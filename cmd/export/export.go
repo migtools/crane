@@ -2,6 +2,9 @@ package export
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vmware-tanzu/velero/pkg/discovery"
@@ -10,13 +13,12 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd/api"
-	"os"
-	"path/filepath"
 )
 
 type ExportOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 
+	logger    logrus.FieldLogger
 	ExportDir string
 	Context   string
 	Namespace string
@@ -42,6 +44,7 @@ func NewExportCommand(streams genericclioptions.IOStreams) *cobra.Command {
 		configFlags: genericclioptions.NewConfigFlags(true),
 
 		IOStreams: streams,
+		logger:    logrus.New(),
 	}
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -73,19 +76,21 @@ func addFlagsForOptions(o *ExportOptions, cmd *cobra.Command) {
 }
 
 func (o *ExportOptions) run() error {
+	log := o.logger
+
 	config := o.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
 	if err != nil {
-		fmt.Printf("error in generating raw config")
-		os.Exit(1)
+		log.Errorf("error in generating raw config")
+		return err
 	}
 	if o.Context == "" {
 		o.Context = rawConfig.CurrentContext
 	}
 
 	if o.Context == "" {
-		fmt.Printf("current kubecontext is empty and not kubecontext is specified")
-		os.Exit(1)
+		log.Errorf("current kubecontext is empty and not kubecontext is specified")
+		return fmt.Errorf("current kubecontext is empty and not kubecontext is specified")
 	}
 
 	var currentContext *api.Context
@@ -99,28 +104,28 @@ func (o *ExportOptions) run() error {
 	}
 
 	if currentContext == nil {
-		fmt.Printf("currentContext is nil\n")
-		os.Exit(1)
+		log.Errorf("currentContext is nil\n")
+		return err
 	}
 
 	if o.Namespace == "" {
-		fmt.Printf("--namespace is empty, defaulting to current context namespace\n")
+		log.Debugf("--namespace is empty, defaulting to current context namespace\n")
 		if currentContext.Namespace == "" {
-			fmt.Printf("current context %s namespace is empty, exiting\n", contextName)
-			os.Exit(1)
+			log.Errorf("current context %s namespace is empty, exiting\n", contextName)
+			return fmt.Errorf("current context %s namespace is empty, exiting\n", contextName)
 		}
 		o.Namespace = currentContext.Namespace
 	}
 
-	fmt.Printf("current context is: %s\n", currentContext.AuthInfo)
+	log.Debugf("current context is: %s\n", currentContext.AuthInfo)
 
 	// create export directory if it doesnt exist
 	err = os.MkdirAll(filepath.Join(o.ExportDir, "resources", o.Namespace), 0700)
 	switch {
 	case os.IsExist(err):
 	case err != nil:
-		fmt.Printf("error creating the resources directory: %#v", err)
-		os.Exit(1)
+		log.Errorf("error creating the resources directory: %#v", err)
+		return err
 	}
 
 	// create export directory if it doesnt exist
@@ -128,14 +133,14 @@ func (o *ExportOptions) run() error {
 	switch {
 	case os.IsExist(err):
 	case err != nil:
-		fmt.Printf("error creating the failures directory: %#v", err)
-		os.Exit(1)
+		log.Errorf("error creating the failures directory: %#v", err)
+		return err
 	}
 
 	discoveryClient, err := o.configFlags.ToDiscoveryClient()
 	if err != nil {
-		fmt.Printf("cannot create discovery client: %#v", err)
-		os.Exit(1)
+		log.Errorf("cannot create discovery client: %#v", err)
+		return err
 	}
 
 	// Always request fresh data from the server
@@ -143,38 +148,41 @@ func (o *ExportOptions) run() error {
 
 	restConfig, err := o.configFlags.ToRESTConfig()
 	if err != nil {
-		fmt.Printf("cannot create rest config: %#v", err)
-		os.Exit(1)
+		log.Errorf("cannot create rest config: %#v", err)
+		return err
 	}
 
 	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 
 	features.NewFeatureFlagSet()
 
-	discoveryHelper, err := discovery.NewHelper(discoveryClient, logrus.New())
+	discoveryHelper, err := discovery.NewHelper(discoveryClient, log)
 	if err != nil {
-		fmt.Printf("cannot create rest config: %#v", err)
-		os.Exit(1)
-	}
-
-	errs := []error{}
-	resourceList := discoveryHelper.Resources()
-	if err != nil {
-		fmt.Printf("unauthorized to get discovery service resources: %#v", err)
+		log.Errorf("cannot create discovery helper: %#v", err)
 		return err
 	}
 
-	resources, resourceErrs := resourceToExtract(o.Namespace, dynamicClient, resourceList)
-	for _, e := range errs {
-		fmt.Printf("error exporting resource: %#v\n", e)
+	var errs []error
+
+	resources, resourceErrs := resourceToExtract(o.Namespace, dynamicClient, discoveryHelper.Resources(), log)
+	for _, e := range resourceErrs {
+		log.Warnf("error exporting resource: %#v, ignoring\n", e)
+		errs = append(errs, e.Error)
 	}
 
-	errs = writeResources(resources, filepath.Join(o.ExportDir, "resources", o.Namespace))
-	for _, e := range errs {
-		fmt.Printf("error writing maniffest to file: %#v\n", e)
+	log.Debugf("attempting to write resources to files\n")
+	writeResourcesErrors := writeResources(resources, filepath.Join(o.ExportDir, "resources", o.Namespace), log)
+	for _, e := range writeResourcesErrors {
+		log.Warnf("error writing manifests to file: %#v, ignoring\n", e)
 	}
 
-	errs = writeErrors(resourceErrs, filepath.Join(o.ExportDir, "failures", o.Namespace))
+	writeErrorsErrors := writeErrors(resourceErrs, filepath.Join(o.ExportDir, "failures", o.Namespace), log)
+	for _, e := range writeErrorsErrors {
+		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
+	}
+
+	errs = append(errs, writeResourcesErrors...)
+	errs = append(errs, writeErrorsErrors...)
 
 	return errorsutil.NewAggregate(errs)
 }

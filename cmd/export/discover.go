@@ -2,10 +2,11 @@ package export
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sirupsen/logrus"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,10 +30,10 @@ type groupResourceError struct {
 	Error       error              `json:"error"`
 }
 
-func writeResources(resources []*groupResource, resourceDir string) []error {
+func writeResources(resources []*groupResource, resourceDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range resources {
-		fmt.Printf("%s %s\n", r.APIResource.Name, r.APIGroupVersion)
+		log.Infof("Writing objects of resource: %s to the output directory\n", r.APIResource.Name)
 
 		kind := r.APIResource.Kind
 
@@ -72,10 +73,10 @@ func writeResources(resources []*groupResource, resourceDir string) []error {
 	return errs
 }
 
-func writeErrors(errors []*groupResourceError, failuresDir string) []error {
+func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range errors {
-		fmt.Printf("%s\n", r.APIResource.Name)
+		log.Debugf("Writing error for resource %s, error: %#v\n", r.APIResource.Name, r.Error)
 
 		kind := r.APIResource.Kind
 
@@ -120,7 +121,7 @@ func getFilePath(obj unstructured.Unstructured) string {
 	return strings.Join([]string{obj.GetKind(), namespace, obj.GetName()}, "_") + ".yaml"
 }
 
-func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -139,16 +140,16 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 
 			// TODO: alpatel: put this behing a flag
 			if resource.Kind == "Event" {
-				fmt.Printf("resource: %s.%s, skipping\n", gv.String(), resource.Kind)
+				log.Debugf("skipping extracting events\n")
 				continue
 			}
 
 			if !resource.Namespaced {
-				fmt.Printf("resource: %s.%s is clusterscoped, skipping\n", gv.String(), resource.Kind)
+				log.Debugf("resource: %s.%s is clusterscoped, skipping\n", gv.String(), resource.Kind)
 				continue
 			}
 
-			fmt.Printf("processing resource: %s.%s\n", gv.String(), resource.Kind)
+			log.Debugf("processing resource: %s.%s\n", gv.String(), resource.Kind)
 
 			g := &groupResource{
 				APIGroup:        gv.Group,
@@ -161,29 +162,26 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 			if err != nil {
 				switch {
 				case apierrors.IsForbidden(err):
-					fmt.Printf("cannot list obj in namespace\n")
+					log.Errorf("cannot list obj in namespace\n")
 				case apierrors.IsMethodNotSupported(err):
-					fmt.Printf("list method not supported on the gvr\n")
+					log.Errorf("list method not supported on the gvr\n")
 				case apierrors.IsNotFound(err):
-					fmt.Printf("could not find the resource, most likely this is a virtual resource\n")
+					log.Errorf("could not find the resource, most likely this is a virtual resource\n")
 				default:
-					fmt.Printf("error listing objects: %#v\n", err)
+					log.Errorf("error listing objects: %#v\n", err)
 				}
-				errors = append(errors, &groupResourceError{
-					APIResource: resource,
-					Error:       err,
-				})
+				errors = append(errors, &groupResourceError{resource, err})
 				continue
 			}
 
 			if len(objs.Items) > 0 {
 				g.objects = objs
-				fmt.Printf("more than one object found\n")
+				log.Infof("adding resource: %s to the list of GVRs to be extracted", resource.Name)
 				resources = append(resources, g)
 				continue
 			}
 
-			fmt.Printf("0 objects found, skipping\n")
+			log.Debugf("0 objects found, for resource %s, skipping\n", resource.Name)
 		}
 	}
 
