@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/pager"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -158,7 +160,7 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 				APIResource:     resource,
 			}
 
-			objs, err := getObjects(g, namespace, dynamicClient)
+			objs, err := getObjects(g, namespace, dynamicClient, log)
 			if err != nil {
 				switch {
 				case apierrors.IsForbidden(err):
@@ -188,14 +190,25 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 	return resources, errors
 }
 
-func getObjects(g *groupResource, namespace string, d dynamic.Interface) (*unstructured.UnstructuredList, error) {
+func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	c := d.Resource(schema.GroupVersionResource{
 		Group:    g.APIGroup,
 		Version:  g.APIVersion,
 		Resource: g.APIResource.Name,
 	})
-	if g.APIResource.Namespaced {
-		return c.Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+	if !g.APIResource.Namespaced {
+		return &unstructured.UnstructuredList{}, nil
 	}
-	return &unstructured.UnstructuredList{}, nil
+
+	p := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+		return c.Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+	})
+
+	list, _, err := p.List(context.TODO(), metav1.ListOptions{})
+	l, ok := list.(*unstructured.UnstructuredList)
+	if !ok {
+		logger.Errorf("expected unstructed.UnstructuredList type got %T\n", l)
+		os.Exit(1)
+	}
+	return l, err
 }
