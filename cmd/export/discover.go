@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
-	"sigs.k8s.io/kustomize/kyaml/yaml"
+	"sigs.k8s.io/yaml"
 )
 
 // groupResource contains the APIGroup and APIResource
@@ -26,7 +26,7 @@ type groupResource struct {
 
 type groupResourceError struct {
 	APIResource metav1.APIResource `json:",inline"`
-	Err         error              `json:"error"`
+	Error       error              `json:"error"`
 }
 
 func writeResources(resources []*groupResource, resourceDir string) []error {
@@ -48,14 +48,13 @@ func writeResources(resources []*groupResource, resourceDir string) []error {
 				continue
 			}
 
-			encoder := yaml.NewEncoder(f)
-			err = encoder.Encode(obj.Object)
+			objBytes, err := yaml.Marshal(f)
 			if err != nil {
 				errs = append(errs, err)
 				continue
 			}
 
-			err = encoder.Close()
+			_, err = f.Write(objBytes)
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -91,14 +90,13 @@ func writeErrors(errors []*groupResourceError, failuresDir string) []error {
 			continue
 		}
 
-		encoder := yaml.NewEncoder(f)
-		err = encoder.Encode(&r)
+		errBytes, err := yaml.Marshal(&r)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
 
-		err = encoder.Close()
+		_, err = f.Write(errBytes)
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -173,7 +171,7 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 				}
 				errors = append(errors, &groupResourceError{
 					APIResource: resource,
-					Err:         err,
+					Error:       err,
 				})
 				continue
 			}
