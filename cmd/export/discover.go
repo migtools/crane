@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,13 +165,13 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 			if err != nil {
 				switch {
 				case apierrors.IsForbidden(err):
-					log.Errorf("cannot list obj in namespace\n")
+					log.Errorf("cannot list obj in namespace for groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsMethodNotSupported(err):
-					log.Errorf("list method not supported on the gvr\n")
+					log.Errorf("list method not supported on the groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsNotFound(err):
-					log.Errorf("could not find the resource, most likely this is a virtual resource\n")
+					log.Errorf("could not find the resource, most likely this is a virtual resource, groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
 				default:
-					log.Errorf("error listing objects: %#v\n", err)
+					log.Errorf("error listing objects: %#v, groupVersion %s, kind: %s\n", err, g.APIGroupVersion, g.APIResource.Kind)
 				}
 				errors = append(errors, &groupResourceError{resource, err})
 				continue
@@ -205,10 +206,13 @@ func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger 
 	})
 
 	list, _, err := p.List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
 	l, ok := list.(*unstructured.UnstructuredList)
 	if !ok {
-		logger.Errorf("expected unstructed.UnstructuredList type got %T\n", l)
-		os.Exit(1)
+		logger.Errorf("expected unstructured.UnstructuredList type got %T for groupResource %s\n", l, g)
+		return nil, fmt.Errorf("expected unstructured.UnstructuredList type got %T for group: %s, kind: %s\n", l, g.APIGroup, g.APIResource.Kind)
 	}
 	return l, err
 }

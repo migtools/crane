@@ -165,10 +165,6 @@ func (o *ExportOptions) run() error {
 	var errs []error
 
 	resources, resourceErrs := resourceToExtract(o.Namespace, dynamicClient, discoveryHelper.Resources(), log)
-	for _, e := range resourceErrs {
-		log.Warnf("error exporting resource: %#v, ignoring\n", e)
-		errs = append(errs, e.Error)
-	}
 
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, filepath.Join(o.ExportDir, "resources", o.Namespace), log)
