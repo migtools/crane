@@ -1,0 +1,45 @@
+name: Make and Test
+on: 
+  push:
+    branches: ["main", "release*"]
+    tags: ["*"]
+  pull_request:
+    branches: ["main", "release*"]
+
+env:
+  GO_VERSION: "1.15"
+
+jobs:
+  make-binary:
+    name: 
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v2
+
+      - name: Install Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: build bin
+        run: go build main.go
+
+  e2e:
+    name: End-to-end
+    needs: [make-binary]
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        KUBERNETES_VERSIONS: ["1.20.2"]
+    env:
+      KUBECONFIG: /tmp/kubeconfig
+      KUBERNETES_VERSION: ${{ matrix.KUBERNETES_VERSIONS }}
+    steps:
+      - name: Create k8s Kind Cluster
+        uses: engineerd/setup-kind@v0.5.0
+
+      - name: Run crane
+        run: main export --export-dir /tmp
