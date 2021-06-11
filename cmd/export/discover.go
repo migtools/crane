@@ -52,7 +52,7 @@ func writeResources(resources []*groupResource, resourceDir string, log logrus.F
 				continue
 			}
 
-			objBytes, err := yaml.Marshal(f)
+			objBytes, err := yaml.Marshal(obj.Object)
 			if err != nil {
 				errs = append(errs, err)
 				continue
