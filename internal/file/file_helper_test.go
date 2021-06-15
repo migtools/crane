@@ -26,7 +26,7 @@ func TestGetWhiteOutFilePath(t *testing.T) {
 	for _, test := range cases {
 		opts := file.PathOpts{
 			TransformDir: test.Dir,
-			ResourceDir:  test.ResourceDir,
+			ExportDir:    test.ResourceDir,
 		}
 		if actual := opts.GetWhiteOutFilePath(test.Filepath); actual != test.Expected {
 			t.Errorf("actual: %v did not match expected: %v", actual, test.Expected)
@@ -53,7 +53,7 @@ func TestGetTransformPath(t *testing.T) {
 	for _, test := range cases {
 		opts := file.PathOpts{
 			TransformDir: test.Dir,
-			ResourceDir:  test.ResourceDir,
+			ExportDir:    test.ResourceDir,
 		}
 		if actual := opts.GetTransformPath(test.Filepath); actual != test.Expected {
 			t.Errorf("actual: %v did not match expected: %v", actual, test.Expected)
@@ -80,8 +80,8 @@ func TestGetOutputFilePath(t *testing.T) {
 	}
 	for _, test := range cases {
 		opts := file.PathOpts{
-			OutputDir:   test.Dir,
-			ResourceDir: test.ResourceDir,
+			OutputDir: test.Dir,
+			ExportDir: test.ResourceDir,
 		}
 		if actual := opts.GetOutputFilePath(test.Filepath); actual != test.Expected {
 			t.Errorf("actual: %v did not match expected: %v", actual, test.Expected)

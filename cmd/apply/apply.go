@@ -1,6 +1,8 @@
 package apply
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -61,8 +63,8 @@ func NewApplyCommand() *cobra.Command {
 
 func addFlagsForOptions(o *Options, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
-	cmd.Flags().StringVarP(&o.ExportDir, "transform-dir", "t", "transfrom", "The path where files that contain the transformations are saved")
-	cmd.Flags().StringVarP(&o.ExportDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
+	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
+	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
 }
 
 func (o *Options) run() error {
@@ -70,13 +72,13 @@ func (o *Options) run() error {
 	a := apply.Applier{}
 
 	// Load all the resources from the export dir
-	p, err := filepath.Abs(o.ExportDir)
+	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
 		// Handle errors better for users.
 		return err
 	}
 
-	t, err := filepath.Abs(o.TransformDir)
+	transformDir, err := filepath.Abs(o.TransformDir)
 	if err != nil {
 		return err
 	}
@@ -86,26 +88,27 @@ func (o *Options) run() error {
 		return err
 	}
 
-	files, err := file.ReadFiles(p)
+	files, err := file.ReadFiles(context.TODO(), exportDir)
 	if err != nil {
 		return err
 	}
 
 	opts := file.PathOpts{
-		TransformDir: t,
-		ResourceDir:  p,
+		TransformDir: transformDir,
+		ExportDir:    exportDir,
 		OutputDir:    outputDir,
 	}
 
+	//TODO: @shawn-hurley handle case where transform or whiteout file is not present.
 	for _, f := range files {
-		whPath := opts.GetWhiteOutFilePath(f.Info.Name())
+		whPath := opts.GetWhiteOutFilePath(f.Path)
 		_, statErr := os.Stat(whPath)
-		if !os.IsNotExist(statErr) {
-			o.logger.Debugf("resource file: %v is skipped due to white file: %v", f.Info.Name(), whPath)
+		if !errors.Is(statErr, os.ErrNotExist) {
+			o.logger.Infof("resource file: %v is skipped due to white file: %v", f.Info.Name(), whPath)
 			continue
 		}
 
-		tfPath := opts.GetTransformPath(f.Info.Name())
+		tfPath := opts.GetTransformPath(f.Path)
 		transformfile, err := os.ReadFile(tfPath)
 		if err != nil {
 			return err
@@ -120,7 +123,7 @@ func (o *Options) run() error {
 		if err != nil {
 			return err
 		}
-		outputFilePath := opts.GetOutputFilePath(f.Info.Name())
+		outputFilePath := opts.GetOutputFilePath(f.Path)
 		outputFile, err := os.Create(outputFilePath)
 		if err != nil {
 			return err
