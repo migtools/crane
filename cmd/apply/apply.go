@@ -124,6 +124,11 @@ func (o *Options) run() error {
 			return err
 		}
 		outputFilePath := opts.GetOutputFilePath(f.Path)
+		// We must create all the directories here.
+		err = os.MkdirAll(filepath.Dir(outputFilePath), 0777)
+		if err != nil {
+			return err
+		}
 		outputFile, err := os.Create(outputFilePath)
 		if err != nil {
 			return err
