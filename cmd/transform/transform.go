@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/plugin"
-	"github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -99,18 +99,18 @@ func (o *Options) run() error {
 
 	opts := file.PathOpts{
 		TransformDir: transformDir,
-		ExportDir:  exportDir,
+		ExportDir:    exportDir,
 	}
 
 	runner = transform.Runner{}
 
 	for _, f := range files {
-		patches, haveWhiteOut, err := runner.Run(f.Unstructured, plugins)
+		response, err := runner.Run(f.Unstructured, plugins)
 		if err != nil {
 			return err
 		}
 
-		if haveWhiteOut {
+		if response.HaveWhiteOut {
 			whPath := opts.GetWhiteOutFilePath(f.Path)
 			_, statErr := os.Stat(whPath)
 			if os.IsNotExist(statErr) {
@@ -118,7 +118,7 @@ func (o *Options) run() error {
 				err = os.MkdirAll(filepath.Dir(whPath), 0700)
 				if err != nil {
 					return err
-				}			
+				}
 				whFile, err := os.Create(whPath)
 				if err != nil {
 					return err
@@ -145,17 +145,20 @@ func (o *Options) run() error {
 		err = os.MkdirAll(filepath.Dir(tfPath), 0700)
 		if err != nil {
 			return err
-		}			
+		}
 		transformFile, err := os.Create(tfPath)
 		if err != nil {
 			return err
 		}
 		defer transformFile.Close()
-		i, err := transformFile.Write(patches)
+		i, err := transformFile.Write(response.TransformFile)
 		if err != nil {
 			return err
 		}
 		o.logger.Debugf("wrote %v bytes for file: %v", i, tfPath)
+		if len(response.IgnoredPatches) > 2 {
+			o.logger.Infof("Ignoring patches: %v", string(response.IgnoredPatches))
+		}
 	}
 	return nil
 }
