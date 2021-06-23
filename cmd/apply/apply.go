@@ -112,9 +112,9 @@ func (o *Options) run() error {
 		// Check if transform file exists
 		// If the transform does not exist, assume that the resource file is
 		// not needed and ignore for now.
-		_, tfStatErr := os.Stat(whPath)
+		_, tfStatErr := os.Stat(tfPath)
 		if errors.Is(tfStatErr, os.ErrNotExist) {
-			o.logger.Infof("resource file: %v is skipped due to no transform file: %v", f.Info.Name(), whPath)
+			o.logger.Infof("resource file: %v is skipped due to no transform file: %v", f.Info.Name(), tfPath)
 			continue
 		}
 
