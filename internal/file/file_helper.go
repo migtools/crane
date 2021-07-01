@@ -71,22 +71,38 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 
 //TODO: @shawn-hurley Add errors for these methods to validate that the correct struct values are set.
 type PathOpts struct {
-	TransformDir string
-	ExportDir    string
-	OutputDir    string
+	TransformDir      string
+	ExportDir         string
+	OutputDir         string
+	IgnoredPatchesDir string
 }
 
 func (opts *PathOpts) GetWhiteOutFilePath(filePath string) string {
-	return opts.updatePath(".wh.", filePath)
+	return opts.updateTransformDirPath(".wh.", filePath)
 }
 
 func (opts *PathOpts) GetTransformPath(filePath string) string {
-	return opts.updatePath("transform-", filePath)
+	return opts.updateTransformDirPath("transform-", filePath)
 }
 
-func (opts *PathOpts) updatePath(prefix, filePath string) string {
+func (opts *PathOpts) GetIgnoredPatchesPath(filePath string) string {
+	return opts.updateIgnoredPatchesDirPath("ignored-", filePath)
+}
+
+func (opts *PathOpts) updateTransformDirPath(prefix, filePath string) string {
+	return opts.updatePath(opts.TransformDir, prefix, filePath)
+}
+
+func (opts *PathOpts) updateIgnoredPatchesDirPath(prefix, filePath string) string {
+	if len(opts.IgnoredPatchesDir) == 0 {
+		return ""
+	}
+	return opts.updatePath(opts.IgnoredPatchesDir, prefix, filePath)
+}
+
+func (opts *PathOpts) updatePath(updateDir, prefix, filePath string) string {
 	dir, fname := filepath.Split(filePath)
-	dir = strings.Replace(dir, opts.ExportDir, opts.TransformDir, 1)
+	dir = strings.Replace(dir, opts.ExportDir, updateDir, 1)
 	fname = fmt.Sprintf("%v%v", prefix, fname)
 	return filepath.Join(dir, fname)
 }
