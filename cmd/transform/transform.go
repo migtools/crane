@@ -5,6 +5,7 @@ import (
 	//"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/internal/file"
@@ -14,10 +15,12 @@ import (
 )
 
 type Options struct {
-	logger       logrus.FieldLogger
-	ExportDir    string
-	PluginDir    string
-	TransformDir string
+	logger            logrus.FieldLogger
+	ExportDir         string
+	PluginDir         string
+	TransformDir      string
+	IgnoredPatchesDir string
+	PluginPriorities  string
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -65,11 +68,11 @@ func addFlagsForOptions(o *Options, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins", "The path where binary plugins are located")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
+	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
+	cmd.Flags().StringVar(&o.PluginPriorities, "plugin-priorities", "", "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
 }
 
 func (o *Options) run() error {
-	runner := transform.Runner{}
-
 	// Load all the resources from the export dir
 	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
@@ -87,6 +90,14 @@ func (o *Options) run() error {
 		return err
 	}
 
+	var ignoredPatchesDir string
+	if o.IgnoredPatchesDir != "" {
+		ignoredPatchesDir, err = filepath.Abs(o.IgnoredPatchesDir)
+		if err != nil {
+			return err
+		}
+	}
+
 	plugins, err := plugin.GetBinaryPlugins(pluginDir)
 	if err != nil {
 		return err
@@ -98,11 +109,15 @@ func (o *Options) run() error {
 	}
 
 	opts := file.PathOpts{
-		TransformDir: transformDir,
-		ExportDir:    exportDir,
+		TransformDir:      transformDir,
+		ExportDir:         exportDir,
+		IgnoredPatchesDir: ignoredPatchesDir,
 	}
 
-	runner = transform.Runner{}
+	runner := transform.Runner{Log: o.logger.WithField("command", "transform").Logger}
+	if len(o.PluginPriorities) > 0 {
+		runner.PluginPriorities = o.getPluginPrioritiesMap()
+	}
 
 	for _, f := range files {
 		response, err := runner.Run(f.Unstructured, plugins)
@@ -158,7 +173,32 @@ func (o *Options) run() error {
 		o.logger.Debugf("wrote %v bytes for file: %v", i, tfPath)
 		if len(response.IgnoredPatches) > 2 {
 			o.logger.Infof("Ignoring patches: %v", string(response.IgnoredPatches))
+			if len(ignoredPatchesDir) > 0 {
+				ignorePath := opts.GetIgnoredPatchesPath(f.Path)
+				err = os.MkdirAll(filepath.Dir(ignorePath), 0700)
+				if err != nil {
+					return err
+				}
+				ignoreFile, err := os.Create(ignorePath)
+				if err != nil {
+					return err
+				}
+				defer ignoreFile.Close()
+				i, err := ignoreFile.Write(response.IgnoredPatches)
+				if err != nil {
+					return err
+				}
+				o.logger.Debugf("wrote %v bytes for file: %v", i, ignorePath)
+			}
 		}
 	}
 	return nil
+}
+
+func (o *Options) getPluginPrioritiesMap() map[string]int {
+	prioritiesMap := make(map[string]int)
+	for i, pluginName := range strings.Split(o.PluginPriorities, ",") {
+		prioritiesMap[pluginName] = i
+	}
+	return prioritiesMap
 }
