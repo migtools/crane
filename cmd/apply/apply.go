@@ -108,24 +108,32 @@ func (o *Options) run() error {
 			continue
 		}
 
+		// Set doc to the object, only update the file if the transfrom file exists
+		doc, err := f.Unstructured.MarshalJSON()
+		if err != nil {
+			return err
+		}
+
 		tfPath := opts.GetTransformPath(f.Path)
 		// Check if transform file exists
 		// If the transform does not exist, assume that the resource file is
 		// not needed and ignore for now.
 		_, tfStatErr := os.Stat(tfPath)
-		if errors.Is(tfStatErr, os.ErrNotExist) {
-			o.logger.Infof("resource file: %v is skipped due to no transform file: %v", f.Info.Name(), tfPath)
-			continue
-		}
-
-		transformfile, err := os.ReadFile(tfPath)
-		if err != nil {
+		if err != nil && !errors.Is(tfStatErr, os.ErrNotExist) {
+			// Some other error here err out
 			return err
 		}
 
-		doc, err := a.Apply(f.Unstructured, transformfile)
-		if err != nil {
-			return err
+		if !errors.Is(tfStatErr, os.ErrNotExist) {
+			transformfile, err := os.ReadFile(tfPath)
+			if err != nil {
+				return err
+			}
+
+			doc, err = a.Apply(f.Unstructured, transformfile)
+			if err != nil {
+				return err
+			}
 		}
 
 		y, err := yaml.JSONToYAML(doc)
