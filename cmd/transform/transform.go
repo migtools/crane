@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane/cmd/transform/optionals"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/plugin"
+	"github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -21,6 +22,7 @@ type Options struct {
 	TransformDir      string
 	IgnoredPatchesDir string
 	PluginPriorities  string
+	OptionalFlags     string
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -59,6 +61,7 @@ func NewTransformCommand() *cobra.Command {
 		},
 	}
 
+	cmd.AddCommand(optionals.NewOptionalsCommand())
 	addFlagsForOptions(o, cmd)
 
 	return cmd
@@ -70,6 +73,7 @@ func addFlagsForOptions(o *Options, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.PluginPriorities, "plugin-priorities", "", "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
+	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "A semicolon-separated list of flag-name=value pairs. These flags with values will be passed into all plugins that are executed in the transform operation.")
 }
 
 func (o *Options) run() error {
@@ -117,6 +121,9 @@ func (o *Options) run() error {
 	runner := transform.Runner{Log: o.logger.WithField("command", "transform").Logger}
 	if len(o.PluginPriorities) > 0 {
 		runner.PluginPriorities = o.getPluginPrioritiesMap()
+	}
+	if len(o.OptionalFlags) > 0 {
+		runner.OptionalFlags = o.getOptionalFlagsMap()
 	}
 
 	for _, f := range files {
@@ -201,4 +208,23 @@ func (o *Options) getPluginPrioritiesMap() map[string]int {
 		prioritiesMap[pluginName] = i
 	}
 	return prioritiesMap
+}
+
+func (o *Options) getOptionalFlagsMap() map[string]string {
+	flagsMap := make(map[string]string)
+	for _, flag := range strings.Split(o.OptionalFlags, ";") {
+		if flag == "" {
+			continue
+		}
+		flagKeyValue := strings.SplitN(flag, "=", 2)
+		if len(flagKeyValue) == 0 || flagKeyValue[0] == "" {
+			continue
+		}
+		if len(flagKeyValue) == 1 {
+			flagsMap[flagKeyValue[0]] = ""
+		} else {
+			flagsMap[flagKeyValue[0]] = flagKeyValue[1]
+		}
+	}
+	return flagsMap
 }

@@ -34,7 +34,11 @@ func getBinaryPlugins(path string, files []os.FileInfo) ([]transform.Plugin, err
 			}
 			pluginList = append(pluginList, plugins...)
 		} else if file.Mode().IsRegular() && isExecAny(file.Mode().Perm()) {
-			pluginList = append(pluginList, binary_plugin.NewBinaryPlugin(filePath))
+			newPlugin, err := binary_plugin.NewBinaryPlugin(filePath)
+			if err != nil {
+				return nil, err
+			}
+			pluginList = append(pluginList, newPlugin)
 		}
 	}
 	return pluginList, nil
