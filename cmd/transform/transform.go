@@ -7,16 +7,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/cmd/transform/optionals"
 	"github.com/konveyor/crane/internal/file"
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
-	"github.com/konveyor/crane-lib/transform"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 type Options struct {
-	logger            logrus.FieldLogger
+	globalFlags       *flags.GlobalFlags
 	ExportDir         string
 	PluginDir         string
 	TransformDir      string
@@ -39,9 +39,9 @@ func (o *Options) Run() error {
 	return o.run()
 }
 
-func NewTransformCommand() *cobra.Command {
+func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
-		logger: logrus.New(),
+		globalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "transform",
@@ -77,6 +77,7 @@ func addFlagsForOptions(o *Options, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
+	log := o.globalFlags.GetLogger()
 	// Load all the resources from the export dir
 	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
@@ -118,7 +119,7 @@ func (o *Options) run() error {
 		IgnoredPatchesDir: ignoredPatchesDir,
 	}
 
-	runner := transform.Runner{Log: o.logger.WithField("command", "transform").Logger}
+	runner := transform.Runner{Log: log.WithField("command", "transform").Logger}
 	if len(o.PluginPriorities) > 0 {
 		runner.PluginPriorities = o.getPluginPrioritiesMap()
 	}
@@ -136,7 +137,7 @@ func (o *Options) run() error {
 			whPath := opts.GetWhiteOutFilePath(f.Path)
 			_, statErr := os.Stat(whPath)
 			if os.IsNotExist(statErr) {
-				o.logger.Infof("resource file: %v creating whiteout file: %v", f.Info.Name(), whPath)
+				log.Infof("resource file: %v creating whiteout file: %v", f.Info.Name(), whPath)
 				err = os.MkdirAll(filepath.Dir(whPath), 0700)
 				if err != nil {
 					return err
@@ -153,7 +154,7 @@ func (o *Options) run() error {
 			whPath := opts.GetWhiteOutFilePath(f.Path)
 			_, statErr := os.Stat(whPath)
 			if !os.IsNotExist(statErr) {
-				o.logger.Infof("resource file: %v removing stale whiteout file: %v", f.Info.Name(), whPath)
+				log.Infof("resource file: %v removing stale whiteout file: %v", f.Info.Name(), whPath)
 				err := os.Remove(whPath)
 				if err != nil {
 					return err
@@ -177,9 +178,9 @@ func (o *Options) run() error {
 		if err != nil {
 			return err
 		}
-		o.logger.Debugf("wrote %v bytes for file: %v", i, tfPath)
+		log.Debugf("wrote %v bytes for file: %v", i, tfPath)
 		if len(response.IgnoredPatches) > 2 {
-			o.logger.Infof("Ignoring patches: %v", string(response.IgnoredPatches))
+			log.Infof("Ignoring patches: %v", string(response.IgnoredPatches))
 			if len(ignoredPatchesDir) > 0 {
 				ignorePath := opts.GetIgnoredPatchesPath(f.Path)
 				err = os.MkdirAll(filepath.Dir(ignorePath), 0700)
@@ -195,7 +196,7 @@ func (o *Options) run() error {
 				if err != nil {
 					return err
 				}
-				o.logger.Debugf("wrote %v bytes for file: %v", i, ignorePath)
+				log.Debugf("wrote %v bytes for file: %v", i, ignorePath)
 			}
 		}
 	}
