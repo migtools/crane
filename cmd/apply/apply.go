@@ -8,13 +8,13 @@ import (
 
 	"github.com/konveyor/crane-lib/apply"
 	"github.com/konveyor/crane/internal/file"
-	"github.com/sirupsen/logrus"
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 )
 
 type Options struct {
-	logger       logrus.FieldLogger
+	globalFlags  *flags.GlobalFlags
 	ExportDir    string
 	TransformDir string
 	OutputDir    string
@@ -34,9 +34,9 @@ func (o *Options) Run() error {
 	return o.run()
 }
 
-func NewApplyCommand() *cobra.Command {
+func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
-		logger: logrus.New(),
+		globalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "apply",
@@ -68,7 +68,7 @@ func addFlagsForOptions(o *Options, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	// log := o.logger
+	log := o.globalFlags.GetLogger()
 	a := apply.Applier{}
 
 	// Load all the resources from the export dir
@@ -104,7 +104,7 @@ func (o *Options) run() error {
 		whPath := opts.GetWhiteOutFilePath(f.Path)
 		_, statErr := os.Stat(whPath)
 		if !errors.Is(statErr, os.ErrNotExist) {
-			o.logger.Infof("resource file: %v is skipped due to white file: %v", f.Info.Name(), whPath)
+			log.Infof("resource file: %v is skipped due to white file: %v", f.Info.Name(), whPath)
 			continue
 		}
 
@@ -155,7 +155,7 @@ func (o *Options) run() error {
 		if err != nil {
 			return err
 		}
-		o.logger.Debugf("wrote %v bytes for file: %v", i, outputFilePath)
+		log.Debugf("wrote %v bytes for file: %v", i, outputFilePath)
 	}
 
 	return nil

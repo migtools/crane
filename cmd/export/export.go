@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sirupsen/logrus"
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"github.com/vmware-tanzu/velero/pkg/discovery"
 	"github.com/vmware-tanzu/velero/pkg/features"
@@ -17,8 +17,8 @@ import (
 
 type ExportOptions struct {
 	configFlags *genericclioptions.ConfigFlags
+	globalFlags *flags.GlobalFlags
 
-	logger    logrus.FieldLogger
 	ExportDir string
 	Context   string
 	Namespace string
@@ -39,12 +39,12 @@ func (o *ExportOptions) Run() error {
 	return o.run()
 }
 
-func NewExportCommand(streams genericclioptions.IOStreams) *cobra.Command {
+func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ExportOptions{
 		configFlags: genericclioptions.NewConfigFlags(true),
 
-		IOStreams: streams,
-		logger:    logrus.New(),
+		IOStreams:   streams,
+		globalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -76,7 +76,7 @@ func addFlagsForOptions(o *ExportOptions, cmd *cobra.Command) {
 }
 
 func (o *ExportOptions) run() error {
-	log := o.logger
+	log := o.globalFlags.GetLogger()
 
 	config := o.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
