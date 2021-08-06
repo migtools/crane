@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
 	binary_plugin "github.com/konveyor/crane-lib/transform/binary-plugin"
@@ -54,4 +55,32 @@ func getBinaryPlugins(path string, files []os.FileInfo) ([]transform.Plugin, err
 
 func isExecAny(mode os.FileMode) bool {
 	return mode&0111 != 0
+}
+
+func GetFilteredPlugins(pluginDir, skipPlugins string) ([]transform.Plugin, error) {
+	var filteredPlugins []transform.Plugin
+	plugins, err := GetPlugins(pluginDir)
+	if err != nil {
+		return filteredPlugins, err
+	}
+	if len(skipPlugins) == 0 {
+		return plugins, nil
+	}
+	skipList := strings.Split(skipPlugins, ",")
+	for _, thisPlugin := range plugins {
+		if !isPluginInList(thisPlugin, skipList) {
+			filteredPlugins = append(filteredPlugins, thisPlugin)
+		}
+	}
+	return filteredPlugins, nil
+}
+
+func isPluginInList(plugin transform.Plugin, list []string) bool {
+	pluginName := plugin.Metadata().Name
+	for _, listItem := range list {
+		if pluginName == listItem {
+			return true
+		}
+	}
+	return false
 }

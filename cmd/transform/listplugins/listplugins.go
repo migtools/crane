@@ -1,4 +1,4 @@
-package optionals
+package listplugins
 
 import (
 	"fmt"
@@ -10,9 +10,9 @@ import (
 )
 
 type Options struct {
-	logger      logrus.FieldLogger
-	PluginDir   string
-	SkipPlugins string
+	logger            logrus.FieldLogger
+	PluginDir         string
+	SkipPlugins       string
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -29,13 +29,13 @@ func (o *Options) Run() error {
 	return o.run()
 }
 
-func NewOptionalsCommand() *cobra.Command {
+func NewListPluginsCommand() *cobra.Command {
 	o := &Options{
 		logger: logrus.New(),
 	}
 	cmd := &cobra.Command{
-		Use:   "optionals",
-		Short: "Return a list of optional fields accepted by configured plugins",
+		Use:   "list-plugins",
+		Short: "Return a list of configured plugins",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
@@ -73,13 +73,7 @@ func (o *Options) run() error {
 	}
 
 	for _, thisPlugin := range plugins {
-		if len(thisPlugin.Metadata().OptionalFields) > 0 {
-			fmt.Printf("Plugin: %v (version %v)\n", thisPlugin.Metadata().Name, thisPlugin.Metadata().Version)
-			for _, field := range thisPlugin.Metadata().OptionalFields {
-				fmt.Printf("    %v: %v\n", field.FlagName, field.Help)
-				fmt.Printf("        Example: %v\n", field.Example)
-			}
-		}
+		fmt.Printf("Plugin: %v (version %v)\n", thisPlugin.Metadata().Name, thisPlugin.Metadata().Version)
 	}
 	return nil
 }
