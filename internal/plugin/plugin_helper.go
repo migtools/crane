@@ -6,17 +6,25 @@ import (
 	"os"
 
 	"github.com/konveyor/crane-lib/transform"
-	"github.com/konveyor/crane-lib/transform/binary-plugin"
+	binary_plugin "github.com/konveyor/crane-lib/transform/binary-plugin"
+	"github.com/konveyor/crane-lib/transform/kubernetes"
 )
+
 func GetBinaryPlugins(dir string) ([]transform.Plugin, error) {
+	pluginList := []transform.Plugin{&kubernetes.KubernetesTransformPlugin{}}
 	files, err := ioutil.ReadDir(dir)
 	switch {
 	case os.IsNotExist(err):
-		return []transform.Plugin{}, nil
+		return pluginList, nil
 	case err != nil:
 		return nil, err
 	}
-	return getBinaryPlugins(dir, files)
+	list, err := getBinaryPlugins(dir, files)
+	if err != nil {
+		return nil, err
+	}
+	pluginList = append(pluginList, list...)
+	return pluginList, nil
 }
 
 func getBinaryPlugins(path string, files []os.FileInfo) ([]transform.Plugin, error) {
@@ -45,5 +53,5 @@ func getBinaryPlugins(path string, files []os.FileInfo) ([]transform.Plugin, err
 }
 
 func isExecAny(mode os.FileMode) bool {
-    return mode&0111 != 0
+	return mode&0111 != 0
 }
