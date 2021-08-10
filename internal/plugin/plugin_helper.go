@@ -10,7 +10,7 @@ import (
 	"github.com/konveyor/crane-lib/transform/kubernetes"
 )
 
-func GetBinaryPlugins(dir string) ([]transform.Plugin, error) {
+func GetPlugins(dir string) ([]transform.Plugin, error) {
 	pluginList := []transform.Plugin{&kubernetes.KubernetesTransformPlugin{}}
 	files, err := ioutil.ReadDir(dir)
 	switch {
