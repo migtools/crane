@@ -103,7 +103,7 @@ func (o *Options) run() error {
 		}
 	}
 
-	plugins, err := plugin.GetBinaryPlugins(pluginDir)
+	plugins, err := plugin.GetPlugins(pluginDir)
 	if err != nil {
 		return err
 	}

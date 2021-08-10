@@ -10,8 +10,8 @@ import (
 )
 
 type Options struct {
-	logger            logrus.FieldLogger
-	PluginDir         string
+	logger    logrus.FieldLogger
+	PluginDir string
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -65,7 +65,7 @@ func (o *Options) run() error {
 		return err
 	}
 
-	plugins, err := plugin.GetBinaryPlugins(pluginDir)
+	plugins, err := plugin.GetPlugins(pluginDir)
 	if err != nil {
 		return err
 	}
