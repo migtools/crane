@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane/cmd/transform/listplugins"
 	"github.com/konveyor/crane/cmd/transform/optionals"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
@@ -22,6 +23,7 @@ type Options struct {
 	TransformDir      string
 	IgnoredPatchesDir string
 	PluginPriorities  string
+	SkipPlugins       string
 	OptionalFlags     string
 }
 
@@ -62,6 +64,7 @@ func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 	}
 
 	cmd.AddCommand(optionals.NewOptionalsCommand())
+	cmd.AddCommand(listplugins.NewListPluginsCommand())
 	addFlagsForOptions(o, cmd)
 
 	return cmd
@@ -73,6 +76,7 @@ func addFlagsForOptions(o *Options, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.PluginPriorities, "plugin-priorities", "", "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
+	cmd.Flags().StringVarP(&o.SkipPlugins, "skip-plugins", "s", "", "A comma-separated list of plugins to skip")
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "A semicolon-separated list of flag-name=value pairs. These flags with values will be passed into all plugins that are executed in the transform operation.")
 }
 
@@ -103,11 +107,10 @@ func (o *Options) run() error {
 		}
 	}
 
-	plugins, err := plugin.GetPlugins(pluginDir)
+	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins)
 	if err != nil {
 		return err
 	}
-
 	files, err := file.ReadFiles(context.TODO(), exportDir)
 	if err != nil {
 		return err
