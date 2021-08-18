@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
 	"os"
 	"time"
-
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/konveyor/crane-lib/state_transfer"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
@@ -18,18 +15,20 @@ import (
 	metadata "github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 	"github.com/konveyor/crane-lib/state_transfer/transport/stunnel"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/rest"
-
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -245,12 +244,13 @@ func (t *TransferPVCOptions) run() error {
 	}
 
 	// create an stunnel transport to carry the data over the route
+
 	s := stunnel.NewTransport(meta.NewNamespacedPair(
 		types.NamespacedName{
 			Name: pvc.Name, Namespace: pvc.Namespace},
 		types.NamespacedName{
 			Name: destPVC.Name, Namespace: destPVC.Namespace},
-	))
+	), &transport.Options{})
 	err = s.CreateServer(destClient, e)
 	if err != nil {
 		log.Fatal(err, "error creating stunnel server")
@@ -261,7 +261,7 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "error creating stunnel client")
 	}
 
-	s, err = stunnel.GetTransferFromKubeObjects(srcClient, destClient, s.NamespacedNamePair(), e)
+	s, err = stunnel.GetTransportFromKubeObjects(srcClient, destClient, s.NamespacedNamePair(), e)
 	if err != nil {
 		log.Fatal(err, "error creating from kube objects")
 	} else {
