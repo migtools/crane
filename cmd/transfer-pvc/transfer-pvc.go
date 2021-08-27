@@ -10,14 +10,11 @@ import (
 
 	"github.com/konveyor/crane-lib/state_transfer"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
-	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
+	ls "github.com/konveyor/crane-lib/state_transfer/endpoint/local_service"
 	"github.com/konveyor/crane-lib/state_transfer/meta"
-	metadata "github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
-	"github.com/konveyor/crane-lib/state_transfer/transport"
-	"github.com/konveyor/crane-lib/state_transfer/transport/stunnel"
-	routev1 "github.com/openshift/api/route/v1"
+	"github.com/konveyor/crane-lib/state_transfer/transport/null"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -31,17 +28,24 @@ import (
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	// Auth Things
+	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
 type TransferPVCOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
 
-	logger             logrus.FieldLogger
-	SourceContext      string
-	DestinationContext string
-	PVCName            string
-	PVCNamespace       string
+	logger                  logrus.FieldLogger
+	SourceContext           string
+	DestinationContext      string
+	SourcePVCName           string
+	SourcePVCNamespace      string
+	DestinationPVCName      string
+	DestinationPVCNamespace string
+	LocalCopy               bool
+	SkipQuiesce             bool
 
 	// TODO: add more fields for PVC mapping/think of a config file to get inputs?
 	sourceContext      *clientcmdapi.Context
@@ -81,8 +85,12 @@ func NewTransferOptions(streams genericclioptions.IOStreams) *cobra.Command {
 func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.SourceContext, "source-context", "", "The name of the source context in current kubeconfig")
 	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context current kubeconfig")
-	cmd.Flags().StringVar(&t.PVCNamespace, "pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
-	cmd.Flags().StringVar(&t.PVCName, "pvc-name", "", "The pvc name which is to be transferred on the source")
+	cmd.Flags().StringVar(&t.SourcePVCNamespace, "source-pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
+	cmd.Flags().StringVar(&t.SourcePVCName, "source-pvc-name", "", "The pvc name which is to be transferred on the source")
+	cmd.Flags().StringVar(&t.DestinationPVCNamespace, "destination-pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in destination-context, if both are empty it will error")
+	cmd.Flags().StringVar(&t.DestinationPVCName, "destination-pvc-name", "", "The pvc name which is to be transferred on the source")
+	cmd.Flags().BoolVarP(&t.LocalCopy, "local", "l", false, "Will use the source context as the destination context. Destination Namespace Must be set")
+	cmd.Flags().BoolVarP(&t.SkipQuiesce, "skip-quiesce", "q", false, "Will skip quiesce for the application")
 }
 
 func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
@@ -90,6 +98,10 @@ func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
 	rawConfig, err := config.RawConfig()
 	if err != nil {
 		return err
+	}
+
+	if t.LocalCopy && t.DestinationPVCNamespace == "" {
+		return fmt.Errorf("local copy with no new Destination PVC Namespace")
 	}
 
 	if t.DestinationContext == "" {
@@ -105,19 +117,26 @@ func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
 		}
 	}
 
-	if t.PVCNamespace == "" && t.sourceContext != nil {
-		t.PVCNamespace = t.sourceContext.Namespace
+	if t.LocalCopy {
+		t.destinationContext = t.sourceContext
+		if t.DestinationPVCName == "" {
+			t.DestinationPVCName = t.SourcePVCName
+		}
+	}
+
+	if t.SourcePVCNamespace == "" && t.sourceContext != nil {
+		t.SourcePVCNamespace = t.sourceContext.Namespace
 	}
 
 	return nil
 }
 
 func (t *TransferPVCOptions) Validate() error {
-	if t.PVCName == "" {
+	if t.SourcePVCName == "" {
 		return fmt.Errorf("flag pvc-name is not set")
 	}
 
-	if t.PVCNamespace == "" {
+	if t.SourcePVCNamespace == "" {
 		return fmt.Errorf("flag pvc-name is not set and source-context Namespace is empty")
 	}
 
@@ -129,10 +148,6 @@ func (t *TransferPVCOptions) Validate() error {
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
-	if t.sourceContext.Cluster == t.destinationContext.Cluster {
-		return fmt.Errorf("both source and destination cluster are same, this is not support right now, coming soon")
-	}
-
 	return nil
 }
 
@@ -142,11 +157,6 @@ func (t *TransferPVCOptions) Run() error {
 
 func (t *TransferPVCOptions) getClientFromContext(ctx string) (client.Client, error) {
 	restConfig, err := t.getRestConfigFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	err = routev1.Install(scheme.Scheme)
 	if err != nil {
 		return nil, err
 	}
@@ -182,14 +192,16 @@ func (t *TransferPVCOptions) run() error {
 	}
 
 	// quiesce the applications if needed on the source side
-	err = state_transfer.QuiesceApplications(srcCfg, t.PVCNamespace)
-	if err != nil {
-		log.Fatal(err, "unable to quiesce application on source cluster")
+	if !t.SkipQuiesce {
+		err = state_transfer.QuiesceApplications(srcCfg, t.SourcePVCNamespace)
+		if err != nil {
+			log.Fatal(err, "unable to quiesce application on source cluster")
+		}
 	}
 
 	// set up the PVC on destination to receive the data
 	pvc := &corev1.PersistentVolumeClaim{}
-	err = srcClient.Get(context.TODO(), client.ObjectKey{Namespace: t.PVCNamespace, Name: t.PVCName}, pvc)
+	err = srcClient.Get(context.TODO(), client.ObjectKey{Namespace: t.SourcePVCNamespace, Name: t.SourcePVCName}, pvc)
 	if err != nil {
 		log.Fatal(err, "unable to get source PVC")
 	}
@@ -197,6 +209,8 @@ func (t *TransferPVCOptions) run() error {
 	destPVC := pvc.DeepCopy()
 
 	clearDestPVC(destPVC)
+	destPVC.Namespace = t.DestinationPVCNamespace
+	destPVC.Name = t.DestinationPVCName
 
 	pvc.Annotations = map[string]string{}
 	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
@@ -212,45 +226,35 @@ func (t *TransferPVCOptions) run() error {
 	}
 
 	// create a route for data transfer
-	r := route.NewEndpoint(
-		types.NamespacedName{
-			Namespace: pvc.Namespace,
-			Name:      pvc.Name,
-		}, route.EndpointTypePassthrough, metadata.Labels)
-	e, err := endpoint.Create(r, destClient)
+	l := ls.NewEndpoint(types.NamespacedName{
+		Name:      destPVC.Name,
+		Namespace: destPVC.Namespace,
+	}, map[string]string{})
+
+	e, err := endpoint.Create(l, destClient)
 	if err != nil {
-		log.Fatal(err, "unable to create route endpoint")
+		log.Fatal(err, "unable to create endpoint")
 	}
 
 	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		e, err := route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-		if err != nil {
-			log.Println(err, "unable to check route health, retrying...")
-			return false, nil
-		}
 		ready, err := e.IsHealthy(destClient)
 		if err != nil {
-			log.Println(err, "unable to check route health, retrying...")
+			log.Println(err, "unable to check endpoint health, retrying...")
 			return false, nil
 		}
 		return ready, nil
 	}, make(<-chan struct{}))
 
-	e, err = route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-	if err != nil {
-		log.Fatal(err, "unable to get the route object")
-	} else {
-		log.Println("route endpoint is created and is healthy")
-	}
-
 	// create an stunnel transport to carry the data over the route
 
-	s := stunnel.NewTransport(meta.NewNamespacedPair(
+	s := null.NewTransport(meta.NewNamespacedPair(
 		types.NamespacedName{
 			Name: pvc.Name, Namespace: pvc.Namespace},
 		types.NamespacedName{
-			Name: destPVC.Name, Namespace: destPVC.Namespace},
-	), &transport.Options{})
+			Name: destPVC.Name, Namespace: destPVC.Namespace,
+		},
+	))
+
 	err = s.CreateServer(destClient, e)
 	if err != nil {
 		log.Fatal(err, "error creating stunnel server")
@@ -261,23 +265,16 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "error creating stunnel client")
 	}
 
-	s, err = stunnel.GetTransportFromKubeObjects(srcClient, destClient, s.NamespacedNamePair(), e)
-	if err != nil {
-		log.Fatal(err, "error creating from kube objects")
-	} else {
-		log.Println("stunnel transport is created and is healthy")
-	}
-
 	// Rsync Example
 	rsyncTransferOptions := []rsync.TransferOption{
 		rsync.StandardProgress(true),
 		rsync.ArchiveFiles(true),
 		rsync.WithSourcePodLabels(map[string]string{"app": "crane2"}),
-		rsync.WithDestinationPodLabels(map[string]string{"app": "crane2"}),
+		rsync.WithDestinationPodLabels(map[string]string{"app": "crane2", "pvc": destPVC.Name}),
 		rsync.Username("root"),
 	}
 
-	rsyncTransfer, err := rsync.NewTransfer(s, r, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
+	rsyncTransfer, err := rsync.NewTransfer(s, l, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
 	if err != nil {
 		log.Fatal(err, "error creating rsync transfer")
 	} else {
@@ -306,7 +303,7 @@ func (t *TransferPVCOptions) run() error {
 		log.Println("rsync client pod is created, attempting following logs")
 	}
 
-	err = followClientLogs(srcCfg, srcClient, t.PVCNamespace, map[string]string{"app": "crane2"})
+	err = followClientLogs(srcCfg, srcClient, t.SourcePVCNamespace, map[string]string{"app": "crane2"})
 	if err != nil {
 		log.Fatal(err, "error following rsync client logs")
 	}
@@ -374,6 +371,8 @@ func clearDestPVC(destPVC *corev1.PersistentVolumeClaim) {
 	destPVC.ResourceVersion = ""
 	destPVC.Spec.VolumeName = ""
 	destPVC.Annotations = map[string]string{}
+	// Test TODO: remove
+	destPVC.Labels = map[string]string{}
 	destPVC.Spec.StorageClassName = nil
 	destPVC.Spec.VolumeMode = nil
 	destPVC.Status = corev1.PersistentVolumeClaimStatus{}
