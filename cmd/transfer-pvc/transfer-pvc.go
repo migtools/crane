@@ -10,11 +10,14 @@ import (
 
 	"github.com/konveyor/crane-lib/state_transfer"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
-	ls "github.com/konveyor/crane-lib/state_transfer/endpoint/local_service"
+	"github.com/konveyor/crane-lib/state_transfer/endpoint/local_service"
+	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
 	"github.com/konveyor/crane-lib/state_transfer/meta"
 	"github.com/konveyor/crane-lib/state_transfer/transfer"
 	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
+	"github.com/konveyor/crane-lib/state_transfer/transport"
 	"github.com/konveyor/crane-lib/state_transfer/transport/null"
+	"github.com/konveyor/crane-lib/state_transfer/transport/stunnel"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -225,11 +228,7 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "invalid pvc list")
 	}
 
-	// create a route for data transfer
-	l := ls.NewEndpoint(types.NamespacedName{
-		Name:      destPVC.Name,
-		Namespace: destPVC.Namespace,
-	}, map[string]string{})
+	l := t.getEndpoint(destPVC)
 
 	e, err := endpoint.Create(l, destClient)
 	if err != nil {
@@ -245,15 +244,13 @@ func (t *TransferPVCOptions) run() error {
 		return ready, nil
 	}, make(<-chan struct{}))
 
-	// create an stunnel transport to carry the data over the route
-
-	s := null.NewTransport(meta.NewNamespacedPair(
+	s := t.getTransport(meta.NewNamespacedPair(
 		types.NamespacedName{
 			Name: pvc.Name, Namespace: pvc.Namespace},
 		types.NamespacedName{
 			Name: destPVC.Name, Namespace: destPVC.Namespace,
 		},
-	))
+	), &transport.Options{})
 
 	err = s.CreateServer(destClient, e)
 	if err != nil {
@@ -371,9 +368,32 @@ func clearDestPVC(destPVC *corev1.PersistentVolumeClaim) {
 	destPVC.ResourceVersion = ""
 	destPVC.Spec.VolumeName = ""
 	destPVC.Annotations = map[string]string{}
-	// Test TODO: remove
-	destPVC.Labels = map[string]string{}
 	destPVC.Spec.StorageClassName = nil
 	destPVC.Spec.VolumeMode = nil
 	destPVC.Status = corev1.PersistentVolumeClaimStatus{}
+}
+
+// No Ability to pass in extra labels right now, must fix in the future.
+func (t *TransferPVCOptions) getEndpoint(pvc *corev1.PersistentVolumeClaim) endpoint.Endpoint {
+	if t.LocalCopy {
+		return local_service.NewEndpoint(types.NamespacedName{
+			Name:      pvc.Name,
+			Namespace: pvc.Namespace,
+		}, meta.Labels)
+	}
+
+	return route.NewEndpoint(
+		types.NamespacedName{
+			Namespace: pvc.Namespace,
+			Name:      pvc.Name,
+		}, route.EndpointTypePassthrough, meta.Labels)
+
+}
+
+func (t *TransferPVCOptions) getTransport(nsp meta.NamespacedNamePair, opts *transport.Options) transport.Transport {
+	if t.LocalCopy {
+		return null.NewTransport(nsp)
+	}
+
+	return stunnel.NewTransport(nsp, opts)
 }
