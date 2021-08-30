@@ -87,13 +87,14 @@ func NewTransferOptions(streams genericclioptions.IOStreams) *cobra.Command {
 
 func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.SourceContext, "source-context", "", "The name of the source context in current kubeconfig")
-	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context current kubeconfig")
+	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context in current kubeconfig. Will use the default context")
 	cmd.Flags().StringVar(&t.SourcePVCNamespace, "source-pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
 	cmd.Flags().StringVar(&t.SourcePVCName, "source-pvc-name", "", "The pvc name which is to be transferred on the source")
 	cmd.Flags().StringVar(&t.DestinationPVCNamespace, "destination-pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in destination-context, if both are empty it will error")
 	cmd.Flags().StringVar(&t.DestinationPVCName, "destination-pvc-name", "", "The pvc name which is to be transferred on the source")
 	cmd.Flags().BoolVarP(&t.LocalCopy, "local", "l", false, "Will use the source context as the destination context. Destination Namespace Must be set")
 	cmd.Flags().BoolVarP(&t.SkipQuiesce, "skip-quiesce", "q", false, "Will skip quiesce for the application")
+	cmd.MarkFlagRequired("source-context")
 }
 
 func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
@@ -103,12 +104,19 @@ func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	if t.LocalCopy && t.DestinationPVCNamespace == "" {
-		return fmt.Errorf("local copy with no new Destination PVC Namespace")
+	// Deal with if a local copy
+	if t.LocalCopy {
+		if t.DestinationPVCNamespace == "" {
+			return fmt.Errorf("local copy with no new Destination PVC Namespace")
+		}
+		t.destinationContext = t.sourceContext
 	}
 
 	if t.DestinationContext == "" {
 		t.DestinationContext = *t.configFlags.Context
+	}
+	if t.DestinationPVCName == "" {
+		t.DestinationPVCName = t.SourcePVCName
 	}
 
 	for name, context := range rawConfig.Contexts {
@@ -120,15 +128,13 @@ func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
 		}
 	}
 
-	if t.LocalCopy {
-		t.destinationContext = t.sourceContext
-		if t.DestinationPVCName == "" {
-			t.DestinationPVCName = t.SourcePVCName
-		}
-	}
-
+	// Set Namespaces if not set.
 	if t.SourcePVCNamespace == "" && t.sourceContext != nil {
 		t.SourcePVCNamespace = t.sourceContext.Namespace
+	}
+
+	if t.DestinationPVCNamespace == "" && t.destinationContext != nil {
+		t.DestinationPVCNamespace = t.destinationContext.Namespace
 	}
 
 	return nil
