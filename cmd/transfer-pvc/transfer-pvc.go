@@ -109,7 +109,9 @@ func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
 		if t.DestinationPVCNamespace == "" {
 			return fmt.Errorf("local copy with no new Destination PVC Namespace")
 		}
-		t.destinationContext = t.sourceContext
+		if t.DestinationContext == "" {
+			t.DestinationContext = t.SourceContext
+		}
 	}
 
 	if t.DestinationContext == "" {
@@ -267,6 +269,15 @@ func (t *TransferPVCOptions) run() error {
 	if err != nil {
 		log.Fatal(err, "error creating stunnel client")
 	}
+
+	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
+		ready, err := s.IsHealthy(destClient, srcClient, e)
+		if err != nil {
+			log.Println(err, "unable to check endpoint health, retrying...")
+			return false, nil
+		}
+		return ready, nil
+	}, make(<-chan struct{}))
 
 	// Rsync Example
 	rsyncTransferOptions := []rsync.TransferOption{
