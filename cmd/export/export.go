@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"github.com/sirupsen/logrus"
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"github.com/vmware-tanzu/velero/pkg/discovery"
 	"github.com/vmware-tanzu/velero/pkg/features"
@@ -17,12 +18,36 @@ import (
 
 type ExportOptions struct {
 	configFlags *genericclioptions.ConfigFlags
+	globalFlags *flags.GlobalFlags
 
-	logger    logrus.FieldLogger
 	ExportDir string
 	Context   string
 	Namespace string
+
+	//User Impersonation Flags
+	User   string
+	Group  []string
+	Extra  string
+	extras map[string][]string
+
 	genericclioptions.IOStreams
+}
+
+func (o *ExportOptions) setExtras() error {
+	if o.Extra == "" {
+		return nil
+	}
+	keysAndStrings := strings.Split(o.Extra, ";")
+	o.extras = map[string][]string{}
+	for _, keysAndString := range keysAndStrings {
+		keyString := strings.Split(keysAndString, "=")
+		if len(keyString) != 2 {
+			// Todo: Much better error message here.
+			return fmt.Errorf("invalid extra options")
+		}
+		o.extras[keyString[0]] = strings.Split(keyString[1], ",")
+	}
+	return nil
 }
 
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
@@ -32,6 +57,13 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 func (o *ExportOptions) Validate() error {
 	// TODO: @alpatel
+	if len(o.User) == 0 && len(o.Group) == 0 && len(o.Extra) != 0 {
+		return fmt.Errorf("if adding extras must also provide a group or user")
+	}
+
+	if err := o.setExtras(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -39,12 +71,12 @@ func (o *ExportOptions) Run() error {
 	return o.run()
 }
 
-func NewExportCommand(streams genericclioptions.IOStreams) *cobra.Command {
+func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ExportOptions{
 		configFlags: genericclioptions.NewConfigFlags(true),
 
-		IOStreams: streams,
-		logger:    logrus.New(),
+		IOStreams:   streams,
+		globalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -73,10 +105,13 @@ func addFlagsForOptions(o *ExportOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.ExportDir, "export-dir", "export", "The path where files are to be exported")
 	cmd.Flags().StringVar(&o.Context, "context", "", "The kube context, if empty it will use the current context. If --namespace is set it will take precedence")
 	cmd.Flags().StringVar(&o.Namespace, "namespace", "", "The kube namespace to export.")
+	cmd.Flags().StringVar(&o.User, "as-user", "", "The user to impersonation.")
+	cmd.Flags().StringSliceVar(&o.Group, "as-group", nil, "The group to impersonation.")
+	cmd.Flags().StringVar(&o.Extra, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An eample is --as-extras key=string1,string2;key2=string3")
 }
 
 func (o *ExportOptions) run() error {
-	log := o.logger
+	log := o.globalFlags.GetLogger()
 
 	config := o.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
@@ -112,7 +147,7 @@ func (o *ExportOptions) run() error {
 		log.Debugf("--namespace is empty, defaulting to current context namespace\n")
 		if currentContext.Namespace == "" {
 			log.Errorf("current context %s namespace is empty, exiting\n", contextName)
-			return fmt.Errorf("current context %s namespace is empty, exiting\n", contextName)
+			return fmt.Errorf("current context %s namespace is empty, exiting", contextName)
 		}
 		o.Namespace = currentContext.Namespace
 	}
@@ -151,6 +186,11 @@ func (o *ExportOptions) run() error {
 		log.Errorf("cannot create rest config: %#v", err)
 		return err
 	}
+
+	// Act as th user requested by the CLI
+	restConfig.Impersonate.UserName = o.User
+	restConfig.Impersonate.Groups = o.Group
+	restConfig.Impersonate.Extra = o.extras
 
 	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 

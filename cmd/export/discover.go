@@ -212,7 +212,7 @@ func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger 
 	l, ok := list.(*unstructured.UnstructuredList)
 	if !ok {
 		logger.Errorf("expected unstructured.UnstructuredList type got %T for groupResource %s\n", l, g)
-		return nil, fmt.Errorf("expected unstructured.UnstructuredList type got %T for group: %s, kind: %s\n", l, g.APIGroup, g.APIResource.Kind)
+		return nil, fmt.Errorf("expected unstructured.UnstructuredList type got %T for group: %s, kind: %s", l, g.APIGroup, g.APIResource.Kind)
 	}
 	return l, err
 }
