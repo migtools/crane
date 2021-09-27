@@ -23,18 +23,18 @@ jobs:
       - name: Build Linux AMD64
         env:
           GOPROXY: "https://proxy.golang.org"
-        run: cd main && GOOS=linux GOARCH=amd64 go build -o bin/AMD64-Linux-crane-${{ github.event.inputs.version }} main.go
+        run: cd main && GOOS=linux GOARCH=amd64 go build -o bin/amd64-linux-crane-${{ github.event.inputs.version }} main.go
       - name: Build Darwin AMD64
         env:
           GOPROXY: "https://proxy.golang.org"
-        run: cd main && GOOS=darwin GOARCH=amd64 go build -o bin/AMD64-DARWIN-crane-${{ github.event.inputs.version }} main.go
+        run: cd main && GOOS=darwin GOARCH=amd64 go build -o bin/amd64-darwin-crane-${{ github.event.inputs.version }} main.go
       - name: Build Darwin ARM
         env:
           GOPROXY: "https://proxy.golang.org"
-        run: cd main && GOOS=darwin GOARCH=arm64 go build -o bin/AMD64-DARWIN-crane-${{ github.event.inputs.version }} main.go
+        run: cd main && GOOS=darwin GOARCH=arm64 go build -o bin/arm64-darwin-crane-${{ github.event.inputs.version }} main.go
       - name: release 
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "bin/*"
+          artifacts: "main/bin/*"
           token: ${{ secrets.GITHUB_TOKEN }}
           tag: ${{ github.event.inputs.version }}
