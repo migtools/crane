@@ -261,7 +261,7 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "error creating stunnel client")
 	}
 
-	s, err = stunnel.GetTransportFromKubeObjects(srcClient, destClient, s.NamespacedNamePair(), e)
+	s, err = stunnel.GetTransportFromKubeObjects(srcClient, destClient, s.NamespacedNamePair(), e, &transport.Options{})
 	if err != nil {
 		log.Fatal(err, "error creating from kube objects")
 	} else {
