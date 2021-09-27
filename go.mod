@@ -3,7 +3,7 @@ module github.com/konveyor/crane
 go 1.16
 
 require (
-	github.com/konveyor/crane-lib v0.0.0-20210924163913-29e13f0713a6
+	github.com/konveyor/crane-lib v0.0.1
 	github.com/openshift/api v0.0.0-20210625082935-ad54d363d274
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1
@@ -15,5 +15,3 @@ require (
 	sigs.k8s.io/controller-runtime v0.10.1
 	sigs.k8s.io/yaml v1.3.0
 )
-
-replace github.com/konveyor/crane-lib => ../crane-lib
