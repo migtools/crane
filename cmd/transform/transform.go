@@ -63,8 +63,8 @@ func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(optionals.NewOptionalsCommand())
-	cmd.AddCommand(listplugins.NewListPluginsCommand())
+	cmd.AddCommand(optionals.NewOptionalsCommand(f))
+	cmd.AddCommand(listplugins.NewListPluginsCommand(f))
 	addFlagsForOptions(o, cmd)
 
 	return cmd
@@ -107,7 +107,7 @@ func (o *Options) run() error {
 		}
 	}
 
-	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins)
+	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
 	if err != nil {
 		return err
 	}
