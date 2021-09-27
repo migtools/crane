@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 type Options struct {
-	logger            logrus.FieldLogger
-	PluginDir         string
-	SkipPlugins       string
+	globalFlags *flags.GlobalFlags
+	PluginDir   string
+	SkipPlugins string
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -29,9 +29,9 @@ func (o *Options) Run() error {
 	return o.run()
 }
 
-func NewListPluginsCommand() *cobra.Command {
+func NewListPluginsCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
-		logger: logrus.New(),
+		globalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "list-plugins",
@@ -67,7 +67,9 @@ func (o *Options) run() error {
 		return err
 	}
 
-	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins)
+	log := o.globalFlags.GetLogger()
+
+	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
 	if err != nil {
 		return err
 	}
