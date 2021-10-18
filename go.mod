@@ -3,6 +3,7 @@ module github.com/konveyor/crane
 go 1.16
 
 require (
+	github.com/ghodss/yaml v1.0.0
 	github.com/konveyor/crane-lib v0.0.1
 	github.com/openshift/api v0.0.0-20210625082935-ad54d363d274
 	github.com/sirupsen/logrus v1.8.1

@@ -43,7 +43,7 @@ func getBinaryPlugins(path string, files []os.FileInfo, logger *logrus.Logger) (
 				return nil, err
 			}
 			pluginList = append(pluginList, plugins...)
-		} else if file.Mode().IsRegular() && isExecAny(file.Mode().Perm()) {
+		} else if file.Mode().IsRegular() && IsExecAny(file.Mode().Perm()) {
 			newPlugin, err := binary_plugin.NewBinaryPlugin(filePath, logger)
 			if err != nil {
 				return nil, err
@@ -54,7 +54,7 @@ func getBinaryPlugins(path string, files []os.FileInfo, logger *logrus.Logger) (
 	return pluginList, nil
 }
 
-func isExecAny(mode os.FileMode) bool {
+func IsExecAny(mode os.FileMode) bool {
 	return mode&0111 != 0
 }
 
