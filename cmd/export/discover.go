@@ -202,7 +202,7 @@ func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger 
 	}
 
 	p := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-		return c.Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+		return c.Namespace(namespace).List(context.Background(), opts)
 	})
 
 	list, _, err := p.List(context.TODO(), metav1.ListOptions{})
