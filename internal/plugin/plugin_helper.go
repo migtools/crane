@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
 	binary_plugin "github.com/konveyor/crane-lib/transform/binary-plugin"
@@ -58,7 +57,7 @@ func isExecAny(mode os.FileMode) bool {
 	return mode&0111 != 0
 }
 
-func GetFilteredPlugins(pluginDir, skipPlugins string, logger *logrus.Logger) ([]transform.Plugin, error) {
+func GetFilteredPlugins(pluginDir string, skipPlugins []string, logger *logrus.Logger) ([]transform.Plugin, error) {
 	var filteredPlugins []transform.Plugin
 	plugins, err := GetPlugins(pluginDir, logger)
 	if err != nil {
@@ -67,9 +66,8 @@ func GetFilteredPlugins(pluginDir, skipPlugins string, logger *logrus.Logger) ([
 	if len(skipPlugins) == 0 {
 		return plugins, nil
 	}
-	skipList := strings.Split(skipPlugins, ",")
 	for _, thisPlugin := range plugins {
-		if !isPluginInList(thisPlugin, skipList) {
+		if !isPluginInList(thisPlugin, skipPlugins) {
 			filteredPlugins = append(filteredPlugins, thisPlugin)
 		}
 	}

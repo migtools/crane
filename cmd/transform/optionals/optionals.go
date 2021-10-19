@@ -7,12 +7,25 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 type Options struct {
-	globalFlags *flags.GlobalFlags
-	PluginDir   string
-	SkipPlugins string
+	// Two GlobalFlags struct fields are needed
+	// 1. cobraGlobalFlags for explicit CLI args parsed by cobra
+	// 2. globalFlags for the args merged with values from the viper config file
+	cobraGlobalFlags *flags.GlobalFlags
+	globalFlags      *flags.GlobalFlags
+	// Two Flags struct fields are needed
+	// 1. cobraFlags for explicit CLI args parsed by cobra
+	// 2. Flags for the args merged with values from the viper config file
+	cobraFlags       Flags
+	Flags
+}
+
+type Flags struct {
+	PluginDir   string `mapstructure:"plugin-dir"`
+	SkipPlugins []string `mapstructure:"skip-plugins"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -31,7 +44,7 @@ func (o *Options) Run() error {
 
 func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
-		globalFlags: f,
+		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "optionals",
@@ -49,16 +62,16 @@ func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 
 			return nil
 		},
+		PreRun: func(cmd *cobra.Command, args []string) {
+			viper.BindPFlags(cmd.Flags())
+			viper.Unmarshal(&o.Flags)
+			viper.Unmarshal(&o.globalFlags)
+		},
 	}
 
-	addFlagsForOptions(o, cmd)
+	// No separate addFlags needed here since all options inherit from parent PersistentFlags()
 
 	return cmd
-}
-
-func addFlagsForOptions(o *Options, cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins", "The path where binary plugins are located")
-	cmd.Flags().StringVarP(&o.SkipPlugins, "skip-plugins", "s", "", "A comma-separated list of plugins to skip")
 }
 
 func (o *Options) run() error {
