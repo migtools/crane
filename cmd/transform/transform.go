@@ -2,9 +2,10 @@ package transform
 
 import (
 	"context"
-	//"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/konveyor/crane-lib/transform"
@@ -13,18 +14,32 @@ import (
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
+	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 type Options struct {
-	globalFlags       *flags.GlobalFlags
-	ExportDir         string
-	PluginDir         string
-	TransformDir      string
-	IgnoredPatchesDir string
-	PluginPriorities  string
-	SkipPlugins       string
-	OptionalFlags     string
+	// Two GlobalFlags struct fields are needed
+	// 1. cobraGlobalFlags for explicit CLI args parsed by cobra
+	// 2. globalFlags for the args merged with values from the viper config file
+	cobraGlobalFlags *flags.GlobalFlags
+	globalFlags      *flags.GlobalFlags
+	// Two Flags struct fields are needed
+	// 1. cobraFlags for explicit CLI args parsed by cobra
+	// 2. Flags for the args merged with values from the viper config file
+	cobraFlags       Flags
+	Flags
+}
+
+type Flags struct {
+	ExportDir         string `mapstructure:"export-dir"`
+	PluginDir         string `mapstructure:"plugin-dir"`
+	TransformDir      string `mapstructure:"transform-dir"`
+	IgnoredPatchesDir string `mapstructure:"ignored-patches-dir"`
+	PluginPriorities  []string `mapstructure:"plugin-priorities"`
+	SkipPlugins       []string `mapstructure:"skip-plugins"`
+	OptionalFlags     map[string]string `mapstructure:"optional-flags"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -43,7 +58,7 @@ func (o *Options) Run() error {
 
 func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
-		globalFlags: f,
+		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "transform",
@@ -61,23 +76,30 @@ func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 
 			return nil
 		},
+		PreRun: func(cmd *cobra.Command, args []string) {
+			viper.BindPFlags(cmd.Flags())
+			viper.BindPFlags(cmd.PersistentFlags())
+			viper.Unmarshal(&o.Flags, viper.DecodeHook(OptionalFlagsHookFunc()))
+			viper.Unmarshal(&o.globalFlags)
+		},
 	}
 
+	addFlagsForOptions(&o.cobraFlags, cmd)
 	cmd.AddCommand(optionals.NewOptionalsCommand(f))
 	cmd.AddCommand(listplugins.NewListPluginsCommand(f))
-	addFlagsForOptions(o, cmd)
-
 	return cmd
 }
 
-func addFlagsForOptions(o *Options, cmd *cobra.Command) {
+func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
-	cmd.Flags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins", "The path where binary plugins are located")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
-	cmd.Flags().StringVar(&o.PluginPriorities, "plugin-priorities", "", "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
-	cmd.Flags().StringVarP(&o.SkipPlugins, "skip-plugins", "s", "", "A comma-separated list of plugins to skip")
-	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "A semicolon-separated list of flag-name=value pairs. These flags with values will be passed into all plugins that are executed in the transform operation.")
+	cmd.Flags().StringSliceVar(&o.PluginPriorities, "plugin-priorities", nil, "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
+	cmd.Flags().StringToStringVar(&o.OptionalFlags, "optional-flags", nil, "A comma-separated list of flag-name=value pairs. These flags with values will be passed into all plugins that are executed in the transform operation.")
+	// These flags pass down to subcommands
+	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins", "The path where binary plugins are located")
+	cmd.PersistentFlags().StringSliceVarP(&o.SkipPlugins, "skip-plugins", "s", nil, "A comma-separated list of plugins to skip")
+
 }
 
 func (o *Options) run() error {
@@ -127,7 +149,7 @@ func (o *Options) run() error {
 		runner.PluginPriorities = o.getPluginPrioritiesMap()
 	}
 	if len(o.OptionalFlags) > 0 {
-		runner.OptionalFlags = o.getOptionalFlagsMap()
+		runner.OptionalFlags = o.OptionalFlags
 	}
 
 	for _, f := range files {
@@ -208,27 +230,60 @@ func (o *Options) run() error {
 
 func (o *Options) getPluginPrioritiesMap() map[string]int {
 	prioritiesMap := make(map[string]int)
-	for i, pluginName := range strings.Split(o.PluginPriorities, ",") {
-		prioritiesMap[pluginName] = i
+	for i, pluginName := range o.PluginPriorities {
+		if len(pluginName) > 0 {
+			prioritiesMap[pluginName] = i
+		}
 	}
 	return prioritiesMap
 }
 
-func (o *Options) getOptionalFlagsMap() map[string]string {
-	flagsMap := make(map[string]string)
-	for _, flag := range strings.Split(o.OptionalFlags, ";") {
-		if flag == "" {
-			continue
+func OptionalFlagsHookFunc() mapstructure.DecodeHookFuncType {
+	return func(
+		f reflect.Type,
+		t reflect.Type,
+		data interface{},
+	) (interface{}, error) {
+		// Check that the data is map[string]interface{}
+		if f != reflect.TypeOf(map[string]interface{}{}) {
+			return data, nil
 		}
-		flagKeyValue := strings.SplitN(flag, "=", 2)
-		if len(flagKeyValue) == 0 || flagKeyValue[0] == "" {
-			continue
+
+		// Check that the target type is map[string]string
+		if t != reflect.TypeOf(map[string]string{}) {
+			return data, nil
 		}
-		if len(flagKeyValue) == 1 {
-			flagsMap[flagKeyValue[0]] = ""
-		} else {
-			flagsMap[flagKeyValue[0]] = flagKeyValue[1]
+
+		retVal := map[string]string{}
+		for flag, val := range data.(map[string]interface{}) {
+			valstr, ok := val.(string)
+			// leave string values as-is
+			if ok {
+				retVal[flag] = valstr
+				continue
+			}
+			valSlice, ok := val.([]interface{})
+			// convert slice to comma-separated string
+			if ok {
+				strSlice := make([]string, len(valSlice))
+				for i, sliceEntry := range valSlice {
+					strSlice[i] = fmt.Sprint(sliceEntry)
+				}
+				retVal[flag] = strings.Join(strSlice, ",")
+				continue
+			}
+			valMap, ok := val.(map[string]interface{})
+			// convert map to comma-separated k=v pairs
+			if ok {
+				strSlice := []string{}
+				for k, v := range valMap {
+					strSlice = append(strSlice,fmt.Sprintf("%v=%v", k, v))
+				}
+				retVal[flag] = strings.Join(strSlice, ",")
+				continue
+			}
 		}
+		// Return the converted value
+		return retVal, nil
 	}
-	return flagsMap
 }

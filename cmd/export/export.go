@@ -8,6 +8,7 @@ import (
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"github.com/vmware-tanzu/velero/pkg/discovery"
 	"github.com/vmware-tanzu/velero/pkg/features"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -17,20 +18,31 @@ import (
 )
 
 type ExportOptions struct {
-	configFlags *genericclioptions.ConfigFlags
-	globalFlags *flags.GlobalFlags
+	// Two GlobalFlags struct fields are needed
+	// 1. cobraGlobalFlags for explicit CLI args parsed by cobra
+	// 2. globalFlags for the args merged with values from the viper config file
+	cobraGlobalFlags *flags.GlobalFlags
+	globalFlags      *flags.GlobalFlags
+	// Two Flags struct fields are needed
+	// 1. cobraFlags for explicit CLI args parsed by cobra
+	// 2. Flags for the args merged with values from the viper config file
+	cobraFlags       Flags
+	Flags
 
-	ExportDir string
-	Context   string
-	Namespace string
+	configFlags *genericclioptions.ConfigFlags
+	extras      map[string][]string
+	genericclioptions.IOStreams
+}
+
+type Flags struct {
+	ExportDir string `mapstructure:"export-dir"`
+	Context   string `mapstructure:"context"`
+	Namespace string `mapstructure:"namespace"`
 
 	//User Impersonation Flags
-	User   string
-	Group  []string
-	Extra  string
-	extras map[string][]string
-
-	genericclioptions.IOStreams
+	User   string    `mapstructure:"as-user"`
+	Group  []string  `mapstructure:"as-group"`
+	Extra  string    `mapstructure:"as-extras"`
 }
 
 func (o *ExportOptions) setExtras() error {
@@ -76,7 +88,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 		configFlags: genericclioptions.NewConfigFlags(true),
 
 		IOStreams:   streams,
-		globalFlags: f,
+		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -94,17 +106,22 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 
 			return nil
 		},
+		PreRun: func(cmd *cobra.Command, args []string) {
+			viper.BindPFlags(cmd.Flags())
+			viper.Unmarshal(&o.Flags)
+			viper.Unmarshal(&o.globalFlags)
+		},
 	}
 
-	addFlagsForOptions(o, cmd)
+	addFlagsForOptions(&o.cobraFlags, cmd)
 
 	return cmd
 }
 
-func addFlagsForOptions(o *ExportOptions, cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.ExportDir, "export-dir", "export", "The path where files are to be exported")
+func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
+	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where files are to be exported")
 	cmd.Flags().StringVar(&o.Context, "context", "", "The kube context, if empty it will use the current context. If --namespace is set it will take precedence")
-	cmd.Flags().StringVar(&o.Namespace, "namespace", "", "The kube namespace to export.")
+	cmd.Flags().StringVarP(&o.Namespace, "namespace", "n", "", "The kube namespace to export.")
 	cmd.Flags().StringVar(&o.User, "as-user", "", "The user to impersonation.")
 	cmd.Flags().StringSliceVar(&o.Group, "as-group", nil, "The group to impersonation.")
 	cmd.Flags().StringVar(&o.Extra, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An eample is --as-extras key=string1,string2;key2=string3")

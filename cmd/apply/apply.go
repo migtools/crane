@@ -10,14 +10,27 @@ import (
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"sigs.k8s.io/yaml"
 )
 
 type Options struct {
-	globalFlags  *flags.GlobalFlags
-	ExportDir    string
-	TransformDir string
-	OutputDir    string
+	// Two GlobalFlags struct fields are needed
+	// 1. cobraGlobalFlags for explicit CLI args parsed by cobra
+	// 2. globalFlags for the args merged with values from the viper config file
+	cobraGlobalFlags *flags.GlobalFlags
+	globalFlags      *flags.GlobalFlags
+	// Two Flags struct fields are needed
+	// 1. cobraFlags for explicit CLI args parsed by cobra
+	// 2. Flags for the args merged with values from the viper config file
+	cobraFlags       Flags
+	Flags
+}
+
+type Flags struct {
+	ExportDir    string `mapstructure:"export-dir"`
+	TransformDir string `mapstructure:"transform-dir"`
+	OutputDir    string `mapstructure:"output-dir"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -36,7 +49,7 @@ func (o *Options) Run() error {
 
 func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
-		globalFlags: f,
+		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
 		Use:   "apply",
@@ -54,14 +67,19 @@ func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 
 			return nil
 		},
+		PreRun: func(cmd *cobra.Command, args []string) {
+			viper.BindPFlags(cmd.Flags())
+			viper.Unmarshal(&o.Flags)
+			viper.Unmarshal(&o.globalFlags)
+		},
 	}
 
-	addFlagsForOptions(o, cmd)
+	addFlagsForOptions(&o.cobraFlags, cmd)
 
 	return cmd
 }
 
-func addFlagsForOptions(o *Options, cmd *cobra.Command) {
+func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
