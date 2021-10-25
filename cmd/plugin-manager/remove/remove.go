@@ -48,7 +48,7 @@ func NewRemoveCommand(f *flags.GlobalFlags) *cobra.Command {
 		globalFlags: f,
 	}
 	cmd := &cobra.Command{
-		Use:   "remove",
+		Use:   "remove <name>",
 		Short: "removes the desired plugin",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {

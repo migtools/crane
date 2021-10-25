@@ -66,6 +66,7 @@ func (o *Options) Validate(args []string) error {
 	}
 
 	if len(paths) > 0 {
+		// TODO: if a version is specified and the plugin is installed, have the discussion on what to do here
 		for _, path := range paths {
 			fmt.Printf("%s \n", path)
 		}
@@ -143,7 +144,8 @@ func (o *Options) run(args []string) error {
 					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
 						return downloadBinary(fmt.Sprintf("%s/%s", o.PluginDir, repo), value.Name, value.Binaries[0].URI, log)
 					} else {
-						log.Errorf(fmt.Sprintf("The version %s of plugin %s is not available", o.Version, value.Name))
+						log.Errorf(fmt.Sprintf("The version %s of plugin %s is not available", installVersion, value.Name))
+						fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
 					}
 				}
 			case len(manifest) > 1:
@@ -154,15 +156,17 @@ func (o *Options) run(args []string) error {
 					}
 				}
 				log.Errorf(fmt.Sprintf("The %s version of the plugin %s is not found", installVersion, args[0]))
-				fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available plugins along with additional information \n", args[0])
+				fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
 			default:
 				// throw error saying that the plugin doest exists
 				log.Errorf(fmt.Sprintf("The plugin %s is not found", args[0]))
+				fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
 			}
 		}
 	default:
 		// throw error saying that the plugin doest exists
 		log.Errorf(fmt.Sprintf("The plugin %s is not found", args[0]))
+		fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
 	}
 	return nil
 }
