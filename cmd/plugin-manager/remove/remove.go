@@ -5,15 +5,28 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 )
 
 type Options struct {
-	globalFlags *flags.GlobalFlags
-	Repo        string
-	PluginDir   string
+	// Two GlobalFlags struct fields are needed
+	// 1. cobraGlobalFlags for explicit CLI args parsed by cobra
+	// 2. globalFlags for the args merged with values from the viper config file
+	cobraGlobalFlags *flags.GlobalFlags
+	globalFlags      *flags.GlobalFlags
+	// Two Flags struct fields are needed
+	// 1. cobraFlags for explicit CLI args parsed by cobra
+	// 2. Flags for the args merged with values from the viper config file
+	cobraFlags Flags
+	Flags
+}
+
+type Flags struct {
+	Repo      string `mapstructure:"repo"`
+	PluginDir string `mapstructure:"plugin-dir"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -35,7 +48,7 @@ func NewRemoveCommand(f *flags.GlobalFlags) *cobra.Command {
 		globalFlags: f,
 	}
 	cmd := &cobra.Command{
-		Use:   "remove",
+		Use:   "remove <name>",
 		Short: "removes the desired plugin",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
@@ -50,14 +63,14 @@ func NewRemoveCommand(f *flags.GlobalFlags) *cobra.Command {
 
 			return nil
 		},
+		PreRun: func(cmd *cobra.Command, args []string) {
+			viper.BindPFlags(cmd.Flags())
+			viper.Unmarshal(&o.Flags)
+			viper.Unmarshal(&o.globalFlags)
+		},
 	}
-	addFlagsForOptions(o, cmd)
-	return cmd
-}
 
-func addFlagsForOptions(o *Options, cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&o.Repo, "repo", "", "", "Remove plugin from specific repo (optional), if not passed iterate through all the repo and remove the desired plugin. In case of conflicting name the command fails and asks user to specify the repo from which to remove the plugin")
-	cmd.Flags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins/managed", "The path where binary plugins are located (default 'plugins/managed')")
+	return cmd
 }
 
 func (o *Options) run(args []string) error {
@@ -85,6 +98,9 @@ func (o *Options) run(args []string) error {
 		for _, path := range paths {
 			fmt.Printf("%s \n", path)
 		}
+	} else if len(paths) == 0 {
+		log.Errorf(fmt.Sprintf("Plugin %s not found in the plugin dir %s", args[0], pluginDir))
+		fmt.Printf("Run \"crane plugin-manager list --installed -p %s\" to see the list of installed plugins \n", pluginDir)
 	} else {
 		err = os.Remove(paths[0])
 		if err != nil {

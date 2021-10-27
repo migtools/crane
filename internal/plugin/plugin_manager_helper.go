@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ghodss/yaml"
+	"github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
@@ -19,11 +20,12 @@ const (
 )
 
 type Manifest struct {
-	Name             string   `json:"name"`
-	ShortDescription string   `json:"shortDescription"`
-	Description      string   `json:"description"`
-	Version          Version  `json:"version"`
-	Binaries         []Binary `json:"binaries"`
+	Name             string                     `json:"name"`
+	ShortDescription string                     `json:"shortDescription"`
+	Description      string                     `json:"description"`
+	Version          Version                    `json:"version"`
+	Binaries         []Binary                   `json:"binaries"`
+	OptionalFields   []transform.OptionalFields `json:"optionalFields"`
 }
 
 type Binary struct {
@@ -35,6 +37,7 @@ type Binary struct {
 
 type Version string
 
+// returns map containing the manifests with the key as name-version. Takes name and repo as input to filter accordingly
 func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[string]map[string]Manifest, error) {
 	// TODO: for multiple repo, read values from conf file to this map
 	repos := make(map[string]string)
@@ -50,21 +53,29 @@ func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[str
 	}
 	manifestMap := make(map[string]map[string]Manifest)
 
+	// iterate over all the repos
 	for repo, url := range repos {
+		// get the index.yml file for respective repo
 		urlMap, err := GetYamlFromUrl(url)
 		if err != nil {
 			return nil, err
 		}
-		manifestMap[repo] = make(map[string]Manifest)
+		// fetch all the manifest file from a repo
 		for key, value := range urlMap {
 			if s, ok := value.(string); ok {
+				// retrieve the manifest if name matches or there is no name passed, i.e a specific or all of the manifest
 				if name == "" || strings.Contains(key, name) {
 					plugin, err := YamlToManifest(s)
 					if err != nil {
 						log.Errorf("Error reading %s plugin manifest located at %s - Error: %s", key, s, err)
 						return nil, err
-					} else {
-						manifestMap[repo][key] = plugin
+					} else if name == "" || plugin.Name == name {
+						if _, ok := manifestMap[repo]; ok {
+							manifestMap[repo][key] = plugin
+						} else {
+							manifestMap[repo] = make(map[string]Manifest)
+							manifestMap[repo][key] = plugin
+						}
 					}
 				}
 			}
@@ -73,6 +84,7 @@ func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[str
 	return manifestMap, nil
 }
 
+// takes url as input and returns index.yml for plugin repository
 func GetYamlFromUrl(url string) (map[string]interface{}, error) {
 	res, err := http.Get(url)
 	if err != nil {
@@ -94,6 +106,7 @@ func GetYamlFromUrl(url string) (map[string]interface{}, error) {
 	return manifest, nil
 }
 
+// takes url as input and fetches the manifest of a plugin
 func YamlToManifest(url string) (Manifest, error) {
 	plugin := Manifest{}
 	res, err := http.Get(url)
@@ -104,11 +117,13 @@ func YamlToManifest(url string) (Manifest, error) {
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
-
 	if err != nil {
 		return plugin, err
 	}
 	err = yaml.Unmarshal(body, &plugin)
+	if err != nil {
+		return Manifest{}, err
+	}
 	isPluginAvailable := FilterPluginForOsArch(&plugin)
 	if isPluginAvailable {
 		return plugin, nil
@@ -117,6 +132,7 @@ func YamlToManifest(url string) (Manifest, error) {
 	return Manifest{}, nil
 }
 
+// takes manifest as input and filters manifest for current os/arch
 func FilterPluginForOsArch(plugin *Manifest) bool {
 	// filter manifests for current os/arch
 	isPluginAvailable := false
@@ -132,6 +148,7 @@ func FilterPluginForOsArch(plugin *Manifest) bool {
 	return isPluginAvailable
 }
 
+// overrides the default plugin dir url
 func GetDefaultSource() string {
 	val, present := os.LookupEnv(DEFAULT_REPO_URL)
 	if present {
@@ -140,6 +157,7 @@ func GetDefaultSource() string {
 	return DEFAULT_URL
 }
 
+// return array of string containing all the paths where a binary installed within plugin-dir
 func LocateBinaryInPluginDir(pluginDir string, name string, files []os.FileInfo) ([]string, error) {
 	paths := []string{}
 
