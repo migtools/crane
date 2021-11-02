@@ -8,14 +8,14 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/pager"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/tools/pager"
 	"sigs.k8s.io/yaml"
 )
 
@@ -202,17 +202,26 @@ func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger 
 	}
 
 	p := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-		return c.Namespace(namespace).List(context.Background(), metav1.ListOptions{})
+		return c.Namespace(namespace).List(context.Background(), opts)
 	})
 
 	list, _, err := p.List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	l, ok := list.(*unstructured.UnstructuredList)
-	if !ok {
-		logger.Errorf("expected unstructured.UnstructuredList type got %T for groupResource %s\n", l, g)
-		return nil, fmt.Errorf("expected unstructured.UnstructuredList type got %T for group: %s, kind: %s", l, g.APIGroup, g.APIResource.Kind)
+	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
+	err = meta.EachListItem(list, func(object runtime.Object) error {
+		u, ok := object.(*unstructured.Unstructured)
+		if !ok {
+			// TODO: explore aggregating all the errors here instead of terminating the loop
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", g, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
+		}
+		unstructuredList.Items = append(unstructuredList.Items, *u)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s", g.APIGroup, g.APIResource.Kind)
 	}
-	return l, err
+	return unstructuredList, nil
 }
