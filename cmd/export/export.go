@@ -26,7 +26,7 @@ type ExportOptions struct {
 	// Two Flags struct fields are needed
 	// 1. cobraFlags for explicit CLI args parsed by cobra
 	// 2. Flags for the args merged with values from the viper config file
-	cobraFlags       Flags
+	cobraFlags Flags
 	Flags
 
 	configFlags *genericclioptions.ConfigFlags
@@ -40,9 +40,9 @@ type Flags struct {
 	Namespace string `mapstructure:"namespace"`
 
 	//User Impersonation Flags
-	User   string    `mapstructure:"as-user"`
-	Group  []string  `mapstructure:"as-group"`
-	Extra  string    `mapstructure:"as-extras"`
+	User  string   `mapstructure:"as-user"`
+	Group []string `mapstructure:"as-group"`
+	Extra string   `mapstructure:"as-extras"`
 }
 
 func (o *ExportOptions) setExtras() error {
@@ -87,7 +87,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	o := &ExportOptions{
 		configFlags: genericclioptions.NewConfigFlags(true),
 
-		IOStreams:   streams,
+		IOStreams:        streams,
 		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
