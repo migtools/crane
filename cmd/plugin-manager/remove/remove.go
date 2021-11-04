@@ -75,8 +75,7 @@ func NewRemoveCommand(f *flags.GlobalFlags) *cobra.Command {
 
 func (o *Options) run(args []string) error {
 	log := o.globalFlags.GetLogger()
-
-	pluginDir, err := filepath.Abs(fmt.Sprintf("%v/%v", o.PluginDir, o.Repo))
+	pluginDir, err := filepath.Abs(fmt.Sprintf("%v/%v", o.ManagedPluginDir(), o.Repo))
 	if err != nil {
 		return err
 	}
@@ -110,4 +109,8 @@ func (o *Options) run(args []string) error {
 	}
 
 	return nil
+}
+
+func (o *Options) ManagedPluginDir() string {
+	return fmt.Sprintf("%v/%v", o.PluginDir, plugin.MANAGED_DIR)
 }
