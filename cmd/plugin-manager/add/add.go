@@ -46,8 +46,7 @@ func (o *Options) Validate(args []string) error {
 	if len(args) != 1 {
 		return errors.New("please input only one plugin name")
 	}
-
-	pluginDir, err := filepath.Abs(fmt.Sprintf("%v/%v", o.PluginDir, o.Repo))
+	pluginDir, err := filepath.Abs(fmt.Sprintf("%v/%v", o.ManagedPluginDir(), o.Repo))
 	if err != nil {
 		return err
 	}
@@ -60,7 +59,7 @@ func (o *Options) Validate(args []string) error {
 		return err
 	}
 
-	paths, err := plugin.LocateBinaryInPluginDir(o.PluginDir, args[0], files)
+	paths, err := plugin.LocateBinaryInPluginDir(o.ManagedPluginDir(), args[0], files)
 	if err != nil {
 		return err
 	}
@@ -142,7 +141,7 @@ func (o *Options) run(args []string) error {
 				for _, value := range manifest {
 					// check if the version is mentioned and matches the version in manifest file
 					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
-						return downloadBinary(fmt.Sprintf("%s/%s", o.PluginDir, repo), value.Name, value.Binaries[0].URI, log)
+						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
 					} else {
 						log.Errorf(fmt.Sprintf("The version %s of plugin %s is not available", installVersion, value.Name))
 						fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
@@ -152,7 +151,7 @@ func (o *Options) run(args []string) error {
 				// if there are multiple version of the plugins are available then look for the latest or mentioned version and if not found fail and ask user to input a version using --version flag
 				for _, value := range manifest {
 					if string(value.Version) == installVersion {
-						return downloadBinary(fmt.Sprintf("%s/%s", o.PluginDir, repo), value.Name, value.Binaries[0].URI, log)
+						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
 					}
 				}
 				log.Errorf(fmt.Sprintf("The %s version of the plugin %s is not found", installVersion, args[0]))
@@ -200,4 +199,8 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 		log.Infof("plugin %s added to the path - %s", filename, filepath)
 	}
 	return err
+}
+
+func (o *Options) ManagedPluginDir() string {
+	return fmt.Sprintf("%v/%v", o.PluginDir, plugin.MANAGED_DIR)
 }

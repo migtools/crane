@@ -72,7 +72,7 @@ func NewPluginManagerCommand(f *flags.GlobalFlags) *cobra.Command {
 	return cmd
 }
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins/managed", "The path where binary plugins are located")
+	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins", "The path where binary plugins are located")
 	cmd.PersistentFlags().StringVarP(&o.Repo, "repo", "", "", "The name of the repository from which to list the plugins from")
 }
 
