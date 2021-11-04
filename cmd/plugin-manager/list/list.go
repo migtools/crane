@@ -96,14 +96,14 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 
 func (o *Options) run() error {
 	log := o.globalFlags.GetLogger()
-
 	if o.Installed {
 		// retrieve list of all the plugins that are installed within plugin dir
-		plugins, err := plugin.GetFilteredPlugins(o.PluginDir, []string{}, log)
+		// TODO: differentiate between multiple repos
+		plugins, err := plugin.GetFilteredPlugins(o.ManagedPluginDir(), []string{}, log)
 		if err != nil {
 			return err
 		}
-		fmt.Println(fmt.Sprintf("Listing plugins from path - %s", o.PluginDir))
+		fmt.Println(fmt.Sprintf("Listing plugins from path - %s, along with default plugin", o.ManagedPluginDir()))
 		printInstalledInformation(plugins)
 		return nil
 	}
@@ -138,18 +138,25 @@ func (o *Options) run() error {
 			log.Errorf(fmt.Sprintf("name flag must be used with wither params or versions"))
 		}
 	} else {
-		if o.Name != "" {
-			log.Info(fmt.Sprintf("\"--name\" flag should be used with either \"--versions\" or \"--params\" flag to get more information about the plugin, example: \"crane plugin-manager --name %s --versions\" or \"crane plugin-manager --name %s --params\"\n", o.Name, o.Name))
-		}
 		manifestMap, err := plugin.BuildManifestMap(log, "", o.Repo)
 		if err != nil {
 			return nil
 		}
 
-		for repo, manifest := range manifestMap {
-			// output information
-			fmt.Printf("Listing from the repo %s\n", repo)
-			groupInformationForPlugins(manifest)
+		if o.Name != "" {
+			log.Info(fmt.Sprintf("\"--name\" flag should be used with either \"--versions\" or \"--params\" flag to get more information about the plugin, example: \"crane plugin-manager --name %s --versions\" or \"crane plugin-manager --name %s --params\"\n", o.Name, o.Name))
+		} else if o.Params {
+			// retrieve all the information for all the versions available for a specific plugin
+			for repo, manifests := range manifestMap {
+				fmt.Printf("Listing from the repo %s\n", repo)
+				printParamsInformation(manifests)
+			}
+		} else {
+			for repo, manifest := range manifestMap {
+				// output information
+				fmt.Printf("Listing from the repo %s\n", repo)
+				groupInformationForPlugins(manifest)
+			}
 		}
 	}
 	return nil
@@ -157,7 +164,7 @@ func (o *Options) run() error {
 
 //TODO: this can be merged with printParamsInformation
 func printInstalledInformation(plugins []transform2.Plugin) {
-	headers := []string {"Name", "Version", "OptionalFields"}
+	headers := []string{"Name", "Version", "OptionalFields"}
 	var data [][]string
 	for _, thisPlugin := range plugins {
 		data = append(data, []string{thisPlugin.Metadata().Name, thisPlugin.Metadata().Version, getOptionalFields(thisPlugin.Metadata().OptionalFields)})
@@ -202,14 +209,16 @@ func printParamsInformation(manifests map[string]plugin.Manifest) {
 	header := []string{"Name", "ShortDescription", "Description", "AvailableVersions", "OptionalFields"}
 
 	for _, manifest := range manifests {
-		data = append(data,
-		[]string{
-			manifest.Name,
-			manifest.ShortDescription,
-			manifest.Description,
-			string(manifest.Version),
-			getOptionalFields(manifest.OptionalFields),
-		})
+		if manifest.Name != "" {
+			data = append(data,
+				[]string{
+					manifest.Name,
+					manifest.ShortDescription,
+					manifest.Description,
+					string(manifest.Version),
+					getOptionalFields(manifest.OptionalFields),
+				})
+		}
 	}
 	printTable(header, data)
 }
@@ -247,4 +256,8 @@ func printTable(headers []string, data [][]string) {
 	table.SetHeader(headers)
 	table.AppendBulk(data)
 	table.Render()
+}
+
+func (o *Options) ManagedPluginDir() string {
+	return fmt.Sprintf("%v/%v", o.PluginDir, plugin.MANAGED_DIR)
 }

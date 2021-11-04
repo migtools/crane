@@ -17,6 +17,7 @@ const (
 	DEFAULT_REPO     = "default"
 	DEFAULT_REPO_URL = "DEFAULT_REPO_URL"
 	DEFAULT_URL      = "https://raw.githubusercontent.com/konveyor/crane-plugins/main/index.yml"
+	MANAGED_DIR      = "managed"
 )
 
 type Manifest struct {
