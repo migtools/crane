@@ -149,7 +149,7 @@ func (o *Options) run() error {
 		runner.PluginPriorities = o.getPluginPrioritiesMap()
 	}
 	if len(o.OptionalFlags) > 0 {
-		runner.OptionalFlags = o.OptionalFlags
+		runner.OptionalFlags = optionalFlagsToLower(o.OptionalFlags)
 	}
 
 	for _, f := range files {
@@ -286,4 +286,14 @@ func OptionalFlagsHookFunc() mapstructure.DecodeHookFuncType {
 		// Return the converted value
 		return retVal, nil
 	}
+}
+
+// Returns an extras map with lowercased keys, since any keys coming from the config file
+// are lower-cased by viper
+func optionalFlagsToLower(inFlags map[string]string) map[string]string {
+	lowerMap := make(map[string]string)
+	for key, val := range inFlags {
+		lowerMap[strings.ToLower(key)] = val
+	}
+	return lowerMap
 }
