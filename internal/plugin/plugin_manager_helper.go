@@ -16,7 +16,7 @@ import (
 const (
 	DEFAULT_REPO     = "default"
 	DEFAULT_REPO_URL = "DEFAULT_REPO_URL"
-	DEFAULT_URL      = "https://raw.githubusercontent.com/konveyor/crane-plugins/main/index.yml"
+	DEFAULT_URL      = "https://raw.githubusercontent.com/konveyor/crane-plugins/crane-cli/index.yml"
 	MANAGED_DIR      = "managed"
 )
 
