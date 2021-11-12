@@ -171,13 +171,24 @@ func (o *Options) run(args []string) error {
 }
 
 func downloadBinary(filepath string, filename string, url string, log *logrus.Logger) error {
-
-	// Get the data
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
+	var binaryContents io.Reader
+	isUrl, url := plugin.IsUrl(url)
+	if !isUrl {
+		srcPlugin, err := os.Open(url)
+		if err != nil {
+			return err
+		}
+		defer srcPlugin.Close()
+		binaryContents = srcPlugin
+	} else {
+		// Get the data
+		resp, err := http.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		binaryContents = resp.Body
 	}
-	defer resp.Body.Close()
 	// Create dir if not exists
 	if _, err := os.Stat(filepath); os.IsNotExist(err) {
 		err = os.MkdirAll(filepath, os.ModePerm)
@@ -187,17 +198,22 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	}
 
 	// Create the file
-	out, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0777)
+	plugin, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0777)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer plugin.Close()
 
 	// Write the body to filePluginDir
-	_, err = io.Copy(out, resp.Body)
-	if err == nil {
-		log.Infof("plugin %s added to the path - %s", filename, filepath)
+	_, err = io.Copy(plugin, binaryContents)
+	if err != nil {
+		return err
 	}
+	err = plugin.Sync()
+	if err != nil {
+		return err
+	}
+	log.Infof("plugin %s added to the path - %s", filename, filepath)
 	return err
 }
 
