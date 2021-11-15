@@ -6,9 +6,10 @@ import (
 
 	"github.com/konveyor/crane/cmd/apply"
 	export "github.com/konveyor/crane/cmd/export"
-	"github.com/konveyor/crane/cmd/transform"
-	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/cmd/plugin-manager"
+	"github.com/konveyor/crane/cmd/transform"
+	"github.com/konveyor/crane/cmd/version"
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
@@ -24,6 +25,7 @@ func main() {
 	root.AddCommand(transform.NewTransformCommand(f))
 	root.AddCommand(apply.NewApplyCommand(f))
 	root.AddCommand(plugin_manager.NewPluginManagerCommand(f))
+	root.AddCommand(version.NewVersionCommand(f))
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}

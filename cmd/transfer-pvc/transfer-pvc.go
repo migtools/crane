@@ -212,11 +212,12 @@ func (t *TransferPVCOptions) run() error {
 	}
 
 	// create a route for data transfer
+	// TODO: pass in subdomain instead of ""
 	r := route.NewEndpoint(
 		types.NamespacedName{
 			Namespace: pvc.Namespace,
 			Name:      pvc.Name,
-		}, route.EndpointTypePassthrough, metadata.Labels)
+		}, route.EndpointTypePassthrough, metadata.Labels, "")
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")
