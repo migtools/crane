@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -86,45 +87,33 @@ func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[str
 }
 
 // takes url as input and returns index.yml for plugin repository
-func GetYamlFromUrl(url string) (map[string]interface{}, error) {
-	res, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-
-	defer res.Body.Close()
-
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		return nil, err
-	}
+func GetYamlFromUrl(URL string) (map[string]interface{}, error) {
 	var manifest map[string]interface{}
-	err = yaml.Unmarshal(body, &manifest)
+	index, err := getData(URL)
 	if err != nil {
-		panic(err)
+		return nil, err
+	}
+	err = yaml.Unmarshal(index, &manifest)
+	if err != nil {
+		return nil, err
 	}
 	return manifest, nil
 }
 
 // takes url as input and fetches the manifest of a plugin
-func YamlToManifest(url string) (Manifest, error) {
+func YamlToManifest(URL string) (Manifest, error) {
 	plugin := Manifest{}
-	res, err := http.Get(url)
+
+	body, err := getData(URL)
 	if err != nil {
 		return plugin, err
 	}
 
-	defer res.Body.Close()
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return plugin, err
-	}
 	err = yaml.Unmarshal(body, &plugin)
 	if err != nil {
 		return Manifest{}, err
 	}
+
 	isPluginAvailable := FilterPluginForOsArch(&plugin)
 	if isPluginAvailable {
 		return plugin, nil
@@ -179,4 +168,35 @@ func LocateBinaryInPluginDir(pluginDir string, name string, files []os.FileInfo)
 		}
 	}
 	return paths, nil
+}
+
+func IsUrl(URL string) (bool, string) {
+	URL = strings.TrimPrefix(URL, "file://")
+	u, err := url.Parse(URL)
+	return err == nil && u.Scheme != "" && u.Host != "", URL
+}
+
+func getData(URL string) ([]byte, error) {
+	var index []byte
+	var err error
+	isUrl, URL := IsUrl(URL)
+	if !isUrl {
+		index, err = ioutil.ReadFile(URL)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		res, err := http.Get(URL)
+		if err != nil {
+			return nil, err
+		}
+
+		defer res.Body.Close()
+
+		index, err = ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return index, nil
 }

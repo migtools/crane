@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	github.com/ghodss/yaml v1.0.0
+	github.com/jarcoal/httpmock v1.0.8
 	github.com/konveyor/crane-lib v0.0.4
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/olekukonko/tablewriter v0.0.0-20170122224234-a0225b3f23b5
@@ -12,6 +13,7 @@ require (
 	github.com/spf13/cobra v1.2.1
 	github.com/spf13/viper v1.8.1
 	github.com/vmware-tanzu/velero v1.6.3
+	gotest.tools v2.2.0+incompatible
 	k8s.io/api v0.22.2
 	k8s.io/apimachinery v0.22.2
 	k8s.io/cli-runtime v0.22.2
