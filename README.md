@@ -21,6 +21,16 @@ PATH for regular usage:
 
 `go build -o crane main.go`
 
+## Known issues
+
+- v0.0.2 (alpha1)
+  - The new-namespace optional arg (and associated functionality) in the
+    built-in kubernetes plugin is incomplete. `metadata.namespace` will be
+    modified, but other required changes will not be made. It will be
+    removed from this plugin in the next release and expanded
+    functionality will most likely be added via a separate (optional)
+    plugin.
+
 ## Usage
 
 TODO
