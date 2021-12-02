@@ -14,7 +14,7 @@ type GlobalFlags struct {
 func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
 	cobra.OnInitialize(g.initConfig)
 	cmd.PersistentFlags().BoolVar(&g.Debug, "debug", false, "Debug the command by printing more information")
-	cmd.PersistentFlags().StringVarP(&g.ConfigFile, "config-file", "c", "", "Path to config file which contains a yaml representation of cli flags. Explicit flags take precedence over config file values.")
+	cmd.PersistentFlags().StringVarP(&g.ConfigFile, "flags-file", "f", "", "Path to input file which contains a yaml representation of cli flags. Explicit flags take precedence over input file values.")
 	viper.BindPFlags(cmd.PersistentFlags())
 }
 
