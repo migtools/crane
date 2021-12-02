@@ -23,7 +23,7 @@ type Options struct {
 	// Two Flags struct fields are needed
 	// 1. cobraFlags for explicit CLI args parsed by cobra
 	// 2. Flags for the args merged with values from the viper config file
-	cobraFlags       Flags
+	cobraFlags Flags
 	Flags
 }
 

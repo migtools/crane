@@ -3,17 +3,18 @@ package add
 import (
 	"errors"
 	"fmt"
-	"github.com/konveyor/crane/internal/flags"
-	"github.com/konveyor/crane/internal/plugin"
-	"github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"github.com/konveyor/crane/internal/flags"
+	"github.com/konveyor/crane/internal/plugin"
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 type Options struct {

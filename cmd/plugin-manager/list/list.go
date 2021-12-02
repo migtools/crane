@@ -2,15 +2,16 @@ package list
 
 import (
 	"fmt"
+	"os"
+	"reflect"
+	"strings"
+
 	transform2 "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"os"
-	"reflect"
-	"strings"
 )
 
 type Options struct {

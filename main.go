@@ -5,7 +5,7 @@ import (
 
 	"github.com/konveyor/crane/cmd/apply"
 	export "github.com/konveyor/crane/cmd/export"
-	"github.com/konveyor/crane/cmd/plugin-manager"
+	plugin_manager "github.com/konveyor/crane/cmd/plugin-manager"
 	transfer_pvc "github.com/konveyor/crane/cmd/transfer-pvc"
 	"github.com/konveyor/crane/cmd/transform"
 	tunnel_api "github.com/konveyor/crane/cmd/tunnel-api"
