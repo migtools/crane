@@ -28,17 +28,17 @@ type Options struct {
 	// Two Flags struct fields are needed
 	// 1. cobraFlags for explicit CLI args parsed by cobra
 	// 2. Flags for the args merged with values from the viper config file
-	cobraFlags       Flags
+	cobraFlags Flags
 	Flags
 }
 
 type Flags struct {
-	ExportDir         string `mapstructure:"export-dir"`
-	PluginDir         string `mapstructure:"plugin-dir"`
-	TransformDir      string `mapstructure:"transform-dir"`
-	IgnoredPatchesDir string `mapstructure:"ignored-patches-dir"`
-	PluginPriorities  []string `mapstructure:"plugin-priorities"`
-	SkipPlugins       []string `mapstructure:"skip-plugins"`
+	ExportDir         string            `mapstructure:"export-dir"`
+	PluginDir         string            `mapstructure:"plugin-dir"`
+	TransformDir      string            `mapstructure:"transform-dir"`
+	IgnoredPatchesDir string            `mapstructure:"ignored-patches-dir"`
+	PluginPriorities  []string          `mapstructure:"plugin-priorities"`
+	SkipPlugins       []string          `mapstructure:"skip-plugins"`
 	OptionalFlags     map[string]string `mapstructure:"optional-flags"`
 }
 
@@ -277,7 +277,7 @@ func OptionalFlagsHookFunc() mapstructure.DecodeHookFuncType {
 			if ok {
 				strSlice := []string{}
 				for k, v := range valMap {
-					strSlice = append(strSlice,fmt.Sprintf("%v=%v", k, v))
+					strSlice = append(strSlice, fmt.Sprintf("%v=%v", k, v))
 				}
 				retVal[flag] = strings.Join(strSlice, ",")
 				continue

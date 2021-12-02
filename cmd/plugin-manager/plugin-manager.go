@@ -18,14 +18,15 @@ type Options struct {
 	// Two Flags struct fields are needed
 	// 1. cobraFlags for explicit CLI args parsed by cobra
 	// 2. Flags for the args merged with values from the viper config file
-	cobraFlags       Flags
+	cobraFlags Flags
 	Flags
 }
 
 type Flags struct {
-	PluginDir   string	`mapstructure:"plugin-dir"`
-	Repo        string  `mapstructure:"repo"`
+	PluginDir string `mapstructure:"plugin-dir"`
+	Repo      string `mapstructure:"repo"`
 }
+
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @jgabani
 	return nil
