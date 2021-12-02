@@ -3,15 +3,16 @@ package plugin
 import (
 	"errors"
 	"fmt"
-	"github.com/ghodss/yaml"
-	"github.com/konveyor/crane-lib/transform"
-	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/ghodss/yaml"
+	"github.com/konveyor/crane-lib/transform"
+	"github.com/sirupsen/logrus"
 )
 
 const (

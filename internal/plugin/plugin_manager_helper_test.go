@@ -1,13 +1,14 @@
 package plugin
 
 import (
-	"github.com/ghodss/yaml"
-	"github.com/jarcoal/httpmock"
-	"gotest.tools/assert"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"testing"
+
+	"github.com/ghodss/yaml"
+	"github.com/jarcoal/httpmock"
+	"gotest.tools/assert"
 )
 
 func TestGetYamlFromUrlWithUrl(t *testing.T) {
@@ -84,7 +85,7 @@ func TestGetYamlFromUrlWithFile(t *testing.T) {
 }
 
 func TestYamlToManifestWithFile(t *testing.T) {
-	plugin := Manifest {
+	plugin := Manifest{
 		Name:             "foo",
 		Version:          "0.0.1",
 		Description:      "Description of foo plugin",
