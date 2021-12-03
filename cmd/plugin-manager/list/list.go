@@ -165,12 +165,13 @@ func (o *Options) run() error {
 
 //TODO: this can be merged with printParamsInformation
 func printInstalledInformation(plugins []transform2.Plugin) {
-	headers := []string{"Name", "Version", "OptionalFields"}
-	var data [][]string
 	for _, thisPlugin := range plugins {
-		data = append(data, []string{thisPlugin.Metadata().Name, thisPlugin.Metadata().Version, getOptionalFields(thisPlugin.Metadata().OptionalFields)})
+		printTable([][]string{
+			{"Name", thisPlugin.Metadata().Name},
+			{"Version", thisPlugin.Metadata().Version},
+			{"OptionalFields", getOptionalFields(thisPlugin.Metadata().OptionalFields)},
+		})
 	}
-	printTable(headers, data)
 }
 
 func groupInformationForPlugins(manifestMap map[string]plugin.Manifest) {
@@ -191,37 +192,29 @@ func groupInformationForPlugins(manifestMap map[string]plugin.Manifest) {
 }
 
 func printInformation(plugins map[string]AvailablePlugins) {
-	var data [][]string
-	header := []string{"Name", "ShortDescription", "AvailableVersions"}
 	for _, plugin := range plugins {
 		if plugin.Name != "" {
-			data = append(data, []string{
-				plugin.Name,
-				plugin.ShortDescription,
-				strings.Join(plugin.Versions, ", "),
+			printTable([][]string{
+				{"Name", plugin.Name},
+				{"ShortDescription", plugin.ShortDescription},
+				{"AvailableVersions", strings.Join(plugin.Versions, ", ")},
 			})
 		}
 	}
-	printTable(header, data)
 }
 
 func printParamsInformation(manifests map[string]plugin.Manifest) {
-	var data [][]string
-	header := []string{"Name", "ShortDescription", "Description", "AvailableVersions", "OptionalFields"}
-
 	for _, manifest := range manifests {
 		if manifest.Name != "" {
-			data = append(data,
-				[]string{
-					manifest.Name,
-					manifest.ShortDescription,
-					manifest.Description,
-					string(manifest.Version),
-					getOptionalFields(manifest.OptionalFields),
-				})
+			printTable([][]string{
+				{"Name", manifest.Name},
+				{"ShortDescription", manifest.ShortDescription},
+				{"Description", manifest.Description},
+				{"AvailableVersions", string(manifest.Version)},
+				{"OptionalFields", getOptionalFields(manifest.OptionalFields)},
+			})
 		}
 	}
-	printTable(header, data)
 }
 
 func getOptionalFields(fields []transform2.OptionalFields) string {
@@ -249,12 +242,9 @@ func getOptionalFields(fields []transform2.OptionalFields) string {
 	return retstr
 }
 
-func printTable(headers []string, data [][]string) {
+func printTable(data [][]string) {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetAutoWrapText(false)
-	table.SetRowSeparator("-")
-	table.SetRowLine(true)
-	table.SetHeader(headers)
 	table.AppendBulk(data)
 	table.Render()
 }
