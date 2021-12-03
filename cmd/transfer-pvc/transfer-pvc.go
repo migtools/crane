@@ -84,7 +84,7 @@ func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context current kubeconfig")
 	cmd.Flags().StringVar(&t.PVCNamespace, "pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
 	cmd.Flags().StringVar(&t.PVCName, "pvc-name", "", "The pvc name which is to be transferred on the source")
-	cmd.Flags().StringVar(&t.Endpoint, "endpoint", "ingress", "The type of networking endpoing to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
+	cmd.Flags().StringVar(&t.Endpoint, "endpoint", "nignx-ingress", "The type of networking endpoing to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
 }
 
 func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
@@ -305,6 +305,10 @@ func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string,
 		clientPod = &clientPodList.Items[0]
 
 		for _, containerStatus := range clientPod.Status.ContainerStatuses {
+			if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode == 0 {
+				log.Printf("container %s in pod %s completed successfully", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
+				break
+			}
 			if !containerStatus.Ready {
 				log.Println(fmt.Errorf("container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name}))
 				return false, nil
