@@ -38,3 +38,8 @@ kubectl patch cm -n kube-system coredns --type='json' -p='[{"op": "replace", "pa
 kubectl get cm -n kube-system coredns -oyaml | sed "s/DEST_IP/${DEST_IP}/" | kubectl replace -f -
 
 kubectl patch deploy -n kube-system coredns --type='json' -p='[{"op": "add", "path": "/spec/template/spec/volumes/0/configMap/items/1", "value": {"key": "crane.db", "path": "crane.db"}}]'
+
+kubectl patch deploy --context=destination-cluster -n ingress-nginx ingress-nginx-controller --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/12", "value": "--enable-ssl-passthrough"}]'
+
+# force a rollout
+kubectl delete rs -n ingress-nginx --context=destination-cluster  -l app.kubernetes.io/component=controller,app.kubernetes.io/instance=ingress-nginx
