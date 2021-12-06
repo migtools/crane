@@ -1,3 +1,5 @@
+#!/usr/bin/env bashset +x
+
 export KUBECONFIG=${PWD}/state-transfer.kubeconfig
 
 SRC_CLUSTER_NAME=source-cluster
@@ -6,10 +8,12 @@ DEST_CLUSTER_NAME=destination-cluster
 minikube start -p ${SRC_CLUSTER_NAME}
 minikube start -p ${DEST_CLUSTER_NAME}
 
+echo "clusters started, configuring networking between source and destination clusters"
+
 SOURCE_IP=$(minikube ip -p ${SRC_CLUSTER_NAME})
 DEST_IP=$(minikube ip -p ${DEST_CLUSTER_NAME})
-SOURCE_IP_RANGE=$(echo $SOURCE_IP | cut -d"." -f1-3).0/24 # subnet 11.1.1.0/24
-DEST_IP_RANGE=$(echo $DEST_IP | cut -d"." -f1-3).0/24 # subnet 11.1.1.0/24
+SOURCE_IP_RANGE="${SOURCE_IP%.*}.0/24"
+DEST_IP_RANGE="${DEST_IP%.*}.0/24"
 
 sudo iptables -I FORWARD 2 -p all -s $SOURCE_IP_RANGE -d $DEST_IP_RANGE -j ACCEPT
 sudo iptables -I FORWARD 3 -p all -s $DEST_IP_RANGE -d $SOURCE_IP_RANGE -j ACCEPT
