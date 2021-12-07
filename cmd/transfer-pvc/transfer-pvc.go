@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"log"
 	"os"
 	"time"
@@ -213,7 +216,8 @@ func (t *TransferPVCOptions) run() error {
 		e = createAndWaitForRoute(pvc, destClient)
 	case "nignx-ingress":
 		e = createAndWaitForIngress(pvc, destClient)
-
+	default:
+		log.Fatalf("unsupported endpoint type %s\n", t.Endpoint)
 	}
 	// create an stunnel transport to carry the data over the route
 
@@ -283,6 +287,84 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "error following rsync client logs")
 	}
 
+	log.Println("followed the logs, garbage collecting created resources on both source and destination")
+	err = garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.PVCNamespace)
+
+	return nil
+}
+
+func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint, namespace string) error {
+	srcGVK := []client.Object{
+		&corev1.Pod{},
+		&corev1.ConfigMap{},
+		&corev1.Secret{},
+	}
+	destGVK := []client.Object{
+		&corev1.Pod{},
+		&corev1.ConfigMap{},
+		&corev1.Secret{},
+	}
+	switch endpoint {
+	case "route":
+		destGVK = append(destGVK, &routev1.Route{})
+	case "nignx-ingress":
+		destGVK = append(destGVK, &networkingv1.Ingress{})
+	}
+
+	err := deleteResourcesForGVK(srcClient, srcGVK, labels, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = deleteResourcesForGVK(destClient, destGVK, labels, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = deleteResourcesIteratively(destClient, []client.Object{
+		&corev1.Service{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Service",
+				APIVersion: corev1.SchemeGroupVersion.Version,
+			},
+		}}, labels, namespace)
+
+	return nil
+}
+
+func deleteResourcesIteratively(c client.Client, iterativeTypes []client.Object, labels map[string]string, namespace string) error {
+	listOptions := []client.ListOption{
+		client.MatchingLabels(labels),
+		client.InNamespace(namespace),
+	}
+	errs := []error{}
+	for _, objList := range iterativeTypes {
+		ulist := &unstructured.UnstructuredList{}
+		ulist.SetGroupVersionKind(objList.GetObjectKind().GroupVersionKind())
+		err := c.List(context.TODO(), ulist, listOptions...)
+		if err != nil {
+			// if we hit error with one api still try all others
+			errs = append(errs, err)
+			continue
+		}
+		for _, item := range ulist.Items {
+			err = c.Delete(context.TODO(), &item, client.PropagationPolicy(metav1.DeletePropagationBackground))
+			if err != nil {
+				// if we hit error deleting on continue delete others
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errorsutil.NewAggregate(errs)
+}
+
+func deleteResourcesForGVK(c client.Client, gvk []client.Object, labels map[string]string, namespace string) error {
+	for _, obj := range gvk {
+		err := c.DeleteAllOf(context.TODO(), obj, client.InNamespace(namespace), client.MatchingLabels(labels))
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
