@@ -429,12 +429,12 @@ func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string,
 
 func createAndWaitForIngress(pvc *corev1.PersistentVolumeClaim, destClient client.Client) endpoint.Endpoint {
 	// create a route for data transfer
-	// TODO: pass in subdomain instead of ""
+	// TODO: add a config flag for subdomain
 	r := ingress.NewEndpoint(
 		types.NamespacedName{
 			Namespace: pvc.Namespace,
 			Name:      pvc.Name,
-		}, metadata.Labels)
+		}, metadata.Labels, "crane.dev")
 	e, err := endpoint.Create(r, destClient)
 	if err != nil {
 		log.Fatal(err, "unable to create endpoint")
