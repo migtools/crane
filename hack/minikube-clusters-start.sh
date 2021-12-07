@@ -1,9 +1,13 @@
-#!/usr/bin/env bashset +x
+#!/usr/bin/env bash
+set +x
 
-export KUBECONFIG=${PWD}/state-transfer.kubeconfig
+SRC_CLUSTER_NAME=src
+DEST_CLUSTER_NAME=dest
 
-SRC_CLUSTER_NAME=source-cluster
-DEST_CLUSTER_NAME=destination-cluster
+minikube status -p ${SRC_CLUSTER_NAME} && echo "run hack/minikube-delete-clusters.sh before running this script"; exit 1
+minikube status -p ${DEST_CLUSTER_NAME} && echo "run hack/minikube-delete-clusters.sh before running this script"; exit 1
+
+echo "create two minikube clusters"
 
 minikube start -p ${SRC_CLUSTER_NAME}
 minikube start -p ${DEST_CLUSTER_NAME}
@@ -28,7 +32,7 @@ then
   exit 1
 fi
 
-echo "network setup successful, configuring nginx ingress on destionation cluster"
+echo "network setup successful, configuring nginx ingress on destination cluster"
 minikube addons -p ${DEST_CLUSTER_NAME} enable ingress
 
 minikube update-context -p ${SRC_CLUSTER_NAME}
@@ -43,7 +47,7 @@ kubectl get cm -n kube-system coredns -oyaml | sed "s/DEST_IP/${DEST_IP}/" | kub
 
 kubectl patch deploy -n kube-system coredns --type='json' -p='[{"op": "add", "path": "/spec/template/spec/volumes/0/configMap/items/1", "value": {"key": "crane.db", "path": "crane.db"}}]'
 
-kubectl patch deploy --context=destination-cluster -n ingress-nginx ingress-nginx-controller --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/12", "value": "--enable-ssl-passthrough"}]'
+kubectl patch deploy --context=${DEST_CLUSTER_NAME} -n ingress-nginx ingress-nginx-controller --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/12", "value": "--enable-ssl-passthrough"}]'
 
 # force a rollout
-kubectl delete rs -n ingress-nginx --context=destination-cluster  -l app.kubernetes.io/component=controller,app.kubernetes.io/instance=ingress-nginx
+kubectl delete rs -n ingress-nginx --context=${DEST_CLUSTER_NAME}  -l app.kubernetes.io/component=controller,app.kubernetes.io/instance=ingress-nginx

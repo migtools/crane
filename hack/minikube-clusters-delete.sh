@@ -1,4 +1,5 @@
-#!/usr/bin/env bashset +x
+#!/usr/bin/env bash
+set +x
 
 SRC_CLUSTER_NAME=source-cluster
 DEST_CLUSTER_NAME=destination-cluster
