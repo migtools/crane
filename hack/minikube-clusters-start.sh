@@ -4,8 +4,14 @@ set +x
 SRC_CLUSTER_NAME=src
 DEST_CLUSTER_NAME=dest
 
-minikube status -p ${SRC_CLUSTER_NAME} && echo "run hack/minikube-delete-clusters.sh before running this script"; exit 1
-minikube status -p ${DEST_CLUSTER_NAME} && echo "run hack/minikube-delete-clusters.sh before running this script"; exit 1
+minikube status -p ${SRC_CLUSTER_NAME} >> /dev/null
+if [[ $? == 0 ]]; then
+  echo "run hack/minikube-delete-clusters.sh before running this script"; exit 1
+fi
+minikube status -p ${DEST_CLUSTER_NAME} >> /dev/null
+if [[ $? == 0 ]]; then
+  echo "run hack/minikube-delete-clusters.sh before running this script"; exit 1
+fi
 
 echo "create two minikube clusters"
 

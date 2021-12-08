@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set +x
 
-SRC_CLUSTER_NAME=source-cluster
-DEST_CLUSTER_NAME=destination-cluster
+SRC_CLUSTER_NAME=src
+DEST_CLUSTER_NAME=dest
 
 SOURCE_IP=$(minikube ip -p ${SRC_CLUSTER_NAME})
 DEST_IP=$(minikube ip -p ${DEST_CLUSTER_NAME})
