@@ -288,9 +288,7 @@ func (t *TransferPVCOptions) run() error {
 	}
 
 	log.Println("followed the logs, garbage collecting created resources on both source and destination")
-	err = garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.PVCNamespace)
-
-	return nil
+	return garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.PVCNamespace)
 }
 
 func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint, namespace string) error {
@@ -321,15 +319,13 @@ func garbageCollect(srcClient client.Client, destClient client.Client, labels ma
 		return err
 	}
 
-	err = deleteResourcesIteratively(destClient, []client.Object{
+	return deleteResourcesIteratively(destClient, []client.Object{
 		&corev1.Service{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "Service",
 				APIVersion: corev1.SchemeGroupVersion.Version,
 			},
 		}}, labels, namespace)
-
-	return nil
 }
 
 func deleteResourcesIteratively(c client.Client, iterativeTypes []client.Object, labels map[string]string, namespace string) error {
