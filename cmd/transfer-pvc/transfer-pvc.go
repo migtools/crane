@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/konveyor/crane-lib/state_transfer"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint"
+	"github.com/konveyor/crane-lib/state_transfer/endpoint/ingress"
 	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
 	"github.com/konveyor/crane-lib/state_transfer/meta"
 	metadata "github.com/konveyor/crane-lib/state_transfer/meta"
@@ -21,9 +21,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -42,6 +45,7 @@ type TransferPVCOptions struct {
 	DestinationContext string
 	PVCName            string
 	PVCNamespace       string
+	Endpoint           string
 
 	// TODO: add more fields for PVC mapping/think of a config file to get inputs?
 	sourceContext      *clientcmdapi.Context
@@ -83,6 +87,7 @@ func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context current kubeconfig")
 	cmd.Flags().StringVar(&t.PVCNamespace, "pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
 	cmd.Flags().StringVar(&t.PVCName, "pvc-name", "", "The pvc name which is to be transferred on the source")
+	cmd.Flags().StringVar(&t.Endpoint, "endpoint", "nignx-ingress", "The type of networking endpoing to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
 }
 
 func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
@@ -181,12 +186,6 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "unable to get destination client")
 	}
 
-	// quiesce the applications if needed on the source side
-	err = state_transfer.QuiesceApplications(srcCfg, t.PVCNamespace)
-	if err != nil {
-		log.Fatal(err, "unable to quiesce application on source cluster")
-	}
-
 	// set up the PVC on destination to receive the data
 	pvc := &corev1.PersistentVolumeClaim{}
 	err = srcClient.Get(context.TODO(), client.ObjectKey{Namespace: t.PVCNamespace, Name: t.PVCName}, pvc)
@@ -211,39 +210,15 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "invalid pvc list")
 	}
 
-	// create a route for data transfer
-	// TODO: pass in subdomain instead of ""
-	r := route.NewEndpoint(
-		types.NamespacedName{
-			Namespace: pvc.Namespace,
-			Name:      pvc.Name,
-		}, route.EndpointTypePassthrough, metadata.Labels, "")
-	e, err := endpoint.Create(r, destClient)
-	if err != nil {
-		log.Fatal(err, "unable to create route endpoint")
+	var e endpoint.Endpoint
+	switch t.Endpoint {
+	case "route":
+		e = createAndWaitForRoute(pvc, destClient)
+	case "nignx-ingress":
+		e = createAndWaitForIngress(pvc, destClient)
+	default:
+		log.Fatalf("unsupported endpoint type %s\n", t.Endpoint)
 	}
-
-	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		e, err := route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-		if err != nil {
-			log.Println(err, "unable to check route health, retrying...")
-			return false, nil
-		}
-		ready, err := e.IsHealthy(destClient)
-		if err != nil {
-			log.Println(err, "unable to check route health, retrying...")
-			return false, nil
-		}
-		return ready, nil
-	}, make(<-chan struct{}))
-
-	e, err = route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-	if err != nil {
-		log.Fatal(err, "unable to get the route object")
-	} else {
-		log.Println("route endpoint is created and is healthy")
-	}
-
 	// create an stunnel transport to carry the data over the route
 
 	s := stunnel.NewTransport(meta.NewNamespacedPair(
@@ -278,7 +253,7 @@ func (t *TransferPVCOptions) run() error {
 		rsync.Username("root"),
 	}
 
-	rsyncTransfer, err := rsync.NewTransfer(s, r, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
+	rsyncTransfer, err := rsync.NewTransfer(s, e, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
 	if err != nil {
 		log.Fatal(err, "error creating rsync transfer")
 	} else {
@@ -312,6 +287,80 @@ func (t *TransferPVCOptions) run() error {
 		log.Fatal(err, "error following rsync client logs")
 	}
 
+	log.Println("followed the logs, garbage collecting created resources on both source and destination")
+	return garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.PVCNamespace)
+}
+
+func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint, namespace string) error {
+	srcGVK := []client.Object{
+		&corev1.Pod{},
+		&corev1.ConfigMap{},
+		&corev1.Secret{},
+	}
+	destGVK := []client.Object{
+		&corev1.Pod{},
+		&corev1.ConfigMap{},
+		&corev1.Secret{},
+	}
+	switch endpoint {
+	case "route":
+		destGVK = append(destGVK, &routev1.Route{})
+	case "nignx-ingress":
+		destGVK = append(destGVK, &networkingv1.Ingress{})
+	}
+
+	err := deleteResourcesForGVK(srcClient, srcGVK, labels, namespace)
+	if err != nil {
+		return err
+	}
+
+	err = deleteResourcesForGVK(destClient, destGVK, labels, namespace)
+	if err != nil {
+		return err
+	}
+
+	return deleteResourcesIteratively(destClient, []client.Object{
+		&corev1.Service{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "Service",
+				APIVersion: corev1.SchemeGroupVersion.Version,
+			},
+		}}, labels, namespace)
+}
+
+func deleteResourcesIteratively(c client.Client, iterativeTypes []client.Object, labels map[string]string, namespace string) error {
+	listOptions := []client.ListOption{
+		client.MatchingLabels(labels),
+		client.InNamespace(namespace),
+	}
+	errs := []error{}
+	for _, objList := range iterativeTypes {
+		ulist := &unstructured.UnstructuredList{}
+		ulist.SetGroupVersionKind(objList.GetObjectKind().GroupVersionKind())
+		err := c.List(context.TODO(), ulist, listOptions...)
+		if err != nil {
+			// if we hit error with one api still try all others
+			errs = append(errs, err)
+			continue
+		}
+		for _, item := range ulist.Items {
+			err = c.Delete(context.TODO(), &item, client.PropagationPolicy(metav1.DeletePropagationBackground))
+			if err != nil {
+				// if we hit error deleting on continue delete others
+				errs = append(errs, err)
+			}
+		}
+	}
+	return errorsutil.NewAggregate(errs)
+}
+
+func deleteResourcesForGVK(c client.Client, gvk []client.Object, labels map[string]string, namespace string) error {
+	for _, obj := range gvk {
+		err := c.DeleteAllOf(context.TODO(), obj, client.InNamespace(namespace), client.MatchingLabels(labels))
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -334,6 +383,10 @@ func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string,
 		clientPod = &clientPodList.Items[0]
 
 		for _, containerStatus := range clientPod.Status.ContainerStatuses {
+			if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode == 0 {
+				log.Printf("container %s in pod %s completed successfully", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
+				break
+			}
 			if !containerStatus.Ready {
 				log.Println(fmt.Errorf("container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name}))
 				return false, nil
@@ -368,6 +421,80 @@ func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string,
 	}
 
 	return err
+}
+
+func createAndWaitForIngress(pvc *corev1.PersistentVolumeClaim, destClient client.Client) endpoint.Endpoint {
+	// create a route for data transfer
+	// TODO: add a config flag for subdomain
+	r := ingress.NewEndpoint(
+		types.NamespacedName{
+			Namespace: pvc.Namespace,
+			Name:      pvc.Name,
+		}, metadata.Labels, "crane.dev")
+	e, err := endpoint.Create(r, destClient)
+	if err != nil {
+		log.Fatal(err, "unable to create endpoint")
+	}
+
+	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
+		e, err := ingress.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
+		if err != nil {
+			log.Println(err, "unable to check health, retrying...")
+			return false, nil
+		}
+		ready, err := e.IsHealthy(destClient)
+		if err != nil {
+			log.Println(err, "unable to check health, retrying...")
+			return false, nil
+		}
+		return ready, nil
+	}, make(<-chan struct{}))
+
+	e, err = ingress.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
+	if err != nil {
+		log.Fatal(err, "unable to get the route object")
+	} else {
+		log.Println("endpoint is created and is healthy")
+	}
+
+	return e
+}
+
+func createAndWaitForRoute(pvc *corev1.PersistentVolumeClaim, destClient client.Client) endpoint.Endpoint {
+	// create a route for data transfer
+	// TODO: pass in subdomain instead of ""
+	r := route.NewEndpoint(
+		types.NamespacedName{
+			Namespace: pvc.Namespace,
+			Name:      pvc.Name,
+		}, route.EndpointTypePassthrough, metadata.Labels, "")
+	e, err := endpoint.Create(r, destClient)
+	if err != nil {
+		log.Fatal(err, "unable to create route endpoint")
+	}
+
+	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
+		e, err := route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
+		if err != nil {
+			log.Println(err, "unable to check route health, retrying...")
+			return false, nil
+		}
+		ready, err := e.IsHealthy(destClient)
+		if err != nil {
+			log.Println(err, "unable to check route health, retrying...")
+			return false, nil
+		}
+		return ready, nil
+	}, make(<-chan struct{}))
+
+	e, err = route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
+	if err != nil {
+		log.Fatal(err, "unable to get the route object")
+	} else {
+		log.Println("route endpoint is created and is healthy")
+	}
+
+	return e
 }
 
 func clearDestPVC(destPVC *corev1.PersistentVolumeClaim) {
