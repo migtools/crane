@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	Version string = "v0.0.2"
+	Version string = "v0.0.3"
 
 	CranelibVersion string = cranelibversion.Version
 )
