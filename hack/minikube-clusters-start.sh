@@ -3,6 +3,8 @@ set +x
 
 SRC_CLUSTER_NAME=src
 DEST_CLUSTER_NAME=dest
+SRC_KUBE_VERSION="${SRC_KUBE_VERSION:-}"
+DEST_KUBE_VERSION="${DEST_KUBE_VERSION:-}"
 
 minikube status -p ${SRC_CLUSTER_NAME} >> /dev/null
 if [[ $? == 0 ]]; then
@@ -15,8 +17,8 @@ fi
 
 echo "create two minikube clusters"
 
-minikube start -p ${SRC_CLUSTER_NAME}
-minikube start -p ${DEST_CLUSTER_NAME}
+minikube start -p ${SRC_CLUSTER_NAME} --kubernetes-version="${SRC_KUBE_VERSION}"
+minikube start -p ${DEST_CLUSTER_NAME} --kubernetes-version="${DEST_KUBE_VERSION}"
 
 echo "clusters started, configuring networking between source and destination clusters"
 
