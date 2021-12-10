@@ -36,6 +36,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	endpointNginx = "nginx-ingress"
+	endpointRoute = "route"
+)
+
 type TransferPVCOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
@@ -87,7 +92,7 @@ func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context current kubeconfig")
 	cmd.Flags().StringVar(&t.PVCNamespace, "pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
 	cmd.Flags().StringVar(&t.PVCName, "pvc-name", "", "The pvc name which is to be transferred on the source")
-	cmd.Flags().StringVar(&t.Endpoint, "endpoint", "nignx-ingress", "The type of networking endpoing to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
+	cmd.Flags().StringVar(&t.Endpoint, "endpoint", endpointNginx, "The type of networking endpoing to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
 }
 
 func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
@@ -212,9 +217,9 @@ func (t *TransferPVCOptions) run() error {
 
 	var e endpoint.Endpoint
 	switch t.Endpoint {
-	case "route":
+	case endpointRoute:
 		e = createAndWaitForRoute(pvc, destClient)
-	case "nignx-ingress":
+	case endpointNginx:
 		e = createAndWaitForIngress(pvc, destClient)
 	default:
 		log.Fatalf("unsupported endpoint type %s\n", t.Endpoint)
@@ -303,9 +308,9 @@ func garbageCollect(srcClient client.Client, destClient client.Client, labels ma
 		&corev1.Secret{},
 	}
 	switch endpoint {
-	case "route":
+	case endpointRoute:
 		destGVK = append(destGVK, &routev1.Route{})
-	case "nignx-ingress":
+	case endpointNginx:
 		destGVK = append(destGVK, &networkingv1.Ingress{})
 	}
 
