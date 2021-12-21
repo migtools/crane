@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"sigs.k8s.io/yaml"
+
+	kustomize "sigs.k8s.io/kustomize/api/types"
 )
 
 type Options struct {
@@ -174,8 +176,38 @@ func (o *Options) run() error {
 			return err
 		}
 		log.Debugf("wrote %v bytes for file: %v", i, outputFilePath)
+
+		// Handle kustomizations
+		kustomizationFilepath := opts.GetKustomizationFilePath(f.Path)
+		var kustomization kustomize.Kustomization
+
+		_, err = os.Stat(kustomizationFilepath)
+		if err == nil {
+			kustomizationFile, err := os.ReadFile(kustomizationFilepath)
+			if err != nil {
+				return err
+			}
+			kustomization.Unmarshal(kustomizationFile)
+		} else {
+			kustomization = kustomize.Kustomization{}
+		}
+		kustomization.FixKustomizationPostUnmarshalling()
+		kustomization.Resources = append(kustomization.Resources, filepath.Base(outputFilePath))
+		kustomizationFile, err := os.Create(kustomizationFilepath)
+		if err != nil {
+			return err
+		}
+		defer kustomizationFile.Close()
+		kustomizationBytes, err := yaml.Marshal(kustomization)
+		if err != nil {
+			return err
+		}
+		i, err = kustomizationFile.Write(kustomizationBytes)
+		if err != nil {
+			return err
+		}
+		log.Debugf("wrote %v bytes for file: %v", i, kustomizationFilepath)
 	}
 
 	return nil
-
 }

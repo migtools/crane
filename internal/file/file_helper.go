@@ -112,3 +112,9 @@ func (opts *PathOpts) GetOutputFilePath(filePath string) string {
 	dir = strings.Replace(dir, opts.ExportDir, opts.OutputDir, 1)
 	return filepath.Join(dir, fname)
 }
+
+func (opts *PathOpts) GetKustomizationFilePath(filePath string) string {
+	dir, _ := filepath.Split(filePath)
+	dir = strings.Replace(dir, opts.ExportDir, opts.OutputDir, 1)
+	return filepath.Join(dir, "kustomization.yaml")
+}
