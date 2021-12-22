@@ -25,8 +25,7 @@ type ExportOptions struct {
 	globalFlags      *flags.GlobalFlags
 
 	rawConfig api.Config
-	exportDir string `mapstructure:"export-dir"`
-	// TODO(djzager): how do we handle viper + k8s cli options?
+	exportDir string
 	namespace string
 
 	genericclioptions.IOStreams
@@ -147,6 +146,8 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 		PreRun: func(cmd *cobra.Command, args []string) {
 			viper.BindPFlags(cmd.Flags())
 			viper.Unmarshal(&o.globalFlags)
+			viper.Unmarshal(&o.configFlags)
+			viper.UnmarshalKey("export-dir", &o.exportDir)
 		},
 	}
 
