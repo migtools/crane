@@ -24,9 +24,9 @@ type ExportOptions struct {
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
 
-	rawConfig api.Config
-	exportDir string
-	namespace string
+	rawConfig              api.Config
+	exportDir              string
+	userSpecifiedNamespace string
 
 	genericclioptions.IOStreams
 }
@@ -38,7 +38,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	o.namespace, _, err = o.configFlags.ToRawKubeConfigLoader().Namespace()
+	o.userSpecifiedNamespace, _, err = o.configFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (o *ExportOptions) Run() error {
 	log := o.globalFlags.GetLogger()
 
 	// create export directory if it doesnt exist
-	err = os.MkdirAll(filepath.Join(o.exportDir, "resources", o.namespace), 0700)
+	err = os.MkdirAll(filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace), 0700)
 	switch {
 	case os.IsExist(err):
 	case err != nil:
@@ -66,7 +66,7 @@ func (o *ExportOptions) Run() error {
 	}
 
 	// create export directory if it doesnt exist
-	err = os.MkdirAll(filepath.Join(o.exportDir, "failures", o.namespace), 0700)
+	err = os.MkdirAll(filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), 0700)
 	switch {
 	case os.IsExist(err):
 	case err != nil:
@@ -101,15 +101,15 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.namespace, dynamicClient, discoveryHelper.Resources(), log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, dynamicClient, discoveryHelper.Resources(), log)
 
 	log.Debugf("attempting to write resources to files\n")
-	writeResourcesErrors := writeResources(resources, filepath.Join(o.exportDir, "resources", o.namespace), log)
+	writeResourcesErrors := writeResources(resources, filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace), log)
 	for _, e := range writeResourcesErrors {
 		log.Warnf("error writing manifests to file: %#v, ignoring\n", e)
 	}
 
-	writeErrorsErrors := writeErrors(resourceErrs, filepath.Join(o.exportDir, "failures", o.namespace), log)
+	writeErrorsErrors := writeErrors(resourceErrs, filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), log)
 	for _, e := range writeErrorsErrors {
 		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
 	}
