@@ -1,8 +1,10 @@
 package export
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
@@ -27,12 +29,15 @@ type ExportOptions struct {
 	rawConfig              api.Config
 	exportDir              string
 	userSpecifiedNamespace string
+	asExtras               string
+	extras                 map[string][]string
 
 	genericclioptions.IOStreams
 }
 
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
+
 	o.rawConfig, err = o.configFlags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {
 		return err
@@ -43,11 +48,25 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		return err
 	}
 
+	if o.asExtras != "" {
+		keysAndStrings := strings.Split(o.asExtras, ";")
+		o.extras = map[string][]string{}
+		for _, keysAndString := range keysAndStrings {
+			keyString := strings.Split(keysAndString, "=")
+			if len(keyString) != 2 {
+				return fmt.Errorf("extra options (%v) formatted incorrectly", o.asExtras)
+			}
+			o.extras[keyString[0]] = strings.Split(keyString[1], ",")
+		}
+	}
+
 	return nil
 }
 
 func (o *ExportOptions) Validate() error {
-	// This is where pre-run validations should be performed
+	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
+		return fmt.Errorf("extras requires specifying a user or group to impersonate")
+	}
 	return nil
 }
 
@@ -88,6 +107,9 @@ func (o *ExportOptions) Run() error {
 		log.Errorf("cannot create rest config: %#v", err)
 		return err
 	}
+
+	// user/group impersonation is handled from genericclioptions.ConfigFlags
+	restConfig.Impersonate.Extra = o.extras
 
 	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 
@@ -152,6 +174,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	}
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
+	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An eample is --as-extras key=string1,string2;key2=string3")
 	o.configFlags.AddFlags(cmd.Flags())
 
 	return cmd
