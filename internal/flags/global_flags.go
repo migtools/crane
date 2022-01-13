@@ -35,5 +35,4 @@ func (g *GlobalFlags) initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		g.GetLogger().Infof("Using config file: %v", viper.ConfigFileUsed())
 	}
-
 }
