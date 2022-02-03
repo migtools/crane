@@ -22,6 +22,8 @@ type TunnelAPIOptions struct {
 	SourceContext      string
 	DestinationContext string
 	Namespace          string
+	SourceImage        string
+	DestinationImage   string
 
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
@@ -61,6 +63,8 @@ func addFlagsForTunnelAPIOptions(t *TunnelAPIOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.SourceContext, "source-context", "", "The name of the source context in current kubeconfig")
 	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context current kubeconfig")
 	cmd.Flags().StringVar(&t.Namespace, "namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the openvpn namespace")
+	cmd.Flags().StringVar(&t.SourceImage, "source-image", "", "The container image to use on the source cluster. Defaults to quay.io/konveyor/openvpn:latest")
+	cmd.Flags().StringVar(&t.DestinationImage, "destination-image", "", "The container image to use on the destination cluster. Defaults to quay.io/konveyor/openvpn:latest")
 }
 
 func (t *TunnelAPIOptions) Complete(c *cobra.Command, args []string) error {
@@ -160,6 +164,8 @@ func (t *TunnelAPIOptions) run() error {
 	tunnel.SrcConfig = srcConfig
 	tunnel.DstConfig = dstConfig
 	tunnel.Options.Namespace = t.Namespace
+	tunnel.Options.ClientImage = t.SourceImage
+	tunnel.Options.ServerImage = t.DestinationImage
 
 	err = tunnel_api.Openvpn(tunnel)
 	if err != nil {
