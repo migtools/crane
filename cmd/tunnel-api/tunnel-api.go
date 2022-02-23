@@ -24,7 +24,10 @@ type TunnelAPIOptions struct {
 	Namespace          string
 	SourceImage        string
 	DestinationImage   string
-
+	ProxyHost          string
+	ProxyPort          string
+	ProxyUser          string
+	ProxyPass          string
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
 }
@@ -65,6 +68,10 @@ func addFlagsForTunnelAPIOptions(t *TunnelAPIOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.Namespace, "namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the openvpn namespace")
 	cmd.Flags().StringVar(&t.SourceImage, "source-image", "", "The container image to use on the source cluster. Defaults to quay.io/konveyor/openvpn:latest")
 	cmd.Flags().StringVar(&t.DestinationImage, "destination-image", "", "The container image to use on the destination cluster. Defaults to quay.io/konveyor/openvpn:latest")
+	cmd.Flags().StringVar(&t.ProxyHost, "proxy-host", "", "The hostname of an http-proxy to use on the source cluster for connecting to the destination cluster")
+	cmd.Flags().StringVar(&t.ProxyPort, "proxy-port", "", "The port the http-proxy is listening on. If no specified it will default to 3128")
+	cmd.Flags().StringVar(&t.ProxyUser, "proxy-user", "", "The username for the http-proxy. If specified you must also specify a password or it will be ignored.")
+	cmd.Flags().StringVar(&t.ProxyPass, "proxy-pass", "", "The password for the http-proxy. If specified you must also specify a username or it will be ignored.")
 }
 
 func (t *TunnelAPIOptions) Complete(c *cobra.Command, args []string) error {
@@ -166,6 +173,10 @@ func (t *TunnelAPIOptions) run() error {
 	tunnel.Options.Namespace = t.Namespace
 	tunnel.Options.ClientImage = t.SourceImage
 	tunnel.Options.ServerImage = t.DestinationImage
+	tunnel.Options.ProxyHost = t.ProxyHost
+	tunnel.Options.ProxyPort = t.ProxyPort
+	tunnel.Options.ProxyUser = t.ProxyUser
+	tunnel.Options.ProxyPass = t.ProxyPass
 
 	err = tunnel_api.Openvpn(tunnel)
 	if err != nil {
