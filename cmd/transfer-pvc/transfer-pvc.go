@@ -51,6 +51,7 @@ type TransferPVCOptions struct {
 	PVCName            string
 	PVCNamespace       string
 	Endpoint           string
+	NodeName           string
 
 	// TODO: add more fields for PVC mapping/think of a config file to get inputs?
 	sourceContext      *clientcmdapi.Context
@@ -93,6 +94,7 @@ func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.PVCNamespace, "pvc-namespace", "", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
 	cmd.Flags().StringVar(&t.PVCName, "pvc-name", "", "The pvc name which is to be transferred on the source")
 	cmd.Flags().StringVar(&t.Endpoint, "endpoint", endpointNginx, "The type of networking endpoing to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
+	cmd.Flags().StringVar(&t.NodeName, "node-name", "", "The node on which PVC is currently mounted")
 }
 
 func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
@@ -249,6 +251,11 @@ func (t *TransferPVCOptions) run() error {
 		log.Println("stunnel transport is created and is healthy")
 	}
 
+	nodeName, err := getNodeNameForPVC(srcClient, pvc.Namespace, pvc.Name)
+	if err != nil {
+		log.Fatal(err, "failed to find node name")
+	}
+
 	// Rsync Example
 	rsyncTransferOptions := []rsync.TransferOption{
 		rsync.StandardProgress(true),
@@ -256,6 +263,11 @@ func (t *TransferPVCOptions) run() error {
 		rsync.WithSourcePodLabels(map[string]string{"app": "crane2"}),
 		rsync.WithDestinationPodLabels(map[string]string{"app": "crane2"}),
 		rsync.Username("root"),
+		&rsync.SourcePodSpecMutation{
+			Spec: &corev1.PodSpec{
+				NodeName: nodeName,
+			},
+		},
 	}
 
 	rsyncTransfer, err := rsync.NewTransfer(s, e, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
@@ -294,6 +306,31 @@ func (t *TransferPVCOptions) run() error {
 
 	log.Println("followed the logs, garbage collecting created resources on both source and destination")
 	return garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.PVCNamespace)
+}
+
+// getNodeNameForPVC returns name of the node on which the PVC is currently mounted on
+// returns name of the node as a string, and an error
+func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string) (string, error) {
+	podList := corev1.PodList{}
+
+	err := srcClient.List(context.TODO(), &podList)
+	if err != nil {
+		return "", err
+	}
+
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			for _, vol := range pod.Spec.Volumes {
+				if vol.PersistentVolumeClaim != nil {
+					if vol.PersistentVolumeClaim.ClaimName == pvcName {
+						return pod.Spec.NodeName, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", nil
 }
 
 func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint, namespace string) error {
