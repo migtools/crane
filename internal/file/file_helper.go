@@ -34,6 +34,9 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 	for _, file := range files {
 		filePath := fmt.Sprintf("%v/%v", path, file.Name())
 		if file.IsDir() {
+			if file.Name() == "failures" {
+				continue
+			}
 			newFiles, err := ioutil.ReadDir(filePath)
 			if err != nil {
 				return nil, err
