@@ -256,10 +256,14 @@ func (t *TransferPVCOptions) run() error {
 
 	// set up the PVC on destination to receive the data
 	pvc := &corev1.PersistentVolumeClaim{}
-	err = srcClient.Get(context.TODO(),
+	err = srcClient.Get(
+		context.TODO(),
 		client.ObjectKey{
 			Namespace: t.PVCNamespace.source,
-			Name:      t.PVCName.source}, pvc)
+			Name:      t.PVCName.source
+		},
+		pvc,
+	)
 	if err != nil {
 		log.Fatal(err, "unable to get source PVC")
 	}
