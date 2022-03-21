@@ -45,78 +45,43 @@ const (
 type TransferPVCOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
+	logger logrus.FieldLogger
 
-	logger               logrus.FieldLogger
-	SourceContext        string
-	DestinationContext   string
-	PVCName              mappedName
-	PVCNamespace         mappedName
-	DestStorageClassName string
-	DestStorageRequests  string
-	Endpoint             string
-	NodeName             string
-	Verify               bool
+	pvcConfig
+	SourceContext      string
+	DestinationContext string
+	Endpoint           string
+	Verify             bool
 
 	// TODO: add more fields for PVC mapping/think of a config file to get inputs?
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
-	// parsed quantity
-	destStorageRequests resource.Quantity
 }
 
-// mappedName defines a mapping of source to destination names
-type mappedName struct {
-	source      string
-	destination string
-}
-
-// String returns string repr of mapped name
-// follows format <source>:<destination>
-func (m *mappedName) String() string {
-	return fmt.Sprintf("%s:%s", m.source, m.destination)
-}
-
-func (m *mappedName) Set(val string) error {
-	source, destination, err := parseSourceDestinationMapping(val)
-	if err != nil {
-		return err
-	}
-	m.source = source
-	m.destination = destination
-	return nil
-}
-
-func (m *mappedName) Type() string {
-	return "string"
-}
-
-// parseSourceDestinationMapping given a mapping of source to destination names,
-// returns two separate strings. mapping follows format <source>:<destination>.
-func parseSourceDestinationMapping(mapping string) (source string, destination string, err error) {
-	split := strings.Split(string(mapping), ":")
-	switch len(split) {
-	case 1:
-		if split[0] == "" {
-			return "", "", fmt.Errorf("source name cannot be empty")
-		}
-		return split[0], split[0], nil
-	case 2:
-		if split[1] == "" || split[0] == "" {
-			return "", "", fmt.Errorf("source or destination name cannot be empty")
-		}
-		return split[0], split[1], nil
-	default:
-		return "", "", fmt.Errorf("invalid name mapping. must be of format <source>:<destination>")
-	}
+// pvcConfig defines a PVC to be transferred
+type pvcConfig struct {
+	// name defines name of the PVC,
+	// mapped in format <source>:<destination>
+	name mappedNameVar
+	// namespace defines namespace of the PVC,
+	// mapped in format <source>:<destination>
+	namespace mappedNameVar
+	// storageClassName defines storage class of destination PVC
+	storageClassName string
+	// storageRequests defines requested capacity of destination PVC
+	storageRequests quantityVar
 }
 
 func NewTransferOptions(streams genericclioptions.IOStreams) *cobra.Command {
 	t := &TransferPVCOptions{
-		configFlags:  genericclioptions.NewConfigFlags(false),
-		PVCName:      mappedName{},
-		PVCNamespace: mappedName{},
-		IOStreams:    streams,
-		logger:       logrus.New(),
+		configFlags: genericclioptions.NewConfigFlags(false),
+		pvcConfig: pvcConfig{
+			name:            mappedNameVar{},
+			namespace:       mappedNameVar{},
+			storageRequests: quantityVar{},
+		},
+		IOStreams: streams,
+		logger:    logrus.New(),
 	}
 
 	cmd := &cobra.Command{
@@ -144,12 +109,12 @@ func NewTransferOptions(streams genericclioptions.IOStreams) *cobra.Command {
 func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&t.SourceContext, "source-context", "", "The name of the source context in current kubeconfig")
 	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context in current kubeconfig")
-	cmd.Flags().Var(&t.PVCNamespace, "pvc-namespace", "The namespace of the pvc which is to be transferred, if empty it will try to use the namespace in source-context, if both are empty it will error")
-	cmd.Flags().Var(&t.PVCName, "pvc-name", "The pvc name which is to be transferred on the source")
-	cmd.Flags().StringVar(&t.Endpoint, "endpoint", endpointNginx, "The type of networking endpoing to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
+	cmd.Flags().Var(&t.name, "pvc-name", "Name of the PVC to be transferred. Optionally, source name can be mapped to a different destination name in format <source>:<destination> ")
+	cmd.Flags().Var(&t.namespace, "pvc-namespace", "Namespace of the PVC to be transferred. Optionally, source namespace can be mapped to a different destination namespace in format <source>:<destination>")
+	cmd.Flags().StringVar(&t.Endpoint, "endpoint", endpointNginx, "The type of networking endpoint to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
+	cmd.Flags().StringVar(&t.storageClassName, "dest-storage-class", "", "Storage class for the destination PVC")
+	cmd.Flags().Var(&t.storageRequests, "dest-storage-requests", "Requested storage capacity for the destination PVC")
 	cmd.Flags().BoolVar(&t.Verify, "verify", false, "Enable checksum verification")
-	cmd.Flags().StringVar(&t.DestStorageClassName, "dest-storage-class", "", "The name of the destination storage class")
-	cmd.Flags().StringVar(&t.DestStorageRequests, "dest-storage-requests", "", "The requested storage capacity of the PVC in the destination cluster")
 }
 
 func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
@@ -172,19 +137,19 @@ func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
 		}
 	}
 
-	if t.PVCNamespace.source == "" && t.sourceContext != nil {
-		t.PVCNamespace.source = t.sourceContext.Namespace
+	if t.pvcConfig.namespace.source == "" && t.sourceContext != nil {
+		t.pvcConfig.namespace.source = t.sourceContext.Namespace
 	}
 
 	return nil
 }
 
 func (t *TransferPVCOptions) Validate() error {
-	if t.PVCName.source == "" || t.PVCName.destination == "" {
+	if t.pvcConfig.name.source == "" || t.pvcConfig.name.destination == "" {
 		return fmt.Errorf("flag pvc-name is not set")
 	}
 
-	if t.PVCNamespace.source == "" || t.PVCNamespace.destination == "" {
+	if t.pvcConfig.namespace.source == "" || t.pvcConfig.namespace.destination == "" {
 		return fmt.Errorf("flag pvc-name is not set and source-context Namespace is empty")
 	}
 
@@ -198,12 +163,6 @@ func (t *TransferPVCOptions) Validate() error {
 
 	if t.sourceContext.Cluster == t.destinationContext.Cluster {
 		return fmt.Errorf("both source and destination cluster are same, this is not support right now, coming soon")
-	}
-
-	if val, err := resource.ParseQuantity(t.DestStorageRequests); err != nil {
-		return fmt.Errorf("invalid quantity for requested storage capacity")
-	} else {
-		t.destStorageRequests = val
 	}
 
 	return nil
@@ -259,8 +218,8 @@ func (t *TransferPVCOptions) run() error {
 	err = srcClient.Get(
 		context.TODO(),
 		client.ObjectKey{
-			Namespace: t.PVCNamespace.source,
-			Name:      t.PVCName.source
+			Namespace: t.pvcConfig.namespace.source,
+			Name:      t.pvcConfig.name.source,
 		},
 		pvc,
 	)
@@ -364,14 +323,14 @@ func (t *TransferPVCOptions) run() error {
 		log.Println("rsync client pod is created, attempting following logs")
 	}
 
-	err = followClientLogs(srcCfg, srcClient, t.PVCNamespace.source, map[string]string{"app": "crane2"})
+	err = followClientLogs(srcCfg, srcClient, t.pvcConfig.namespace.source, map[string]string{"app": "crane2"})
 	if err != nil {
 		log.Fatal(err, "error following rsync client logs")
 	}
 
 	log.Println("followed the logs, garbage collecting created resources on both source and destination")
 
-	return garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.PVCNamespace)
+	return garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.pvcConfig.namespace)
 }
 
 // getNodeNameForPVC returns name of the node on which the PVC is currently mounted on
@@ -396,7 +355,7 @@ func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string
 	return "", nil
 }
 
-func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint string, namespace mappedName) error {
+func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint string, namespace mappedNameVar) error {
 	srcGVK := []client.Object{
 		&corev1.Pod{},
 		&corev1.ConfigMap{},
@@ -604,24 +563,21 @@ func createAndWaitForRoute(pvc *corev1.PersistentVolumeClaim, destClient client.
 
 // getDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster
 func (t *TransferPVCOptions) getDestinationPVC(sourcePVC *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
-	pvc := sourcePVC.DeepCopy()
-	clearDestPVC(pvc)
-	pvc.Namespace = t.PVCNamespace.destination
-	pvc.Name = t.PVCName.destination
-	pvc.Annotations = map[string]string{}
-	pvc.Spec.Resources.Requests[corev1.ResourceStorage] = t.destStorageRequests
-	pvc.Spec.StorageClassName = &t.DestStorageClassName
+	pvc := &corev1.PersistentVolumeClaim{}
+	pvc.Namespace = t.pvcConfig.namespace.destination
+	pvc.Name = t.pvcConfig.name.destination
+	pvc.Labels = sourcePVC.Labels
+	pvc.Spec = *sourcePVC.Spec.DeepCopy()
+	if t.pvcConfig.storageRequests.quantity != nil {
+		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = *t.pvcConfig.storageRequests.quantity
+	}
+	if t.pvcConfig.storageClassName != "" {
+		pvc.Spec.StorageClassName = &t.pvcConfig.storageClassName
+	}
+	// clear fields
+	pvc.Spec.VolumeMode = nil
+	pvc.Spec.VolumeName = ""
 	return pvc
-}
-
-func clearDestPVC(destPVC *corev1.PersistentVolumeClaim) {
-	// TODO: some of this needs to be configuration option exposed to the user
-	destPVC.ResourceVersion = ""
-	destPVC.Spec.VolumeName = ""
-	destPVC.Annotations = map[string]string{}
-	destPVC.Spec.StorageClassName = nil
-	destPVC.Spec.VolumeMode = nil
-	destPVC.Status = corev1.PersistentVolumeClaimStatus{}
 }
 
 // verify enables/disables --checksum option in Rsync
@@ -641,4 +597,71 @@ func (c verify) ApplyTo(opts *rsync.TransferOptions) error {
 		opts.Extras = newExtras
 	}
 	return nil
+}
+
+// mappedNameVar defines a mapping of source to destination names
+type mappedNameVar struct {
+	source      string
+	destination string
+}
+
+// String returns string repr of mapped name
+// follows format <source>:<destination>
+func (m *mappedNameVar) String() string {
+	return fmt.Sprintf("%s:%s", m.source, m.destination)
+}
+
+func (m *mappedNameVar) Set(val string) error {
+	source, destination, err := parseSourceDestinationMapping(val)
+	if err != nil {
+		return err
+	}
+	m.source = source
+	m.destination = destination
+	return nil
+}
+
+func (m *mappedNameVar) Type() string {
+	return "string"
+}
+
+// parseSourceDestinationMapping given a mapping of source to destination names,
+// returns two separate strings. mapping follows format <source>:<destination>.
+func parseSourceDestinationMapping(mapping string) (source string, destination string, err error) {
+	split := strings.Split(string(mapping), ":")
+	switch len(split) {
+	case 1:
+		if split[0] == "" {
+			return "", "", fmt.Errorf("source name cannot be empty")
+		}
+		return split[0], split[0], nil
+	case 2:
+		if split[1] == "" || split[0] == "" {
+			return "", "", fmt.Errorf("source or destination name cannot be empty")
+		}
+		return split[0], split[1], nil
+	default:
+		return "", "", fmt.Errorf("invalid name mapping. must be of format <source>:<destination>")
+	}
+}
+
+type quantityVar struct {
+	quantity *resource.Quantity
+}
+
+func (q *quantityVar) String() string {
+	return q.quantity.String()
+}
+
+func (q *quantityVar) Set(val string) error {
+	parsedQuantity, err := resource.ParseQuantity(val)
+	if err != nil {
+		return err
+	}
+	q.quantity = &parsedQuantity
+	return nil
+}
+
+func (q *quantityVar) Type() string {
+	return "string"
 }
