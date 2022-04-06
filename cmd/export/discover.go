@@ -209,8 +209,41 @@ func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger 
 	if err != nil {
 		return nil, err
 	}
+	if g.APIResource.Name == "imagestreamtags" || g.APIResource.Name == "imagetags" {
+		unstructuredList, err := iterateItemsByGet(c, g, list, namespace, logger)
+		if err != nil {
+			return nil, err
+		}
+		return unstructuredList, nil
+	}
+	return iterateItemsInList(list, g, logger)
+}
+
+func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResource, list runtime.Object, namespace string, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
-	err = meta.EachListItem(list, func(object runtime.Object) error {
+	err := meta.EachListItem(list, func(object runtime.Object) error {
+		u, ok := object.(*unstructured.Unstructured)
+		if !ok {
+			// TODO: explore aggregating all the errors here instead of terminating the loop
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", g, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
+		}
+		obj, err := c.Namespace(namespace).Get(context.TODO(), u.GetName(), metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		unstructuredList.Items = append(unstructuredList.Items, *obj)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s", g.APIGroup, g.APIResource.Kind)
+	}
+	return unstructuredList, nil
+}
+
+func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
+	err := meta.EachListItem(list, func(object runtime.Object) error {
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
