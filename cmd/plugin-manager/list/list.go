@@ -121,17 +121,17 @@ func (o *Options) run() error {
 		}
 		if o.Params {
 			// retrieve all the information for all the versions available for a specific plugin
-			for repo, manifests := range manifestMap {
+			for repo, pluginsMap := range manifestMap {
 				fmt.Printf("Listing from the repo %s\n", repo)
-				printParamsInformation(manifests)
+				printParamsInformation(pluginsMap)
 			}
 		} else if o.Versions {
 			// retrieve all the available version of the plugin
-			for repo, manifest := range manifestMap {
-				fmt.Printf("Listing from the repo %s\n", repo)
-				for _, manifest := range manifest {
-					if manifest.Name == o.Name {
-						fmt.Printf("Version: %s\n", manifest.Version)
+			for repo, pluginsMap := range manifestMap {
+				for name, pluginVersions := range pluginsMap {
+					fmt.Printf("Listing versions of plugin %s from the repo %s\n", name, repo)
+					for _, pluginVersion := range pluginVersions {
+						fmt.Printf("Version: %s\n", pluginVersion.Version)
 					}
 				}
 			}
@@ -148,15 +148,15 @@ func (o *Options) run() error {
 			log.Info(fmt.Sprintf("\"--name\" flag should be used with either \"--versions\" or \"--params\" flag to get more information about the plugin, example: \"crane plugin-manager --name %s --versions\" or \"crane plugin-manager --name %s --params\"\n", o.Name, o.Name))
 		} else if o.Params {
 			// retrieve all the information for all the versions available for a specific plugin
-			for repo, manifests := range manifestMap {
+			for repo, pluginsMap := range manifestMap {
 				fmt.Printf("Listing from the repo %s\n", repo)
-				printParamsInformation(manifests)
+				printParamsInformation(pluginsMap)
 			}
 		} else {
-			for repo, manifest := range manifestMap {
+			for repo, pluginsMap := range manifestMap {
 				// output information
 				fmt.Printf("Listing from the repo %s\n", repo)
-				groupInformationForPlugins(manifest)
+				groupInformationForPlugins(pluginsMap)
 			}
 		}
 	}
@@ -174,16 +174,18 @@ func printInstalledInformation(plugins []transform2.Plugin) {
 	}
 }
 
-func groupInformationForPlugins(manifestMap map[string]plugin.Manifest) {
+func groupInformationForPlugins(pluginsMap map[string][]plugin.PluginVersion) {
 	availablePlugin := map[string]AvailablePlugins{}
-	for _, manifest := range manifestMap {
-		if _, ok := availablePlugin[manifest.Name]; ok {
-			availablePlugin[manifest.Name] = AvailablePlugins{Name: manifest.Name, ShortDescription: manifest.ShortDescription, Versions: append(availablePlugin[manifest.Name].Versions, string(manifest.Version))}
-		} else {
-			availablePlugin[manifest.Name] = AvailablePlugins{
-				Name:             manifest.Name,
-				ShortDescription: manifest.ShortDescription,
-				Versions:         []string{string(manifest.Version)},
+	for _, pluginVersions := range pluginsMap {
+		for _, pluginVersion := range pluginVersions {
+			if _, ok := availablePlugin[pluginVersion.Name]; ok {
+				availablePlugin[pluginVersion.Name] = AvailablePlugins{Name: pluginVersion.Name, ShortDescription: pluginVersion.ShortDescription, Versions: append(availablePlugin[pluginVersion.Name].Versions, string(pluginVersion.Version))}
+			} else {
+				availablePlugin[pluginVersion.Name] = AvailablePlugins{
+					Name:             pluginVersion.Name,
+					ShortDescription: pluginVersion.ShortDescription,
+					Versions:         []string{string(pluginVersion.Version)},
+				}
 			}
 		}
 	}
@@ -191,27 +193,27 @@ func groupInformationForPlugins(manifestMap map[string]plugin.Manifest) {
 	printInformation(availablePlugin)
 }
 
-func printInformation(plugins map[string]AvailablePlugins) {
-	for _, plugin := range plugins {
-		if plugin.Name != "" {
+func printInformation(availablePlugins map[string]AvailablePlugins) {
+	for _, availablePlugin := range availablePlugins {
+		if availablePlugin.Name != "" {
 			printTable([][]string{
-				{"Name", plugin.Name},
-				{"ShortDescription", plugin.ShortDescription},
-				{"AvailableVersions", strings.Join(plugin.Versions, ", ")},
+				{"Name", availablePlugin.Name},
+				{"ShortDescription", availablePlugin.ShortDescription},
+				{"AvailableVersions", strings.Join(availablePlugin.Versions, ", ")},
 			})
 		}
 	}
 }
 
-func printParamsInformation(manifests map[string]plugin.Manifest) {
-	for _, manifest := range manifests {
-		if manifest.Name != "" {
+func printParamsInformation(pluginsMap map[string][]plugin.PluginVersion) {
+	for _, pluginVersions := range pluginsMap {
+		for _, pluginVersion := range pluginVersions {
 			printTable([][]string{
-				{"Name", manifest.Name},
-				{"ShortDescription", manifest.ShortDescription},
-				{"Description", manifest.Description},
-				{"AvailableVersions", string(manifest.Version)},
-				{"OptionalFields", getOptionalFields(manifest.OptionalFields)},
+				{"Name", pluginVersion.Name},
+				{"ShortDescription", pluginVersion.ShortDescription},
+				{"Description", pluginVersion.Description},
+				{"AvailableVersions", string(pluginVersion.Version)},
+				{"OptionalFields", getOptionalFields(pluginVersion.OptionalFields)},
 			})
 		}
 	}
