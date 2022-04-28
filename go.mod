@@ -20,4 +20,5 @@ require (
 	k8s.io/client-go v0.22.2
 	sigs.k8s.io/controller-runtime v0.10.1
 	sigs.k8s.io/yaml v1.3.0
+	golang.org/x/mod v0.5.1
 )
