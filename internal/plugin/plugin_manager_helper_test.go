@@ -15,8 +15,15 @@ func TestGetYamlFromUrlWithUrl(t *testing.T) {
 	URL := "https://test.com/index.yml"
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
-	index := map[string]interface{}{
-		"foo-0.0.1": "https://test.com/foo-0.0.1.yml",
+	index := PluginIndex{
+		Kind: "PluginIndex",
+		ApiVersion: "crane.konveyor.io/v1alpha1",
+		Plugins: []PluginLocation{
+			{
+				Name: "foo",
+				Path: "https://test.com/foo.yml",
+			},
+		},
 	}
 	httpmock.RegisterResponder("GET", URL,
 		func(req *http.Request) (*http.Response, error) {
@@ -30,36 +37,49 @@ func TestGetYamlFromUrlWithUrl(t *testing.T) {
 }
 
 func TestYamlToManifestWithUrl(t *testing.T) {
-	URL := "https://test.com/foo-0.0.1.yml"
+	URL := "https://test.com/foo.yml"
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
-	index := Manifest{
-		Name:             "foo",
-		Version:          "0.0.1",
-		Description:      "Description of foo plugin",
-		ShortDescription: "Short description of foo plugin",
-		Binaries: []Binary{
+	plugin := Plugin{
+		Kind:       "Plugin",
+		ApiVersion: "crane.konveyor.io/v1alpha1",
+		Versions: []PluginVersion{
 			{
-				OS:   "linux",
-				Arch: "amd64",
-				URI:  "https://test.com/download/foo",
+				Name:             "foo",
+				Version:          "0.0.1",
+				Description:      "Description of foo plugin",
+				ShortDescription: "Short description of foo plugin",
+				Binaries: []Binary{
+					{
+						OS:   "linux",
+						Arch: "amd64",
+						URI:  "https://test.com/download/foo",
+					},
+				},
 			},
 		},
 	}
 	httpmock.RegisterResponder("GET", URL,
 		func(req *http.Request) (*http.Response, error) {
 			// Get ID from request
-			return httpmock.NewJsonResponse(200, index)
+			return httpmock.NewJsonResponse(200, plugin)
 		},
 	)
 
 	resp, _ := YamlToManifest(URL)
-	assert.DeepEqual(t, index, resp)
+	assert.DeepEqual(t, plugin.Versions, resp)
 }
 
 func TestGetYamlFromUrlWithFile(t *testing.T) {
-	index := map[string]interface{}{
-		"foo-0.0.1": "file://tmp/foo-0.0.1.yml",
+	index := PluginIndex{
+		Kind: "PluginIndex",
+		ApiVersion: "crane.konveyor.io/v1alpha1",
+		Plugins: []PluginLocation{
+			{
+				Name: "foo",
+				Path: "https://test.com/foo.yml",
+			},
+		},
 	}
 	tempFile, err := ioutil.TempFile(os.TempDir(), "index.yml")
 	if err != nil {
@@ -85,16 +105,22 @@ func TestGetYamlFromUrlWithFile(t *testing.T) {
 }
 
 func TestYamlToManifestWithFile(t *testing.T) {
-	plugin := Manifest{
-		Name:             "foo",
-		Version:          "0.0.1",
-		Description:      "Description of foo plugin",
-		ShortDescription: "Short description of foo plugin",
-		Binaries: []Binary{
+	plugin := Plugin{
+		Kind:       "Plugin",
+		ApiVersion: "crane.konveyor.io/v1alpha1",
+		Versions: []PluginVersion{
 			{
-				OS:   "linux",
-				Arch: "amd64",
-				URI:  "https://test.com/download/foo",
+				Name:             "foo",
+				Version:          "0.0.1",
+				Description:      "Description of foo plugin",
+				ShortDescription: "Short description of foo plugin",
+				Binaries: []Binary{
+					{
+						OS:   "linux",
+						Arch: "amd64",
+						URI:  "https://test.com/download/foo",
+					},
+				},
 			},
 		},
 	}
@@ -115,8 +141,8 @@ func TestYamlToManifestWithFile(t *testing.T) {
 	}
 
 	resp, _ := YamlToManifest(tempFile.Name())
-	assert.DeepEqual(t, plugin, resp)
+	assert.DeepEqual(t, plugin.Versions, resp)
 
 	resp, _ = YamlToManifest("file://" + tempFile.Name())
-	assert.DeepEqual(t, plugin, resp)
+	assert.DeepEqual(t, plugin.Versions, resp)
 }

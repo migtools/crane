@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"golang.org/x/mod/semver"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
@@ -20,7 +21,8 @@ import (
 type Options struct {
 	// Two GlobalFlags struct fields are needed
 	// 1. cobraGlobalFlags for explicit CLI args parsed by cobra
-	// 2. globalFlags for the args merged with values from the viper config file
+	// 2. globalFlags for the args merged with values from the viper config fileno go-import meta tags ()
+
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
 	// Two Flags struct fields are needed
@@ -123,7 +125,7 @@ func (o *Options) run(args []string) error {
 		return nil
 	}
 
-	installVersion := "latest"
+	installVersion := ""
 	if o.Version != "" {
 		installVersion = o.Version
 	}
@@ -135,12 +137,12 @@ func (o *Options) run(args []string) error {
 		log.Errorf(fmt.Sprintf("The plugin %s is found across multiple repos, please specify one repo with --repo flag", args[0]))
 	case len(manifestMap) == 1:
 		// the plugin is found in only one repo
-		for repo, manifest := range manifestMap {
+		for repo, pluginsMap := range manifestMap {
 			switch {
 			// install the only available version of the plugin
-			case len(manifest) == 1:
-				for _, value := range manifest {
-					// check if the version is mentioned and matches the version in manifest file
+			case len(pluginsMap[args[0]]) == 1:
+				for _, value := range pluginsMap[args[0]] {
+					// check if the version is mentioned and matches the version in pluginsMap file
 					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
 						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
 					} else {
@@ -148,9 +150,17 @@ func (o *Options) run(args []string) error {
 						fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
 					}
 				}
-			case len(manifest) > 1:
+			case len(pluginsMap[args[0]]) > 1:
 				// if there are multiple version of the plugins are available then look for the latest or mentioned version and if not found fail and ask user to input a version using --version flag
-				for _, value := range manifest {
+				if installVersion == "" {
+					availableVersions := []string{}
+					for _, value := range pluginsMap[args[0]] {
+						availableVersions = append(availableVersions, string(value.Version))
+					}
+					semver.Sort(availableVersions)
+					installVersion = availableVersions[len(availableVersions) - 1]
+				}
+				for _, value := range pluginsMap[args[0]] {
 					if string(value.Version) == installVersion {
 						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
 					}
@@ -199,22 +209,22 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	}
 
 	// Create the file
-	plugin, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0777)
+	pluginBinary, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0777)
 	if err != nil {
 		return err
 	}
-	defer plugin.Close()
+	defer pluginBinary.Close()
 
 	// Write the body to filePluginDir
-	_, err = io.Copy(plugin, binaryContents)
+	_, err = io.Copy(pluginBinary, binaryContents)
 	if err != nil {
 		return err
 	}
-	err = plugin.Sync()
+	err = pluginBinary.Sync()
 	if err != nil {
 		return err
 	}
-	log.Infof("plugin %s added to the path - %s", filename, filepath)
+	log.Infof("pluginBinary %s added to the path - %s", filename, filepath)
 	return err
 }
 
