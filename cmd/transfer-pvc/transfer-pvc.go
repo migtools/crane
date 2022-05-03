@@ -5,21 +5,17 @@ import (
 	"fmt"
 	"io"
 	"log"
+	random "math/rand"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/konveyor/crane-lib/state_transfer/endpoint"
-	"github.com/konveyor/crane-lib/state_transfer/endpoint/ingress"
-	"github.com/konveyor/crane-lib/state_transfer/endpoint/route"
-	cranemeta "github.com/konveyor/crane-lib/state_transfer/meta"
-	"github.com/konveyor/crane-lib/state_transfer/transfer"
-	"github.com/konveyor/crane-lib/state_transfer/transfer/rsync"
-	"github.com/konveyor/crane-lib/state_transfer/transport"
-	"github.com/konveyor/crane-lib/state_transfer/transport/stunnel"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,50 +31,110 @@ import (
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/backube/pvc-transfer/endpoint"
+	ingressendpoint "github.com/backube/pvc-transfer/endpoint/ingress"
+	routendpoint "github.com/backube/pvc-transfer/endpoint/route"
+	"github.com/backube/pvc-transfer/transfer"
+	rsynctransfer "github.com/backube/pvc-transfer/transfer/rsync"
+	"github.com/backube/pvc-transfer/transport"
+	stunneltransport "github.com/backube/pvc-transfer/transport/stunnel"
 )
+
+type endpointType string
 
 const (
-	endpointNginx = "nginx-ingress"
-	endpointRoute = "route"
+	endpointNginx endpointType = "nginx-ingress"
+	endpointRoute endpointType = "route"
 )
 
-type TransferPVCOptions struct {
+type TransferPVCCommand struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
 	logger logrus.FieldLogger
 
-	pvcConfig
-	SourceContext      string
-	DestinationContext string
-	Endpoint           string
-	Verify             bool
-
-	// TODO: add more fields for PVC mapping/think of a config file to get inputs?
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
+
+	// user defined flags for the subcommand
+	Flags
 }
 
-// pvcConfig defines a PVC to be transferred
-type pvcConfig struct {
-	// name defines name of the PVC,
-	// mapped in format <source>:<destination>
-	name mappedNameVar
-	// namespace defines namespace of the PVC,
-	// mapped in format <source>:<destination>
-	namespace mappedNameVar
-	// storageClassName defines storage class of destination PVC
-	storageClassName string
-	// storageRequests defines requested capacity of destination PVC
-	storageRequests quantityVar
+// Flags defines options configured by users
+// via command line flags of the subcommand
+type Flags struct {
+	PVC                PvcFlags
+	Endpoint           EndpointFlags
+	SourceContext      string
+	DestinationContext string
+	Verify             bool
+	RsyncFlags         []string
 }
 
-func NewTransferOptions(streams genericclioptions.IOStreams) *cobra.Command {
-	t := &TransferPVCOptions{
+// EndpointFlags defines command line flags specific
+// to the endpoint to be used in transfer
+type EndpointFlags struct {
+	// Type defines the endpoint type
+	Type endpointType
+	// Subdomain defines host of the endpoint
+	Subdomain string
+	// IngressClass defines class for ingress
+	IngressClass string
+}
+
+func (e EndpointFlags) Validate() error {
+	// default endpoint type is nginx-ingress
+	if e.Type == "" {
+		e.Type = endpointNginx
+	}
+	switch e.Type {
+	case endpointNginx:
+		if e.Subdomain == "" {
+			return fmt.Errorf("subdomain cannot be empty when using nginx ingress")
+		}
+	}
+	return nil
+}
+
+// PvcFlags defines command line flags for the PVC to be transferred
+type PvcFlags struct {
+	// Name defines Name of the PVC,
+	// mapped in format <source>:<destination>
+	Name mappedNameVar
+	// Namespace defines Namespace of the PVC,
+	// mapped in format <source>:<destination>
+	Namespace mappedNameVar
+	// StorageClassName defines storage class of destination PVC
+	StorageClassName string
+	// StorageRequests defines requested capacity of destination PVC
+	StorageRequests quantityVar
+}
+
+func (p *PvcFlags) Validate() error {
+	if p.Name.source == "" {
+		return fmt.Errorf("source pvc name cannot be empty")
+	}
+	if p.Name.destination == "" {
+		return fmt.Errorf("destnation pvc name cannot be empty")
+	}
+	if p.Namespace.source == "" {
+		return fmt.Errorf("source pvc namespace cannot be empty")
+	}
+	if p.Namespace.destination == "" {
+		return fmt.Errorf("destination pvc namespace cannot be empty")
+	}
+	return nil
+}
+
+func NewTransferPVCCommand(streams genericclioptions.IOStreams) *cobra.Command {
+	t := &TransferPVCCommand{
 		configFlags: genericclioptions.NewConfigFlags(false),
-		pvcConfig: pvcConfig{
-			name:            mappedNameVar{},
-			namespace:       mappedNameVar{},
-			storageRequests: quantityVar{},
+		Flags: Flags{
+			PVC: PvcFlags{
+				Name:            mappedNameVar{},
+				Namespace:       mappedNameVar{},
+				StorageRequests: quantityVar{},
+			},
 		},
 		IOStreams: streams,
 		logger:    logrus.New(),
@@ -101,58 +157,59 @@ func NewTransferOptions(streams genericclioptions.IOStreams) *cobra.Command {
 			return nil
 		},
 	}
-	addFlagsForTransferPVCOptions(t, cmd)
+	addFlagsToTransferPVCCommand(&t.Flags, cmd)
 
 	return cmd
 }
 
-func addFlagsForTransferPVCOptions(t *TransferPVCOptions, cmd *cobra.Command) {
-	cmd.Flags().StringVar(&t.SourceContext, "source-context", "", "The name of the source context in current kubeconfig")
-	cmd.Flags().StringVar(&t.DestinationContext, "destination-context", "", "The name of destination context in current kubeconfig")
-	cmd.Flags().Var(&t.name, "pvc-name", "Name of the PVC to be transferred. Optionally, source name can be mapped to a different destination name in format <source>:<destination> ")
-	cmd.Flags().Var(&t.namespace, "pvc-namespace", "Namespace of the PVC to be transferred. Optionally, source namespace can be mapped to a different destination namespace in format <source>:<destination>")
-	cmd.Flags().StringVar(&t.Endpoint, "endpoint", endpointNginx, "The type of networking endpoint to use to accept traffic in destination cluster. The options available are `nginx-ingress` and `route`")
-	cmd.Flags().StringVar(&t.storageClassName, "dest-storage-class", "", "Storage class for the destination PVC")
-	cmd.Flags().Var(&t.storageRequests, "dest-storage-requests", "Requested storage capacity for the destination PVC")
-	cmd.Flags().BoolVar(&t.Verify, "verify", false, "Enable checksum verification")
+func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
+	cmd.Flags().StringVar(&c.SourceContext, "source-context", "", "Name of the source context in current kubeconfig")
+	cmd.Flags().StringVar(&c.DestinationContext, "destination-context", "", "Name of the destination context in current kubeconfig")
+	cmd.Flags().Var(&c.PVC.Name, "pvc-name", "Name of the PVC to be transferred. Optionally, source name can be mapped to a different destination name in format <source>:<destination> ")
+	cmd.Flags().Var(&c.PVC.Namespace, "pvc-namespace", "Namespace of the PVC to be transferred. Optionally, source namespace can be mapped to a different destination namespace in format <source>:<destination>")
+	cmd.Flags().StringVar(&c.PVC.StorageClassName, "dest-storage-class", "", "Storage class for the destination PVC")
+	cmd.Flags().Var(&c.PVC.StorageRequests, "dest-storage-requests", "Requested storage capacity for the destination PVC")
+	cmd.Flags().Var(&c.Endpoint.Type, "endpoint", "The type of networking endpoint to use to accept traffic in destination cluster. Must be `nginx-ingress` or `route`.")
+	cmd.Flags().StringVar(&c.Endpoint.Subdomain, "subdomain", "", "Subdomain to use for the ingress endpoint")
+	cmd.Flags().StringVar(&c.Endpoint.IngressClass, "ingress-class", "", "IngressClass to use for the ingress endpoint")
+	cmd.Flags().BoolVar(&c.Verify, "verify", false, "Enable checksum verification")
+	cmd.MarkFlagRequired("source-context")
+	cmd.MarkFlagRequired("destination-context")
+	cmd.MarkFlagRequired("pvc-name")
 }
 
-func (t *TransferPVCOptions) Complete(c *cobra.Command, args []string) error {
+func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
 	if err != nil {
 		return err
 	}
 
-	if t.DestinationContext == "" {
-		t.DestinationContext = *t.configFlags.Context
+	if t.Flags.DestinationContext == "" {
+		t.Flags.DestinationContext = *t.configFlags.Context
 	}
 
 	for name, context := range rawConfig.Contexts {
-		if name == t.SourceContext {
+		if name == t.Flags.SourceContext {
 			t.sourceContext = context
 		}
-		if name == t.DestinationContext {
+		if name == t.Flags.DestinationContext {
 			t.destinationContext = context
 		}
 	}
 
-	if t.pvcConfig.namespace.source == "" && t.sourceContext != nil {
-		t.pvcConfig.namespace.source = t.sourceContext.Namespace
+	if t.PVC.Namespace.source == "" && t.sourceContext != nil {
+		t.PVC.Namespace.source = t.sourceContext.Namespace
+	}
+
+	if t.PVC.Namespace.destination == "" && t.destinationContext != nil {
+		t.PVC.Namespace.destination = t.destinationContext.Namespace
 	}
 
 	return nil
 }
 
-func (t *TransferPVCOptions) Validate() error {
-	if t.pvcConfig.name.source == "" || t.pvcConfig.name.destination == "" {
-		return fmt.Errorf("flag pvc-name is not set")
-	}
-
-	if t.pvcConfig.namespace.source == "" || t.pvcConfig.namespace.destination == "" {
-		return fmt.Errorf("flag pvc-name is not set and source-context Namespace is empty")
-	}
-
+func (t *TransferPVCCommand) Validate() error {
 	if t.sourceContext == nil {
 		return fmt.Errorf("cannot evaluate source context")
 	}
@@ -162,17 +219,27 @@ func (t *TransferPVCOptions) Validate() error {
 	}
 
 	if t.sourceContext.Cluster == t.destinationContext.Cluster {
-		return fmt.Errorf("both source and destination cluster are same, this is not support right now, coming soon")
+		return fmt.Errorf("both source and destination cluster are the same, this is not support right now, coming soon")
+	}
+
+	err := t.PVC.Validate()
+	if err != nil {
+		return err
+	}
+
+	err = t.Endpoint.Validate()
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (t *TransferPVCOptions) Run() error {
+func (t *TransferPVCCommand) Run() error {
 	return t.run()
 }
 
-func (t *TransferPVCOptions) getClientFromContext(ctx string) (client.Client, error) {
+func (t *TransferPVCCommand) getClientFromContext(ctx string) (client.Client, error) {
 	restConfig, err := t.getRestConfigFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -186,151 +253,179 @@ func (t *TransferPVCOptions) getClientFromContext(ctx string) (client.Client, er
 	return client.New(restConfig, client.Options{Scheme: scheme.Scheme})
 }
 
-func (t *TransferPVCOptions) getRestConfigFromContext(ctx string) (*rest.Config, error) {
+func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config, error) {
 	c := ctx
 	t.configFlags.Context = &c
 
 	return t.configFlags.ToRESTConfig()
 }
 
-func (t *TransferPVCOptions) run() error {
-	srcCfg, err := t.getRestConfigFromContext(t.SourceContext)
+func (t *TransferPVCCommand) run() error {
+	zaplog, err := zap.NewProduction()
 	if err != nil {
-		log.Fatal(err, "unable to get source config")
+		log.Fatal(err, "failed to initiate logger")
 	}
 
-	destCfg, err := t.getRestConfigFromContext(t.DestinationContext)
+	logger := zapr.NewLogger(zaplog)
+
+	srcCfg, err := t.getRestConfigFromContext(t.Flags.SourceContext)
 	if err != nil {
-		log.Fatal(err, "unable to get destination config")
+		log.Fatal(err, "unable to get source rest config")
 	}
 
-	srcClient, err := t.getClientFromContext(t.SourceContext)
+	labels := map[string]string{
+		"app.kubernetes.io/name":      "crane",
+		"app.kubernetes.io/component": "pvc-transfer",
+	}
+
+	srcClient, err := t.getClientFromContext(t.Flags.SourceContext)
 	if err != nil {
 		log.Fatal(err, "unable to get source client")
 	}
-	destClient, err := t.getClientFromContext(t.DestinationContext)
+	destClient, err := t.getClientFromContext(t.Flags.DestinationContext)
 	if err != nil {
 		log.Fatal(err, "unable to get destination client")
 	}
 
 	// set up the PVC on destination to receive the data
-	pvc := &corev1.PersistentVolumeClaim{}
+	srcPVC := &corev1.PersistentVolumeClaim{}
 	err = srcClient.Get(
 		context.TODO(),
 		client.ObjectKey{
-			Namespace: t.pvcConfig.namespace.source,
-			Name:      t.pvcConfig.name.source,
+			Namespace: t.PVC.Namespace.source,
+			Name:      t.PVC.Name.source,
 		},
-		pvc,
+		srcPVC,
 	)
 	if err != nil {
 		log.Fatal(err, "unable to get source PVC")
 	}
 
-	destPVC := t.getDestinationPVC(pvc)
+	destPVC := t.getDestinationPVC(srcPVC)
 	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
 		log.Fatal(err, "unable to create destination PVC")
 	}
 
-	pvcList, err := transfer.NewPVCPairList(
-		transfer.NewPVCPair(pvc, destPVC),
-	)
-	if err != nil {
-		log.Fatal(err, "invalid pvc list")
-	}
-
 	var e endpoint.Endpoint
-	switch t.Endpoint {
+	switch t.Endpoint.Type {
 	case endpointRoute:
-		e = createAndWaitForRoute(destPVC, destClient)
+		e = createAndWaitForRoute(t.Endpoint, destPVC, labels, logger, destClient)
 	case endpointNginx:
-		e = createAndWaitForIngress(destPVC, destClient)
+		e = createAndWaitForIngress(t.Endpoint, destPVC, labels, logger, destClient)
 	default:
-		log.Fatalf("unsupported endpoint type %s\n", t.Endpoint)
+		log.Fatalf("unsupported endpoint type %s\n", t.Endpoint.Type)
 	}
-	// create an stunnel transport to carry the data over the route
 
-	s := stunnel.NewTransport(cranemeta.NewNamespacedPair(
+	if _, err := e.IsHealthy(context.TODO(), destClient); err != nil {
+		log.Fatal("endpoint not healthy")
+	}
+
+	stunnelServer, err := stunneltransport.NewServer(
+		context.TODO(),
+		destClient,
+		logger,
 		types.NamespacedName{
-			Name: pvc.Name, Namespace: pvc.Namespace},
-		types.NamespacedName{
-			Name: destPVC.Name, Namespace: destPVC.Namespace},
-	), &transport.Options{})
-	err = s.CreateServer(destClient, e)
+			Name:      destPVC.Name,
+			Namespace: destPVC.Namespace,
+		}, e, &transport.Options{
+			Labels: labels,
+		})
 	if err != nil {
 		log.Fatal(err, "error creating stunnel server")
 	}
 
-	err = s.CreateClient(srcClient, e)
+	secretList := &corev1.SecretList{}
+	err = destClient.List(
+		context.TODO(),
+		secretList,
+		client.InNamespace(destPVC.Namespace),
+		client.MatchingLabels(labels))
 	if err != nil {
-		log.Fatal(err, "error creating stunnel client")
+		log.Fatal(err, "failed to find certificate secrets")
 	}
 
-	s, err = stunnel.GetTransportFromKubeObjects(srcClient, destClient, s.NamespacedNamePair(), e, &transport.Options{})
-	if err != nil {
-		log.Fatal(err, "error creating from kube objects")
-	} else {
-		log.Println("stunnel transport is created and is healthy")
+	for i := range secretList.Items {
+		destSecret := &secretList.Items[i]
+		srcSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        destSecret.Name,
+				Namespace:   srcPVC.Namespace,
+				Labels:      destSecret.Labels,
+				Annotations: destSecret.Annotations,
+			},
+			StringData: destSecret.StringData,
+			Data:       destSecret.Data,
+		}
+		err = srcClient.Create(context.TODO(), srcSecret)
+		if err != nil {
+			log.Fatal(err, "failed to create certificate secret on source cluster")
+		}
 	}
 
-	nodeName, err := getNodeNameForPVC(srcClient, pvc.Namespace, pvc.Name)
+	stunnelClient, err := stunneltransport.NewClient(
+		context.TODO(),
+		srcClient,
+		logger,
+		types.NamespacedName{
+			Name:      srcPVC.Name,
+			Namespace: srcPVC.Namespace,
+		}, e.Hostname(), e.IngressPort(), &transport.Options{
+			Labels: labels,
+		},
+	)
+	if err != nil {
+		log.Fatal(err, "error creating stunnel server")
+	}
+
+	destPVCList := transfer.NewSingletonPVC(destPVC)
+	srcPVCList := transfer.NewSingletonPVC(srcPVC)
+
+	rsyncPassword := getRsyncPassword()
+
+	rsyncServer, err := rsynctransfer.NewServer(
+		context.TODO(),
+		destClient,
+		logger, destPVCList, stunnelServer, e, labels, nil, rsyncPassword,
+		transfer.PodOptions{},
+	)
+	if err != nil {
+		log.Fatal(err, "error creating rsync transfer server")
+	}
+
+	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
+		ready, err := rsyncServer.IsHealthy(context.TODO(), destClient)
+		if err != nil {
+			log.Println(err, "unable to check rsync server health, retrying...")
+			return false, nil
+		}
+		return ready, nil
+	}, make(<-chan struct{}))
+
+	nodeName, err := getNodeNameForPVC(srcClient, srcPVC.Namespace, srcPVC.Name)
 	if err != nil {
 		log.Fatal(err, "failed to find node name")
 	}
 
-	// Rsync Example
-	rsyncTransferOptions := []rsync.TransferOption{
-		rsync.StandardProgress(true),
-		rsync.ArchiveFiles(true),
-		rsync.WithSourcePodLabels(map[string]string{"app": "crane2"}),
-		rsync.WithDestinationPodLabels(map[string]string{"app": "crane2"}),
-		rsync.Username("root"),
-		&rsync.SourcePodSpecMutation{
-			Spec: &corev1.PodSpec{
-				NodeName: nodeName,
-			},
+	_, err = rsynctransfer.NewClient(
+		context.TODO(),
+		srcClient, srcPVCList, stunnelClient, e, logger, "rsync-client", labels, nil, rsyncPassword,
+		transfer.PodOptions{
+			NodeName: nodeName,
 		},
-		verify(t.Verify),
-	}
-
-	rsyncTransfer, err := rsync.NewTransfer(s, e, srcCfg, destCfg, pvcList, rsyncTransferOptions...)
+	)
 	if err != nil {
-		log.Fatal(err, "error creating rsync transfer")
-	} else {
-		log.Printf("rsync transfer created for pvc %s\n", rsyncTransfer.PVCs()[0].Source().Claim().Name)
+		log.Fatal(err, "failed to create rsync client")
 	}
 
-	err = rsyncTransfer.CreateServer(destClient)
-	if err != nil {
-		log.Fatal(err, "error creating rsync server")
-	}
-
-	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		isHealthy, err := rsyncTransfer.IsServerHealthy(destClient)
-		if err != nil {
-			log.Println(err, "unable to check server health, retrying...")
-			return false, nil
-		}
-		return isHealthy, nil
-	}, make(<-chan struct{}))
-
-	// Create Rclone Client Pod
-	err = rsyncTransfer.CreateClient(srcClient)
-	if err != nil {
-		log.Fatal(err, "error creating rsync client")
-	} else {
-		log.Println("rsync client pod is created, attempting following logs")
-	}
-
-	err = followClientLogs(srcCfg, srcClient, t.pvcConfig.namespace.source, map[string]string{"app": "crane2"})
+	err = followClientLogs(srcCfg, srcClient, t.PVC.Namespace.source, labels)
 	if err != nil {
 		log.Fatal(err, "error following rsync client logs")
 	}
 
 	log.Println("followed the logs, garbage collecting created resources on both source and destination")
 
-	return garbageCollect(srcClient, destClient, map[string]string{"app": "crane2"}, t.Endpoint, t.pvcConfig.namespace)
+	return garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace)
 }
 
 // getNodeNameForPVC returns name of the node on which the PVC is currently mounted on
@@ -355,11 +450,23 @@ func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string
 	return "", nil
 }
 
-func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint string, namespace mappedNameVar) error {
+// getRsyncPassword returns a random password for rsync
+func getRsyncPassword() string {
+	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	random.Seed(time.Now().UnixNano())
+	password := make([]byte, 6)
+	for i := range password {
+		password[i] = letters[random.Intn(len(letters))]
+	}
+	return string(password)
+}
+
+func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint endpointType, namespace mappedNameVar) error {
 	srcGVK := []client.Object{
 		&corev1.Pod{},
 		&corev1.ConfigMap{},
 		&corev1.Secret{},
+		&corev1.ServiceAccount{},
 	}
 	destGVK := []client.Object{
 		&corev1.Pod{},
@@ -487,63 +594,24 @@ func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string,
 	return err
 }
 
-func createAndWaitForIngress(pvc *corev1.PersistentVolumeClaim, destClient client.Client) endpoint.Endpoint {
-	// create a route for data transfer
-	// TODO: add a config flag for subdomain
-	r := ingress.NewEndpoint(
+func createAndWaitForRoute(
+	endpointFlags EndpointFlags, pvc *corev1.PersistentVolumeClaim,
+	labels map[string]string, logger logr.Logger, destClient client.Client) endpoint.Endpoint {
+	var e endpoint.Endpoint
+	e, err := routendpoint.New(
+		context.TODO(), destClient, logger,
 		types.NamespacedName{
 			Namespace: pvc.Namespace,
 			Name:      pvc.Name,
-		}, cranemeta.Labels, "crane.dev")
-	e, err := endpoint.Create(r, destClient)
-	if err != nil {
-		log.Fatal(err, "unable to create endpoint")
-	}
-
-	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		e, err := ingress.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-		if err != nil {
-			log.Println(err, "unable to check health, retrying...")
-			return false, nil
-		}
-		ready, err := e.IsHealthy(destClient)
-		if err != nil {
-			log.Println(err, "unable to check health, retrying...")
-			return false, nil
-		}
-		return ready, nil
-	}, make(<-chan struct{}))
-
-	e, err = ingress.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-	if err != nil {
-		log.Fatal(err, "unable to get the route object")
-	} else {
-		log.Println("endpoint is created and is healthy")
-	}
-
-	return e
-}
-
-func createAndWaitForRoute(pvc *corev1.PersistentVolumeClaim, destClient client.Client) endpoint.Endpoint {
-	// create a route for data transfer
-	// TODO: pass in subdomain instead of ""
-	r := route.NewEndpoint(
-		types.NamespacedName{
-			Namespace: pvc.Namespace,
-			Name:      pvc.Name,
-		}, route.EndpointTypePassthrough, cranemeta.Labels, "")
-	e, err := endpoint.Create(r, destClient)
+		},
+		routendpoint.EndpointTypePassthrough,
+		labels, nil)
 	if err != nil {
 		log.Fatal(err, "unable to create route endpoint")
 	}
 
 	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		e, err := route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-		if err != nil {
-			log.Println(err, "unable to check route health, retrying...")
-			return false, nil
-		}
-		ready, err := e.IsHealthy(destClient)
+		ready, err := e.IsHealthy(context.TODO(), destClient)
 		if err != nil {
 			log.Println(err, "unable to check route health, retrying...")
 			return false, nil
@@ -551,28 +619,54 @@ func createAndWaitForRoute(pvc *corev1.PersistentVolumeClaim, destClient client.
 		return ready, nil
 	}, make(<-chan struct{}))
 
-	e, err = route.GetEndpointFromKubeObjects(destClient, e.NamespacedName())
-	if err != nil {
-		log.Fatal(err, "unable to get the route object")
-	} else {
-		log.Println("route endpoint is created and is healthy")
-	}
-
 	return e
 }
 
+func createAndWaitForIngress(
+	endpointFlags EndpointFlags, pvc *corev1.PersistentVolumeClaim,
+	labels map[string]string, logger logr.Logger, destClient client.Client) endpoint.Endpoint {
+
+	annotations := map[string]string{
+		ingressendpoint.NginxIngressPassthroughAnnotation: "true",
+	}
+
+	ingressEndpoint, err := ingressendpoint.New(
+		context.Background(), destClient, logger,
+		types.NamespacedName{
+			Name:      pvc.Name,
+			Namespace: pvc.Namespace,
+		},
+		&endpointFlags.IngressClass,
+		endpointFlags.Subdomain,
+		labels, annotations, nil)
+	if err != nil {
+		log.Fatal(err, "unable to create endpoint")
+	}
+
+	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
+		ready, err := ingressEndpoint.IsHealthy(context.TODO(), destClient)
+		if err != nil {
+			log.Println(err, "unable to check health, retrying...")
+			return false, nil
+		}
+		return ready, nil
+	}, make(<-chan struct{}))
+
+	return ingressEndpoint
+}
+
 // getDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster
-func (t *TransferPVCOptions) getDestinationPVC(sourcePVC *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
+func (t *TransferPVCCommand) getDestinationPVC(sourcePVC *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 	pvc := &corev1.PersistentVolumeClaim{}
-	pvc.Namespace = t.pvcConfig.namespace.destination
-	pvc.Name = t.pvcConfig.name.destination
+	pvc.Namespace = t.PVC.Namespace.destination
+	pvc.Name = t.PVC.Name.destination
 	pvc.Labels = sourcePVC.Labels
 	pvc.Spec = *sourcePVC.Spec.DeepCopy()
-	if t.pvcConfig.storageRequests.quantity != nil {
-		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = *t.pvcConfig.storageRequests.quantity
+	if t.PVC.StorageRequests.quantity != nil {
+		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = *t.PVC.StorageRequests.quantity
 	}
-	if t.pvcConfig.storageClassName != "" {
-		pvc.Spec.StorageClassName = &t.pvcConfig.storageClassName
+	if t.PVC.StorageClassName != "" {
+		pvc.Spec.StorageClassName = &t.PVC.StorageClassName
 	}
 	// clear fields
 	pvc.Spec.VolumeMode = nil
@@ -583,8 +677,8 @@ func (t *TransferPVCOptions) getDestinationPVC(sourcePVC *corev1.PersistentVolum
 // verify enables/disables --checksum option in Rsync
 type verify bool
 
-func (c verify) ApplyTo(opts *rsync.TransferOptions) error {
-	if bool(c) {
+func (v verify) ApplyTo(opts *rsynctransfer.CommandOptions) error {
+	if bool(v) {
 		opts.Extras = append(opts.Extras, "--checksum")
 	} else {
 		newExtras := []string{}
@@ -663,5 +757,23 @@ func (q *quantityVar) Set(val string) error {
 }
 
 func (q *quantityVar) Type() string {
+	return "string"
+}
+
+func (e endpointType) String() string {
+	return string(e)
+}
+
+func (e *endpointType) Set(val string) error {
+	switch val {
+	case string(endpointNginx), string(endpointRoute):
+		*e = endpointType(val)
+		return nil
+	default:
+		return fmt.Errorf("unsupported endpoint type %s", val)
+	}
+}
+
+func (e endpointType) Type() string {
 	return "string"
 }

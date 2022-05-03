@@ -22,7 +22,7 @@ func main() {
 	}
 	f.ApplyFlags(&root)
 	root.AddCommand(export.NewExportCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
-	root.AddCommand(transfer_pvc.NewTransferOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
+	root.AddCommand(transfer_pvc.NewTransferPVCCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
 	root.AddCommand(tunnel_api.NewTunnelAPIOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
 	root.AddCommand(transform.NewTransformCommand(f))
 	root.AddCommand(apply.NewApplyCommand(f))
