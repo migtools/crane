@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM registry.ci.openshift.org/openshift/release:golang-1.17 as builder
+FROM registry.ci.openshift.org/openshift/release:golang-1.18 as builder
 ENV GOFLAGS "-mod=mod"
 WORKDIR /go/src/github.com/konveyor/crane
 
