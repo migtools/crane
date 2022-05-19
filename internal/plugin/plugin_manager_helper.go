@@ -17,12 +17,12 @@ import (
 const (
 	DEFAULT_REPO     = "default"
 	DEFAULT_REPO_URL = "DEFAULT_REPO_URL"
-	DEFAULT_URL      = "https://raw.githubusercontent.com/konveyor/crane-plugins/main/index.yaml"
+	DEFAULT_URL      = "https://raw.githubusercontent.com/djzager/crane-plugins/plugin-version-update/index.yaml"
 	MANAGED_DIR      = "managed"
 )
 
 // returns map containing the manifests with the key as name-version. Takes name and repo as input to filter accordingly
-func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[string]map[string][]PluginVersion, error) {
+func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[string][]Plugin, error) {
 	// TODO: for multiple repo, read values from conf file to this map
 	repos := make(map[string]string)
 
@@ -35,7 +35,7 @@ func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[str
 		// read the whole config file and iterate through all repos to make sure every manifest is read
 		repos[DEFAULT_REPO] = GetDefaultSource()
 	}
-	manifestMap := make(map[string]map[string][]PluginVersion)
+	manifestMap := make(map[string][]Plugin)
 
 	// iterate over all the repos
 	for repo, url := range repos {
@@ -48,17 +48,12 @@ func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[str
 		for _, p := range index.Plugins {
 			// retrieve the manifest if name matches or there is no name passed, i.e a specific or all of the manifest
 			if name == "" || strings.Contains(p.Name, name) {
-				plugin, err := YamlToManifest(p.Path)
+				plugin, err := YamlToPlugin(p.Path)
 				if err != nil {
 					log.Errorf("Error reading %s plugin manifest located at %s - Error: %s", p.Name, p.Path, err)
 					return nil, err
 				}
-				if _, ok := manifestMap[repo]; ok {
-					manifestMap[repo][p.Name] = plugin
-				} else {
-					manifestMap[repo] = make(map[string][]PluginVersion)
-					manifestMap[repo][p.Name] = plugin
-				}
+				manifestMap[repo] = append(manifestMap[repo], plugin)
 			}
 		}
 	}
@@ -80,25 +75,25 @@ func GetYamlFromUrl(URL string) (PluginIndex, error) {
 }
 
 // takes url as input and fetches the manifest of a plugin
-func YamlToManifest(URL string) ([]PluginVersion, error) {
+func YamlToPlugin(URL string) (Plugin, error) {
 	plugin := Plugin{}
 
 	body, err := getData(URL)
 	if err != nil {
-		return plugin.Versions, err
+		return plugin, err
 	}
 
 	err = yaml.Unmarshal(body, &plugin)
 	if err != nil {
-		return []PluginVersion{}, err
+		return plugin, err
 	}
 
 	isPluginAvailable := FilterPluginForOsArch(&plugin)
 	if isPluginAvailable {
-		return plugin.Versions, nil
+		return plugin, nil
 	}
 	// TODO: figure out a better way to not return the plugin
-	return []PluginVersion{}, nil
+	return Plugin{}, nil
 }
 
 // takes manifest as input and filters manifest for current os/arch

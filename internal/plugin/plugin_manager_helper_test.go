@@ -41,14 +41,19 @@ func TestYamlToManifestWithUrl(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 	plugin := Plugin{
-		Kind:       "Plugin",
-		ApiVersion: "crane.konveyor.io/v1alpha1",
+		TypeMeta: TypeMeta{
+			Kind:       "Plugin",
+			APIVersion: "crane.konveyor.io/v1alpha1",
+		},
+		MetaData: &ObjectMeta{
+			Name: "foo",
+			Annotations: map[string]string{
+				"description": "Description of foo plugin",
+			},
+		},
 		Versions: []PluginVersion{
 			{
-				Name:             "foo",
 				Version:          "0.0.1",
-				Description:      "Description of foo plugin",
-				ShortDescription: "Short description of foo plugin",
 				Binaries: []Binary{
 					{
 						OS:   "linux",
@@ -106,14 +111,19 @@ func TestGetYamlFromUrlWithFile(t *testing.T) {
 
 func TestYamlToManifestWithFile(t *testing.T) {
 	plugin := Plugin{
-		Kind:       "Plugin",
-		ApiVersion: "crane.konveyor.io/v1alpha1",
+		TypeMeta: TypeMeta{
+			Kind:       "Plugin",
+			APIVersion: "crane.konveyor.io/v1alpha1",
+		},
+		MetaData: &ObjectMeta{
+			Name: "foo",
+			Annotations: map[string]string{
+				"description": "Description of foo plugin",
+			},
+		},
 		Versions: []PluginVersion{
 			{
-				Name:             "foo",
 				Version:          "0.0.1",
-				Description:      "Description of foo plugin",
-				ShortDescription: "Short description of foo plugin",
 				Binaries: []Binary{
 					{
 						OS:   "linux",

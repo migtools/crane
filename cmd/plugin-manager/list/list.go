@@ -37,10 +37,9 @@ type Flags struct {
 }
 
 type AvailablePlugins struct {
-	Name             string
-	ShortDescription string
-	Description      string
-	Versions         []string
+	Name        string
+	Description string
+	Versions    []string
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -121,16 +120,16 @@ func (o *Options) run() error {
 		}
 		if o.Params {
 			// retrieve all the information for all the versions available for a specific plugin
-			for repo, pluginsMap := range manifestMap {
+			for repo, plugins := range manifestMap {
 				fmt.Printf("Listing from the repo %s\n", repo)
-				printParamsInformation(pluginsMap)
+				printParamsInformation(plugins)
 			}
 		} else if o.Versions {
 			// retrieve all the available version of the plugin
-			for repo, pluginsMap := range manifestMap {
-				for name, pluginVersions := range pluginsMap {
-					fmt.Printf("Listing versions of plugin %s from the repo %s\n", name, repo)
-					for _, pluginVersion := range pluginVersions {
+			for repo, plugins := range manifestMap {
+				for _, plugin := range plugins {
+					fmt.Printf("Listing versions of plugin %s from the repo %s\n", plugin.MetaData.Name, repo)
+					for _, pluginVersion := range plugin.Versions {
 						fmt.Printf("Version: %s\n", pluginVersion.Version)
 					}
 				}
@@ -141,22 +140,22 @@ func (o *Options) run() error {
 	} else {
 		manifestMap, err := plugin.BuildManifestMap(log, "", o.Repo)
 		if err != nil {
-			return nil
+			return err
 		}
 
 		if o.Name != "" {
 			log.Info(fmt.Sprintf("\"--name\" flag should be used with either \"--versions\" or \"--params\" flag to get more information about the plugin, example: \"crane plugin-manager --name %s --versions\" or \"crane plugin-manager --name %s --params\"\n", o.Name, o.Name))
 		} else if o.Params {
 			// retrieve all the information for all the versions available for a specific plugin
-			for repo, pluginsMap := range manifestMap {
+			for repo, plugins := range manifestMap {
 				fmt.Printf("Listing from the repo %s\n", repo)
-				printParamsInformation(pluginsMap)
+				printParamsInformation(plugins)
 			}
 		} else {
-			for repo, pluginsMap := range manifestMap {
+			for repo, plugins := range manifestMap {
 				// output information
 				fmt.Printf("Listing from the repo %s\n", repo)
-				groupInformationForPlugins(pluginsMap)
+				groupInformationForPlugins(plugins)
 			}
 		}
 	}
@@ -174,45 +173,23 @@ func printInstalledInformation(plugins []transform2.Plugin) {
 	}
 }
 
-func groupInformationForPlugins(pluginsMap map[string][]plugin.PluginVersion) {
-	availablePlugin := map[string]AvailablePlugins{}
-	for _, pluginVersions := range pluginsMap {
-		for _, pluginVersion := range pluginVersions {
-			if _, ok := availablePlugin[pluginVersion.Name]; ok {
-				availablePlugin[pluginVersion.Name] = AvailablePlugins{Name: pluginVersion.Name, ShortDescription: pluginVersion.ShortDescription, Versions: append(availablePlugin[pluginVersion.Name].Versions, string(pluginVersion.Version))}
-			} else {
-				availablePlugin[pluginVersion.Name] = AvailablePlugins{
-					Name:             pluginVersion.Name,
-					ShortDescription: pluginVersion.ShortDescription,
-					Versions:         []string{string(pluginVersion.Version)},
-				}
-			}
-		}
-	}
-
-	printInformation(availablePlugin)
-}
-
-func printInformation(availablePlugins map[string]AvailablePlugins) {
-	for _, availablePlugin := range availablePlugins {
-		if availablePlugin.Name != "" {
-			printTable([][]string{
-				{"Name", availablePlugin.Name},
-				{"ShortDescription", availablePlugin.ShortDescription},
-				{"AvailableVersions", strings.Join(availablePlugin.Versions, ", ")},
-			})
-		}
+func groupInformationForPlugins(plugins []plugin.Plugin) {
+	for _, plug := range plugins {
+		printTable([][]string{
+			{"Name", plug.Name()},
+			{"Description", plug.Description()},
+			{"AvailableVersions", plug.VersionsString()},
+		})
 	}
 }
 
-func printParamsInformation(pluginsMap map[string][]plugin.PluginVersion) {
-	for _, pluginVersions := range pluginsMap {
-		for _, pluginVersion := range pluginVersions {
+func printParamsInformation(plugins []plugin.Plugin) {
+	for _, plug := range plugins {
+		for _, pluginVersion := range plug.Versions {
 			printTable([][]string{
-				{"Name", pluginVersion.Name},
-				{"ShortDescription", pluginVersion.ShortDescription},
-				{"Description", pluginVersion.Description},
-				{"AvailableVersions", string(pluginVersion.Version)},
+				{"Name", plug.Name()},
+				{"Description", plug.Description()},
+				{"Version", string(pluginVersion.Version)},
 				{"OptionalFields", getOptionalFields(pluginVersion.OptionalFields)},
 			})
 		}
