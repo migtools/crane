@@ -27,7 +27,6 @@ jobs:
       - name: Create comment
         uses: peter-evans/create-or-update-comment@v1
         with:
-          token: ${{ secrets.GH_TOKEN }}
           issue-number: ${{ github.event.issue.number }}
           body: |
             Automatically created Jira issue: ${{ steps.create.outputs.issue }}
