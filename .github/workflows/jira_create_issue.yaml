@@ -12,7 +12,7 @@ jobs:
 
       - name: Jira Create issue
         id: create
-        uses: corda/jira-create-issue-action@master
+        uses: djzager/jira-create-issue-action@bearer-token
         with:
           jiraBaseUrl: https://issues.redhat.com
           project: MIG
