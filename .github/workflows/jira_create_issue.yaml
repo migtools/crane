@@ -19,7 +19,6 @@ jobs:
           issuetype: Bug
           summary: ${{ github.event.issue.title }}
           labels: community
-          jiraEmail: ${{ secrets.JIRA_USER_EMAIL }}
           jiraToken: ${{ secrets.JIRA_API_TOKEN }}
           description: |
             ${{ github.event.issue.body }}
