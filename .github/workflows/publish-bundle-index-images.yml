@@ -1,0 +1,54 @@
+name: Publish Bundle and Index images
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+on:
+  push:
+    branches:
+    - main
+  workflow_dispatch:
+
+env:
+  CHANNEL: alpha
+  REGISTRY: quay.io
+  IMAGE_NAME: ${{ github.repository }}
+  BUNDLE_DOCKERFILE: bundle.Dockerfile
+  BUNDLE_SUFFIX: bundle
+  BUNDLE_TAG: latest
+  INDEX_SUFFIX: index
+  INDEX_TAG: latest
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Get opm
+        run: wget $(curl -s https://api.github.com/repos/operator-framework/operator-registry/releases/latest | grep 'browser_' | cut -d\" -f4 | grep linux) -O opm && chmod +x opm
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+        id: extract_branch
+
+      - name: Build bundle image
+        run: docker build . --file ${{ env.BUNDLE_DOCKERFILE }} --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ env.BUNDLE_SUFFIX }}:${{ env.BUNDLE_TAG }}
+
+      - name: Log into registry
+        run: echo "${{ secrets.QUAY_PUBLISH_TOKEN }}" | docker login quay.io -u ${{ secrets.QUAY_PUBLISH_ROBOT }} --password-stdin
+
+      - name: Push bundle image
+        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ env.BUNDLE_SUFFIX }}:${{ env.BUNDLE_TAG }}
+
+      - name: Run OPM
+        run: ./opm index add -c docker --bundles ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ env.BUNDLE_SUFFIX }}:${{ env.BUNDLE_TAG }} --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ env.INDEX_SUFFIX }}:${{ env.INDEX_TAG }}
+
+      - name: Push index
+        run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ env.INDEX_SUFFIX }}:${{ env.INDEX_TAG }}
