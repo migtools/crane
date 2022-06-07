@@ -1,0 +1,25 @@
+name: Reconcile GitHub Issue
+
+on:
+  issues:
+    types:
+      - opened
+      - edited
+      - reopened
+      - closed
+      - labeled
+
+jobs:
+  reconcile-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Reconcile Issue
+        id: create
+        uses: konveyor/github-actions/reconcile-issue@main
+        with:
+          jiraBaseUrl: https://issues.redhat.com
+          jiraToken: ${{ secrets.JIRA_API_TOKEN }}
+          jiraProject: MIG
+          additionalLabels: community
