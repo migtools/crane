@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +35,7 @@ import (
 
 	"github.com/backube/pvc-transfer/endpoint"
 	ingressendpoint "github.com/backube/pvc-transfer/endpoint/ingress"
-	routendpoint "github.com/backube/pvc-transfer/endpoint/route"
+	routeendpoint "github.com/backube/pvc-transfer/endpoint/route"
 	"github.com/backube/pvc-transfer/transfer"
 	rsynctransfer "github.com/backube/pvc-transfer/transfer/rsync"
 	"github.com/backube/pvc-transfer/transport"
@@ -273,11 +274,6 @@ func (t *TransferPVCCommand) run() error {
 		log.Fatal(err, "unable to get source rest config")
 	}
 
-	labels := map[string]string{
-		"app.kubernetes.io/name":      "crane",
-		"app.kubernetes.io/component": "pvc-transfer",
-	}
-
 	srcClient, err := t.getClientFromContext(t.Flags.SourceContext)
 	if err != nil {
 		log.Fatal(err, "unable to get source client")
@@ -301,23 +297,24 @@ func (t *TransferPVCCommand) run() error {
 		log.Fatal(err, "unable to get source PVC")
 	}
 
-	destPVC := t.getDestinationPVC(srcPVC)
+	destPVC := t.buildDestinationPVC(srcPVC)
 	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
 		log.Fatal(err, "unable to create destination PVC")
 	}
 
-	var e endpoint.Endpoint
-	switch t.Endpoint.Type {
-	case endpointRoute:
-		e = createAndWaitForRoute(t.Endpoint, destPVC, labels, logger, destClient)
-	case endpointNginx:
-		e = createAndWaitForIngress(t.Endpoint, destPVC, labels, logger, destClient)
-	default:
-		log.Fatalf("unsupported endpoint type %s\n", t.Endpoint.Type)
+	labels := map[string]string{
+		"app.kubernetes.io/name":          "crane",
+		"app.kubernetes.io/component":     "transfer-pvc",
+		"app.konveyor.io/created-for-pvc": srcPVC.Name,
 	}
 
-	if _, err := e.IsHealthy(context.TODO(), destClient); err != nil {
+	e, err := createEndpoint(t.Endpoint, destPVC, labels, logger, destClient)
+	if err != nil {
+		log.Fatal(err, "failed creating endpoint")
+	}
+
+	if err := waitForEndpoint(e, destClient); err != nil {
 		log.Fatal("endpoint not healthy")
 	}
 
@@ -467,11 +464,16 @@ func garbageCollect(srcClient client.Client, destClient client.Client, labels ma
 		&corev1.ConfigMap{},
 		&corev1.Secret{},
 		&corev1.ServiceAccount{},
+		&rbacv1.RoleBinding{},
+		&rbacv1.Role{},
 	}
 	destGVK := []client.Object{
 		&corev1.Pod{},
 		&corev1.ConfigMap{},
 		&corev1.Secret{},
+		&corev1.ServiceAccount{},
+		&rbacv1.RoleBinding{},
+		&rbacv1.Role{},
 	}
 	switch endpoint {
 	case endpointRoute:
@@ -594,69 +596,60 @@ func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string,
 	return err
 }
 
-func createAndWaitForRoute(
-	endpointFlags EndpointFlags, pvc *corev1.PersistentVolumeClaim,
-	labels map[string]string, logger logr.Logger, destClient client.Client) endpoint.Endpoint {
-	var e endpoint.Endpoint
-	e, err := routendpoint.New(
-		context.TODO(), destClient, logger,
-		types.NamespacedName{
-			Namespace: pvc.Namespace,
-			Name:      pvc.Name,
-		},
-		routendpoint.EndpointTypePassthrough,
-		labels, nil)
-	if err != nil {
-		log.Fatal(err, "unable to create route endpoint")
-	}
-
-	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
+// waitForEndpoint waits for endpoint to become ready
+func waitForEndpoint(e endpoint.Endpoint, destClient client.Client) error {
+	return wait.PollUntil(time.Second*5, func() (done bool, err error) {
 		ready, err := e.IsHealthy(context.TODO(), destClient)
 		if err != nil {
-			log.Println(err, "unable to check route health, retrying...")
+			log.Println(err, "unable to check endpoint health, retrying...")
 			return false, nil
 		}
 		return ready, nil
 	}, make(<-chan struct{}))
-
-	return e
 }
 
-func createAndWaitForIngress(
+// createEndpoint creates an endpoint based on provided endpointFlags
+func createEndpoint(
 	endpointFlags EndpointFlags, pvc *corev1.PersistentVolumeClaim,
-	labels map[string]string, logger logr.Logger, destClient client.Client) endpoint.Endpoint {
-
-	annotations := map[string]string{
-		ingressendpoint.NginxIngressPassthroughAnnotation: "true",
-	}
-
-	ingressEndpoint, err := ingressendpoint.New(
-		context.Background(), destClient, logger,
-		types.NamespacedName{
-			Name:      pvc.Name,
-			Namespace: pvc.Namespace,
-		},
-		&endpointFlags.IngressClass,
-		endpointFlags.Subdomain,
-		labels, annotations, nil)
-	if err != nil {
-		log.Fatal(err, "unable to create endpoint")
-	}
-
-	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		ready, err := ingressEndpoint.IsHealthy(context.TODO(), destClient)
-		if err != nil {
-			log.Println(err, "unable to check health, retrying...")
-			return false, nil
+	labels map[string]string, logger logr.Logger, destClient client.Client) (endpoint.Endpoint, error) {
+	switch endpointFlags.Type {
+	case endpointNginx:
+		annotations := map[string]string{
+			ingressendpoint.NginxIngressPassthroughAnnotation: "true",
 		}
-		return ready, nil
-	}, make(<-chan struct{}))
-
-	return ingressEndpoint
+		err := ingressendpoint.AddToScheme(scheme.Scheme)
+		if err != nil {
+			return nil, err
+		}
+		e, err := ingressendpoint.New(
+			context.TODO(), destClient, logger,
+			types.NamespacedName{
+				Namespace: pvc.Namespace,
+				Name:      pvc.Name,
+			}, &endpointFlags.IngressClass,
+			endpointFlags.Subdomain,
+			labels, annotations, nil)
+		return e, err
+	case endpointRoute:
+		err := routeendpoint.AddToScheme(scheme.Scheme)
+		if err != nil {
+			return nil, err
+		}
+		e, err := routeendpoint.New(
+			context.TODO(), destClient, logger,
+			types.NamespacedName{
+				Namespace: pvc.Namespace,
+				Name:      pvc.Name,
+			}, routeendpoint.EndpointTypePassthrough,
+			labels, nil)
+		return e, err
+	default:
+		return nil, fmt.Errorf("unrecognized endpoint type")
+	}
 }
 
-// getDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster
-func (t *TransferPVCCommand) getDestinationPVC(sourcePVC *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
+// buildDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster
+func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVolumeClaim) *corev1.PersistentVolumeClaim {
 	pvc := &corev1.PersistentVolumeClaim{}
 	pvc.Namespace = t.PVC.Namespace.destination
 	pvc.Name = t.PVC.Name.destination
