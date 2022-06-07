@@ -2,7 +2,7 @@
 name: Request for Enhancement (RFE)
 about: Request features and enhancements to crane using this template
 title: "[RFE] ..."
-labels: RFE
+labels: kind/feature
 
 ---
 
