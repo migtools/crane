@@ -20,7 +20,6 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +41,8 @@ import (
 	rsynctransfer "github.com/backube/pvc-transfer/transfer/rsync"
 	"github.com/backube/pvc-transfer/transport"
 	stunneltransport "github.com/backube/pvc-transfer/transport/stunnel"
+	securityv1 "github.com/openshift/api/security/v1"
+	openshiftuid "github.com/openshift/library-go/pkg/security/uid"
 )
 
 type endpointType string
@@ -389,11 +390,28 @@ func (t *TransferPVCCommand) run() error {
 
 	rsyncPassword := getRsyncPassword()
 
+	serverPodSecContext, err := getRsyncServerPodSecurityContext(destClient, destPVC.Namespace)
+	if err != nil {
+		log.Fatal(err, "error creating security context for rsync server")
+	}
+
+	trueBool := bool(true)
+	falseBool := bool(false)
 	rsyncServer, err := rsynctransfer.NewServer(
 		context.TODO(),
 		destClient,
 		logger, destPVCList, stunnelServer, e, labels, nil, rsyncPassword,
-		transfer.PodOptions{},
+		transfer.PodOptions{
+			ContainerSecurityContext: corev1.SecurityContext{
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{"ALL"},
+				},
+				RunAsNonRoot: &trueBool,
+			},
+			PodSecurityContext: corev1.PodSecurityContext{
+				FSGroup: serverPodSecContext.FSGroup,
+			},
+		},
 	)
 	if err != nil {
 		log.Fatal(err, "error creating rsync transfer server")
@@ -413,11 +431,32 @@ func (t *TransferPVCCommand) run() error {
 		log.Fatal(err, "failed to find node name")
 	}
 
+	clientPodSecCtx, err := getRsyncClientPodSecurityContext(srcClient, srcPVC.Namespace)
+	if err != nil {
+		log.Fatal(err, "error creating security context for rsync server")
+	}
+
 	_, err = rsynctransfer.NewClient(
 		context.TODO(),
 		srcClient, srcPVCList, stunnelClient, e, logger, "rsync-client", labels, nil, rsyncPassword,
 		transfer.PodOptions{
 			NodeName: nodeName,
+			CommandOptions: rsynctransfer.NewDefaultOptionsFrom(
+				verify(t.Verify),
+				restrictedContainers(true),
+				verbose(true),
+			),
+			ContainerSecurityContext: corev1.SecurityContext{
+				Privileged: &falseBool,
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{"ALL"},
+				},
+				RunAsNonRoot: &trueBool,
+				RunAsUser:    clientPodSecCtx.RunAsUser,
+			},
+			PodSecurityContext: corev1.PodSecurityContext{
+				FSGroup: clientPodSecCtx.FSGroup,
+			},
 		},
 	)
 	if err != nil {
@@ -477,22 +516,66 @@ func getRsyncPassword() string {
 	return string(password)
 }
 
+func getIDsForNamespace(client client.Client, namespace string) (*corev1.SecurityContext, error) {
+	ctx := &corev1.SecurityContext{}
+	ns := &corev1.Namespace{}
+	err := client.Get(context.TODO(), types.NamespacedName{Name: namespace}, ns)
+	if err != nil {
+		return nil, err
+	}
+	if annotationVal, found := ns.Annotations[securityv1.UIDRangeAnnotation]; found {
+		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
+		if err != nil {
+			return nil, nil
+		}
+		min := int64(uidBlock.Start)
+		ctx.RunAsUser = &min
+	}
+	if annotationVal, found := ns.Annotations[securityv1.SupplementalGroupsAnnotation]; found {
+		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
+		if err != nil {
+			return nil, nil
+		}
+		min := int64(uidBlock.Start)
+		ctx.RunAsGroup = &min
+	}
+	return ctx, nil
+}
+
+func getRsyncClientPodSecurityContext(client client.Client, namespace string) (*corev1.PodSecurityContext, error) {
+	ps := &corev1.PodSecurityContext{}
+	ctx, err := getIDsForNamespace(client, namespace)
+	if err != nil {
+		return ps, err
+	}
+	ps.RunAsUser = ctx.RunAsUser
+	ps.RunAsGroup = ctx.RunAsGroup
+	ps.FSGroup = ctx.RunAsGroup
+	return ps, nil
+}
+
+func getRsyncServerPodSecurityContext(client client.Client, namespace string) (*corev1.PodSecurityContext, error) {
+	ps := &corev1.PodSecurityContext{}
+	ctx, err := getIDsForNamespace(client, namespace)
+	if err != nil {
+		return ps, err
+	}
+	ps.RunAsUser = ctx.RunAsUser
+	ps.RunAsGroup = ctx.RunAsGroup
+	ps.FSGroup = ctx.RunAsGroup
+	return ps, nil
+}
+
 func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint endpointType, namespace mappedNameVar) error {
 	srcGVK := []client.Object{
 		&corev1.Pod{},
 		&corev1.ConfigMap{},
 		&corev1.Secret{},
-		&corev1.ServiceAccount{},
-		&rbacv1.RoleBinding{},
-		&rbacv1.Role{},
 	}
 	destGVK := []client.Object{
 		&corev1.Pod{},
 		&corev1.ConfigMap{},
 		&corev1.Secret{},
-		&corev1.ServiceAccount{},
-		&rbacv1.RoleBinding{},
-		&rbacv1.Role{},
 	}
 	switch endpoint {
 	case endpointRoute:
@@ -723,6 +806,29 @@ func (v verify) ApplyTo(opts *rsynctransfer.CommandOptions) error {
 			}
 		}
 		opts.Extras = newExtras
+	}
+	return nil
+}
+
+// restrictedContainers enables/disables Rsync options that
+// require privileged containers
+type restrictedContainers bool
+
+func (r restrictedContainers) ApplyTo(opts *rsynctransfer.CommandOptions) error {
+	opts.Groups = bool(!r)
+	opts.Owners = bool(!r)
+	opts.DeviceFiles = bool(!r)
+	opts.SpecialFiles = bool(!r)
+	opts.Extras = append(
+		opts.Extras, "--omit-dir-times")
+	return nil
+}
+
+type verbose bool
+
+func (i verbose) ApplyTo(opts *rsynctransfer.CommandOptions) error {
+	opts.Info = []string{
+		"COPY", "DEL", "STATS2", "PROGRESS2",
 	}
 	return nil
 }
