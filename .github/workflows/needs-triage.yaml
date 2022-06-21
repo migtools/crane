@@ -1,0 +1,19 @@
+name: Needs Triage
+
+on:
+  # At 0900 every weekday (Monday-Friday)
+  schedule:
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  needs-triage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Needs Triage
+        id: create
+        uses: konveyor/github-actions/gh-issue-slack-digest@main
+        with:
+          slackWebhookUrl: ${{ secretes.SLACK_WEBHOOK_URL }}
+          messageHeader: "Issues needing triage konveyor/crane"
+          hasLabels: "needs-triage"
