@@ -9,6 +9,9 @@ on:
       - closed
       - labeled
 
+concurrency:
+  group: '${{ github.action }}'
+
 jobs:
   reconcile-issue:
     runs-on: ubuntu-latest
