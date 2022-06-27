@@ -109,8 +109,8 @@ github.com/armon/go-radix v0.0.0-20180808171621-7fddfc383310/go.mod h1:ufUuZ+zHj
 github.com/asaskevich/govalidator v0.0.0-20180720115003-f9ffefc3facf/go.mod h1:lB+ZfQJz7igIIfQNfa7Ml4HSf2uFQQRzpGGRXenZAgY=
 github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a/go.mod h1:lB+ZfQJz7igIIfQNfa7Ml4HSf2uFQQRzpGGRXenZAgY=
 github.com/aws/aws-sdk-go v1.28.2/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
-github.com/backube/pvc-transfer v0.0.0-20220518210940-48f0bf5cfa9b h1:EFdPRFEZQxlgrkcC8SpXnhbF9q/mqh2Tn7QPb2j5iGE=
-github.com/backube/pvc-transfer v0.0.0-20220518210940-48f0bf5cfa9b/go.mod h1:pkCOc4hLmDHNAqgZGOypDcaHEi2dGgjqP9jMshlNvYw=
+github.com/backube/pvc-transfer v0.0.0-20220627130016-a6f2935d73ac h1:CJwR7ZxVGiiFYSaWrkrgzB1BXlW3LSVTCb1ImEl0BbQ=
+github.com/backube/pvc-transfer v0.0.0-20220627130016-a6f2935d73ac/go.mod h1:pkCOc4hLmDHNAqgZGOypDcaHEi2dGgjqP9jMshlNvYw=
 github.com/benbjohnson/clock v1.0.3/go.mod h1:bGMdMPoPVvcYyt1gHDf4J2KE153Yf9BuiUKYMaxlTDM=
 github.com/benbjohnson/clock v1.1.0 h1:Q92kusRqC1XV2MjkWETPvjJVqKetz1OzxZB7mHJLju8=
 github.com/benbjohnson/clock v1.1.0/go.mod h1:J11/hYXuz8f4ySSvYwY0FKfm+ezbsZBKZxNJlLklBHA=
