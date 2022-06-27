@@ -9,7 +9,9 @@ on:
       - closed
       - labeled
 
-concurrency: '${{ github.workflow }}'
+concurrency:
+  group: ${{ github.event.issue.number }}
+  cancel-in-progress: true
 
 jobs:
   reconcile-issue:
