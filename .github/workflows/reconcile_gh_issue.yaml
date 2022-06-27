@@ -9,8 +9,7 @@ on:
       - closed
       - labeled
 
-concurrency:
-  group: '${{ github.action }}'
+concurrency: '${{ github.action }}'
 
 jobs:
   reconcile-issue:
