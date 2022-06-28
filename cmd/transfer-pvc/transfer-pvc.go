@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"crypto/md5"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -306,7 +307,7 @@ func (t *TransferPVCCommand) run() error {
 	labels := map[string]string{
 		"app.kubernetes.io/name":          "crane",
 		"app.kubernetes.io/component":     "transfer-pvc",
-		"app.konveyor.io/created-for-pvc": srcPVC.Name,
+		"app.konveyor.io/created-for-pvc": fmt.Sprintf("source-pvc-%x", md5.Sum([]byte(srcPVC.Name))),
 	}
 
 	e, err := createEndpoint(t.Endpoint, destPVC, labels, logger, destClient)
@@ -323,7 +324,7 @@ func (t *TransferPVCCommand) run() error {
 		destClient,
 		logger,
 		types.NamespacedName{
-			Name:      destPVC.Name,
+			Name:      fmt.Sprintf("stunnel-server-%x", md5.Sum([]byte(destPVC.Name))),
 			Namespace: destPVC.Namespace,
 		}, e, &transport.Options{
 			Labels: labels,
@@ -365,7 +366,7 @@ func (t *TransferPVCCommand) run() error {
 		srcClient,
 		logger,
 		types.NamespacedName{
-			Name:      srcPVC.Name,
+			Name:      fmt.Sprintf("stunnel-client-%x", md5.Sum([]byte(srcPVC.Name))),
 			Namespace: srcPVC.Namespace,
 		}, e.Hostname(), e.IngressPort(), &transport.Options{
 			Labels: labels,
@@ -625,7 +626,7 @@ func createEndpoint(
 			context.TODO(), destClient, logger,
 			types.NamespacedName{
 				Namespace: pvc.Namespace,
-				Name:      pvc.Name,
+				Name:      fmt.Sprintf("pvc-transfer-ingress-%x", md5.Sum([]byte(pvc.Name))),
 			}, &endpointFlags.IngressClass,
 			endpointFlags.Subdomain,
 			labels, annotations, nil)
@@ -639,7 +640,7 @@ func createEndpoint(
 			context.TODO(), destClient, logger,
 			types.NamespacedName{
 				Namespace: pvc.Namespace,
-				Name:      pvc.Name,
+				Name:      fmt.Sprintf("pvc-transfer-route-%x", md5.Sum([]byte(pvc.Name))),
 			}, routeendpoint.EndpointTypePassthrough,
 			labels, nil)
 		return e, err
