@@ -1,4 +1,4 @@
-name: Build and test Go
+name: Build and test Go with 1.17
 on: [push, pull_request]
 jobs:
   build:
