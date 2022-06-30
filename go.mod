@@ -10,7 +10,7 @@ require (
 	github.com/jarcoal/httpmock v1.0.8
 	github.com/konveyor/crane-lib v0.0.7
 	github.com/mitchellh/mapstructure v1.4.1
-	github.com/olekukonko/tablewriter v0.0.0-20170122224234-a0225b3f23b5
+	github.com/olekukonko/tablewriter v0.0.4
 	github.com/openshift/api v0.0.0-20210625082935-ad54d363d274
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.2.1
@@ -24,5 +24,8 @@ require (
 	k8s.io/cli-runtime v0.22.2
 	k8s.io/client-go v0.22.2
 	sigs.k8s.io/controller-runtime v0.10.1
+	sigs.k8s.io/kustomize/api v0.11.5 // indirect
+	sigs.k8s.io/kustomize/cmd/config v0.10.7
+	sigs.k8s.io/kustomize/kyaml v0.13.7
 	sigs.k8s.io/yaml v1.3.0
 )
