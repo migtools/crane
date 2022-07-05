@@ -5,12 +5,15 @@ on:
     types:
       - opened
       - edited
-      - reopened
       - closed
+      - reopened
       - labeled
+      - unlabeled
 
+# This prevents potential race conditions by only allowing this action to handle
+# one update at a time for a given issue.
 concurrency:
-  group: ${{ github.event.issue.number }}
+  group: reconcile-issue-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
@@ -18,6 +21,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: needs-triage
+        uses: konveyor/github-actions/require-matching-label@main
+        with:
+          missingComment: |
+            This issue is currently awaiting triage.
+            If contributors determine this is a relevant issue, they will accept it by applying the `triage/accepted` label and provide further guidance.
+            The `triage/accepted` label can be added by org members by writing `/triage accepted` in a comment.
+          missingLabel: "needs-triage"
+          regexp: "^triage/accepted$"
+
+      - name: needs-kind
+        uses: konveyor/github-actions/require-matching-label@main
+        with:
+          missingLabel: "needs-kind"
+          regexp: "^kind/"
+
+      - name: needs-priority
+        uses: konveyor/github-actions/require-matching-label@main
+        with:
+          missingLabel: "needs-priority"
+          regexp: "^priority/"
 
       - name: Reconcile Issue
         id: create

@@ -3,7 +3,7 @@ module github.com/konveyor/crane
 go 1.17
 
 require (
-	github.com/backube/pvc-transfer v0.0.0-20220627130016-a6f2935d73ac
+	github.com/backube/pvc-transfer v0.0.0-20220630152016-a4525b00109d
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.2.3
 	github.com/go-logr/zapr v1.2.3
