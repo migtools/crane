@@ -2,6 +2,7 @@ package transfer_pvc
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -251,6 +253,13 @@ func (t *TransferPVCCommand) getClientFromContext(ctx string) (client.Client, er
 		return nil, err
 	}
 
+	if t.Endpoint.Type == endpointRoute {
+		err = configv1.AddToScheme(scheme.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return client.New(restConfig, client.Options{Scheme: scheme.Scheme})
 }
 
@@ -306,7 +315,7 @@ func (t *TransferPVCCommand) run() error {
 	labels := map[string]string{
 		"app.kubernetes.io/name":          "crane",
 		"app.kubernetes.io/component":     "transfer-pvc",
-		"app.konveyor.io/created-for-pvc": srcPVC.Name,
+		"app.konveyor.io/created-for-pvc": getValidatedResourceName(srcPVC.Name),
 	}
 
 	e, err := createEndpoint(t.Endpoint, destPVC, labels, logger, destClient)
@@ -323,7 +332,7 @@ func (t *TransferPVCCommand) run() error {
 		destClient,
 		logger,
 		types.NamespacedName{
-			Name:      destPVC.Name,
+			Name:      getValidatedResourceName(destPVC.Name),
 			Namespace: destPVC.Namespace,
 		}, e, &transport.Options{
 			Labels: labels,
@@ -365,7 +374,7 @@ func (t *TransferPVCCommand) run() error {
 		srcClient,
 		logger,
 		types.NamespacedName{
-			Name:      srcPVC.Name,
+			Name:      getValidatedResourceName(srcPVC.Name),
 			Namespace: srcPVC.Namespace,
 		}, e.Hostname(), e.IngressPort(), &transport.Options{
 			Labels: labels,
@@ -423,6 +432,16 @@ func (t *TransferPVCCommand) run() error {
 	log.Println("followed the logs, garbage collecting created resources on both source and destination")
 
 	return garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace)
+}
+
+// getValidatedResourceName returns a name for resources
+// created by the command such that they don't fail validations
+func getValidatedResourceName(name string) string {
+	if len(name) < 63 {
+		return name
+	} else {
+		return fmt.Sprintf("crane-%x", md5.Sum([]byte(name)))
+	}
 }
 
 // getNodeNameForPVC returns name of the node on which the PVC is currently mounted on
@@ -625,7 +644,7 @@ func createEndpoint(
 			context.TODO(), destClient, logger,
 			types.NamespacedName{
 				Namespace: pvc.Namespace,
-				Name:      pvc.Name,
+				Name:      getValidatedResourceName(pvc.Name),
 			}, &endpointFlags.IngressClass,
 			endpointFlags.Subdomain,
 			labels, annotations, nil)
@@ -635,17 +654,39 @@ func createEndpoint(
 		if err != nil {
 			return nil, err
 		}
+		resourceName := types.NamespacedName{
+			Namespace: pvc.Namespace,
+			Name:      getValidatedResourceName(pvc.Name),
+		}
+		hostname, err := getRouteHostName(destClient, resourceName)
+		if err != nil {
+			return nil, err
+		}
 		e, err := routeendpoint.New(
 			context.TODO(), destClient, logger,
-			types.NamespacedName{
-				Namespace: pvc.Namespace,
-				Name:      pvc.Name,
-			}, routeendpoint.EndpointTypePassthrough,
-			labels, nil)
+			resourceName, routeendpoint.EndpointTypePassthrough,
+			hostname, labels, nil)
 		return e, err
 	default:
 		return nil, fmt.Errorf("unrecognized endpoint type")
 	}
+}
+
+// getRouteHostName returns a hostname for Route created by the subcommand
+func getRouteHostName(client client.Client, namespacedName types.NamespacedName) (*string, error) {
+	routeNamePrefix := fmt.Sprintf("%s-%s", namespacedName.Name, namespacedName.Namespace)
+	// if route prefix is within limits, default hostname can be used
+	if len(routeNamePrefix) <= 62 {
+		return nil, nil
+	}
+	// if route prefix exceeds limits, a custom hostname will be provided
+	ingressConfig := &configv1.Ingress{}
+	err := client.Get(context.TODO(), types.NamespacedName{Name: "cluster"}, ingressConfig)
+	if err != nil {
+		return nil, err
+	}
+	hostname := fmt.Sprintf("%s.%s", routeNamePrefix[:62], ingressConfig.Spec.Domain)
+	return &hostname, nil
 }
 
 // buildDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster
