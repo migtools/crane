@@ -8,11 +8,11 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/yaml"
 	"strings"
 
-	"github.com/konveyor/crane/cmd/run-function/runfn"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/kustomize/cmd/config/runner"
 	"sigs.k8s.io/kustomize/kyaml/errors"
 	"sigs.k8s.io/kustomize/kyaml/fn/runtime/runtimeutil"
+	"sigs.k8s.io/kustomize/kyaml/runfn"
 )
 
 type Options struct {
@@ -62,8 +62,7 @@ func (o *Options) runE(c *cobra.Command, _ []string) error {
 	if err := WriteOutput(o.TransformDir, o.TransformedContent.String()); err != nil {
 		return err
 	}
-	fmt.Println("Function run successfully!")
-	fmt.Println("Transformed resources are written to", o.TransformDir)
+	fmt.Println("Transformed resources are written to:", o.TransformDir)
 	return nil
 }
 
@@ -89,12 +88,7 @@ func (o *Options) preRunE(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	fnSpec, err := o.getFunctionSpec()
-	if err != nil {
-		return err
-	}
-
-	fnConfig, err := o.getFunctionConfig(fnArgs)
+	fns, err := o.getContainerFunctions(fnArgs)
 	if err != nil {
 		return err
 	}
@@ -105,11 +99,10 @@ func (o *Options) preRunE(c *cobra.Command, args []string) error {
 	output = &o.TransformedContent
 
 	o.RunFns = runfn.RunFns{
-		Path:     o.ExportDir,
-		Output:   output,
-		Function: fnSpec,
-		FnConfig: fnConfig,
-		Env:      o.Env,
+		Path:      o.ExportDir,
+		Output:    output,
+		Functions: fns,
+		Env:       o.Env,
 	}
 	return nil
 }
@@ -125,20 +118,55 @@ func getFunctionImage(args []string) (string, error) {
 	}
 }
 
-func (o *Options) getFunctionSpec() (*runtimeutil.FunctionSpec, error) {
-	fn := &runtimeutil.FunctionSpec{}
+// getContainerFunctions parses the commandline flags and arguments into explicit
+// Functions to run.
+func (o *Options) getContainerFunctions(dataItems []string) ([]*yaml.RNode, error) {
+	res, err := getFunctionConfig(dataItems)
+	if err != nil {
+		return nil, err
+	}
+
+	// create the function spec to set as an annotation
+	fnAnnotation, err := o.getFunctionAnnotation()
+
+	if err != nil {
+		return nil, err
+	}
+
+	// set the function annotation on the function config, so that it is parsed by RunFns
+	value, err := fnAnnotation.String()
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	if err = res.PipeE(
+		yaml.LookupCreate(yaml.MappingNode, "metadata", "annotations"),
+		yaml.SetField(runtimeutil.FunctionAnnotationKey, yaml.NewScalarRNode(value))); err != nil {
+		return nil, errors.Wrap(err)
+	}
+
+	return []*yaml.RNode{res}, nil
+}
+
+func (o *Options) getFunctionAnnotation() (*yaml.RNode, error) {
 	if err := ValidateFunctionImageURL(o.Image); err != nil {
 		return nil, err
 	}
-	fn.Container.Image = o.Image
-	fn.Container.Env = o.Env
+
+	fn, err := yaml.Parse(`container: {}`)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+
+	if err = fn.PipeE(
+		yaml.Lookup("container"),
+		yaml.SetField("image", yaml.NewScalarRNode(o.Image))); err != nil {
+		return nil, errors.Wrap(err)
+	}
 	return fn, nil
 }
 
 // getFunctionConfig parses the commandline flags and arguments into explicit function config
-func (o *Options) getFunctionConfig(fnArgs []string) (*yaml.RNode, error) {
-	var err error
-
+func getFunctionConfig(fnArgs []string) (*yaml.RNode, error) {
 	// create the function config
 	rc, err := yaml.Parse(`
 metadata:
@@ -160,8 +188,13 @@ data: {}
 		if err != nil {
 			return nil, err
 		}
-		for _, s := range fnArgs {
+		for i, s := range fnArgs {
 			kv := strings.SplitN(s, "=", 2)
+			if i == 0 && len(kv) == 1 {
+				// first argument may be the kind
+				kind = s
+				continue
+			}
 			if len(kv) != 2 {
 				return nil, fmt.Errorf("args must have keys and values separated by =")
 			}
@@ -174,12 +207,10 @@ data: {}
 			}
 		}
 	}
-	err = rc.PipeE(yaml.SetField("kind", yaml.NewScalarRNode(kind)))
-	if err != nil {
+	if err = rc.PipeE(yaml.SetField("kind", yaml.NewScalarRNode(kind))); err != nil {
 		return nil, err
 	}
-	err = rc.PipeE(yaml.SetField("apiVersion", yaml.NewScalarRNode(version)))
-	if err != nil {
+	if err = rc.PipeE(yaml.SetField("apiVersion", yaml.NewScalarRNode(version))); err != nil {
 		return nil, err
 	}
 	return rc, nil
