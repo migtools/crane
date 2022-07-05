@@ -54,7 +54,7 @@ func GetDestinationDir(outDir string) (string, error) {
 //	path-component                  := alpha-numeric [separator alpha-numeric]*
 // 	alpha-numeric                   := /[a-z0-9]+/
 //	separator                       := /[_.]|__|[-]*/
-//https://github.com/GoogleContainerTools/kpt/blob/main/pkg/api/kptfile/v1/validation.go#L120-L150
+//https://github.com/GoogleContainerTools/kpt/blob/main/pkg/api/kptfile/v1/validation.go
 func ValidateFunctionImageURL(name string) error {
 	pathComponentRegexp := `(?:[a-z0-9](?:(?:[_.]|__|[-]*)[a-z0-9]+)*)`
 	domainComponentRegexp := `(?:[a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9])`
