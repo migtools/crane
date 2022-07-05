@@ -1,4 +1,4 @@
-package run_function
+package runfn
 
 import (
 	"fmt"

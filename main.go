@@ -6,7 +6,7 @@ import (
 	"github.com/konveyor/crane/cmd/apply"
 	export "github.com/konveyor/crane/cmd/export"
 	plugin_manager "github.com/konveyor/crane/cmd/plugin-manager"
-	"github.com/konveyor/crane/cmd/run-function"
+	"github.com/konveyor/crane/cmd/runfn"
 	transfer_pvc "github.com/konveyor/crane/cmd/transfer-pvc"
 	"github.com/konveyor/crane/cmd/transform"
 	tunnel_api "github.com/konveyor/crane/cmd/tunnel-api"
@@ -29,7 +29,7 @@ func main() {
 	root.AddCommand(apply.NewApplyCommand(f))
 	root.AddCommand(plugin_manager.NewPluginManagerCommand(f))
 	root.AddCommand(version.NewVersionCommand(f))
-	root.AddCommand(run_function.NewFnRunCommand(f))
+	root.AddCommand(runfn.NewFnRunCommand(f))
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
