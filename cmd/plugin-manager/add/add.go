@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"golang.org/x/mod/semver"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
@@ -130,54 +129,34 @@ func (o *Options) run(args []string) error {
 		installVersion = o.Version
 	}
 
-	switch {
-	case len(manifestMap) > 1:
+	if len(manifestMap) == 0 {
+		log.Errorf(fmt.Sprintf("The plugin %s is not found", args[0]))
+		fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
+		return nil
+	}
+
+	if len(manifestMap) > 1 {
 		// if the plugin is found across multiple repository then fail and ask for a specific repo
 		// TODO: if the version is mentioned look for a plugin with the same version, if found in only one repo add the same else fail and ask for the repo
 		log.Errorf(fmt.Sprintf("The plugin %s is found across multiple repos, please specify one repo with --repo flag", args[0]))
-	case len(manifestMap) == 1:
-		// the plugin is found in only one repo
-		for repo, pluginsMap := range manifestMap {
-			switch {
-			// install the only available version of the plugin
-			case len(pluginsMap[args[0]]) == 1:
-				for _, value := range pluginsMap[args[0]] {
-					// check if the version is mentioned and matches the version in pluginsMap file
-					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
-						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
-					} else {
-						log.Errorf(fmt.Sprintf("The version %s of plugin %s is not available", installVersion, value.Name))
-						fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
-					}
-				}
-			case len(pluginsMap[args[0]]) > 1:
-				// if there are multiple version of the plugins are available then look for the latest or mentioned version and if not found fail and ask user to input a version using --version flag
-				if installVersion == "" {
-					availableVersions := []string{}
-					for _, value := range pluginsMap[args[0]] {
-						availableVersions = append(availableVersions, string(value.Version))
-					}
-					semver.Sort(availableVersions)
-					installVersion = availableVersions[len(availableVersions) - 1]
-				}
-				for _, value := range pluginsMap[args[0]] {
-					if string(value.Version) == installVersion {
-						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
-					}
-				}
-				log.Errorf(fmt.Sprintf("The %s version of the plugin %s is not found", installVersion, args[0]))
-				fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
-			default:
-				// throw error saying that the plugin doest exists
-				log.Errorf(fmt.Sprintf("The plugin %s is not found", args[0]))
-				fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
-			}
-		}
-	default:
-		// throw error saying that the plugin doest exists
-		log.Errorf(fmt.Sprintf("The plugin %s is not found", args[0]))
-		fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
 	}
+
+	// here we iterate over the repos even there should only be one
+	for repo, plugins := range manifestMap {
+		// TODO(djzager): How should we handle the unlikely scenario where there are two plugins with the same name?
+		// for right now what we do here is pick the first one.
+		plug := plugins[0]
+		pluginVersion, err := plug.GetVersion(installVersion)
+		if err != nil {
+			log.Error(err, "Failed to download plugin")
+			return err
+		}
+		// TODO(djzager): currently this relies on magic from plugin.YamlToPlugin
+		// the modifies the slice of binaries such that there is only ever one
+		// binary...the one matching our arch/os. Should likely make this more explicit
+		return downloadBinary(o.ManagedPluginDir() + "/" + repo, plug.Name(), pluginVersion.Binaries[0].URI, log)
+	}
+
 	return nil
 }
 
