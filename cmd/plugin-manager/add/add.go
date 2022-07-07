@@ -10,12 +10,12 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"golang.org/x/mod/semver"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/mod/semver"
 )
 
 type Options struct {
@@ -158,7 +158,7 @@ func (o *Options) run(args []string) error {
 						availableVersions = append(availableVersions, string(value.Version))
 					}
 					semver.Sort(availableVersions)
-					installVersion = availableVersions[len(availableVersions) - 1]
+					installVersion = availableVersions[len(availableVersions)-1]
 				}
 				for _, value := range pluginsMap[args[0]] {
 					if string(value.Version) == installVersion {
@@ -175,8 +175,8 @@ func (o *Options) run(args []string) error {
 		}
 	default:
 		// throw error saying that the plugin doest exists
-		log.Errorf(fmt.Sprintf("The plugin %s is not found", args[0]))
 		fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
+		return errors.New(fmt.Sprintf("The plugin %s is not found", args[0]))
 	}
 	return nil
 }
