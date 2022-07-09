@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
-	"io"
 	"log"
 	random "math/rand"
-	"os"
 	"strings"
 	"time"
 
@@ -28,7 +26,6 @@ import (
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -651,65 +648,6 @@ func deleteResourcesForGVK(c client.Client, gvk []client.Object, labels map[stri
 		}
 	}
 	return nil
-}
-
-func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string, labels map[string]string) error {
-	clientPod := &corev1.Pod{}
-
-	err := wait.PollUntil(time.Second, func() (done bool, err error) {
-		clientPodList := &corev1.PodList{}
-
-		err = c.List(context.Background(), clientPodList, client.InNamespace(namespace), client.MatchingLabels(labels))
-		if err != nil {
-			return false, err
-		}
-
-		if len(clientPodList.Items) != 1 {
-			log.Printf("expected 1 client pod found %d, with labels %v\n", len(clientPodList.Items), labels)
-			return false, nil
-		}
-
-		clientPod = &clientPodList.Items[0]
-
-		for _, containerStatus := range clientPod.Status.ContainerStatuses {
-			if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode == 0 {
-				log.Printf("container %s in pod %s completed successfully", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
-				break
-			}
-			if !containerStatus.Ready {
-				log.Println(fmt.Errorf("container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name}))
-				return false, nil
-			}
-		}
-		return true, nil
-	}, make(<-chan struct{}))
-	if err != nil {
-		return err
-	}
-
-	clienset, err := kubernetes.NewForConfig(srcConfig)
-	if err != nil {
-		return err
-	}
-
-	podLogsRequest := clienset.CoreV1().Pods(namespace).GetLogs(clientPod.Name, &corev1.PodLogOptions{
-		TypeMeta:  metav1.TypeMeta{},
-		Container: "rsync",
-		Follow:    true,
-	})
-
-	reader, err := podLogsRequest.Stream(context.Background())
-	if err != nil {
-		return err
-	}
-
-	defer reader.Close()
-	_, err = io.Copy(os.Stdout, reader)
-	if err != nil {
-		return err
-	}
-
-	return err
 }
 
 // waitForEndpoint waits for endpoint to become ready
