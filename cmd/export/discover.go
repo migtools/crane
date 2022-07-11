@@ -124,7 +124,7 @@ func getFilePath(obj unstructured.Unstructured) string {
 	return strings.Join([]string{obj.GetKind(), namespace, obj.GetName()}, "_") + ".yaml"
 }
 
-func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger, iterateByGet bool) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -161,7 +161,7 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 				APIResource:     resource,
 			}
 
-			objs, err := getObjects(g, namespace, dynamicClient, log)
+			objs, err := getObjects(g, namespace, dynamicClient, log, iterateByGet)
 			if err != nil {
 				switch {
 				case apierrors.IsForbidden(err):
@@ -191,7 +191,7 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 	return resources, errors
 }
 
-func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger logrus.FieldLogger, iterateByGet bool) (*unstructured.UnstructuredList, error) {
 	c := d.Resource(schema.GroupVersionResource{
 		Group:    g.APIGroup,
 		Version:  g.APIVersion,
@@ -209,7 +209,8 @@ func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger 
 	if err != nil {
 		return nil, err
 	}
-	if g.APIResource.Name == "imagestreamtags" || g.APIResource.Name == "imagetags" {
+	if iterateByGet && (g.APIResource.Name == "imagestreamtags" || g.APIResource.Name == "imagetags") {
+		logger.Infof("iterating through %v by get, this could take some time", g.APIResource.Name)
 		unstructuredList, err := iterateItemsByGet(c, g, list, namespace, logger)
 		if err != nil {
 			return nil, err

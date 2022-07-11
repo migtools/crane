@@ -29,6 +29,7 @@ type ExportOptions struct {
 	rawConfig              api.Config
 	exportDir              string
 	userSpecifiedNamespace string
+	iterateByGet           bool
 	asExtras               string
 	extras                 map[string][]string
 
@@ -123,7 +124,7 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, dynamicClient, discoveryHelper.Resources(), log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, dynamicClient, discoveryHelper.Resources(), log, o.iterateByGet)
 
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace), log)
@@ -175,6 +176,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
+	cmd.Flags().BoolVar(&o.iterateByGet, "iterate-by-get", true, "Whether to iterate resources via Get calls instead of just List. Responses to Get requests on resources like ImageStreamTags and ImageTags have more information than List, but iterating this way takes significantly longer. Set this to false to speed up export if, for example, you are not interested in the ImageStreamTags or ImageTags.")
 	o.configFlags.AddFlags(cmd.Flags())
 
 	return cmd
