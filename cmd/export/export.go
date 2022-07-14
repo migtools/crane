@@ -31,6 +31,8 @@ type ExportOptions struct {
 	userSpecifiedNamespace string
 	asExtras               string
 	extras                 map[string][]string
+	QPS                    float32
+	Burst                  int
 
 	genericclioptions.IOStreams
 }
@@ -110,6 +112,8 @@ func (o *ExportOptions) Run() error {
 
 	// user/group impersonation is handled from genericclioptions.ConfigFlags
 	restConfig.Impersonate.Extra = o.extras
+	restConfig.Burst = o.Burst
+	restConfig.QPS = o.QPS
 
 	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 
@@ -175,6 +179,8 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
+	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
+	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
 	o.configFlags.AddFlags(cmd.Flags())
 
 	return cmd
