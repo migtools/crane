@@ -406,7 +406,11 @@ func (t *TransferPVCCommand) run() error {
 				Capabilities: &corev1.Capabilities{
 					Drop: []corev1.Capability{"ALL"},
 				},
-				RunAsNonRoot: &trueBool,
+				RunAsNonRoot:             &trueBool,
+				AllowPrivilegeEscalation: &falseBool,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
 			},
 			PodSecurityContext: corev1.PodSecurityContext{
 				FSGroup: serverPodSecContext.FSGroup,
@@ -451,8 +455,9 @@ func (t *TransferPVCCommand) run() error {
 				Capabilities: &corev1.Capabilities{
 					Drop: []corev1.Capability{"ALL"},
 				},
-				RunAsNonRoot: &trueBool,
-				RunAsUser:    clientPodSecCtx.RunAsUser,
+				RunAsNonRoot:             &trueBool,
+				RunAsUser:                clientPodSecCtx.RunAsUser,
+				AllowPrivilegeEscalation: &falseBool,
 			},
 			PodSecurityContext: corev1.PodSecurityContext{
 				FSGroup: clientPodSecCtx.FSGroup,
