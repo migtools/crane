@@ -91,13 +91,15 @@ func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
+	home := os.Getenv("HOME")
+	defaultPluginDir := home + plugin.DefaultLocalPluginDir
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringSliceVar(&o.PluginPriorities, "plugin-priorities", nil, "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
 	cmd.Flags().StringToStringVar(&o.OptionalFlags, "optional-flags", nil, "A comma-separated list of flag-name=value pairs. These flags with values will be passed into all plugins that are executed in the transform operation. Note that for array/slice or map-valued parameters, placing double quotes around the <paramName>=<paramValue> pair is required. In addition, if any map or slice params are included, the entire param list must be enclosed in single quotes. (ie. '\"foo-flag=foo-a=/data,foo-b=/data\",bar-flag=bar-value')")
 	// These flags pass down to subcommands
-	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins", "The path where binary plugins are located")
+	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", defaultPluginDir, "The path where binary plugins are located")
 	cmd.PersistentFlags().StringSliceVarP(&o.SkipPlugins, "skip-plugins", "s", nil, "A comma-separated list of plugins to skip")
 
 }
