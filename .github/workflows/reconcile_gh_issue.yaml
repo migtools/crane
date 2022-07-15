@@ -51,4 +51,5 @@ jobs:
           jiraBaseUrl: https://issues.redhat.com
           jiraToken: ${{ secrets.JIRA_API_TOKEN }}
           jiraProject: MTRHO
+          requireMissingLabels: needs-triage, needs-kind, needs-priority
           additionalLabels: community

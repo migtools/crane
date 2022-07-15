@@ -11,13 +11,14 @@ require (
 	github.com/konveyor/crane-lib v0.0.7
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/openshift/api v0.0.0-20210625082935-ad54d363d274
+	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
+	github.com/openshift/library-go v0.0.0-20220704153411-3ea4b775d418
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.12.0
 	github.com/vmware-tanzu/velero v1.6.3
 	go.uber.org/zap v1.21.0
-	golang.org/x/mod v0.5.1
+	golang.org/x/mod v0.6.0-dev.0.20220106191415-9b9b3d81d5e3
 	gotest.tools/v3 v3.0.3
 	k8s.io/api v0.24.2
 	k8s.io/apimachinery v0.24.2
