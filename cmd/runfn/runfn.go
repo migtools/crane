@@ -36,7 +36,8 @@ func NewFnRunCommand(f *flags.GlobalFlags) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:          "runfn [IMAGE] [flags] [--args]",
-		Short:        "Transform resources by executing function \nExperimental: This command is under active development and may change without notice.",
+		Long:         "Transform resources by executing KRM function \n\nExperimental: This command is under active development and may change without notice.",
+		Short:        "Transform resources by executing KRM function",
 		RunE:         o.runE,
 		PreRunE:      o.preRunE,
 		SilenceUsage: true,
