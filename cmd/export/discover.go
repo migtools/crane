@@ -121,10 +121,10 @@ func getFilePath(obj unstructured.Unstructured) string {
 	if namespace == "" {
 		namespace = "clusterscoped"
 	}
-	return strings.Join([]string{obj.GetKind(), namespace, obj.GetName()}, "_") + ".yaml"
+	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
 }
 
-func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, apiGroups []metav1.APIGroup, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -174,6 +174,16 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 					log.Errorf("error listing objects: %#v, groupVersion %s, kind: %s\n", err, g.APIGroupVersion, g.APIResource.Kind)
 				}
 				errors = append(errors, &groupResourceError{resource, err})
+				continue
+			}
+
+			preferred := false
+			for _, a := range apiGroups {
+				if a.Name == gv.Group && a.PreferredVersion.Version == gv.Version {
+					preferred = true
+				}
+			}
+			if !preferred {
 				continue
 			}
 
