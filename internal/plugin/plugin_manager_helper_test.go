@@ -8,7 +8,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/jarcoal/httpmock"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 func TestGetYamlFromUrlWithUrl(t *testing.T) {
