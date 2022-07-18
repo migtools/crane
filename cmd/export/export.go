@@ -9,6 +9,7 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 	"github.com/vmware-tanzu/velero/pkg/discovery"
 	"github.com/vmware-tanzu/velero/pkg/features"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
@@ -118,6 +119,7 @@ func (o *ExportOptions) Run() error {
 	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 
 	features.NewFeatureFlagSet()
+	features.Enable(velerov1api.APIGroupVersionsFeatureFlag)
 
 	discoveryHelper, err := discovery.NewHelper(discoveryClient, log)
 	if err != nil {
@@ -127,7 +129,7 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, dynamicClient, discoveryHelper.Resources(), log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
 
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace), log)
