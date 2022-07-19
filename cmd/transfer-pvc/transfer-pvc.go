@@ -71,6 +71,8 @@ type Flags struct {
 	Endpoint           EndpointFlags
 	SourceContext      string
 	DestinationContext string
+	SourceImage        string
+	DestinationImage   string
 	Verify             bool
 	RsyncFlags         []string
 }
@@ -169,6 +171,9 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams) *cobra.Command {
 func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.SourceContext, "source-context", "", "Name of the source context in current kubeconfig")
 	cmd.Flags().StringVar(&c.DestinationContext, "destination-context", "", "Name of the destination context in current kubeconfig")
+	cmd.Flags().StringVar(&c.SourceImage, "source-image", "", "The container image to use on the source cluster. Defaults to quay.io/konveyor/esync-transfer:latest")
+	cmd.Flags().StringVar(&c.DestinationImage, "destination-image", "", "The container image to use on the destination cluster. Defaults to quay.io/konveyor/rsync-transfer:latest")
+
 	cmd.Flags().Var(&c.PVC.Name, "pvc-name", "Name of the PVC to be transferred. Optionally, source name can be mapped to a different destination name in format <source>:<destination> ")
 	cmd.Flags().Var(&c.PVC.Namespace, "pvc-namespace", "Namespace of the PVC to be transferred. Optionally, source namespace can be mapped to a different destination namespace in format <source>:<destination>")
 	cmd.Flags().StringVar(&c.PVC.StorageClassName, "dest-storage-class", "", "Storage class for the destination PVC")
@@ -337,6 +342,7 @@ func (t *TransferPVCCommand) run() error {
 			Namespace: destPVC.Namespace,
 		}, e, &transport.Options{
 			Labels: labels,
+			Image:  t.Flags.DestinationImage,
 		})
 	if err != nil {
 		log.Fatal(err, "error creating stunnel server")
@@ -379,6 +385,7 @@ func (t *TransferPVCCommand) run() error {
 			Namespace: srcPVC.Namespace,
 		}, e.Hostname(), e.IngressPort(), &transport.Options{
 			Labels: labels,
+			Image:  t.Flags.DestinationImage,
 		},
 	)
 	if err != nil {
@@ -415,6 +422,7 @@ func (t *TransferPVCCommand) run() error {
 			PodSecurityContext: corev1.PodSecurityContext{
 				FSGroup: serverPodSecContext.FSGroup,
 			},
+			Image: t.Flags.DestinationImage,
 		},
 	)
 	if err != nil {
@@ -462,6 +470,7 @@ func (t *TransferPVCCommand) run() error {
 			PodSecurityContext: corev1.PodSecurityContext{
 				FSGroup: clientPodSecCtx.FSGroup,
 			},
+			Image: t.Flags.SourceImage,
 		},
 	)
 	if err != nil {
