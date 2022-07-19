@@ -36,6 +36,7 @@ type Flags struct {
 	Repo      string `mapstructure:"repo"`
 	PluginDir string `mapstructure:"plugin-dir"`
 	Version   string `mapstructure:"version"`
+	Global    bool   `mapstructure:"global"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -49,7 +50,16 @@ func (o *Options) Validate(args []string) error {
 	if len(args) != 1 {
 		return errors.New("please input only one plugin name")
 	}
-	pluginDir, err := filepath.Abs(fmt.Sprintf("%v/%v", o.ManagedPluginDir(), o.Repo))
+
+	if o.Global {
+		if o.PluginDir == os.Getenv("HOME")+plugin.DefaultLocalPluginDir {
+			o.PluginDir = plugin.GlobalPluginDir
+		} else {
+			return errors.New("--plugin-dir and --global should not be used together.")
+		}
+	}
+
+	pluginDir, err := filepath.Abs(o.PluginDir)
 	if err != nil {
 		return err
 	}
@@ -62,7 +72,7 @@ func (o *Options) Validate(args []string) error {
 		return err
 	}
 
-	paths, err := plugin.LocateBinaryInPluginDir(o.ManagedPluginDir(), args[0], files)
+	paths, err := plugin.LocateBinaryInPluginDir(o.PluginDir, args[0], files)
 	if err != nil {
 		return err
 	}
@@ -115,6 +125,7 @@ func NewAddCommand(f *flags.GlobalFlags) *cobra.Command {
 
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.Version, "version", "", "", "Install specific plugin version (if not passed, installs latest plugin version or the only available one)")
+	cmd.Flags().BoolVar(&o.Global, "global", false, "Perform a global plugin install to /usr/local/share/crane/plugins")
 }
 
 func (o *Options) run(args []string) error {
@@ -137,14 +148,14 @@ func (o *Options) run(args []string) error {
 		log.Errorf(fmt.Sprintf("The plugin %s is found across multiple repos, please specify one repo with --repo flag", args[0]))
 	case len(manifestMap) == 1:
 		// the plugin is found in only one repo
-		for repo, pluginsMap := range manifestMap {
+		for _, pluginsMap := range manifestMap {
 			switch {
 			// install the only available version of the plugin
 			case len(pluginsMap[args[0]]) == 1:
 				for _, value := range pluginsMap[args[0]] {
 					// check if the version is mentioned and matches the version in pluginsMap file
 					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
-						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
+						return downloadBinary(o.PluginDir, value.Name, value.Binaries[0].URI, log)
 					} else {
 						log.Errorf(fmt.Sprintf("The version %s of plugin %s is not available", installVersion, value.Name))
 						fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
@@ -162,7 +173,7 @@ func (o *Options) run(args []string) error {
 				}
 				for _, value := range pluginsMap[args[0]] {
 					if string(value.Version) == installVersion {
-						return downloadBinary(fmt.Sprintf("%s/%s", o.ManagedPluginDir(), repo), value.Name, value.Binaries[0].URI, log)
+						return downloadBinary(o.PluginDir, value.Name, value.Binaries[0].URI, log)
 					}
 				}
 				log.Errorf(fmt.Sprintf("The %s version of the plugin %s is not found", installVersion, args[0]))
@@ -226,8 +237,4 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	}
 	log.Infof("pluginBinary %s added to the path - %s", filename, filepath)
 	return err
-}
-
-func (o *Options) ManagedPluginDir() string {
-	return fmt.Sprintf("%v/%v", o.PluginDir, plugin.MANAGED_DIR)
 }

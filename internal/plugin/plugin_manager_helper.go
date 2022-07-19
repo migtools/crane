@@ -18,7 +18,6 @@ const (
 	DEFAULT_REPO     = "default"
 	DEFAULT_REPO_URL = "DEFAULT_REPO_URL"
 	DEFAULT_URL      = "https://raw.githubusercontent.com/konveyor/crane-plugins/main/index.yaml"
-	MANAGED_DIR      = "managed"
 )
 
 // returns map containing the manifests with the key as name-version. Takes name and repo as input to filter accordingly
@@ -134,17 +133,7 @@ func LocateBinaryInPluginDir(pluginDir string, name string, files []os.FileInfo)
 
 	for _, file := range files {
 		filePath := fmt.Sprintf("%v/%v", pluginDir, file.Name())
-		if file.IsDir() {
-			newFiles, err := ioutil.ReadDir(filePath)
-			if err != nil {
-				return nil, err
-			}
-			plugins, err := LocateBinaryInPluginDir(filePath, name, newFiles)
-			if err != nil {
-				return nil, err
-			}
-			paths = append(paths, plugins...)
-		} else if file.Mode().IsRegular() && IsExecAny(file.Mode().Perm()) && file.Name() == name {
+		if file.Mode().IsRegular() && IsExecAny(file.Mode().Perm()) && file.Name() == name {
 			paths = append(paths, filePath)
 		}
 	}
