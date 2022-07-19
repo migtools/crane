@@ -4,11 +4,18 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	"github.com/konveyor/crane-lib/transform"
 	binary_plugin "github.com/konveyor/crane-lib/transform/binary-plugin"
 	"github.com/konveyor/crane-lib/transform/kubernetes"
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	DefaultLocalPluginDir = "/.local/share/crane/plugins"
+	GlobalPluginDir       = "/usr/local/share/crane/plugins"
+	PkgPluginDir          = "/usr/share/crane/plugins"
 )
 
 func GetPlugins(dir string, logger *logrus.Logger) ([]transform.Plugin, error) {
@@ -58,15 +65,37 @@ func IsExecAny(mode os.FileMode) bool {
 }
 
 func GetFilteredPlugins(pluginDir string, skipPlugins []string, logger *logrus.Logger) ([]transform.Plugin, error) {
-	var filteredPlugins []transform.Plugin
-	plugins, err := GetPlugins(pluginDir, logger)
+	var filteredPlugins, unfilteredPlugins []transform.Plugin
+	absPathPluginDir, err := filepath.Abs("plugins")
 	if err != nil {
 		return filteredPlugins, err
 	}
-	if len(skipPlugins) == 0 {
-		return plugins, nil
+
+	paths := []string{absPathPluginDir, pluginDir, GlobalPluginDir, PkgPluginDir}
+
+	for _, path := range paths {
+		plugins, err := GetPlugins(path, logger)
+		if err != nil {
+			return filteredPlugins, err
+		}
+		for _, newPlugin := range plugins {
+			exists := false
+			for _, plugin := range unfilteredPlugins {
+				if plugin.Metadata().Name == newPlugin.Metadata().Name {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				unfilteredPlugins = append(unfilteredPlugins, newPlugin)
+			}
+		}
 	}
-	for _, thisPlugin := range plugins {
+
+	if len(skipPlugins) == 0 {
+		return unfilteredPlugins, nil
+	}
+	for _, thisPlugin := range unfilteredPlugins {
 		if !isPluginInList(thisPlugin, skipPlugins) {
 			filteredPlugins = append(filteredPlugins, thisPlugin)
 		}

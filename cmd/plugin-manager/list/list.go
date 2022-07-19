@@ -100,11 +100,11 @@ func (o *Options) run() error {
 	if o.Installed {
 		// retrieve list of all the plugins that are installed within plugin dir
 		// TODO: differentiate between multiple repos
-		plugins, err := plugin.GetFilteredPlugins(o.ManagedPluginDir(), []string{}, log)
+		plugins, err := plugin.GetFilteredPlugins(o.PluginDir, []string{}, log)
 		if err != nil {
 			return err
 		}
-		fmt.Println(fmt.Sprintf("Listing plugins from path - %s, along with default plugin", o.ManagedPluginDir()))
+		fmt.Println(fmt.Sprintf("Listing plugins from path - %s, along with default plugin", o.PluginDir))
 		printInstalledInformation(plugins)
 		return nil
 	}
@@ -249,8 +249,4 @@ func printTable(data [][]string) {
 	table.SetAutoWrapText(false)
 	table.AppendBulk(data)
 	table.Render()
-}
-
-func (o *Options) ManagedPluginDir() string {
-	return fmt.Sprintf("%v/%v", o.PluginDir, plugin.MANAGED_DIR)
 }

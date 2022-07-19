@@ -1,10 +1,13 @@
 package plugin_manager
 
 import (
+	"os"
+
 	"github.com/konveyor/crane/cmd/plugin-manager/add"
 	"github.com/konveyor/crane/cmd/plugin-manager/list"
 	"github.com/konveyor/crane/cmd/plugin-manager/remove"
 	"github.com/konveyor/crane/internal/flags"
+	"github.com/konveyor/crane/internal/plugin"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -73,7 +76,10 @@ func NewPluginManagerCommand(f *flags.GlobalFlags) *cobra.Command {
 	return cmd
 }
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
-	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", "plugins", "The path where binary plugins are located")
+
+	home := os.Getenv("HOME")
+	defaultPluginDir := home + plugin.DefaultLocalPluginDir
+	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", defaultPluginDir, "The path where binary plugins are located")
 	cmd.PersistentFlags().StringVarP(&o.Repo, "repo", "", "", "The name of the repository from which to list the plugins from")
 }
 
