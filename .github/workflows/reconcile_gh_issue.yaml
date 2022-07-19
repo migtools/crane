@@ -53,3 +53,5 @@ jobs:
           jiraProject: MTRHO
           requireMissingLabels: needs-triage, needs-kind, needs-priority
           additionalLabels: community
+          addWatchers:
+            - ernelson@redhat.com
