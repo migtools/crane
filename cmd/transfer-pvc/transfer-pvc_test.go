@@ -1,6 +1,8 @@
 package transfer_pvc
 
-import "testing"
+import (
+	"testing"
+)
 
 func Test_parseSourceDestinationMapping(t *testing.T) {
 	tests := []struct {
