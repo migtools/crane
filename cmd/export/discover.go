@@ -124,7 +124,7 @@ func getFilePath(obj unstructured.Unstructured) string {
 	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
 }
 
-func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, apiGroups []metav1.APIGroup, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, apiGroups []metav1.APIGroup, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -161,7 +161,7 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 				APIResource:     resource,
 			}
 
-			objs, err := getObjects(g, namespace, dynamicClient, log)
+			objs, err := getObjects(g, namespace, labelSelector, dynamicClient, log)
 			if err != nil {
 				switch {
 				case apierrors.IsForbidden(err):
@@ -201,7 +201,7 @@ func resourceToExtract(namespace string, dynamicClient dynamic.Interface, lists 
 	return resources, errors
 }
 
-func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+func getObjects(g *groupResource, namespace string, labelSelector string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	c := d.Resource(schema.GroupVersionResource{
 		Group:    g.APIGroup,
 		Version:  g.APIVersion,
@@ -214,8 +214,12 @@ func getObjects(g *groupResource, namespace string, d dynamic.Interface, logger 
 	p := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
 		return c.Namespace(namespace).List(context.Background(), opts)
 	})
+	listOptions := metav1.ListOptions{}
+	if labelSelector != "" {
+		listOptions.LabelSelector = labelSelector
+	}
 
-	list, _, err := p.List(context.TODO(), metav1.ListOptions{})
+	list, _, err := p.List(context.TODO(), listOptions)
 	if err != nil {
 		return nil, err
 	}
