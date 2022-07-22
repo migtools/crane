@@ -11,13 +11,12 @@ import (
 	"strings"
 	"time"
 
+	logrusr "github.com/bombsimon/logrusr/v3"
 	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -28,7 +27,6 @@ import (
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -75,6 +73,7 @@ type Flags struct {
 	DestinationImage   string
 	Verify             bool
 	RsyncFlags         []string
+	ProgressOutput     string
 }
 
 // EndpointFlags defines command line flags specific
@@ -182,6 +181,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.Endpoint.Subdomain, "subdomain", "", "Subdomain to use for the ingress endpoint")
 	cmd.Flags().StringVar(&c.Endpoint.IngressClass, "ingress-class", "", "IngressClass to use for the ingress endpoint")
 	cmd.Flags().BoolVar(&c.Verify, "verify", false, "Enable checksum verification")
+	cmd.Flags().StringVar(&c.ProgressOutput, "output", "", "Write data transfer stats to specified output file")
 	cmd.MarkFlagRequired("source-context")
 	cmd.MarkFlagRequired("destination-context")
 	cmd.MarkFlagRequired("pvc-name")
@@ -277,12 +277,9 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 }
 
 func (t *TransferPVCCommand) run() error {
-	zaplog, err := zap.NewProduction()
-	if err != nil {
-		log.Fatal(err, "failed to initiate logger")
-	}
-
-	logger := zapr.NewLogger(zaplog)
+	logrusLog := logrus.New()
+	logrusLog.SetFormatter(&logrus.JSONFormatter{})
+	logger := logrusr.New(logrusLog).WithName("transfer-pvc")
 
 	srcCfg, err := t.getRestConfigFromContext(t.Flags.SourceContext)
 	if err != nil {
@@ -477,12 +474,11 @@ func (t *TransferPVCCommand) run() error {
 		log.Fatal(err, "failed to create rsync client")
 	}
 
-	err = followClientLogs(srcCfg, srcClient, t.PVC.Namespace.source, labels)
+	err = followClientLogs(
+		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, labels, t.ProgressOutput)
 	if err != nil {
 		log.Fatal(err, "error following rsync client logs")
 	}
-
-	log.Println("followed the logs, garbage collecting created resources on both source and destination")
 
 	return garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace)
 }
@@ -653,62 +649,42 @@ func deleteResourcesForGVK(c client.Client, gvk []client.Object, labels map[stri
 	return nil
 }
 
-func followClientLogs(srcConfig *rest.Config, c client.Client, namespace string, labels map[string]string) error {
-	clientPod := &corev1.Pod{}
+// LogStreams defines functions to read from a stream of pod logs
+type LogStreams interface {
+	// Init initiates the log streams
+	Init() error
+	// Streams returns streams for output and error logs
+	// returns a stream to communicate errors
+	Streams() (stdout chan string, stderr chan string, err chan error)
+	// Close closes log streams
+	Close()
+}
 
-	err := wait.PollUntil(time.Second, func() (done bool, err error) {
-		clientPodList := &corev1.PodList{}
-
-		err = c.List(context.Background(), clientPodList, client.InNamespace(namespace), client.MatchingLabels(labels))
-		if err != nil {
-			return false, err
-		}
-
-		if len(clientPodList.Items) != 1 {
-			log.Printf("expected 1 client pod found %d, with labels %v\n", len(clientPodList.Items), labels)
-			return false, nil
-		}
-
-		clientPod = &clientPodList.Items[0]
-
-		for _, containerStatus := range clientPod.Status.ContainerStatuses {
-			if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.ExitCode == 0 {
-				log.Printf("container %s in pod %s completed successfully", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
-				break
+func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string) error {
+	logReader := NewRsyncLogStream(srcConfig, pvc, labels, outputFile)
+	err := logReader.Init()
+	if err != nil {
+		return err
+	}
+	defer logReader.Close()
+	stdout, stderr, errChan := logReader.Streams()
+	for {
+		closed := false
+		select {
+		case out := <-stdout:
+			os.Stdout.WriteString(out)
+		case err := <-stderr:
+			os.Stderr.WriteString(err)
+		case e := <-errChan:
+			if e != io.EOF {
+				err = e
 			}
-			if !containerStatus.Ready {
-				log.Println(fmt.Errorf("container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name}))
-				return false, nil
-			}
+			closed = true
 		}
-		return true, nil
-	}, make(<-chan struct{}))
-	if err != nil {
-		return err
+		if err != nil || closed {
+			break
+		}
 	}
-
-	clienset, err := kubernetes.NewForConfig(srcConfig)
-	if err != nil {
-		return err
-	}
-
-	podLogsRequest := clienset.CoreV1().Pods(namespace).GetLogs(clientPod.Name, &corev1.PodLogOptions{
-		TypeMeta:  metav1.TypeMeta{},
-		Container: "rsync",
-		Follow:    true,
-	})
-
-	reader, err := podLogsRequest.Stream(context.Background())
-	if err != nil {
-		return err
-	}
-
-	defer reader.Close()
-	_, err = io.Copy(os.Stdout, reader)
-	if err != nil {
-		return err
-	}
-
 	return err
 }
 
@@ -842,8 +818,9 @@ type verbose bool
 
 func (i verbose) ApplyTo(opts *rsynctransfer.CommandOptions) error {
 	opts.Info = []string{
-		"COPY", "DEL", "STATS2", "PROGRESS2",
+		"COPY", "DEL", "STATS2", "PROGRESS2", "FLIST2",
 	}
+	opts.Extras = append(opts.Extras, "--progress")
 	return nil
 }
 
