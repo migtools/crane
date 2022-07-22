@@ -29,6 +29,7 @@ type ExportOptions struct {
 
 	rawConfig              api.Config
 	exportDir              string
+	labelSelector          string
 	userSpecifiedNamespace string
 	asExtras               string
 	extras                 map[string][]string
@@ -129,7 +130,7 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
 
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace), log)
@@ -180,6 +181,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	}
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
+	cmd.Flags().StringVarP(&o.labelSelector, "label-selector", "l", "export", "Restrict export to resources matching a label selector")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
