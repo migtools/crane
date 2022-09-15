@@ -2,8 +2,8 @@ name: Needs Triage
 
 on:
   # At 0900 every Tues/Thursday
-  schedule:
-    - cron: "0 9 * * 2,4"
+  #schedule:
+  #  - cron: "0 9 * * 2,4"
   workflow_dispatch:
 
 jobs:
