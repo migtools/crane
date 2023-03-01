@@ -49,7 +49,6 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 			targetDir := resourceDir
 			if obj.GetNamespace() == "" {
 				targetDir = clusterResourceDir
-				log.Infof("Writing objects of resource: %s to the %s directory\n", obj.GetName(), targetDir)
 			}
 			path := filepath.Join(targetDir, getFilePath(obj))
 			f, err := os.Create(path)
@@ -206,8 +205,6 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 
 	return resources, errors
 }
-
-var admittedClusterScopeKinds = []string{"ClusterRole", "ClusterRoleBinding", "SecurityContextConstraints"}
 
 func isAdmitted(clusterScopedRbac bool, resource metav1.APIResource) bool {
 	if !resource.Namespaced && clusterScopedRbac {

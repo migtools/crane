@@ -143,6 +143,10 @@ func (o *ExportOptions) Run() error {
 	var errs []error
 
 	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, o.clusterScopedRbac, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
+	clusterScopeHandler := NewClusterScopeHandler()
+	if o.clusterScopedRbac {
+		resources = clusterScopeHandler.filterRbacResources(resources, log)
+	}
 
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
