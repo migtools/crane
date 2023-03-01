@@ -198,7 +198,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
 	cmd.Flags().StringVarP(&o.labelSelector, "label-selector", "l", "", "Restrict export to resources matching a label selector")
-	cmd.Flags().BoolVarP(&o.clusterScopedRbac, "cluster-scoped-rbac", "c", true, "Include cluster-scoped RBAC resources")
+	cmd.Flags().BoolVarP(&o.clusterScopedRbac, "cluster-scoped-rbac", "c", false, "Include cluster-scoped RBAC resources")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")

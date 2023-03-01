@@ -207,8 +207,8 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 }
 
 func isAdmitted(clusterScopedRbac bool, resource metav1.APIResource) bool {
-	if !resource.Namespaced && clusterScopedRbac {
-		return slices.Contains(admittedClusterScopeKinds, resource.Kind)
+	if !resource.Namespaced {
+		return clusterScopedRbac && slices.Contains(admittedClusterScopeKinds, resource.Kind)
 	}
 	return true
 }
