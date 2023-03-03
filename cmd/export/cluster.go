@@ -202,6 +202,7 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 				if c.anyServiceAccountInNamespace(namespaceName, serviceAccountName) {
 					c.log.Infof("Accepted %s of kind %s (match wia user %s)",
 						clusterResource.GetName(), clusterResource.GetKind(), u)
+					return true
 				}
 			}
 		}
