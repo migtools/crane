@@ -90,7 +90,7 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 	// create _clluster directory if it doesnt exist
-	clusterResourceDir := filepath.Join(o.exportDir, "resources", "_cluster")
+	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 	if o.clusterScopedRbac {
 		err = os.MkdirAll(clusterResourceDir, 0700)
 		switch {
