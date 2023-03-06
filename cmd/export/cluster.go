@@ -22,7 +22,8 @@ type admittedResource struct {
 var admittedClusterScopeResources = []admittedResource{
 	{Kind: "ClusterRoleBinding", APIgroup: "rbac.authorization.k8s.io"},
 	{Kind: "ClusterRole", APIgroup: "rbac.authorization.k8s.io"},
-	{Kind: "SecurityContextConstraints", APIgroup: "security.openshift.io"}}
+	{Kind: "SecurityContextConstraints", APIgroup: "security.openshift.io"},
+}
 
 func NewClusterScopeHandler() *ClusterScopeHandler {
 	clusterScopeHandler := &ClusterScopeHandler{}
