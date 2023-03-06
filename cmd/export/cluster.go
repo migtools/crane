@@ -7,7 +7,6 @@ import (
 	authv1 "github.com/openshift/api/authorization/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -15,7 +14,15 @@ import (
 type ClusterScopeHandler struct {
 }
 
-var admittedClusterScopeKinds = []string{"ClusterRole", "ClusterRoleBinding", "SecurityContextConstraints"}
+type admittedResource struct {
+	APIgroup string
+	Kind     string
+}
+
+var admittedClusterScopeResources = []admittedResource{
+	{Kind: "ClusterRoleBinding", APIgroup: "rbac.authorization.k8s.io"},
+	{Kind: "ClusterRole", APIgroup: "rbac.authorization.k8s.io"},
+	{Kind: "SecurityContextConstraints", APIgroup: "security.openshift.io"}}
 
 func NewClusterScopeHandler() *ClusterScopeHandler {
 	clusterScopeHandler := &ClusterScopeHandler{}
@@ -23,33 +30,44 @@ func NewClusterScopeHandler() *ClusterScopeHandler {
 	return clusterScopeHandler
 }
 
+func isClusterScopedResource(apiGroup string, kind string) bool {
+	for _, admitted := range admittedClusterScopeResources {
+		if admitted.Kind == kind && admitted.APIgroup == apiGroup {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *ClusterScopeHandler) filterRbacResources(resources []*groupResource, log logrus.FieldLogger) []*groupResource {
 	log.Debug("Looking for ServiceAccount resources")
 
 	handler := NewClusterScopedRbacHandler(log)
-	for i := len(resources) - 1; i >= 0; i-- {
-		r := resources[i]
+	var filteredResources []*groupResource
+	for _, r := range resources {
 		kind := r.APIResource.Kind
 		if kind == "ServiceAccount" {
 			for _, obj := range r.objects.Items {
 				log.Debugf("Adding ServiceAccount %s in namespace %s", obj.GetName(), obj.GetNamespace())
 				handler.serviceAccounts = append(handler.serviceAccounts, obj)
 			}
-		} else if slices.Contains(admittedClusterScopeKinds, kind) {
+		}
+		if isClusterScopedResource(r.APIGroup, kind) {
 			log.Debugf("Adding %d Cluster resource of type %s", len(r.objects.Items), kind)
 			handler.clusterResources[kind] = r
-			resources = append(resources[:i], resources[i+1:]...)
+		} else {
+			filteredResources = append(filteredResources, r)
 		}
 	}
 
-	for _, k := range admittedClusterScopeKinds {
+	for _, k := range admittedClusterScopeResources {
 		filtered, ok := handler.filteredResourcesOfKind(k)
 		if ok && len(filtered.objects.Items) > 0 {
-			resources = append(resources, filtered)
+			filteredResources = append(filteredResources, filtered)
 		}
 	}
 
-	return resources
+	return filteredResources
 }
 
 type ClusterScopedRbacHandler struct {
@@ -90,11 +108,12 @@ func (c *ClusterScopedRbacHandler) prepareForFiltering() {
 	}
 }
 
-func (c *ClusterScopedRbacHandler) filteredResourcesOfKind(kind string) (*groupResource, bool) {
+func (c *ClusterScopedRbacHandler) filteredResourcesOfKind(resource admittedResource) (*groupResource, bool) {
 	if !c.readyToFilter {
 		c.prepareForFiltering()
 	}
 
+	kind := resource.Kind
 	clusterGroupResource, ok := c.clusterResources[kind]
 	if ok {
 		if kind == "ClusterRoleBinding" {
@@ -172,41 +191,44 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 		FromUnstructured(clusterResource.Object, &scc)
 	if err != nil {
 		c.log.Warnf("Cannot convert to securityv1.SecurityContextConstraints: %s", err)
-	} else {
-		for _, f := range c.filteredClusterRoleBindings.objects.Items {
-			var crb authv1.ClusterRoleBinding
-			err := runtime.DefaultUnstructuredConverter.
-				FromUnstructured(f.Object, &crb)
-			if err != nil {
-				c.log.Warnf("Cannot convert to authv1.ClusterRoleBinding: %s", err)
-			} else {
-				if crb.RoleRef.Kind == "SecurityContextConstraints" && crb.RoleRef.Name == scc.Name {
-					c.log.Infof("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
-					return true
-				} else {
-					sccSystemName := fmt.Sprintf("system:openshift:scc:%s", clusterResource.GetName())
-					if crb.RoleRef.Kind == "ClusterRole" && crb.RoleRef.Name == sccSystemName {
-						c.log.Infof("Accepted %s of kind %s (match wia ClusterRoleBinding %s)",
-							clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
-						return true
-					}
-				}
-			}
+		return false
+	}
+
+	for _, f := range c.filteredClusterRoleBindings.objects.Items {
+		var crb authv1.ClusterRoleBinding
+		err := runtime.DefaultUnstructuredConverter.
+			FromUnstructured(f.Object, &crb)
+		if err != nil {
+			c.log.Warnf("Cannot convert to authv1.ClusterRoleBinding: %s", err)
+			continue
 		}
 
-		// Last option, look at the users field if it contains one of the exported serviceaccounts
-		for _, u := range scc.Users {
-			if strings.Contains(u, "system:serviceaccount:") && len(strings.Split(u, ":")) == 4 {
-				namespaceName := strings.Split(u, ":")[2]
-				serviceAccountName := strings.Split(u, ":")[3]
-				if c.anyServiceAccountInNamespace(namespaceName, serviceAccountName) {
-					c.log.Infof("Accepted %s of kind %s (match wia user %s)",
-						clusterResource.GetName(), clusterResource.GetKind(), u)
-					return true
-				}
+		if crb.RoleRef.Kind == "SecurityContextConstraints" && crb.RoleRef.Name == scc.Name {
+			c.log.Infof("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+			return true
+		} else {
+			sccSystemName := fmt.Sprintf("system:openshift:scc:%s", clusterResource.GetName())
+			if crb.RoleRef.Kind == "ClusterRole" && crb.RoleRef.Name == sccSystemName {
+				c.log.Infof("Accepted %s of kind %s (match wia ClusterRoleBinding %s)",
+					clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
+				return true
 			}
 		}
 	}
+
+	// Last option, look at the users field if it contains one of the exported serviceaccounts
+	for _, u := range scc.Users {
+		if strings.Contains(u, "system:serviceaccount:") && len(strings.Split(u, ":")) == 4 {
+			namespaceName := strings.Split(u, ":")[2]
+			serviceAccountName := strings.Split(u, ":")[3]
+			if c.anyServiceAccountInNamespace(namespaceName, serviceAccountName) {
+				c.log.Infof("Accepted %s of kind %s (match wia user %s)",
+					clusterResource.GetName(), clusterResource.GetKind(), u)
+				return true
+			}
+		}
+	}
+
 	return false
 }
 

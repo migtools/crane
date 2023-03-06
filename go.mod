@@ -1,6 +1,6 @@
 module github.com/konveyor/crane
 
-go 1.18
+go 1.17
 
 require (
 	github.com/backube/pvc-transfer v0.0.0-20220718185428-1d2440958552
@@ -16,7 +16,6 @@ require (
 	github.com/spf13/cobra v1.5.0
 	github.com/spf13/viper v1.12.0
 	github.com/vmware-tanzu/velero v1.6.3
-	golang.org/x/exp v0.0.0-20230213192124-5e25df0256eb
 	golang.org/x/mod v0.6.0
 	gotest.tools/v3 v3.0.3
 	k8s.io/api v0.24.2

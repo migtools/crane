@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -152,7 +151,7 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 				continue
 			}
 
-			if !isAdmitted(clusterScopedRbac, resource) {
+			if !isAdmittedResource(clusterScopedRbac, gv, resource) {
 				log.Debugf("resource: %s.%s is clusterscoped or not admitted kind, skipping\n", gv.String(), resource.Kind)
 				continue
 			}
@@ -206,9 +205,9 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 	return resources, errors
 }
 
-func isAdmitted(clusterScopedRbac bool, resource metav1.APIResource) bool {
+func isAdmittedResource(clusterScopedRbac bool, gv schema.GroupVersion, resource metav1.APIResource) bool {
 	if !resource.Namespaced {
-		return clusterScopedRbac && slices.Contains(admittedClusterScopeKinds, resource.Kind)
+		return clusterScopedRbac && isClusterScopedResource(gv.Group, resource.Kind)
 	}
 	return true
 }
