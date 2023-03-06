@@ -210,7 +210,7 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 		} else {
 			sccSystemName := fmt.Sprintf("system:openshift:scc:%s", clusterResource.GetName())
 			if crb.RoleRef.Kind == "ClusterRole" && crb.RoleRef.Name == sccSystemName {
-				c.log.Infof("Accepted %s of kind %s (match wia ClusterRoleBinding %s)",
+				c.log.Infof("Accepted %s of kind %s (match via ClusterRoleBinding %s)",
 					clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
 				return true
 			}
