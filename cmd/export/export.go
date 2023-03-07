@@ -31,6 +31,7 @@ type ExportOptions struct {
 	exportDir              string
 	labelSelector          string
 	userSpecifiedNamespace string
+	clusterScopedRbac      bool
 	asExtras               string
 	extras                 map[string][]string
 	QPS                    float32
@@ -80,14 +81,25 @@ func (o *ExportOptions) Run() error {
 	log := o.globalFlags.GetLogger()
 
 	// create export directory if it doesnt exist
-	err = os.MkdirAll(filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace), 0700)
+	resourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace)
+	err = os.MkdirAll(resourceDir, 0700)
 	switch {
 	case os.IsExist(err):
 	case err != nil:
 		log.Errorf("error creating the resources directory: %#v", err)
 		return err
 	}
-
+	// create _clluster directory if it doesnt exist
+	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
+	if o.clusterScopedRbac {
+		err = os.MkdirAll(clusterResourceDir, 0700)
+		switch {
+		case os.IsExist(err):
+		case err != nil:
+			log.Errorf("error creating the cluster resources directory: %#v", err)
+			return err
+		}
+	}
 	// create export directory if it doesnt exist
 	err = os.MkdirAll(filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), 0700)
 	switch {
@@ -130,10 +142,14 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, o.clusterScopedRbac, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
+	clusterScopeHandler := NewClusterScopeHandler()
+	if o.clusterScopedRbac {
+		resources = clusterScopeHandler.filterRbacResources(resources, log)
+	}
 
 	log.Debugf("attempting to write resources to files\n")
-	writeResourcesErrors := writeResources(resources, filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace), log)
+	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
 		log.Warnf("error writing manifests to file: %#v, ignoring\n", e)
 	}
@@ -182,6 +198,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
 	cmd.Flags().StringVarP(&o.labelSelector, "label-selector", "l", "", "Restrict export to resources matching a label selector")
+	cmd.Flags().BoolVarP(&o.clusterScopedRbac, "cluster-scoped-rbac", "c", false, "Include cluster-scoped RBAC resources")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
