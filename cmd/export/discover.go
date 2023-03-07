@@ -33,7 +33,7 @@ type groupResourceError struct {
 	Error       error              `json:"error"`
 }
 
-func writeResources(resources []*groupResource, resourceDir string, log logrus.FieldLogger) []error {
+func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range resources {
 		log.Infof("Writing objects of resource: %s to the output directory\n", r.APIResource.Name)
@@ -45,7 +45,11 @@ func writeResources(resources []*groupResource, resourceDir string, log logrus.F
 		}
 
 		for _, obj := range r.objects.Items {
-			path := filepath.Join(resourceDir, getFilePath(obj))
+			targetDir := resourceDir
+			if obj.GetNamespace() == "" {
+				targetDir = clusterResourceDir
+			}
+			path := filepath.Join(targetDir, getFilePath(obj))
 			f, err := os.Create(path)
 			if err != nil {
 				errs = append(errs, err)
@@ -124,7 +128,7 @@ func getFilePath(obj unstructured.Unstructured) string {
 	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
 }
 
-func resourceToExtract(namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, apiGroups []metav1.APIGroup, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac bool, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, apiGroups []metav1.APIGroup, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -147,8 +151,8 @@ func resourceToExtract(namespace string, labelSelector string, dynamicClient dyn
 				continue
 			}
 
-			if !resource.Namespaced {
-				log.Debugf("resource: %s.%s is clusterscoped, skipping\n", gv.String(), resource.Kind)
+			if !isAdmittedResource(clusterScopedRbac, gv, resource) {
+				log.Debugf("resource: %s.%s is clusterscoped or not admitted kind, skipping\n", gv.String(), resource.Kind)
 				continue
 			}
 
@@ -201,18 +205,25 @@ func resourceToExtract(namespace string, labelSelector string, dynamicClient dyn
 	return resources, errors
 }
 
+func isAdmittedResource(clusterScopedRbac bool, gv schema.GroupVersion, resource metav1.APIResource) bool {
+	if !resource.Namespaced {
+		return clusterScopedRbac && isClusterScopedResource(gv.Group, resource.Kind)
+	}
+	return true
+}
+
 func getObjects(g *groupResource, namespace string, labelSelector string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	c := d.Resource(schema.GroupVersionResource{
 		Group:    g.APIGroup,
 		Version:  g.APIVersion,
 		Resource: g.APIResource.Name,
 	})
-	if !g.APIResource.Namespaced {
-		return &unstructured.UnstructuredList{}, nil
-	}
-
 	p := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
-		return c.Namespace(namespace).List(context.Background(), opts)
+		if g.APIResource.Namespaced {
+			return c.Namespace(namespace).List(context.Background(), opts)
+		} else {
+			return c.List(context.Background(), opts)
+		}
 	})
 	listOptions := metav1.ListOptions{}
 	if labelSelector != "" {
