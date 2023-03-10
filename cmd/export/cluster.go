@@ -107,17 +107,18 @@ func (c *ClusterScopedRbacHandler) prepareForFiltering() {
 			}
 		}
 		c.filteredClusterRoleBindings.objects = &filteredClusterRoleBindings
-	} else {
-		c.filteredClusterRoleBindings = &groupResource{
-			APIGroup:        "NA",
-			APIVersion:      "NA",
-			APIGroupVersion: "NA",
-			APIResource:     metav1.APIResource{},
-		}
-		c.filteredClusterRoleBindings.objects = &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
-		c.log.Error("The export of cluster level RBAC resources is enabled but no ClusterRoleBinding resources have been collected:" +
-			" the actual error message can be found under the failures folder")
+		return
 	}
+
+	c.filteredClusterRoleBindings = &groupResource{
+		APIGroup:        "NA",
+		APIVersion:      "NA",
+		APIGroupVersion: "NA",
+		APIResource:     metav1.APIResource{},
+	}
+	c.filteredClusterRoleBindings.objects = &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
+	c.log.Error("The export of cluster level RBAC resources is enabled but no ClusterRoleBinding resources have been collected:" +
+		" the actual error message can be found under the failures folder")
 }
 
 func (c *ClusterScopedRbacHandler) filteredResourcesOfKind(resource admittedResource) (*groupResource, bool) {
