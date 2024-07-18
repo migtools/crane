@@ -1,6 +1,6 @@
 module github.com/konveyor/crane
 
-go 1.17
+go 1.21
 
 require (
 	github.com/backube/pvc-transfer v0.0.0-20220718185428-1d2440958552
