@@ -26,7 +26,7 @@ Crane is composed of several repositories:
 * [backube/pvc-transfer](https://github.com/backube/pvc-transfer): The library that powers the Persistent Volume migration ability, shared with the [VolSync](https://volsync.readthedocs.io/en/stable/index.html) project.  State migration of Persistent Volumes is handled by rsync allowing storage migrations between different storage classes.  
 * [migtools/crane-runner](https://github.com/migtools/crane-runner): A collection of resources showing how to leverage Tekton to build migration workflows with Crane
 * [migtools/crane-ui-plugin](https://github.com/migtools/crane-ui-plugin): A dynamic UI plugin for the [openshift/console](https://github.com/openshift/console)
-* [migtools/mtrho-operator](https://github.com/migtools/mtrho-operator): An Operator which deploys Crane in an opinionated manner leveraging Tekton for migrating applications
+* [migtools/crane-operator](https://github.com/migtools/crane-operator): An Operator which deploys Crane in an opinionated manner leveraging Tekton for migrating applications
 
 How does it work? Crane works by:
 1) Inspecting a running application and exporting all associated resources
