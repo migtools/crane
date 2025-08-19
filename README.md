@@ -41,6 +41,27 @@ How does it work? Crane works by:
     * Clone this repo and build the crane binary via: `go build -o crane main.go`
   * Install the `crane` binary in your `$PATH`
 
+### Building from Source
+
+For detailed build instructions, including troubleshooting network issues and corporate proxy configuration, see [BUILDING.md](BUILDING.md).
+
+Quick build options:
+```bash
+# Standard build
+go build -o crane main.go
+
+# Using Makefile (with network troubleshooting options)
+make build              # Standard build
+make build-with-retries # Build with retry logic for network timeouts
+make vendor-build       # Offline build using vendor directory
+
+# Using build scripts (cross-platform)
+./scripts/build.sh --method retry    # Linux/macOS with retries
+scripts\build.bat --method vendor    # Windows offline build
+```
+
+**Experiencing build issues?** Common network-related build problems (TLS handshake timeouts, proxy issues) and their solutions are documented in [BUILDING.md](BUILDING.md).
+
 ## Usage Example
 1. `$ kubectl create namespace guestbook`
 1. `$ kubectl --namespace guestbook apply -k github.com/konveyor/crane-runner/examples/resources/guestbook`
