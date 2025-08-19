@@ -1,7 +1,7 @@
 # Crane 
 
 ## Intro
-[Crane](https://github.com/migtools/crane) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
+[Crane](https://github.com/migtools/crane) is a migration tool under the migtools community that helps application owners migrate Kubernetes workloads and their state between clusters.
 
 ## YouTube Demo
 [![Alt text](https://img.youtube.com/vi/PoSivlgVLf8/0.jpg)](https://www.youtube.com/watch?v=PoSivlgVLf8)
@@ -21,7 +21,7 @@ Crane follows the Unix philosophy of building small sharply focused tools that c
 Crane is composed of several repositories:
 * [migtools/crane](https://github.com/migtools/crane): (this repo) The command line tool that migrates applications to the terminal.
 * [migtools/crane-lib](https://github.com/migtools/crane-lib): The brains behind Crane functionality responsible for transforming resources.
-* [migtools/crane-plugins](https://github.com/migtools/crane-plugins): Collection of plugins from the Konveyor community based on experience from performing Kube migrations.
+* [migtools/crane-plugins](https://github.com/migtools/crane-plugins): Collection of plugins from the migtools community based on experience from performing Kube migrations.
 * [migtools/crane-plugin-openshift](https://github.com/migtools/crane-plugin-openshift): An optional plugin specifically tailored to manage OpenShift migration workloads and an example of a repeatable best-practice.
 * [backube/pvc-transfer](https://github.com/backube/pvc-transfer): The library that powers the Persistent Volume migration ability, shared with the [VolSync](https://volsync.readthedocs.io/en/stable/index.html) project.  State migration of Persistent Volumes is handled by rsync allowing storage migrations between different storage classes.  
 * [migtools/crane-runner](https://github.com/migtools/crane-runner): A collection of resources showing how to leverage Tekton to build migration workflows with Crane
