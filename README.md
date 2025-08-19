@@ -1,7 +1,7 @@
 # Crane 
 
 ## Intro
-[Crane](https://konveyor.github.io/crane/overview/) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
+[Crane](https://github.com/migtools/crane) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
 
 ## YouTube Demo
 [![Alt text](https://img.youtube.com/vi/PoSivlgVLf8/0.jpg)](https://www.youtube.com/watch?v=PoSivlgVLf8)
