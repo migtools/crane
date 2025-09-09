@@ -104,7 +104,7 @@ func NewAddCommand(f *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 			if err := o.Validate(args); err != nil {
-				log.Errorf(fmt.Sprintf("%s", err.Error()))
+				log.Errorf("%s", err.Error())
 				return nil
 			}
 			if err := o.Run(args); err != nil {
@@ -145,7 +145,7 @@ func (o *Options) run(args []string) error {
 	case len(manifestMap) > 1:
 		// if the plugin is found across multiple repository then fail and ask for a specific repo
 		// TODO: if the version is mentioned look for a plugin with the same version, if found in only one repo add the same else fail and ask for the repo
-		log.Errorf(fmt.Sprintf("The plugin %s is found across multiple repos, please specify one repo with --repo flag", args[0]))
+		log.Errorf("The plugin %s is found across multiple repos, please specify one repo with --repo flag", args[0])
 	case len(manifestMap) == 1:
 		// the plugin is found in only one repo
 		for _, pluginsMap := range manifestMap {
@@ -157,7 +157,7 @@ func (o *Options) run(args []string) error {
 					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
 						return downloadBinary(o.PluginDir, value.Name, value.Binaries[0].URI, log)
 					} else {
-						log.Errorf(fmt.Sprintf("The version %s of plugin %s is not available", installVersion, value.Name))
+						log.Errorf("The version %s of plugin %s is not available", installVersion, value.Name)
 						fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
 					}
 				}
@@ -176,11 +176,11 @@ func (o *Options) run(args []string) error {
 						return downloadBinary(o.PluginDir, value.Name, value.Binaries[0].URI, log)
 					}
 				}
-				log.Errorf(fmt.Sprintf("The %s version of the plugin %s is not found", installVersion, args[0]))
+				log.Errorf("The %s version of the plugin %s is not found", installVersion, args[0])
 				fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
 			default:
 				// throw error saying that the plugin doest exists
-				log.Errorf(fmt.Sprintf("The plugin %s is not found", args[0]))
+				log.Errorf("The plugin %s is not found", args[0])
 				fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
 			}
 		}

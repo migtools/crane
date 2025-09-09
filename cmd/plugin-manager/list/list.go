@@ -136,7 +136,7 @@ func (o *Options) run() error {
 				}
 			}
 		} else {
-			log.Errorf(fmt.Sprintf("name flag must be used with wither params or versions"))
+			log.Errorf("name flag must be used with wither params or versions")
 		}
 	} else {
 		manifestMap, err := plugin.BuildManifestMap(log, "", o.Repo)

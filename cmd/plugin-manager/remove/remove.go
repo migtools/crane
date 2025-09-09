@@ -99,7 +99,7 @@ func (o *Options) run(args []string) error {
 			fmt.Printf("%s \n", path)
 		}
 	} else if len(paths) == 0 {
-		log.Errorf(fmt.Sprintf("Plugin %s not found in the plugin dir %s", args[0], pluginDir))
+		log.Errorf("Plugin %s not found in the plugin dir %s", args[0], pluginDir)
 		fmt.Printf("Run \"crane plugin-manager list --installed -p %s\" to see the list of installed plugins \n", pluginDir)
 	} else {
 		err = os.Remove(paths[0])
