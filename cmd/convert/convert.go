@@ -18,20 +18,24 @@ type ConvertOptions struct {
 	genericclioptions.IOStreams
 	SourceContext      string
 	Namespace          string
-	logger             logrus.FieldLogger
+	Logger             logrus.FieldLogger
 	ResourceType       string
 	SearchRegistries   []string
 	InsecureRegistries []string
 	BlockRegistries    []string
 	exportDir          string
+	debug              bool
 }
 
 func NewConvertOptions(streams genericclioptions.IOStreams) *cobra.Command {
+	logger := logrus.New()
+	logger.SetOutput(streams.Out)
+	logger.SetFormatter(&logrus.TextFormatter{})
+
 	t := &ConvertOptions{
 		configFlags: genericclioptions.NewConfigFlags(false),
-
-		IOStreams: streams,
-		logger:    logrus.New(),
+		IOStreams:   streams,
+		Logger:      logger,
 	}
 
 	cmd := &cobra.Command{
@@ -64,9 +68,15 @@ func addFlagsForConvertOptions(t *ConvertOptions, cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&t.InsecureRegistries, "insecure-registries", []string{}, "List of search registries")
 	cmd.Flags().StringSliceVar(&t.BlockRegistries, "block-registries", []string{}, "List of search registries")
 	cmd.Flags().StringVarP(&t.exportDir, "export-dir", "e", "convert", "The path where files are to be exported")
+	cmd.Flags().BoolVar(&t.debug, "debug", false, "Enable debug logging")
 }
 
 func (t *ConvertOptions) Complete(c *cobra.Command, args []string) error {
+	if t.debug {
+		if logger, ok := t.Logger.(*logrus.Logger); ok {
+			logger.SetLevel(logrus.DebugLevel)
+		}
+	}
 	return nil
 }
 
@@ -88,6 +98,7 @@ func (t *ConvertOptions) run() error {
 		InsecureRegistries: t.InsecureRegistries,
 		BlockRegistries:    t.BlockRegistries,
 		ExportDir:          t.exportDir,
+		Logger:             t.Logger,
 	}
 
 	err = convertOptions.Convert()
