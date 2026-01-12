@@ -482,8 +482,8 @@ github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+o
 github.com/klauspost/cpuid v1.2.0/go.mod h1:Pj4uuM528wm8OyEC2QMXAi2YiTZ96dNQPGgoMS4s3ek=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
-github.com/konveyor/crane-lib v0.1.5-0.20251212061635-24a9876b379e h1:l+7KcUT4lb6Ygu5PpwWE22tO1VXmhBzonw/E9Sa1PaQ=
-github.com/konveyor/crane-lib v0.1.5-0.20251212061635-24a9876b379e/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
+github.com/konveyor/crane-lib v0.1.5 h1:3O0/RRVRP4QoSglIjqT/pkbHw4G1RJmDe0dltBTpo8o=
+github.com/konveyor/crane-lib v0.1.5/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
