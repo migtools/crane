@@ -10,7 +10,7 @@ require (
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.4.3
 	github.com/jarcoal/httpmock v1.2.0
-	github.com/konveyor/crane-lib v0.1.5-0.20251212061635-24a9876b379e
+	github.com/konveyor/crane-lib v0.1.5
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
 	github.com/openshift/library-go v0.0.0-20220704153411-3ea4b775d418
