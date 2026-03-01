@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set +x
+set -euo pipefail
 
 SRC_CLUSTER_NAME=src
 DEST_CLUSTER_NAME=dest
