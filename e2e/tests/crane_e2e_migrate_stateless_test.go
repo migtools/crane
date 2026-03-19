@@ -3,6 +3,8 @@ package e2e
 import (
 	"os"
 
+	"github.com/konveyor/crane/e2e/config"
+	. "github.com/konveyor/crane/e2e/framework"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -12,8 +14,8 @@ var _ = Describe("Crane migration e2e stateless app", func() {
 		tempDir, err := os.MkdirTemp("", "crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		runner := CraneRunner{
-			Bin:           craneBin,
-			SourceContext: sourceContext,
+			Bin:           config.CraneBin,
+			SourceContext: config.SourceContext,
 			WorkDir:       tempDir,
 		}
 
@@ -27,8 +29,8 @@ var _ = Describe("Crane migration e2e stateless app", func() {
 		srcApp := K8sDeployApp{
 			Name:      "simple-nginx-nopv",
 			Namespace: ns,
-			Bin:       k8sdeployBin,
-			Context:   sourceContext,
+			Bin:       config.K8sDeployBin,
+			Context:   config.SourceContext,
 		}
 		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
 		Expect(srcApp.Validate()).NotTo(HaveOccurred())
@@ -48,7 +50,7 @@ var _ = Describe("Crane migration e2e stateless app", func() {
 
 		kubectl := KubectlRunner{
 			Bin:     "kubectl",
-			Context: targetContext,
+			Context: config.TargetContext,
 		}
 		Expect(kubectl.CreateNamespace(ns)).NotTo(HaveOccurred())
 		Expect(kubectl.ApplyDir(outputDir)).NotTo(HaveOccurred())
@@ -56,8 +58,8 @@ var _ = Describe("Crane migration e2e stateless app", func() {
 		tgtApp := K8sDeployApp{
 			Name:      "simple-nginx-nopv",
 			Namespace: ns,
-			Bin:       k8sdeployBin,
-			Context:   targetContext,
+			Bin:       config.K8sDeployBin,
+			Context:   config.TargetContext,
 		}
 		Eventually(func() error {
 			return tgtApp.Validate()
