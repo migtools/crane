@@ -1,10 +1,9 @@
-name: Minikube Same Network Smoke
+name: Run Crane E2E Tests
 
 on:
   push:
-
 jobs:
-  deploy-app:
+  run-e2e:
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     steps:
@@ -33,12 +32,25 @@ jobs:
           ./venv/bin/pip install --upgrade pip
           ./venv/bin/pip install -e .
 
-      - name: Deploy app on src cluster
-        working-directory: k8s-apps-deployer
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Ginkgo CLI
         run: |
-          echo "Deploy app on src cluster"
-          k8sdeploy --context src deploy simple-nginx-nopv -n nginx
-          echo "Validating the app"
-          k8sdeploy --context src validate simple-nginx-nopv -n nginx
-          echo "See the pods"
-          kubectl get pods -n nginx --context src
+          GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
+          go install github.com/onsi/ginkgo/v2/ginkgo@"$GINKGO_VERSION"
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          ginkgo version
+
+      - name: Build crane CLI
+        run: go build -o crane .
+
+      - name: Run crane e2e tests
+        run: |
+          ginkgo run -v e2e/tests -- \
+            --k8sdeploy-bin="k8sdeploy" \
+            --crane-bin="${{ github.workspace }}/crane" \
+            --source-context=src \
+            --target-context=tgt
