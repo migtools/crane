@@ -4,50 +4,41 @@ on:
   push:
 
 jobs:
-  setup-minikube-same-network:
+  deploy-app:
     runs-on: ubuntu-22.04
     timeout-minutes: 35
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
+      - name: Setup minikube clusters
+        uses: ./.github/actions/setup-minikube-clusters
         with:
-          version: latest
+          cpus: max
+          memory: "8192"
 
-      - name: Install minikube
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone k8s-apps-deployer
+        run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+
+      - name: Create venv and install package
         run: |
-          curl -fsSL -o minikube-linux-amd64 https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-          sudo install minikube-linux-amd64 /usr/local/bin/minikube
-          minikube version
+          cd k8s-apps-deployer
+          python3 -m venv venv
+          echo "$PWD/venv/bin" >> $GITHUB_PATH
+          ./venv/bin/pip install --upgrade pip
+          ./venv/bin/pip install -e .
 
-      - name: Show docker info
-        run: docker version
-
-      - name: Setup src/tgt minikube same network
-        run: make setup-minikube-same-network
-
-      - name: Verify profiles
+      - name: Deploy app on src cluster
+        working-directory: k8s-apps-deployer
         run: |
-          minikube profile list
-          minikube ip -p src
-          minikube ip -p tgt
-
-      - name: Verify src pod can reach tgt API
-        run: |
-          TGT_IP="$(minikube ip -p tgt)"
-          kubectl config use-context src
-          kubectl run test-connectivity \
-            --context=src \
-            --restart=Never \
-            --image=curlimages/curl:8.8.0 \
-            --rm -i --quiet -- \
-            sh -c "curl -kfsS --connect-timeout 10 --max-time 20 https://${TGT_IP}:8443/version"
-
-      - name: Teardown
-        if: always()
-        run: |
-          make delete-minikube-same-network
-          docker network rm minikube-mc >/dev/null 2>&1 || true
+          echo "Deploy app on src cluster"
+          k8sdeploy --context src deploy simple-nginx-nopv -n nginx
+          echo "Validating the app"
+          k8sdeploy --context src validate simple-nginx-nopv -n nginx
+          echo "See the pods"
+          kubectl get pods -n nginx --context src

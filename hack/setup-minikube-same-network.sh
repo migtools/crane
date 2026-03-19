@@ -15,6 +15,8 @@ set -x
 #   SRC_PROFILE        default: src
 #   TGT_PROFILE        default: tgt
 #   MINIKUBE_DRIVER    default: docker
+#   MINIKUBE_CPUS      optional (example: 2)
+#   MINIKUBE_MEMORY    optional in MB (example: 4096)
 #   SRC_K8S_VERSION    optional
 #   TGT_K8S_VERSION    optional
 #   INGRESS_WAIT       default: 300s
@@ -25,6 +27,8 @@ NETWORK_NAME="${NETWORK_NAME:-minikube-mc}"
 SRC_PROFILE="${SRC_PROFILE:-src}"
 TGT_PROFILE="${TGT_PROFILE:-tgt}"
 MINIKUBE_DRIVER="${MINIKUBE_DRIVER:-docker}"
+MINIKUBE_CPUS="${MINIKUBE_CPUS:-}"
+MINIKUBE_MEMORY="${MINIKUBE_MEMORY:-}"
 SRC_K8S_VERSION="${SRC_K8S_VERSION:-}"
 TGT_K8S_VERSION="${TGT_K8S_VERSION:-}"
 INGRESS_WAIT="${INGRESS_WAIT:-300s}"
@@ -59,11 +63,19 @@ start_profile() {
     cmd+=(--static-ip="$ip")
   fi
 
+  if [[ -n "$MINIKUBE_CPUS" ]]; then
+    cmd+=(--cpus="$MINIKUBE_CPUS")
+  fi
+
+  if [[ -n "$MINIKUBE_MEMORY" ]]; then
+    cmd+=(--memory="$MINIKUBE_MEMORY")
+  fi
+
   if [[ -n "$k8s_version" ]]; then
     cmd+=(--kubernetes-version="$k8s_version")
   fi
 
-  log "Starting profile=${profile} network=${NETWORK_NAME} static-ip=${ip:-auto}"
+  log "Starting profile=${profile} network=${NETWORK_NAME} static-ip=${ip:-auto} cpus=${MINIKUBE_CPUS:-default} memory=${MINIKUBE_MEMORY:-default}"
   "${cmd[@]}"
 }
 
