@@ -35,6 +35,17 @@ jobs:
           minikube ip -p src
           minikube ip -p tgt
 
+      - name: Verify src pod can reach tgt API
+        run: |
+          TGT_IP="$(minikube ip -p tgt)"
+          kubectl config use-context src
+          kubectl run test-connectivity \
+            --context=src \
+            --restart=Never \
+            --image=curlimages/curl:8.8.0 \
+            --rm -i --quiet -- \
+            sh -c "curl -kfsS --connect-timeout 10 --max-time 20 https://${TGT_IP}:8443/version"
+
       - name: Teardown
         if: always()
         run: |
