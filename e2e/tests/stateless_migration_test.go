@@ -10,6 +10,53 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+func expectAndPrintFiles(stage, dir string) {
+	GinkgoHelper()
+	hasFiles, files, err := utils.HasFilesRecursively(dir)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(hasFiles).To(BeTrue(), "expected crane %s to produce files in %s", stage, dir)
+	GinkgoWriter.Printf("%s files:\n%s\n", stage, files)
+}
+
+func runCranePipeline(runner CraneRunner, namespace, exportDir, transformDir, outputDir string) {
+	GinkgoHelper()
+	GinkgoWriter.Printf("Running crane pipeline for namespace %s\n", namespace)
+
+	GinkgoWriter.Printf("Export app to : %s\n", exportDir)
+	Expect(runner.Export(namespace, exportDir)).NotTo(HaveOccurred())
+	expectAndPrintFiles("export", exportDir)
+
+	GinkgoWriter.Printf("Transforming app from: %s\n", exportDir)
+	Expect(runner.Transform(exportDir, transformDir)).NotTo(HaveOccurred())
+	expectAndPrintFiles("transform", transformDir)
+
+	Expect(runner.Apply(exportDir, transformDir, outputDir)).NotTo(HaveOccurred())
+	expectAndPrintFiles("output", outputDir)
+	GinkgoWriter.Printf("Crane pipeline completed for namespace %s\n", namespace)
+}
+
+func prepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner, deploymentName string) {
+	GinkgoHelper()
+	GinkgoWriter.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+	Expect(srcApp.Deploy()).NotTo(HaveOccurred())
+	Expect(srcApp.Validate()).NotTo(HaveOccurred())
+	GinkgoWriter.Printf("Scaling down deployment %s on source cluster to 0\n", deploymentName)
+	Expect(kubectlSrc.ScaleDeployment(srcApp.Namespace, deploymentName, 0)).NotTo(HaveOccurred())
+	GinkgoWriter.Printf("Source app %s prepared successfully\n", srcApp.Name)
+}
+
+func applyAndVerifyOnTarget(kubectlTgt KubectlRunner, tgtApp K8sDeployApp, namespace, deploymentName, outputDir string) {
+	GinkgoHelper()
+	GinkgoWriter.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, outputDir)
+	Expect(kubectlTgt.CreateNamespace(namespace)).NotTo(HaveOccurred())
+	Expect(kubectlTgt.ApplyDir(outputDir)).NotTo(HaveOccurred())
+	GinkgoWriter.Printf("Scaling target deployment %s to 1\n", deploymentName)
+	Expect(kubectlTgt.ScaleDeployment(namespace, deploymentName, 1)).NotTo(HaveOccurred())
+	GinkgoWriter.Printf("Validating app %s on target cluster\n", tgtApp.Name)
+	Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+	GinkgoWriter.Printf("Target validation completed for app %s\n", tgtApp.Name)
+}
+
 var _ = Describe("Stateless migration", func() {
 	It("[MTC-329] nginx app quiesce pod and apply to target cluster", func() {
 		appName := "simple-nginx-nopv"
@@ -21,20 +68,11 @@ var _ = Describe("Stateless migration", func() {
 			Bin:       config.K8sDeployBin,
 			Context:   config.SourceContext,
 		}
-		GinkgoWriter.Printf("Deploying app on source cluster: %s\n", srcApp.Name)
-
-		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
-		GinkgoWriter.Printf("Validating app on source cluster: %s\n", srcApp.Name)
-		Expect(srcApp.Validate()).NotTo(HaveOccurred())
-
-		GinkgoWriter.Printf("Scaling down deployment %s on source cluster to 0\n", deploymentName)
 		kubectl := KubectlRunner{
 			Bin:     "kubectl",
 			Context: config.SourceContext,
 		}
-		Expect(kubectl.ScaleDeployment(srcApp.Namespace, deploymentName, 0)).NotTo(HaveOccurred())
-		GinkgoWriter.Printf("Deployment %s scaled down succesfully\n", deploymentName)
-		GinkgoWriter.Printf("Exporting app from source cluster: %s\n", srcApp.Name)
+		prepareSourceApp(srcApp, kubectl, deploymentName)
 		tempDir, err := utils.CreateTempDir("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		exportDir := tempDir + "/export"
@@ -46,45 +84,22 @@ var _ = Describe("Stateless migration", func() {
 			SourceContext: config.SourceContext,
 			WorkDir:       tempDir,
 		}
-		GinkgoWriter.Printf("Exporting app to: %s\n", exportDir)
-		Expect(runner.Export(srcApp.Namespace, exportDir)).NotTo(HaveOccurred())
-		exportFiles, err := utils.ListFilesRecursively(exportDir)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(exportFiles).NotTo(ContainSubstring("(no files)"), "expected crane export to produce files in export dir")
-		GinkgoWriter.Printf("Exported files:\n%s\n", exportFiles)
-		GinkgoWriter.Printf("Transforming app from: %s\n", exportDir)
-		Expect(runner.Transform(exportDir, transformDir)).NotTo(HaveOccurred())
-		transformFiles, err := utils.ListFilesRecursively(transformDir)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(transformFiles).NotTo(ContainSubstring("(no files)"), "expected crane transform to produce files in transform dir")
-		GinkgoWriter.Printf("Transformed files:\n%s\n", transformFiles)
-		Expect(runner.Apply(exportDir, transformDir, outputDir)).NotTo(HaveOccurred())
-		outputFiles, err := utils.ListFilesRecursively(outputDir)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(outputFiles).NotTo(ContainSubstring("(no files)"), "expected crane apply to produce files in output dir")
-		GinkgoWriter.Printf("Rendered output files:\n%s\n", outputFiles)
-		GinkgoWriter.Printf("Applying app to target cluster: %s\n", outputDir)
+
+		runCranePipeline(runner, srcApp.Namespace, exportDir, transformDir, outputDir)
 
 		kubectl = KubectlRunner{
 			Bin:     "kubectl",
 			Context: config.TargetContext,
 		}
-		Expect(kubectl.CreateNamespace(srcApp.Namespace)).NotTo(HaveOccurred())
-		Expect(kubectl.ApplyDir(outputDir)).NotTo(HaveOccurred())
 
-		GinkgoWriter.Printf("Scaling deployment %s to 1", deploymentName)
-
-		Expect(kubectl.ScaleDeployment(namespace, deploymentName, 1)).NotTo(HaveOccurred())
 		tgtApp := K8sDeployApp{
 			Name:      "simple-nginx-nopv",
 			Namespace: srcApp.Namespace,
 			Bin:       config.K8sDeployBin,
 			Context:   config.TargetContext,
 		}
-		Eventually(func() error {
-			return tgtApp.Validate()
-		}, "2m", "10s").Should(Succeed())
 
+		applyAndVerifyOnTarget(kubectl, tgtApp, namespace, deploymentName, outputDir)
 		DeferCleanup(func() {
 			_ = os.RemoveAll(tempDir)
 			_ = srcApp.Cleanup()

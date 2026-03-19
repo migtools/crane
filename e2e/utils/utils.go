@@ -44,3 +44,12 @@ func ListFilesRecursively(dir string) (string, error) {
 
 	return strings.TrimRight(b.String(), "\n"), nil
 }
+
+func HasFilesRecursively(dir string) (bool, string, error) {
+	files, err := ListFilesRecursively(dir)
+	if err != nil {
+		return false, "", err
+	}
+	hasFiles := !strings.Contains(files, "(no files)")
+	return hasFiles, files, nil
+}
