@@ -1,0 +1,35 @@
+name: k8s-apps-deployer List Smoke
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  k8sdeploy-list:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone k8s-apps-deployer
+        run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+
+      - name: Create venv and install package
+        run: |
+          cd k8s-apps-deployer
+          python3 -m venv venv
+          echo "$PWD/venv/bin" >> $GITHUB_PATH
+          ./venv/bin/pip install --upgrade pip
+          ./venv/bin/pip install -e .
+
+      - name: Run k8sdeploy list
+        run: |
+          cd k8s-apps-deployer
+          k8sdeploy list
