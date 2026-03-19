@@ -1,0 +1,42 @@
+name: Minikube Same Network Smoke
+
+on:
+  push:
+
+jobs:
+  setup-minikube-same-network:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Install minikube
+        run: |
+          curl -fsSL -o minikube-linux-amd64 https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+          sudo install minikube-linux-amd64 /usr/local/bin/minikube
+          minikube version
+
+      - name: Show docker info
+        run: docker version
+
+      - name: Setup src/tgt minikube same network
+        run: make setup-minikube-same-network
+
+      - name: Verify profiles
+        run: |
+          minikube profile list
+          minikube ip -p src
+          minikube ip -p tgt
+
+      - name: Teardown
+        if: always()
+        run: |
+          make delete-minikube-same-network
+          docker network rm minikube-mc >/dev/null 2>&1 || true
