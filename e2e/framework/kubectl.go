@@ -22,6 +22,9 @@ func (k KubectlRunner) CreateNamespace(ns string) error {
 	out, err := cmd.CombinedOutput()
 	logVerboseOutput("kubectl create namespace", out)
 	if err != nil {
+		if strings.Contains(string(out), "AlreadyExists") {
+			return nil
+		}
 		return fmt.Errorf("kubectl create namespace failed: %v, output: %s", err, string(out))
 	}
 	return nil

@@ -17,6 +17,16 @@ type CranePaths struct {
 	TransformDir string
 }
 
+type TransferPVCOptions struct {
+	SourceContext   string
+	TargetContext   string
+	PVCName         string
+	PVCNamespaceMap string
+	Endpoint        string
+	IngressClass    string
+	Subdomain       string
+}
+
 func (c CraneRunner) Export(namespace, exportDir string) error {
 	args := []string{"export", "--context", c.SourceContext, "--namespace", namespace, "--export-dir", exportDir}
 	logVerboseCommand(c.Bin, args)
@@ -52,6 +62,28 @@ func (c CraneRunner) Apply(exportDir, transformDir string, outputDir string) err
 	logVerboseOutput("crane apply", out)
 	if err != nil {
 		return fmt.Errorf("crane apply failed: %v, output: %s", err, string(out))
+	}
+	return nil
+}
+
+func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
+	args := []string{"transfer-pvc",
+		"--source-context",
+		opts.SourceContext,
+		"--destination-context", opts.TargetContext,
+		"--pvc-name", opts.PVCName,
+		"--pvc-namespace", opts.PVCNamespaceMap,
+		"--endpoint", opts.Endpoint,
+		"--ingress-class", opts.IngressClass,
+		"--subdomain", opts.Subdomain,
+	}
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane tranfer-pvc", out)
+	if err != nil {
+		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
 	}
 	return nil
 }
