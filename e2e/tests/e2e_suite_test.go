@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"flag"
+	"log"
 	"testing"
 
 	"github.com/konveyor/crane/e2e/config"
@@ -19,5 +20,7 @@ func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	reporterConfig.Verbose = true
+	log.SetOutput(GinkgoWriter)
+	log.SetFlags(log.LstdFlags)
 	RunSpecs(t, "E2E Suite", suiteConfig, reporterConfig)
 }
