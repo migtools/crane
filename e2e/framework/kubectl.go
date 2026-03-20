@@ -16,8 +16,10 @@ func (k KubectlRunner) CreateNamespace(ns string) error {
 	if k.Context != "" {
 		args = append(args, "--context", k.Context)
 	}
+	logVerboseCommand(k.Bin, args)
 	cmd := exec.Command(k.Bin, args...)
 	out, err := cmd.CombinedOutput()
+	logVerboseOutput("kubectl create namespace", out)
 	if err != nil {
 		return fmt.Errorf("kubectl create namespace failed: %v, output: %s", err, string(out))
 	}
@@ -29,8 +31,10 @@ func (k KubectlRunner) ApplyDir(dir string) error {
 	if k.Context != "" {
 		args = append(args, "--context", k.Context)
 	}
+	logVerboseCommand(k.Bin, args)
 	cmd := exec.Command(k.Bin, args...)
 	out, err := cmd.CombinedOutput()
+	logVerboseOutput("kubectl apply", out)
 	if err != nil {
 		return fmt.Errorf("kubectl apply failed: %v, output: %s", err, string(out))
 	}
@@ -42,8 +46,10 @@ func (k KubectlRunner) ValidateApplyDir(dir string) error {
 	if k.Context != "" {
 		args = append(args, "--context", k.Context)
 	}
+	logVerboseCommand(k.Bin, args)
 	cmd := exec.Command(k.Bin, args...)
 	out, err := cmd.CombinedOutput()
+	logVerboseOutput("kubectl dry-run apply", out)
 	if err != nil {
 		return fmt.Errorf("kubectl dry-run apply failed: %v, output: %s", err, string(out))
 	}
@@ -55,8 +61,10 @@ func (k KubectlRunner) ScaleDeployment(ns, name string, replicas int) error {
 	if k.Context != "" {
 		args = append(args, "--context", k.Context)
 	}
+	logVerboseCommand(k.Bin, args)
 	cmd := exec.Command(k.Bin, args...)
 	out, err := cmd.CombinedOutput()
+	logVerboseOutput("kubectl scale deployment", out)
 	if err != nil {
 		return fmt.Errorf("kubectl scale failed: %v, output: %s", err, string(out))
 	}

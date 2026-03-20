@@ -5,4 +5,5 @@ var (
 	SourceContext string
 	CraneBin      string
 	TargetContext string
+	VerboseLogs   bool
 )

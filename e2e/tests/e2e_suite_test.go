@@ -15,6 +15,7 @@ func init() {
 	flag.StringVar(&config.TargetContext, "target-context", "", "Target cluster context for crane apply/validation")
 	flag.StringVar(&config.SourceContext, "source-context", "", "Source cluster context for app deploy tests")
 	flag.StringVar(&config.K8sDeployBin, "k8sdeploy-bin", "k8sdeploy", "Path to k8sdeploy binary")
+	flag.BoolVar(&config.VerboseLogs, "verbose-logs", false, "Enable verbose command/output logs for e2e runners")
 }
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
