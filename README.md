@@ -1,6 +1,6 @@
 # Crane 
 
-**Important: This repository is under active development including breaking changes. If you looking for the `crane` you used in last few years, use the [old-main](https://github.com/migtools/crane/tree/old-main) branch or [v0.0.6](https://github.com/migtools/crane/releases/tag/v0.0.6) tag.**
+**Important: This repository is under active development including breaking changes. If you are looking for the `crane` you used in last few years, use the [old-main](https://github.com/migtools/crane/tree/old-main) branch or [v0.0.6](https://github.com/migtools/crane/releases/tag/v0.0.6) tag.**
 
 ---
 
