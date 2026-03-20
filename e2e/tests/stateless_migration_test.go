@@ -23,7 +23,6 @@ var _ = Describe("Stateless migration", func() {
 	It("[MTC-329] nginx app quiesce pod and apply to target cluster", func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
-		deploymentName := appName + "-deployment"
 		srcApp := K8sDeployApp{
 			Name:      appName,
 			Namespace: namespace,
@@ -48,7 +47,7 @@ var _ = Describe("Stateless migration", func() {
 		}
 		By("Prepare source app")
 		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrc, deploymentName)).NotTo(HaveOccurred())
+		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
 		tempDir, err := utils.CreateTempDir("crane-export-*")
@@ -89,8 +88,8 @@ var _ = Describe("Stateless migration", func() {
 		Expect(ApplyOutputToTarget(kubectlTgt, namespace, outputDir)).NotTo(HaveOccurred())
 
 		By("Scale target deployment and validate app")
-		log.Printf("Scaling target deployment %s to 1\n", deploymentName)
-		Expect(kubectlTgt.ScaleDeployment(namespace, deploymentName, 1)).NotTo(HaveOccurred())
+		log.Printf("Scaling target deployment(s) with label app=%s to 1\n", appName)
+		Expect(kubectlTgt.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
 		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())

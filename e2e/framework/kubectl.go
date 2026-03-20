@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"strings"
 )
 
 type KubectlRunner struct {
@@ -56,18 +57,58 @@ func (k KubectlRunner) ValidateApplyDir(dir string) error {
 	return nil
 }
 
-func (k KubectlRunner) ScaleDeployment(ns, name string, replicas int) error {
-	args := []string{"scale", "deployment", name, "--namespace", ns, "--replicas", strconv.Itoa(replicas)}
+func (k KubectlRunner) ScaleDeployment(ns, appName string, replicas int) error {
+	selector := "name=" + appName
+	checkArgs := []string{"get", "deployment", "--namespace", ns, "-l", selector, "-o", "name"}
 	if k.Context != "" {
-		args = append(args, "--context", k.Context)
+		checkArgs = append(checkArgs, "--context", k.Context)
 	}
-	logVerboseCommand(k.Bin, args)
-	cmd := exec.Command(k.Bin, args...)
-	out, err := cmd.CombinedOutput()
-	logVerboseOutput("kubectl scale deployment", out)
-	if err != nil {
-		return fmt.Errorf("kubectl scale failed: %v, output: %s", err, string(out))
+	logVerboseCommand(k.Bin, checkArgs)
+	checkCmd := exec.Command(k.Bin, checkArgs...)
+	checkOut, checkErr := checkCmd.CombinedOutput()
+	logVerboseOutput("kubectl get deployment by label", checkOut)
+	if checkErr != nil {
+		return fmt.Errorf("kubectl get deployment by label failed: %v, output: %s", checkErr, string(checkOut))
 	}
-	return nil
+
+	baseArgs := []string{"scale", "deployment", "--namespace", ns, "--replicas", strconv.Itoa(replicas)}
+	if strings.TrimSpace(string(checkOut)) != "" {
+		args := append(baseArgs, "-l", selector)
+		if k.Context != "" {
+			args = append(args, "--context", k.Context)
+		}
+		logVerboseCommand(k.Bin, args)
+		cmd := exec.Command(k.Bin, args...)
+		out, err := cmd.CombinedOutput()
+		logVerboseOutput("kubectl scale deployment", out)
+		if err != nil {
+			return fmt.Errorf("kubectl scale failed: %v, output: %s", err, string(out))
+		}
+		return nil
+	}
+
+	// Fallback when label-based scale doesn't find a deployment:
+	// try direct deployment name only.
+	fallbackNames := []string{appName}
+
+	var lastErr error
+	var lastOut []byte
+	for _, depName := range fallbackNames {
+		args := append(baseArgs, depName)
+		if k.Context != "" {
+			args = append(args, "--context", k.Context)
+		}
+		logVerboseCommand(k.Bin, args)
+		cmd := exec.Command(k.Bin, args...)
+		out, err := cmd.CombinedOutput()
+		logVerboseOutput("kubectl scale deployment", out)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		lastOut = out
+	}
+
+	return fmt.Errorf("kubectl scale failed after label and name fallbacks: %v, output: %s", lastErr, string(lastOut))
 
 }

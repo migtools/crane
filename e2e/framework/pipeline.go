@@ -13,14 +13,14 @@ func RunCranePipeline(runner CraneRunner, namespace, exportDir, transformDir, ou
 	return nil
 }
 
-func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner, deploymentName string) error {
+func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 	if err := srcApp.Deploy(); err != nil {
 		return err
 	}
 	if err := srcApp.Validate(); err != nil {
 		return err
 	}
-	if err := kubectlSrc.ScaleDeployment(srcApp.Namespace, deploymentName, 0); err != nil {
+	if err := kubectlSrc.ScaleDeployment(srcApp.Namespace, srcApp.Name, 0); err != nil {
 		return err
 	}
 	return nil
