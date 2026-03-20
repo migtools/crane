@@ -1,5 +1,12 @@
 package framework
 
+import (
+	"fmt"
+	"log"
+
+	"github.com/konveyor/crane/e2e/utils"
+)
+
 func RunCranePipeline(runner CraneRunner, namespace, exportDir, transformDir, outputDir string) error {
 	if err := runner.Export(namespace, exportDir); err != nil {
 		return err
@@ -8,6 +15,23 @@ func RunCranePipeline(runner CraneRunner, namespace, exportDir, transformDir, ou
 		return err
 	}
 	if err := runner.Apply(exportDir, transformDir, outputDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func RunCranePipelineWithChecks(runner CraneRunner, namespace string, paths ScenarioPaths) error {
+	if err := RunCranePipeline(runner, namespace, paths.ExportDir, paths.TransformDir, paths.OutputDir); err != nil {
+		return err
+	}
+
+	if err := checkAndLogStageFiles("export", paths.ExportDir); err != nil {
+		return err
+	}
+	if err := checkAndLogStageFiles("transform", paths.TransformDir); err != nil {
+		return err
+	}
+	if err := checkAndLogStageFiles("output", paths.OutputDir); err != nil {
 		return err
 	}
 	return nil
@@ -36,5 +60,17 @@ func ApplyOutputToTarget(kubectlTgt KubectlRunner, namespace string, outputDir s
 	if err := kubectlTgt.ApplyDir(outputDir); err != nil {
 		return err
 	}
+	return nil
+}
+
+func checkAndLogStageFiles(stage, dir string) error {
+	hasFiles, files, err := utils.HasFilesRecursively(dir)
+	if err != nil {
+		return err
+	}
+	if !hasFiles {
+		return fmt.Errorf("expected crane %s to produce files in %s", stage, dir)
+	}
+	log.Printf("%s files:\n%s\n", stage, files)
 	return nil
 }
