@@ -68,7 +68,7 @@ var _ = Describe("Stateful app migration", func() {
 				SourceContext:   srcApp.Context,
 				TargetContext:   tgtApp.Context,
 				PVCName:         pvcName,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, srcApp.Namespace),
+				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
 				Endpoint:        "nginx-ingress",
 				IngressClass:    "nginx",
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
