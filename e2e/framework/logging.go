@@ -7,6 +7,7 @@ import (
 	"github.com/konveyor/crane/e2e/config"
 )
 
+// logVerboseCommand prints the executable and arguments when verbose logs are enabled.
 func logVerboseCommand(bin string, args []string) {
 	if !config.VerboseLogs {
 		return
@@ -14,6 +15,7 @@ func logVerboseCommand(bin string, args []string) {
 	log.Printf("[verbose] exec: %s %s", bin, strings.Join(args, " "))
 }
 
+// logVerboseOutput prints command output when verbose logs are enabled.
 func logVerboseOutput(label string, out []byte) {
 	if !config.VerboseLogs || len(out) == 0 {
 		return

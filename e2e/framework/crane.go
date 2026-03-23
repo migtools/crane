@@ -12,11 +12,7 @@ type CraneRunner struct {
 	WorkDir       string
 }
 
-type CranePaths struct {
-	ExportDir    string
-	TransformDir string
-}
-
+// TransferPVCOptions contains arguments for the crane transfer-pvc command.
 type TransferPVCOptions struct {
 	SourceContext   string
 	TargetContext   string
@@ -27,6 +23,7 @@ type TransferPVCOptions struct {
 	Subdomain       string
 }
 
+// Export runs crane export for a namespace into the given export directory.
 func (c CraneRunner) Export(namespace, exportDir string) error {
 	args := []string{"export", "--context", c.SourceContext, "--namespace", namespace, "--export-dir", exportDir}
 	logVerboseCommand(c.Bin, args)
@@ -40,6 +37,7 @@ func (c CraneRunner) Export(namespace, exportDir string) error {
 	return nil
 }
 
+// Transform runs crane transform from export directory to transform directory.
 func (c CraneRunner) Transform(exportDir, transformDir string) error {
 	args := []string{"transform", "--export-dir", exportDir, "--transform-dir", transformDir}
 	logVerboseCommand(c.Bin, args)
@@ -53,6 +51,7 @@ func (c CraneRunner) Transform(exportDir, transformDir string) error {
 	return nil
 }
 
+// Apply runs crane apply to render manifests into the output directory.
 func (c CraneRunner) Apply(exportDir, transformDir string, outputDir string) error {
 	args := []string{"apply", "--export-dir", exportDir, "--transform-dir", transformDir, "--output-dir", outputDir}
 	logVerboseCommand(c.Bin, args)
@@ -66,6 +65,7 @@ func (c CraneRunner) Apply(exportDir, transformDir string, outputDir string) err
 	return nil
 }
 
+// TransferPVC runs crane transfer-pvc with the provided transfer options.
 func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 	args := []string{"transfer-pvc",
 		"--source-context",

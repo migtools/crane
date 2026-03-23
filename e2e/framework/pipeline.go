@@ -7,6 +7,7 @@ import (
 	"github.com/konveyor/crane/e2e/utils"
 )
 
+// RunCranePipeline executes export, transform, and apply in sequence.
 func RunCranePipeline(runner CraneRunner, namespace, exportDir, transformDir, outputDir string) error {
 	if err := runner.Export(namespace, exportDir); err != nil {
 		return err
@@ -20,6 +21,7 @@ func RunCranePipeline(runner CraneRunner, namespace, exportDir, transformDir, ou
 	return nil
 }
 
+// RunCranePipelineWithChecks runs the pipeline and verifies generated stage files.
 func RunCranePipelineWithChecks(runner CraneRunner, namespace string, paths ScenarioPaths) error {
 	if err := RunCranePipeline(runner, namespace, paths.ExportDir, paths.TransformDir, paths.OutputDir); err != nil {
 		return err
@@ -37,6 +39,7 @@ func RunCranePipelineWithChecks(runner CraneRunner, namespace string, paths Scen
 	return nil
 }
 
+// PrepareSourceApp deploys, validates, and scales down the source application.
 func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 	if err := srcApp.Deploy(); err != nil {
 		return err
@@ -50,6 +53,7 @@ func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 	return nil
 }
 
+// ApplyOutputToTarget creates namespace, validates, and applies rendered manifests.
 func ApplyOutputToTarget(kubectlTgt KubectlRunner, namespace string, outputDir string) error {
 	if err := kubectlTgt.CreateNamespace(namespace); err != nil {
 		return err
@@ -63,6 +67,7 @@ func ApplyOutputToTarget(kubectlTgt KubectlRunner, namespace string, outputDir s
 	return nil
 }
 
+// checkAndLogStageFiles validates stage output exists and logs the file list.
 func checkAndLogStageFiles(stage, dir string) error {
 	hasFiles, files, err := utils.HasFilesRecursively(dir)
 	if err != nil {

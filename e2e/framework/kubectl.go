@@ -12,6 +12,7 @@ type KubectlRunner struct {
 	Context string
 }
 
+// CreateNamespace creates a namespace and treats AlreadyExists as success.
 func (k KubectlRunner) CreateNamespace(ns string) error {
 	args := []string{"create", "namespace", ns}
 	if k.Context != "" {
@@ -30,6 +31,7 @@ func (k KubectlRunner) CreateNamespace(ns string) error {
 	return nil
 }
 
+// ApplyDir applies all manifests recursively from the given directory.
 func (k KubectlRunner) ApplyDir(dir string) error {
 	args := []string{"apply", "-R", "-f", dir}
 	if k.Context != "" {
@@ -45,6 +47,7 @@ func (k KubectlRunner) ApplyDir(dir string) error {
 	return nil
 }
 
+// ValidateApplyDir performs a server-side dry-run apply for a directory.
 func (k KubectlRunner) ValidateApplyDir(dir string) error {
 	args := []string{"apply", "-R", "-f", dir, "--dry-run=server"}
 	if k.Context != "" {
@@ -60,6 +63,7 @@ func (k KubectlRunner) ValidateApplyDir(dir string) error {
 	return nil
 }
 
+// ScaleDeployment scales matching deployment by label, then falls back to name.
 func (k KubectlRunner) ScaleDeployment(ns, appName string, replicas int) error {
 	selector := "name=" + appName
 	checkArgs := []string{"get", "deployment", "--namespace", ns, "-l", selector, "-o", "name"}
@@ -91,8 +95,8 @@ func (k KubectlRunner) ScaleDeployment(ns, appName string, replicas int) error {
 	}
 
 	// Fallback when label-based scale doesn't find a deployment:
-	// try direct deployment name only.
-	fallbackNames := []string{appName}
+	// try "<appName>-deployment" name convention.
+	fallbackNames := []string{appName + "-deployment"}
 
 	var lastErr error
 	var lastOut []byte

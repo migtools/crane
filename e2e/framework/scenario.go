@@ -17,6 +17,7 @@ type MigrationScenario struct {
 	Crane      CraneRunner
 }
 
+// NewMigrationScenario builds shared runners and app objects for a migration test.
 func NewMigrationScenario(appName, namespace, k8sDeployBin, craneBin, srcCtx, tgtCtx string) MigrationScenario {
 	return MigrationScenario{
 		AppName:   appName,
@@ -49,6 +50,7 @@ type ScenarioPaths struct {
 	OutputDir    string
 }
 
+// NewScenarioPaths creates a temp workspace and standard export/transform/output dirs.
 func NewScenarioPaths(prefix string) (ScenarioPaths, error) {
 	tempDir, err := utils.CreateTempDir(prefix)
 	if err != nil {
@@ -63,6 +65,7 @@ func NewScenarioPaths(prefix string) (ScenarioPaths, error) {
 	}, nil
 }
 
+// CleanupScenario removes temp artifacts and cleans source and target test apps.
 func CleanupScenario(tempDir string, srcApp, tgtApp K8sDeployApp) {
 	log.Println("Starting cleanup...")
 

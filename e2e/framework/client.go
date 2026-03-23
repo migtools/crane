@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// ListPVCs returns PVCs from a namespace, optionally filtered by label selector.
 func ListPVCs(namespace string, labelSelector string, contextName string) ([]corev1.PersistentVolumeClaim, error) {
 	clientSet, err := NewClientSetForContext(contextName)
 	if err != nil {
@@ -32,6 +33,7 @@ func ListPVCs(namespace string, labelSelector string, contextName string) ([]cor
 
 }
 
+// NewClientSetForContext creates a Kubernetes clientset for the given kube context.
 func NewClientSetForContext(contextName string) (*kubernetes.Clientset, error) {
 	kubeconfig := os.Getenv("KUBECONFIG")
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
@@ -56,6 +58,7 @@ func NewClientSetForContext(contextName string) (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
+// GetClusterNodeIP returns the first schedulable node internal IP for a context.
 func GetClusterNodeIP(contextName string) (string, error) {
 	clientSet, err := NewClientSetForContext(contextName)
 	if err != nil {
