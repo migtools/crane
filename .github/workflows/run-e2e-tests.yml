@@ -1,7 +1,7 @@
 name: Run Crane E2E Tests
 
 on:
-  push:
+  pull_request:
   workflow_dispatch:
 jobs:
   run-e2e:
