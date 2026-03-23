@@ -54,4 +54,5 @@ jobs:
             --k8sdeploy-bin="k8sdeploy" \
             --crane-bin="${{ github.workspace }}/crane" \
             --source-context=src \
-            --target-context=tgt
+            --target-context=tgt \
+            --verbose-logs
