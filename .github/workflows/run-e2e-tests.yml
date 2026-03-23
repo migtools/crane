@@ -23,7 +23,7 @@ jobs:
           python-version: "3.11"
 
       - name: Clone k8s-apps-deployer
-        run: git clone https://github.com/stillalearner/k8s-apps-deployer.git -b fix-context-big
+        run: git clone https://github.com/stillalearner/k8s-apps-deployer.git 
 
       - name: Create venv and install package
         run: |
