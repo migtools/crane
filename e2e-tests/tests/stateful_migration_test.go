@@ -31,8 +31,6 @@ var _ = Describe("Stateful app migration", func() {
 		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
 		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
-		By("Scale src app to 0 replicas")
-		Expect(kubectlSrc.ScaleDeployment(srcApp.Namespace, srcApp.Name, 0)).NotTo(HaveOccurred())
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
