@@ -8,10 +8,12 @@ import (
 	"strings"
 )
 
+// CreateTempDir creates a temporary directory with the given prefix.
 func CreateTempDir(prefix string) (string, error) {
 	return os.MkdirTemp("", prefix)
 }
 
+// ListFilesRecursively returns a formatted list of files under a directory.
 func ListFilesRecursively(dir string) (string, error) {
 	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -45,6 +47,7 @@ func ListFilesRecursively(dir string) (string, error) {
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
+// HasFilesRecursively reports whether a directory contains any files.
 func HasFilesRecursively(dir string) (bool, string, error) {
 	files, err := ListFilesRecursively(dir)
 	if err != nil {

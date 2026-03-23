@@ -75,7 +75,7 @@ var _ = Describe("Stateful app migration", func() {
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
-			log.Printf("PVC transfer complete : %s -> %s", pvcName, tgtApp.Namespace)
+			log.Printf("PVC transfer complete : %s -> namespace %s", pvcName, tgtApp.Namespace)
 		}
 
 		By("List pvcs on target cluster")
