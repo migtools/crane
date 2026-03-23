@@ -4,7 +4,7 @@ import (
 	"log"
 	"strings"
 
-	"github.com/konveyor/crane/e2e/config"
+	"github.com/konveyor/crane/e2e-tests/config"
 )
 
 // logVerboseCommand prints the executable and arguments when verbose logs are enabled.

@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/konveyor/crane/e2e/utils"
+	"github.com/konveyor/crane/e2e-tests/utils"
 )
 
 type MigrationScenario struct {

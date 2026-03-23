@@ -60,7 +60,7 @@ Stateful scenarios add PVC discovery and `transfer-pvc` steps between pipeline g
 From repo root:
 
 ```bash
-ginkgo run -v e2e/tests -- \
+ginkgo run -v e2e-tests/tests -- \
   --k8sdeploy-bin=/path/to/k8sdeploy \
   --crane-bin=/path/to/crane \
   --source-context=src \
@@ -71,7 +71,7 @@ ginkgo run -v e2e/tests -- \
 Run a single spec by focus:
 
 ```bash
-ginkgo run -v --focus="\[MTC-329\]" e2e/tests -- \
+ginkgo run -v --focus="\[MTC-329\]" e2e-tests/tests -- \
   --k8sdeploy-bin=/path/to/k8sdeploy \
   --crane-bin=/path/to/crane \
   --source-context=src \

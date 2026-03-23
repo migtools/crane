@@ -5,7 +5,7 @@ import (
 	"log"
 	"testing"
 
-	"github.com/konveyor/crane/e2e/config"
+	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

@@ -52,7 +52,7 @@ jobs:
 
       - name: Run crane e2e tests
         run: |
-          ginkgo run -v e2e/tests -- \
+          ginkgo run -v e2e-tests/tests -- \
             --k8sdeploy-bin="k8sdeploy" \
             --crane-bin="${{ github.workspace }}/crane" \
             --source-context=src \

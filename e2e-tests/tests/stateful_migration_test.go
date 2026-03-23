@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/konveyor/crane/e2e/config"
-	. "github.com/konveyor/crane/e2e/framework"
+	"github.com/konveyor/crane/e2e-tests/config"
+	. "github.com/konveyor/crane/e2e-tests/framework"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

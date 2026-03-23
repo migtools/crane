@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/konveyor/crane/e2e/utils"
+	"github.com/konveyor/crane/e2e-tests/utils"
 )
 
 // RunCranePipeline executes export, transform, and apply in sequence.
