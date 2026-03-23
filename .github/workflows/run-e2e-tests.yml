@@ -2,11 +2,13 @@ name: Run Crane E2E Tests
 
 on:
   pull_request:
+  schedule:
+    - cron: "0 2 * * *"
   workflow_dispatch:
 jobs:
   run-e2e:
     runs-on: ubuntu-22.04
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
