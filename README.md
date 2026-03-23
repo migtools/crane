@@ -1,5 +1,9 @@
 # Crane 
 
+**Important: This repository is under active development including breaking changes. If you are looking for the `crane` you used in last few years, use the [old-main](https://github.com/migtools/crane/tree/old-main) branch or [v0.0.6](https://github.com/migtools/crane/releases/tag/v0.0.6) tag.**
+
+---
+
 ## Intro
 [Crane](https://konveyor.github.io/crane/overview/) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
 
