@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	random "math/rand"
 	"os"
 	"strings"
 	"time"
@@ -391,6 +392,8 @@ func (t *TransferPVCCommand) run() error {
 	destPVCList := transfer.NewSingletonPVC(destPVC)
 	srcPVCList := transfer.NewSingletonPVC(srcPVC)
 
+	rsyncPassword := getRsyncPassword()
+
 	serverPodSecContext, err := getRsyncServerPodSecurityContext(destClient, destPVC.Namespace)
 	if err != nil {
 		log.Fatal(err, "error creating security context for rsync server")
@@ -401,7 +404,7 @@ func (t *TransferPVCCommand) run() error {
 	rsyncServer, err := rsynctransfer.NewServer(
 		context.TODO(),
 		destClient,
-		logger, destPVCList, stunnelServer, e, labels, nil,
+		logger, destPVCList, stunnelServer, e, labels, nil, rsyncPassword,
 		transfer.PodOptions{
 			ContainerSecurityContext: corev1.SecurityContext{
 				Capabilities: &corev1.Capabilities{
@@ -444,7 +447,7 @@ func (t *TransferPVCCommand) run() error {
 
 	_, err = rsynctransfer.NewClient(
 		context.TODO(),
-		srcClient, srcPVCList, stunnelClient, logger, "rsync-client", labels, nil,
+		srcClient, srcPVCList, stunnelClient, e, logger, "rsync-client", labels, nil, rsyncPassword,
 		transfer.PodOptions{
 			NodeName: nodeName,
 			CommandOptions: rsynctransfer.NewDefaultOptionsFrom(
@@ -510,6 +513,17 @@ func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string
 		}
 	}
 	return "", nil
+}
+
+// getRsyncPassword returns a random password for rsync
+func getRsyncPassword() string {
+	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	random.Seed(time.Now().UnixNano())
+	password := make([]byte, 6)
+	for i := range password {
+		password[i] = letters[random.Intn(len(letters))]
+	}
+	return string(password)
 }
 
 func getIDsForNamespace(client client.Client, namespace string) (*corev1.SecurityContext, error) {

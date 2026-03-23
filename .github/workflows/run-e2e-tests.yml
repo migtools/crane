@@ -41,7 +41,7 @@ jobs:
       - name: Install Ginkgo CLI
         run: |
           GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
-          go install github.com/onsi/ginkgo/v2/ginkgo@"$GINKGO_VERSION"
+          go install "github.com/onsi/ginkgo/v2/ginkgo@$GINKGO_VERSION"
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
           ginkgo version
 

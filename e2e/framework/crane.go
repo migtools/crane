@@ -81,7 +81,7 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir
 	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane tranfer-pvc", out)
+	logVerboseOutput("crane transfer-pvc", out)
 	if err != nil {
 		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
 	}
