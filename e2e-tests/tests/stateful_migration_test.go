@@ -36,7 +36,9 @@ var _ = Describe("Stateful app migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
-			CleanupScenario(paths.TempDir, srcApp, tgtApp)
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
 		})
 		By("List pvcs in the namespace")
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)

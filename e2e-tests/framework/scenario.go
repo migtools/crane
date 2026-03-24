@@ -1,6 +1,8 @@
 package framework
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"os"
 
@@ -66,17 +68,36 @@ func NewScenarioPaths(prefix string) (ScenarioPaths, error) {
 }
 
 // CleanupScenario removes temp artifacts and cleans source and target test apps.
-func CleanupScenario(tempDir string, srcApp, tgtApp K8sDeployApp) {
+// It runs all steps even if earlier ones fail (best effort) and returns a joined
+// error so callers can log or assert; each failure is also logged immediately.
+func CleanupScenario(tempDir string, srcApp, tgtApp K8sDeployApp) error {
 	log.Println("Starting cleanup...")
+	var errs []error
 
-	log.Printf("Removing temp dir: %s\n", tempDir)
-	_ = os.RemoveAll(tempDir)
+	if tempDir != "" {
+		log.Printf("Removing temp dir: %s\n", tempDir)
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Printf("cleanup: failed to remove temp dir %q: %v", tempDir, err)
+			errs = append(errs, fmt.Errorf("remove temp dir %q: %w", tempDir, err))
+		}
+	}
 
 	log.Printf("Cleaning source app: %s/%s\n", srcApp.Namespace, srcApp.Name)
-	_ = srcApp.Cleanup()
+	if err := srcApp.Cleanup(); err != nil {
+		log.Printf("cleanup: failed to remove source app %s/%s: %v", srcApp.Namespace, srcApp.Name, err)
+		errs = append(errs, fmt.Errorf("source app %s/%s: %w", srcApp.Namespace, srcApp.Name, err))
+	}
 
 	log.Printf("Cleaning target app: %s/%s\n", tgtApp.Namespace, tgtApp.Name)
-	_ = tgtApp.Cleanup()
+	if err := tgtApp.Cleanup(); err != nil {
+		log.Printf("cleanup: failed to remove target app %s/%s: %v", tgtApp.Namespace, tgtApp.Name, err)
+		errs = append(errs, fmt.Errorf("target app %s/%s: %w", tgtApp.Namespace, tgtApp.Name, err))
+	}
 
+	if len(errs) > 0 {
+		log.Printf("Cleanup finished with %d error(s); resources or temp files may remain", len(errs))
+		return errors.Join(errs...)
+	}
 	log.Println("Cleanup completed.")
+	return nil
 }
