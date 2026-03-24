@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.4
 
 require (
-	github.com/backube/pvc-transfer v0.0.0-20220718185428-1d2440958552
+	github.com/backube/pvc-transfer v0.0.0-20220810121213-5f9e29a1f6e5
 	github.com/bombsimon/logrusr/v3 v3.0.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.4.3
