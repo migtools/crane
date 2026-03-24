@@ -1,9 +1,11 @@
+// TestYamlToManifest* use a manifest with only a linux/amd64 binary.
 package plugin
 
 import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/ghodss/yaml"
@@ -16,7 +18,7 @@ func TestGetYamlFromUrlWithUrl(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 	index := PluginIndex{
-		Kind: "PluginIndex",
+		Kind:       "PluginIndex",
 		ApiVersion: "crane.konveyor.io/v1alpha1",
 		Plugins: []PluginLocation{
 			{
@@ -37,6 +39,9 @@ func TestGetYamlFromUrlWithUrl(t *testing.T) {
 }
 
 func TestYamlToManifestWithUrl(t *testing.T) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("original fixture is linux/amd64-only; assertions run on linux/amd64")
+	}
 	URL := "https://test.com/foo.yml"
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
@@ -72,7 +77,7 @@ func TestYamlToManifestWithUrl(t *testing.T) {
 
 func TestGetYamlFromUrlWithFile(t *testing.T) {
 	index := PluginIndex{
-		Kind: "PluginIndex",
+		Kind:       "PluginIndex",
 		ApiVersion: "crane.konveyor.io/v1alpha1",
 		Plugins: []PluginLocation{
 			{
@@ -105,6 +110,9 @@ func TestGetYamlFromUrlWithFile(t *testing.T) {
 }
 
 func TestYamlToManifestWithFile(t *testing.T) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("original fixture is linux/amd64-only; assertions run on linux/amd64")
+	}
 	plugin := Plugin{
 		Kind:       "Plugin",
 		ApiVersion: "crane.konveyor.io/v1alpha1",
