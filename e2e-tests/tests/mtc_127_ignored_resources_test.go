@@ -3,9 +3,11 @@ package e2e
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -96,6 +98,14 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
+		By("Verify output directory does not contain ignored resource manifests")
+		outputFiles, err := utils.ListFilesRecursivelyAsList(paths.OutputDir)
+		Expect(err).NotTo(HaveOccurred())
+		for _, f := range outputFiles {
+			Expect(strings.Contains(f, "Endpoint")).To(BeFalse(), "output contains an Endpoints manifest: %s", f)
+			Expect(strings.Contains(f, "Subscription")).To(BeFalse(), "output contains a Subscription manifest: %s", f)
+		}
+		log.Printf("Verified output dir does not include Endpoints/Subscription manifests")
 
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
@@ -106,14 +116,14 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
 
 		By("Validating manual resources on target cluster")
-		log.Printf("Validating manual Endpoints resource on target cluster")
+		log.Printf("Verifying manual Endpoints resource is NOT present on target cluster")
 		output, err = kubectlTgt.Run("get", "endpoints", "mtc-127-manual-endpoint", "-n", tgtApp.Namespace)
-		Expect(err).To(HaveOccurred(), "Endpoints resource is not present on target cluster")
-		log.Printf("Endpoints resource is present on target cluster : %s\n", output)
-		log.Printf("Validating manual Subscription resource on target cluster")
+		Expect(err).To(HaveOccurred(), "Endpoints resource should NOT be present on target cluster but was found")
+		log.Printf("Confirmed: Endpoints resource is correctly absent from target cluster\n")
+		log.Printf("Verifying manual Subscription resource is NOT present on target cluster")
 		output, err = kubectlTgt.Run("get", "subscription", "mtc-127-manual-subscription", "-n", namespace)
-		Expect(err).To(HaveOccurred(), "Subscription resource is not present on target cluster")
-		log.Printf("Subscription resource is present on target cluster : %s\n", output)
+		Expect(err).To(HaveOccurred(), "Subscription resource should NOT be present on target cluster but was found")
+		log.Printf("Confirmed: Subscription resource is correctly absent from target cluster\n")
 
 	})
 })
