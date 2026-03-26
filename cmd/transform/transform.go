@@ -3,6 +3,7 @@ package transform
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
+	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -54,7 +56,22 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// TODO: @sseago
+	// Validate mutually exclusive flags
+	flagCount := 0
+	if o.Stage != "" {
+		flagCount++
+	}
+	if o.FromStage != "" || o.ToStage != "" {
+		flagCount++
+	}
+	if len(o.Stages) > 0 {
+		flagCount++
+	}
+
+	if flagCount > 1 {
+		return fmt.Errorf("--stage, --from-stage/--to-stage, and --stages are mutually exclusive")
+	}
+
 	return nil
 }
 
@@ -121,6 +138,93 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
+	// Determine if using new Kustomize workflow or legacy JSONPatch workflow
+	useKustomize := o.shouldUseKustomizeWorkflow()
+
+	if useKustomize {
+		return o.runKustomizeWorkflow()
+	}
+
+	// Legacy JSONPatch workflow
+	return o.runLegacyWorkflow()
+}
+
+// shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
+func (o *Options) shouldUseKustomizeWorkflow() bool {
+	// Use Kustomize workflow if any multi-stage flags are set
+	return o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 ||
+		o.StageName != "10_transform" || o.PluginName != "transform"
+}
+
+// runKustomizeWorkflow executes the new Kustomize-based transform
+func (o *Options) runKustomizeWorkflow() error {
+	log := o.globalFlags.GetLogger()
+
+	exportDir, err := filepath.Abs(o.ExportDir)
+	if err != nil {
+		return err
+	}
+
+	pluginDir, err := filepath.Abs(o.PluginDir)
+	if err != nil {
+		return err
+	}
+
+	transformDir, err := filepath.Abs(o.TransformDir)
+	if err != nil {
+		return err
+	}
+
+	// Parse plugin priorities
+	var pluginPriorities map[string]int
+	if len(o.PluginPriorities) > 0 {
+		pluginPriorities = o.getPluginPrioritiesMap()
+	}
+
+	// Parse optional flags
+	var optionalFlags map[string]string
+	if len(o.OptionalFlags) > 0 {
+		err = json.Unmarshal([]byte(o.OptionalFlags), &optionalFlags)
+		if err != nil {
+			return err
+		}
+		optionalFlags = optionalFlagsToLower(optionalFlags)
+	}
+
+	// Create orchestrator
+	orchestrator := &internalTransform.Orchestrator{
+		Log:              log.WithField("command", "transform").Logger,
+		ExportDir:        exportDir,
+		TransformDir:     transformDir,
+		PluginDir:        pluginDir,
+		SkipPlugins:      o.SkipPlugins,
+		PluginPriorities: pluginPriorities,
+		OptionalFlags:    optionalFlags,
+		Force:            o.Force,
+		CraneVersion:     "v1.0.0", // TODO: Get from build version
+	}
+
+	// Check if multi-stage mode
+	if o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 {
+		// Multi-stage mode
+		selector := internalTransform.StageSelector{
+			Stage:     o.Stage,
+			FromStage: o.FromStage,
+			ToStage:   o.ToStage,
+			Stages:    o.Stages,
+		}
+
+		log.Info("Running multi-stage transform")
+		return orchestrator.RunMultiStage(selector)
+	}
+
+	// Single stage mode (default)
+	log.Infof("Running single-stage transform: %s", o.StageName)
+	return orchestrator.RunSingleStage(o.StageName, o.PluginName)
+}
+
+// runLegacyWorkflow executes the old JSONPatch-based transform
+func (o *Options) runLegacyWorkflow() error {
 	log := o.globalFlags.GetLogger()
 	// Load all the resources from the export dir
 	exportDir, err := filepath.Abs(o.ExportDir)

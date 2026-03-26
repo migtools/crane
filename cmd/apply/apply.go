@@ -3,12 +3,15 @@ package apply
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/konveyor/crane-lib/apply"
+	craneApply "github.com/konveyor/crane-lib/apply"
+	"github.com/konveyor/crane/internal/apply"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
+	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"sigs.k8s.io/yaml"
@@ -47,7 +50,25 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// TODO: @shawn-hurley
+	// Validate mutually exclusive flags
+	flagCount := 0
+	if o.Stage != "" {
+		flagCount++
+	}
+	if o.FromStage != "" || o.ToStage != "" {
+		flagCount++
+	}
+	if len(o.Stages) > 0 {
+		flagCount++
+	}
+	if o.FinalOnly {
+		flagCount++
+	}
+
+	if flagCount > 1 {
+		return fmt.Errorf("--stage, --from-stage/--to-stage, --stages, and --final-only are mutually exclusive")
+	}
+
 	return nil
 }
 
@@ -103,8 +124,93 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
+	// Determine if using new Kustomize workflow or legacy apply
+	useKustomize := o.shouldUseKustomizeWorkflow()
+
+	if useKustomize {
+		return o.runKustomizeWorkflow()
+	}
+
+	// Legacy apply workflow
+	return o.runLegacyWorkflow()
+}
+
+// shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
+func (o *Options) shouldUseKustomizeWorkflow() bool {
+	// Use Kustomize workflow if any multi-stage flags are set
+	return o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 || o.FinalOnly
+}
+
+// runKustomizeWorkflow executes the new Kustomize-based apply
+func (o *Options) runKustomizeWorkflow() error {
 	log := o.globalFlags.GetLogger()
-	a := apply.Applier{}
+
+	transformDir, err := filepath.Abs(o.TransformDir)
+	if err != nil {
+		return err
+	}
+
+	outputDir, err := filepath.Abs(o.OutputDir)
+	if err != nil {
+		return err
+	}
+
+	// Validate kubectl is available
+	if o.Flags.Validate {
+		if err := apply.ValidateKubectlAvailable(); err != nil {
+			return fmt.Errorf("kubectl validation failed: %w", err)
+		}
+	}
+
+	// Validate output directory
+	if err := apply.ValidateOutputDirectory(outputDir, o.Flags.Force); err != nil {
+		return err
+	}
+
+	// Create applier
+	applier := &apply.KustomizeApplier{
+		Log:          log.WithField("command", "apply").Logger,
+		TransformDir: transformDir,
+		OutputDir:    outputDir,
+	}
+
+	// Run validation if enabled
+	if o.Flags.Validate {
+		log.Info("Running preflight validation...")
+		if err := apply.ValidatePipeline(transformDir); err != nil {
+			return fmt.Errorf("validation failed: %w", err)
+		}
+		log.Info("Validation passed")
+	}
+
+	// Determine which stages to apply
+	if o.FinalOnly {
+		// Default: apply only final stage
+		log.Info("Applying final stage...")
+		return applier.ApplyFinalStage()
+	}
+
+	if o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 {
+		// Multi-stage apply
+		selector := internalTransform.StageSelector{
+			Stage:     o.Stage,
+			FromStage: o.FromStage,
+			ToStage:   o.ToStage,
+			Stages:    o.Stages,
+		}
+
+		log.Info("Applying selected stages...")
+		return applier.ApplyMultiStage(selector)
+	}
+
+	// Default: apply final stage
+	return applier.ApplyFinalStage()
+}
+
+// runLegacyWorkflow executes the old JSONPatch-based apply
+func (o *Options) runLegacyWorkflow() error {
+	log := o.globalFlags.GetLogger()
+	a := craneApply.Applier{}
 
 	// Load all the resources from the export dir
 	exportDir, err := filepath.Abs(o.ExportDir)
