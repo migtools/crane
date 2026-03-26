@@ -1,3 +1,6 @@
+// Package export implements the crane export subcommand: discover API types,
+// list objects in a namespace (and optionally related cluster-scoped RBAC),
+// and write manifests and list failures under an export directory.
 package export
 
 import (
@@ -15,6 +18,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd/api"
 )
 
+// ExportOptions holds CLI flags and runtime state for a single export run.
 type ExportOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 
@@ -37,6 +41,7 @@ type ExportOptions struct {
 	genericclioptions.IOStreams
 }
 
+// Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
 
@@ -65,6 +70,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	return nil
 }
 
+// Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
 	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
 		return fmt.Errorf("extras requires specifying a user or group to impersonate")
@@ -72,6 +78,8 @@ func (o *ExportOptions) Validate() error {
 	return nil
 }
 
+// Run performs discovery, lists resources, optionally filters cluster-scoped RBAC,
+// writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
 func (o *ExportOptions) Run() error {
 	var err error
 
@@ -158,6 +166,7 @@ func (o *ExportOptions) Run() error {
 	return errorsutil.NewAggregate(errs)
 }
 
+// NewExportCommand builds the cobra export command with flags and viper wiring.
 func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ExportOptions{
 		configFlags: genericclioptions.NewConfigFlags(true),
