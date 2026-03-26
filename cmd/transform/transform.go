@@ -11,6 +11,7 @@ import (
 	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/cmd/transform/listplugins"
 	"github.com/konveyor/crane/cmd/transform/optionals"
+	"github.com/konveyor/crane/cmd/transform/validate"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
@@ -110,6 +111,7 @@ func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 	addFlagsForOptions(&o.cobraFlags, cmd)
 	cmd.AddCommand(optionals.NewOptionalsCommand(f))
 	cmd.AddCommand(listplugins.NewListPluginsCommand(f))
+	cmd.AddCommand(validate.NewValidateCommand(f))
 	return cmd
 }
 
