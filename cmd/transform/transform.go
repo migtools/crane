@@ -38,6 +38,14 @@ type Flags struct {
 	PluginPriorities  []string `mapstructure:"plugin-priorities"`
 	SkipPlugins       []string `mapstructure:"skip-plugins"`
 	OptionalFlags     string   `mapstructure:"optional-flags"`
+	// Multi-stage flags
+	Stage      string   `mapstructure:"stage"`
+	FromStage  string   `mapstructure:"from-stage"`
+	ToStage    string   `mapstructure:"to-stage"`
+	Stages     []string `mapstructure:"stages"`
+	StageName  string   `mapstructure:"stage-name"`
+	PluginName string   `mapstructure:"plugin-name"`
+	Force      bool     `mapstructure:"force"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -96,6 +104,16 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringSliceVar(&o.PluginPriorities, "plugin-priorities", nil, "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
+
+	// Multi-stage flags
+	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_kubernetes')")
+	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Run transform from this stage onwards (e.g., '20_openshift')")
+	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Run transform up to and including this stage (e.g., '30_imagestream')")
+	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Run transform for specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
+	cmd.Flags().StringVar(&o.StageName, "stage-name", "10_transform", "Name for the output stage directory (default: '10_transform')")
+	cmd.Flags().StringVar(&o.PluginName, "plugin-name", "transform", "Plugin name for metadata (default: 'transform')")
+	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
+
 	// These flags pass down to subcommands
 	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", defaultPluginDir, "The path where binary plugins are located")
 	cmd.PersistentFlags().StringSliceVarP(&o.SkipPlugins, "skip-plugins", "s", nil, "A comma-separated list of plugins to skip")

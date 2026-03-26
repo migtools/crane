@@ -31,6 +31,14 @@ type Flags struct {
 	ExportDir    string `mapstructure:"export-dir"`
 	TransformDir string `mapstructure:"transform-dir"`
 	OutputDir    string `mapstructure:"output-dir"`
+	// Multi-stage flags
+	Stage       string   `mapstructure:"stage"`
+	FromStage   string   `mapstructure:"from-stage"`
+	ToStage     string   `mapstructure:"to-stage"`
+	Stages      []string `mapstructure:"stages"`
+	FinalOnly   bool     `mapstructure:"final-only"`
+	Validate    bool     `mapstructure:"validate"`
+	Force       bool     `mapstructure:"force"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -83,6 +91,15 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
+
+	// Multi-stage flags
+	cmd.Flags().StringVar(&o.Stage, "stage", "", "Apply a specific stage only (e.g., '10_kubernetes')")
+	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Apply from this stage onwards (e.g., '20_openshift')")
+	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Apply up to and including this stage (e.g., '30_imagestream')")
+	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Apply specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
+	cmd.Flags().BoolVar(&o.FinalOnly, "final-only", true, "Apply only the final stage in the pipeline (default: true)")
+	cmd.Flags().BoolVar(&o.Validate, "validate", true, "Run preflight validation before applying (default: true)")
+	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of output directory if it exists and is not empty")
 }
 
 func (o *Options) run() error {
