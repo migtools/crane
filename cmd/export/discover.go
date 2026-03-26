@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/pager"
 	"sigs.k8s.io/yaml"
@@ -128,7 +129,27 @@ func getFilePath(obj unstructured.Unstructured) string {
 	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
 }
 
-func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac bool, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, apiGroups []metav1.APIGroup, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func discoverPreferredResources(
+	discoveryClient discovery.DiscoveryInterface,
+	log logrus.FieldLogger,
+) ([]*metav1.APIResourceList, error) {
+	lists, err := discoveryClient.ServerPreferredResources()
+	if err != nil {
+		if discovery.IsGroupDiscoveryFailedError(err) {
+			log.Warnf("some API groups failed discovery, continuing with available groups")
+		} else {
+			return nil, err
+		}
+	}
+	// Include only types that support list, create, get, and delete.
+	lists = discovery.FilteredBy(
+		discovery.SupportsAllVerbs{Verbs: []string{"list", "create", "get", "delete"}},
+		lists,
+	)
+	return lists, nil
+}
+
+func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac bool, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -178,16 +199,6 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 					log.Errorf("error listing objects: %#v, groupVersion %s, kind: %s\n", err, g.APIGroupVersion, g.APIResource.Kind)
 				}
 				errors = append(errors, &groupResourceError{resource, err})
-				continue
-			}
-
-			preferred := false
-			for _, a := range apiGroups {
-				if a.Name == gv.Group && a.PreferredVersion.Version == gv.Version {
-					preferred = true
-				}
-			}
-			if !preferred {
 				continue
 			}
 

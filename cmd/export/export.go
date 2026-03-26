@@ -9,9 +9,6 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
-	"github.com/vmware-tanzu/velero/pkg/discovery"
-	"github.com/vmware-tanzu/velero/pkg/features"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/dynamic"
@@ -131,18 +128,14 @@ func (o *ExportOptions) Run() error {
 
 	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 
-	features.NewFeatureFlagSet()
-	features.Enable(velerov1api.APIGroupVersionsFeatureFlag)
-
-	discoveryHelper, err := discovery.NewHelper(discoveryClient, log)
+	resourceLists, err := discoverPreferredResources(discoveryClient, log)
 	if err != nil {
-		log.Errorf("cannot create discovery helper: %#v", err)
 		return err
 	}
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, o.clusterScopedRbac, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, o.clusterScopedRbac, dynamicClient, resourceLists, log)
 	clusterScopeHandler := NewClusterScopeHandler()
 	if o.clusterScopedRbac {
 		resources = clusterScopeHandler.filterRbacResources(resources, log)
