@@ -163,8 +163,8 @@ func (c *ClusterScopedRbacHandler) prepareForFiltering() {
 		APIResource:     metav1.APIResource{},
 	}
 	c.filteredClusterRoleBindings.objects = &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
-	c.log.Error("The export of cluster level RBAC resources is enabled but no ClusterRoleBinding resources have been collected:" +
-		" the actual error message can be found under the failures folder")
+	c.log.Warn("No ClusterRoleBindings available to relate cluster RBAC to this namespace (list may be forbidden or returned nothing). " +
+		"ClusterRole, ClusterRoleBinding, and SCC manifests under _cluster/ will be skipped; check failures/<namespace>/clusterrolebindings.yaml if present.")
 }
 
 func (c *ClusterScopedRbacHandler) filteredResourcesOfKind(resource admittedResource) (*groupResource, bool) {

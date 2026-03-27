@@ -163,9 +163,9 @@ func discoverPreferredResources(
 }
 
 // resourceToExtract lists objects for each admitted API type in namespace (or cluster-wide
-// for allowed cluster-scoped kinds when clusterScopedRbac is true). It returns resources
+// for allowed cluster-scoped kinds: ClusterRoleBinding, ClusterRole, SCC). It returns resources
 // with non-empty lists and a parallel slice of per-type list errors.
-func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac bool, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -188,7 +188,7 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 				continue
 			}
 
-			if !isAdmittedResource(clusterScopedRbac, gv, resource) {
+			if !isAdmittedResource(gv, resource) {
 				log.Debugf("resource: %s.%s is clusterscoped or not admitted kind, skipping\n", gv.String(), resource.Kind)
 				continue
 			}
@@ -233,10 +233,10 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 }
 
 // isAdmittedResource returns whether resource should be listed: all namespaced types,
-// or cluster-scoped types on the RBAC/SCC allowlist when clusterScopedRbac is set.
-func isAdmittedResource(clusterScopedRbac bool, gv schema.GroupVersion, resource metav1.APIResource) bool {
+// or cluster-scoped types on the RBAC/SCC allowlist (ClusterRoleBinding, ClusterRole, SCC).
+func isAdmittedResource(gv schema.GroupVersion, resource metav1.APIResource) bool {
 	if !resource.Namespaced {
-		return clusterScopedRbac && isClusterScopedResource(gv.Group, resource.Kind)
+		return isClusterScopedResource(gv.Group, resource.Kind)
 	}
 	return true
 }
