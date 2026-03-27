@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/pager"
 	"sigs.k8s.io/yaml"
@@ -33,6 +34,8 @@ type groupResourceError struct {
 	Error       error              `json:"error"`
 }
 
+// writeResources writes each object in resources to a YAML file under resourceDir
+// or clusterResourceDir when the object has no namespace.
 func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range resources {
@@ -80,6 +83,7 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 	return errs
 }
 
+// writeErrors persists list failures as YAML files named by API resource in failuresDir.
 func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range errors {
@@ -120,6 +124,7 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 	return errs
 }
 
+// getFilePath returns a stable filename from kind, group, version, namespace, and name.
 func getFilePath(obj unstructured.Unstructured) string {
 	namespace := obj.GetNamespace()
 	if namespace == "" {
@@ -128,7 +133,39 @@ func getFilePath(obj unstructured.Unstructured) string {
 	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
 }
 
-func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac bool, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, apiGroups []metav1.APIGroup, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+// discoverPreferredResources returns server-preferred API resource lists, filtered to
+// types that support list, create, get, and delete. Partial discovery failures log a
+// warning unless no usable lists remain, in which case it returns an error.
+func discoverPreferredResources(
+	discoveryClient discovery.DiscoveryInterface,
+	log logrus.FieldLogger,
+) ([]*metav1.APIResourceList, error) {
+	lists, err := discoveryClient.ServerPreferredResources()
+	if err != nil {
+		if discovery.IsGroupDiscoveryFailedError(err) {
+			if len(lists) == 0 {
+				return nil, err
+			}
+			log.Warnf("some API groups failed discovery, continuing with available groups: %v", err)
+		} else {
+			return nil, err
+		}
+	}
+	// Include only types that support list, create, get, and delete.
+	lists = discovery.FilteredBy(
+		discovery.SupportsAllVerbs{Verbs: []string{"list", "create", "get", "delete"}},
+		lists,
+	)
+	if err != nil && len(lists) == 0 {
+		return nil, err
+	}
+	return lists, nil
+}
+
+// resourceToExtract lists objects for each admitted API type in namespace (or cluster-wide
+// for allowed cluster-scoped kinds when clusterScopedRbac is true). It returns resources
+// with non-empty lists and a parallel slice of per-type list errors.
+func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac bool, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -181,16 +218,6 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 				continue
 			}
 
-			preferred := false
-			for _, a := range apiGroups {
-				if a.Name == gv.Group && a.PreferredVersion.Version == gv.Version {
-					preferred = true
-				}
-			}
-			if !preferred {
-				continue
-			}
-
 			if len(objs.Items) > 0 {
 				g.objects = objs
 				log.Infof("adding resource: %s to the list of GVRs to be extracted", resource.Name)
@@ -205,6 +232,8 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 	return resources, errors
 }
 
+// isAdmittedResource returns whether resource should be listed: all namespaced types,
+// or cluster-scoped types on the RBAC/SCC allowlist when clusterScopedRbac is set.
 func isAdmittedResource(clusterScopedRbac bool, gv schema.GroupVersion, resource metav1.APIResource) bool {
 	if !resource.Namespaced {
 		return clusterScopedRbac && isClusterScopedResource(gv.Group, resource.Kind)
@@ -212,6 +241,8 @@ func isAdmittedResource(clusterScopedRbac bool, gv schema.GroupVersion, resource
 	return true
 }
 
+// getObjects lists objects for g using the dynamic client, with paging and optional
+// labelSelector. imagestreamtags and imagetags use per-item Get after List.
 func getObjects(g *groupResource, namespace string, labelSelector string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	c := d.Resource(schema.GroupVersionResource{
 		Group:    g.APIGroup,
@@ -244,6 +275,8 @@ func getObjects(g *groupResource, namespace string, labelSelector string, d dyna
 	return iterateItemsInList(list, g, logger)
 }
 
+// iterateItemsByGet builds a full UnstructuredList by Get-ing each item name from list
+// in namespace (used where List does not return complete objects).
 func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResource, list runtime.Object, namespace string, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {
@@ -266,6 +299,7 @@ func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResourc
 	return unstructuredList, nil
 }
 
+// iterateItemsInList copies list items into an UnstructuredList, asserting *unstructured.Unstructured.
 func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {

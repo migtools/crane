@@ -19,7 +19,6 @@ require (
 	github.com/spf13/cobra v1.10.0
 	github.com/spf13/viper v1.12.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vmware-tanzu/velero v1.6.3
 	golang.org/x/mod v0.32.0
 	gotest.tools/v3 v3.0.3
 	k8s.io/api v0.35.3
