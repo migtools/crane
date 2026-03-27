@@ -1,8 +1,8 @@
-name: Build and test Go
+name: Go build and unit tests
 on: [push, pull_request]
 jobs:
   build:
-    name: Build
+    name: Build and unit test
     runs-on: ubuntu-latest
     steps:
       - name: Set up Go 1.25
@@ -21,7 +21,8 @@ jobs:
           GOPROXY: "https://proxy.golang.org"
         run: cd main && go build ./...
 
-      - name: Test
+      # E2E lives under e2e-tests/tests and requires k8sdeploy + clusters; CI runs unit tests only.
+      - name: Unit tests
         env:
           GOPROXY: "https://proxy.golang.org"
-        run: cd main && go test -v ./...
+        run: cd main && go test -v $(go list ./... | grep -v '/e2e-tests/tests')
