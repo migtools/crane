@@ -218,12 +218,18 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 
 		if crb.RoleRef.Kind == "SecurityContextConstraints" && crb.RoleRef.Name == scc.Name {
 			c.log.Infof("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+			c.log.Warnf("WARNING: SecurityContextConstraints '%s' requires elevated privileges on the destination cluster. "+
+				"Ensure you have access to appropriate SCCs when applying to the target environment, especially when migrating to OpenShift.", 
+				clusterResource.GetName())
 			return true
 		} else {
 			sccSystemName := fmt.Sprintf("system:openshift:scc:%s", clusterResource.GetName())
 			if crb.RoleRef.Kind == "ClusterRole" && crb.RoleRef.Name == sccSystemName {
 				c.log.Infof("Accepted %s of kind %s (match via ClusterRoleBinding %s)",
 					clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
+				c.log.Warnf("WARNING: SecurityContextConstraints '%s' requires elevated privileges on the destination cluster. "+
+					"Ensure you have access to appropriate SCCs when applying to the target environment, especially when migrating to OpenShift.", 
+					clusterResource.GetName())
 				return true
 			}
 		}
@@ -237,6 +243,9 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 			if c.anyServiceAccountInNamespace(namespaceName, serviceAccountName) {
 				c.log.Infof("Accepted %s of kind %s (match wia user %s)",
 					clusterResource.GetName(), clusterResource.GetKind(), u)
+				c.log.Warnf("WARNING: SecurityContextConstraints '%s' requires elevated privileges on the destination cluster. "+
+					"Ensure you have access to appropriate SCCs when applying to the target environment, especially when migrating to OpenShift.", 
+					clusterResource.GetName())
 				return true
 			}
 		}
