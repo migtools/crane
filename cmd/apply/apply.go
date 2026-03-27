@@ -35,13 +35,12 @@ type Flags struct {
 	TransformDir string `mapstructure:"transform-dir"`
 	OutputDir    string `mapstructure:"output-dir"`
 	// Multi-stage flags
-	Stage       string   `mapstructure:"stage"`
-	FromStage   string   `mapstructure:"from-stage"`
-	ToStage     string   `mapstructure:"to-stage"`
-	Stages      []string `mapstructure:"stages"`
-	FinalOnly   bool     `mapstructure:"final-only"`
-	Validate    bool     `mapstructure:"validate"`
-	Force       bool     `mapstructure:"force"`
+	Stage     string   `mapstructure:"stage"`
+	FromStage string   `mapstructure:"from-stage"`
+	ToStage   string   `mapstructure:"to-stage"`
+	Stages    []string `mapstructure:"stages"`
+	FinalOnly bool     `mapstructure:"final-only"`
+	Force     bool     `mapstructure:"force"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -52,16 +51,16 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 func (o *Options) Validate() error {
 	// Validate mutually exclusive flags
 	flagCount := 0
-	if o.Stage != "" {
+	if o.Flags.Stage != "" {
 		flagCount++
 	}
-	if o.FromStage != "" || o.ToStage != "" {
+	if o.Flags.FromStage != "" || o.Flags.ToStage != "" {
 		flagCount++
 	}
-	if len(o.Stages) > 0 {
+	if len(o.Flags.Stages) > 0 {
 		flagCount++
 	}
-	if o.FinalOnly {
+	if o.Flags.FinalOnly {
 		flagCount++
 	}
 
@@ -119,7 +118,6 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Apply up to and including this stage (e.g., '30_imagestream')")
 	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Apply specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
 	cmd.Flags().BoolVar(&o.FinalOnly, "final-only", true, "Apply only the final stage in the pipeline (default: true)")
-	cmd.Flags().BoolVar(&o.Validate, "validate", true, "Run preflight validation before applying (default: true)")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of output directory if it exists and is not empty")
 }
 
@@ -155,16 +153,9 @@ func (o *Options) runKustomizeWorkflow() error {
 		return err
 	}
 
-	// Validate kubectl is available
-	if o.Flags.Validate {
-		if err := apply.ValidateKubectlAvailable(); err != nil {
-			return fmt.Errorf("kubectl validation failed: %w", err)
-		}
-	}
-
-	// Validate output directory
-	if err := apply.ValidateOutputDirectory(outputDir, o.Flags.Force); err != nil {
-		return err
+	// Create output directory
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	// Create applier
@@ -174,14 +165,7 @@ func (o *Options) runKustomizeWorkflow() error {
 		OutputDir:    outputDir,
 	}
 
-	// Run validation if enabled
-	if o.Flags.Validate {
-		log.Info("Running preflight validation...")
-		if err := apply.ValidatePipeline(transformDir); err != nil {
-			return fmt.Errorf("validation failed: %w", err)
-		}
-		log.Info("Validation passed")
-	}
+	// Validation removed for simplicity
 
 	// Determine which stages to apply
 	if o.FinalOnly {

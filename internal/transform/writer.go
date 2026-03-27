@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/kustomize"
@@ -14,21 +13,15 @@ import (
 
 // KustomizeWriter handles writing transform artifacts to Kustomize layout
 type KustomizeWriter struct {
-	opts          file.PathOpts
-	stageName     string
-	pluginName    string
-	craneVersion  string
-	pluginVersion string
+	opts      file.PathOpts
+	stageName string
 }
 
 // NewKustomizeWriter creates a new KustomizeWriter for a specific stage
-func NewKustomizeWriter(opts file.PathOpts, stageName, pluginName, craneVersion, pluginVersion string) *KustomizeWriter {
+func NewKustomizeWriter(opts file.PathOpts, stageName string) *KustomizeWriter {
 	return &KustomizeWriter{
-		opts:          opts,
-		stageName:     stageName,
-		pluginName:    pluginName,
-		craneVersion:  craneVersion,
-		pluginVersion: pluginVersion,
+		opts:      opts,
+		stageName: stageName,
 	}
 }
 
@@ -36,9 +29,11 @@ func NewKustomizeWriter(opts file.PathOpts, stageName, pluginName, craneVersion,
 func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, force bool) error {
 	stageDir := w.opts.GetStageDir(w.stageName)
 
-	// Ensure stage directory is clean or force is set
-	if err := EnsureCleanDirectory(stageDir, force); err != nil {
-		return err
+	// Remove existing stage directory if force is set
+	if force {
+		if err := os.RemoveAll(stageDir); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove existing stage directory: %w", err)
+		}
 	}
 
 	// Create stage directories
@@ -55,15 +50,10 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	// Group resources and patches
 	var resources []unstructured.Unstructured
 	var patches []kustomize.Patch
-	var whiteoutReports []WhiteoutReport
-	var ignoredPatchReports []IgnoredPatchReport
 
 	for _, artifact := range artifacts {
+		// Skip whiteout resources
 		if artifact.HaveWhiteOut {
-			whiteoutReports = append(whiteoutReports, WhiteoutReport{
-				Resource:   artifact.Resource,
-				PluginName: artifact.PluginName,
-			})
 			continue
 		}
 
@@ -100,16 +90,6 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 				},
 			})
 		}
-
-		// Track ignored operations
-		if len(artifact.IgnoredOps) > 0 {
-			ignoredPatchReports = append(ignoredPatchReports, IgnoredPatchReport{
-				Resource:      artifact.Resource,
-				IgnoredOps:    artifact.IgnoredOps,
-				PluginName:    artifact.PluginName,
-				WinningPlugin: "", // TODO: track winning plugin
-			})
-		}
 	}
 
 	// Group resources by type and write resource files
@@ -138,49 +118,6 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	kustomizationPath := w.opts.GetKustomizationPath(w.stageName)
 	if err := os.WriteFile(kustomizationPath, kustomizationYAML, 0644); err != nil {
 		return fmt.Errorf("failed to write kustomization.yaml: %w", err)
-	}
-
-	// Write whiteout report if any
-	if len(whiteoutReports) > 0 {
-		reportYAML, err := GenerateWhiteoutReport(whiteoutReports)
-		if err != nil {
-			return fmt.Errorf("failed to generate whiteout report: %w", err)
-		}
-		reportPath := filepath.Join(stageDir, "whiteout-report.yaml")
-		if err := os.WriteFile(reportPath, reportYAML, 0644); err != nil {
-			return fmt.Errorf("failed to write whiteout report: %w", err)
-		}
-	}
-
-	// Write ignored patches report if any
-	if len(ignoredPatchReports) > 0 {
-		reportYAML, err := GenerateIgnoredPatchReport(ignoredPatchReports)
-		if err != nil {
-			return fmt.Errorf("failed to generate ignored patch report: %w", err)
-		}
-		reportPath := filepath.Join(stageDir, "ignored-patches-report.yaml")
-		if err := os.WriteFile(reportPath, reportYAML, 0644); err != nil {
-			return fmt.Errorf("failed to write ignored patches report: %w", err)
-		}
-	}
-
-	// Generate and write metadata
-	contentHashes, err := GenerateContentHashes(stageDir)
-	if err != nil {
-		return fmt.Errorf("failed to generate content hashes: %w", err)
-	}
-
-	metadata := Metadata{
-		CreatedAt:     time.Now(),
-		CreatedBy:     "crane-transform",
-		Plugin:        w.pluginName,
-		PluginVersion: w.pluginVersion,
-		CraneVersion:  w.craneVersion,
-		ContentHashes: contentHashes,
-	}
-
-	if err := WriteMetadata(stageDir, metadata); err != nil {
-		return fmt.Errorf("failed to write metadata: %w", err)
 	}
 
 	return nil

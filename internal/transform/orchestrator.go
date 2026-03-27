@@ -82,7 +82,7 @@ func (o *Orchestrator) RunSingleStage(stageName, pluginName string) error {
 		ExportDir:    o.ExportDir,
 	}
 
-	writer := NewKustomizeWriter(opts, stageName, pluginName, o.CraneVersion, "")
+	writer := NewKustomizeWriter(opts, stageName)
 	if err := writer.WriteStage(artifacts, o.Force); err != nil {
 		return fmt.Errorf("failed to write stage output: %w", err)
 	}
@@ -190,7 +190,7 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 		ExportDir:    o.ExportDir,
 	}
 
-	writer := NewKustomizeWriter(opts, stage.DirName, stage.PluginName, o.CraneVersion, "")
+	writer := NewKustomizeWriter(opts, stage.DirName)
 	if err := writer.WriteStage(artifacts, o.Force); err != nil {
 		return err
 	}
