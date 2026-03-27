@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/backube/pvc-transfer v0.0.0-20220810121213-5f9e29a1f6e5
 	github.com/bombsimon/logrusr/v3 v3.0.0
+	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.4.3
 	github.com/jarcoal/httpmock v1.2.0
@@ -17,6 +18,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.0
 	github.com/spf13/viper v1.12.0
+	github.com/stretchr/testify v1.11.1
 	github.com/vmware-tanzu/velero v1.6.3
 	golang.org/x/mod v0.32.0
 	gotest.tools/v3 v3.0.3
@@ -37,7 +39,6 @@ require (
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
-	github.com/evanphx/json-patch v5.9.11+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
@@ -71,6 +72,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.0.1 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/shipwright-io/build v0.17.0 // indirect
 	github.com/spf13/afero v1.9.2 // indirect
@@ -106,3 +108,5 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
 )
+
+replace github.com/konveyor/crane-lib => /home/maufart/go/src/github.com/migtools/crane-lib
