@@ -47,7 +47,7 @@ func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 	if err := srcApp.Validate(); err != nil {
 		return err
 	}
-	if err := kubectlSrc.ScaleDeployment(srcApp.Namespace, srcApp.Name, 0); err != nil {
+	if err := kubectlSrc.ScaleDeploymentIfPresent(srcApp.Namespace, srcApp.Name, 0); err != nil {
 		return err
 	}
 	return nil

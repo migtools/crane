@@ -26,6 +26,10 @@ inputs:
     description: Ingress rollout timeout
     required: false
     default: "300s"
+  enable_olm:
+    description: Install OLM on src/tgt clusters
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -55,6 +59,7 @@ runs:
         SRC_K8S_VERSION: ${{ inputs.src_k8s_version }}
         TGT_K8S_VERSION: ${{ inputs.tgt_k8s_version }}
         INGRESS_WAIT: ${{ inputs.ingress_wait }}
+        ENABLE_OLM: ${{ inputs.enable_olm }}
       run: make setup-minikube-same-network
 
     - name: Verify profiles

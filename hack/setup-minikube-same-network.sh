@@ -20,6 +20,8 @@ set -x
 #   SRC_K8S_VERSION    optional
 #   TGT_K8S_VERSION    optional
 #   INGRESS_WAIT       default: 300s
+#   OLM_WAIT           default: 300s
+#   ENABLE_OLM         default: true
 #   RESET_PROFILES     default: true
 #   RECREATE_NETWORK   default: true
 
@@ -32,6 +34,8 @@ MINIKUBE_MEMORY="${MINIKUBE_MEMORY:-}"
 SRC_K8S_VERSION="${SRC_K8S_VERSION:-}"
 TGT_K8S_VERSION="${TGT_K8S_VERSION:-}"
 INGRESS_WAIT="${INGRESS_WAIT:-300s}"
+OLM_WAIT="${OLM_WAIT:-300s}"
+ENABLE_OLM="${ENABLE_OLM:-true}"
 RESET_PROFILES="${RESET_PROFILES:-true}"
 RECREATE_NETWORK="${RECREATE_NETWORK:-true}"
 set -x
@@ -45,6 +49,22 @@ require_cmd() {
     printf 'Error: required command not found: %s\n' "$1" >&2
     exit 1
   fi
+}
+
+ensure_operator_sdk() {
+  if command -v operator-sdk >/dev/null 2>&1; then
+    log "operator-sdk already installed: $(operator-sdk version 2>/dev/null || echo unknown)"
+    return
+  fi
+
+  require_cmd curl
+  require_cmd sudo
+  log "Installing operator-sdk"
+  curl -fsSL -o /tmp/operator-sdk_linux_amd64 \
+    "https://github.com/operator-framework/operator-sdk/releases/download/v1.40.0/operator-sdk_linux_amd64"
+  chmod +x /tmp/operator-sdk_linux_amd64
+  sudo mv /tmp/operator-sdk_linux_amd64 /usr/local/bin/operator-sdk
+  operator-sdk version
 }
 
 start_profile() {
@@ -79,9 +99,40 @@ start_profile() {
   "${cmd[@]}"
 }
 
+enable_olm() {
+  local profile="$1"
+  local previous_context=""
+  previous_context="$(kubectl config current-context 2>/dev/null || true)"
+
+  log "Installing OLM via operator-sdk on profile: ${profile}"
+  kubectl config use-context "$profile" >/dev/null
+
+  if ! kubectl get deployment olm-operator -n olm --context="$profile" >/dev/null 2>&1; then
+    operator-sdk olm install
+  else
+    log "OLM already present on profile: ${profile}"
+  fi
+
+  if [[ -n "$previous_context" && "$previous_context" != "$profile" ]]; then
+    kubectl config use-context "$previous_context" >/dev/null
+  fi
+
+  log "Waiting for OLM deployments on profile: ${profile}"
+  kubectl rollout status deployment/olm-operator -n olm --context="$profile" --timeout="$OLM_WAIT"
+  kubectl rollout status deployment/catalog-operator -n olm --context="$profile" --timeout="$OLM_WAIT"
+  # packageserver can be named "packageserver" or "packageserver" may be absent
+  # briefly during addon transitions; treat absence as non-fatal.
+  if kubectl get deployment packageserver -n olm --context="$profile" >/dev/null 2>&1; then
+    kubectl rollout status deployment/packageserver -n olm --context="$profile" --timeout="$OLM_WAIT"
+  fi
+}
+
 require_cmd docker
 require_cmd minikube
 require_cmd kubectl
+if [[ "$ENABLE_OLM" == "true" ]]; then
+  ensure_operator_sdk
+fi
 
 if [[ "$RESET_PROFILES" == "true" ]]; then
   log "Deleting existing minikube profiles: ${SRC_PROFILE}, ${TGT_PROFILE}"
@@ -154,6 +205,13 @@ fi
 if [[ "$actual_tgt_ip" != "$TGT_STATIC_IP" ]]; then
   printf 'Error: tgt IP mismatch expected=%s actual=%s\n' "$TGT_STATIC_IP" "$actual_tgt_ip" >&2
   exit 1
+fi
+
+if [[ "$ENABLE_OLM" == "true" ]]; then
+  enable_olm "$SRC_PROFILE"
+  enable_olm "$TGT_PROFILE"
+else
+  log "Skipping OLM installation (ENABLE_OLM=${ENABLE_OLM})"
 fi
 
 log "Setting up ingress on target profile: ${TGT_PROFILE}"

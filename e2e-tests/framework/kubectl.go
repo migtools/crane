@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -10,6 +11,47 @@ import (
 type KubectlRunner struct {
 	Bin     string
 	Context string
+}
+
+// Run executes an arbitrary kubectl command and returns trimmed output.
+// Example: Run("get", "po", "-n", "ns"), Run("delete", "cm", "x", "-n", "ns").
+func (k KubectlRunner) Run(args ...string) (string, error) {
+	return k.executeWithStdin("", args...)
+}
+
+// RunWithStdin executes an arbitrary kubectl command using stdin content.
+// Example: RunWithStdin(manifestYAML, "apply", "-f", "-").
+func (k KubectlRunner) RunWithStdin(stdin string, args ...string) (string, error) {
+	return k.executeWithStdin(stdin, args...)
+}
+
+// executeWithStdin executes an arbitrary kubectl command using stdin content.
+func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, error) {
+	finalArgs := append([]string{}, normalizeKubectlArgs(args...)...)
+	if k.Context != "" {
+		finalArgs = append(finalArgs, "--context", k.Context)
+	}
+	logVerboseCommand(k.Bin, finalArgs)
+	cmd := exec.Command(k.Bin, finalArgs...)
+	if stdin != "" {
+		cmd.Stdin = bytes.NewBufferString(stdin)
+	}
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("kubectl", out)
+	if err != nil {
+		return "", fmt.Errorf("kubectl %s failed: %v, output: %s", strings.Join(finalArgs, " "), err, string(out))
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// normalizeKubectlArgs accepts either tokenized args
+// (Run("get","po","-n","ns")) or a single command string
+// (Run("get po -n ns")) and converts to tokens.
+func normalizeKubectlArgs(args ...string) []string {
+	if len(args) == 1 && strings.Contains(args[0], " ") {
+		return strings.Fields(args[0])
+	}
+	return args
 }
 
 // CreateNamespace creates a namespace and treats AlreadyExists as success.
@@ -43,6 +85,15 @@ func (k KubectlRunner) ApplyDir(dir string) error {
 	logVerboseOutput("kubectl apply", out)
 	if err != nil {
 		return fmt.Errorf("kubectl apply failed: %v, output: %s", err, string(out))
+	}
+	return nil
+}
+
+// ApplyYAMLSpec applies an inline YAML manifest string with kubectl.
+func (k KubectlRunner) ApplyYAMLSpec(spec string, namespace string) error {
+	_, err := k.RunWithStdin(spec, "apply", "-f", "-", "-n", namespace)
+	if err != nil {
+		return fmt.Errorf("kubectl apply inline spec failed: %w", err)
 	}
 	return nil
 }
@@ -118,4 +169,27 @@ func (k KubectlRunner) ScaleDeployment(ns, appName string, replicas int) error {
 
 	return fmt.Errorf("kubectl scale failed after label and name fallbacks: %v, output: %s", lastErr, string(lastOut))
 
+}
+
+// ScaleDeploymentIfPresent scales a deployment only when it can be discovered.
+// It is useful for scenarios that may not create deployments (e.g. namespace-only apps).
+func (k KubectlRunner) ScaleDeploymentIfPresent(ns, appName string, replicas int) error {
+	selector := "name=" + appName
+	checkArgs := []string{"get", "deployment", "--namespace", ns, "-l", selector, "-o", "name"}
+	if k.Context != "" {
+		checkArgs = append(checkArgs, "--context", k.Context)
+	}
+	logVerboseCommand(k.Bin, checkArgs)
+	checkCmd := exec.Command(k.Bin, checkArgs...)
+	checkOut, checkErr := checkCmd.CombinedOutput()
+	logVerboseOutput("kubectl get deployment by label", checkOut)
+	if checkErr != nil {
+		return fmt.Errorf("kubectl get deployment by label failed: %v, output: %s", checkErr, string(checkOut))
+	}
+
+	// No deployment for this app; nothing to scale down.
+	if strings.TrimSpace(string(checkOut)) == "" {
+		return nil
+	}
+	return k.ScaleDeployment(ns, appName, replicas)
 }
