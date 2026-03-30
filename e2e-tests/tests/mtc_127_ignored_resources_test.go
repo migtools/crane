@@ -111,10 +111,12 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 		log.Printf("Verifying manual Endpoints resource is NOT present on target cluster")
 		_, err = kubectlTgt.Run("get", "endpoints", "manual-endpoint", "-n", tgtApp.Namespace)
 		Expect(err).To(HaveOccurred(), "Endpoints resource should NOT be present on target cluster but was found")
+		Expect(err.Error()).To(ContainSubstring("NotFound"))
 		log.Printf("Confirmed: Endpoints resource is correctly absent from target cluster\n")
 		log.Printf("Verifying manual Subscription resource is NOT present on target cluster")
 		_, err = kubectlTgt.Run("get", "subscription", "manual-subscription", "-n", namespace)
 		Expect(err).To(HaveOccurred(), "Subscription resource should NOT be present on target cluster but was found")
+		Expect(err.Error()).To(ContainSubstring("NotFound"))
 		log.Printf("Confirmed: Subscription resource is correctly absent from target cluster\n")
 
 	})
