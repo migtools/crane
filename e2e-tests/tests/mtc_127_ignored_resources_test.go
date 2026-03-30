@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
@@ -56,7 +55,7 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 		Expect(err).NotTo(HaveOccurred())
 		By("Create manual Endpoints resource from inline YAML")
 		Expect(kubectlSrc.ApplyYAMLSpec(manualEndpointsSpec, namespace)).NotTo(HaveOccurred())
-		output, err := kubectlSrc.Run(fmt.Sprintf("get endpoints %s -n %s", "manual-endpoint", namespace))
+		output, err := kubectlSrc.Run("get", "endpoints", "manual-endpoint", "-n", namespace)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Endpoints resource is present on source cluster \n%s\n", output)
 
@@ -77,6 +76,7 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 			if err != nil {
 				log.Printf("cleanup manual endpoints failed: %v", err)
 			}
+			By("Cleanup manual Subscription resource on source")
 			_, err = kubectlSrc.Run("delete", "subscription", "manual-subscription", "-n", namespace, "--ignore-not-found=true")
 			if err != nil {
 				log.Printf("cleanup manual subscription failed: %v", err)
