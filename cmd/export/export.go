@@ -1,3 +1,6 @@
+// Package export implements the crane export subcommand: discover API types,
+// list objects in a namespace (and optionally related cluster-scoped RBAC),
+// and write manifests and list failures under an export directory.
 package export
 
 import (
@@ -9,15 +12,13 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	velerov1api "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
-	"github.com/vmware-tanzu/velero/pkg/discovery"
-	"github.com/vmware-tanzu/velero/pkg/features"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd/api"
 )
 
+// ExportOptions holds CLI flags and runtime state for a single export run.
 type ExportOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 
@@ -40,6 +41,7 @@ type ExportOptions struct {
 	genericclioptions.IOStreams
 }
 
+// Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
 
@@ -68,6 +70,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	return nil
 }
 
+// Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
 	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
 		return fmt.Errorf("extras requires specifying a user or group to impersonate")
@@ -75,6 +78,8 @@ func (o *ExportOptions) Validate() error {
 	return nil
 }
 
+// Run performs discovery, lists resources, optionally filters cluster-scoped RBAC,
+// writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
 func (o *ExportOptions) Run() error {
 	var err error
 
@@ -131,18 +136,14 @@ func (o *ExportOptions) Run() error {
 
 	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 
-	features.NewFeatureFlagSet()
-	features.Enable(velerov1api.APIGroupVersionsFeatureFlag)
-
-	discoveryHelper, err := discovery.NewHelper(discoveryClient, log)
+	resourceLists, err := discoverPreferredResources(discoveryClient, log)
 	if err != nil {
-		log.Errorf("cannot create discovery helper: %#v", err)
 		return err
 	}
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, o.clusterScopedRbac, dynamicClient, discoveryHelper.Resources(), discoveryHelper.APIGroups(), log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, o.clusterScopedRbac, dynamicClient, resourceLists, log)
 	clusterScopeHandler := NewClusterScopeHandler()
 	if o.clusterScopedRbac {
 		resources = clusterScopeHandler.filterRbacResources(resources, log)
@@ -165,6 +166,7 @@ func (o *ExportOptions) Run() error {
 	return errorsutil.NewAggregate(errs)
 }
 
+// NewExportCommand builds the cobra export command with flags and viper wiring.
 func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ExportOptions{
 		configFlags: genericclioptions.NewConfigFlags(true),
