@@ -16,16 +16,17 @@ type KubectlRunner struct {
 // Run executes an arbitrary kubectl command and returns trimmed output.
 // Example: Run("get", "po", "-n", "ns"), Run("delete", "cm", "x", "-n", "ns").
 func (k KubectlRunner) Run(args ...string) (string, error) {
-	return k.runWithStdin("", args...)
+	return k.executeWithStdin("", args...)
 }
 
 // RunWithStdin executes an arbitrary kubectl command using stdin content.
 // Example: RunWithStdin(manifestYAML, "apply", "-f", "-").
 func (k KubectlRunner) RunWithStdin(stdin string, args ...string) (string, error) {
-	return k.runWithStdin(stdin, args...)
+	return k.executeWithStdin(stdin, args...)
 }
 
-func (k KubectlRunner) runWithStdin(stdin string, args ...string) (string, error) {
+// executeWithStdin executes an arbitrary kubectl command using stdin content.
+func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, error) {
 	finalArgs := append([]string{}, normalizeKubectlArgs(args...)...)
 	if k.Context != "" {
 		finalArgs = append(finalArgs, "--context", k.Context)
