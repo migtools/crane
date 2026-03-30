@@ -51,6 +51,24 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
+
+		DeferCleanup(func() {
+			By("Cleanup manual Endpoints resource on source")
+			_, err := kubectlSrc.Run("delete", "endpoints", "manual-endpoint", "-n", namespace, "--ignore-not-found=true")
+			if err != nil {
+				log.Printf("cleanup manual endpoints failed: %v", err)
+			}
+			By("Cleanup manual Subscription resource on source")
+			_, err = kubectlSrc.Run("delete", "subscription", "manual-subscription", "-n", namespace, "--ignore-not-found=true")
+			if err != nil {
+				log.Printf("cleanup manual subscription failed: %v", err)
+			}
+			By("Cleanup source and target resources")
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
+		})
+
 		manualEndpointsSpec, err := utils.ReadTestdataFile("endpoints.yaml")
 		Expect(err).NotTo(HaveOccurred())
 		By("Create manual Endpoints resource from inline YAML")
@@ -70,22 +88,7 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 
 		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
-		DeferCleanup(func() {
-			By("Cleanup manual Endpoints resource on source")
-			_, err := kubectlSrc.Run("delete", "endpoints", "manual-endpoint", "-n", namespace, "--ignore-not-found=true")
-			if err != nil {
-				log.Printf("cleanup manual endpoints failed: %v", err)
-			}
-			By("Cleanup manual Subscription resource on source")
-			_, err = kubectlSrc.Run("delete", "subscription", "manual-subscription", "-n", namespace, "--ignore-not-found=true")
-			if err != nil {
-				log.Printf("cleanup manual subscription failed: %v", err)
-			}
-			By("Cleanup source and target resources")
-			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
-				log.Printf("cleanup: %v", err)
-			}
-		})
+
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
