@@ -89,8 +89,8 @@ func (k KubectlRunner) ApplyDir(dir string) error {
 }
 
 // ApplyYAMLSpec applies an inline YAML manifest string with kubectl.
-func (k KubectlRunner) ApplyYAMLSpec(spec string) error {
-	_, err := k.RunWithStdin(spec, "apply", "-f", "-")
+func (k KubectlRunner) ApplyYAMLSpec(spec string, namespace string) error {
+	_, err := k.RunWithStdin(spec, "apply", "-f", "-", "-n", namespace)
 	if err != nil {
 		return fmt.Errorf("kubectl apply inline spec failed: %w", err)
 	}

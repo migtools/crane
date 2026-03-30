@@ -12,32 +12,22 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-const manualEndpointsSpecTemplate = `apiVersion: v1
-kind: Endpoints
-metadata:
-  name: mtc-127-manual-endpoint
-  namespace: %s
-subsets:
-  - addresses:
-      - ip: 10.0.0.123
-    ports:
-      - name: http
-        port: 80
-        protocol: TCP
-`
+// const manualEndpointsSpecTemplate = `apiVersion: v1
+// kind: Endpoints
+// metadata:
+//   name: mtc-127-manual-endpoint
+//   namespace: %s
+// subsets:
+//   - addresses:
+//       - ip: 10.0.0.123
+//     ports:
+//       - name: http
+//         port: 80
+//         protocol: TCP
+// `
 
-const manualSubscriptionSpecTemplate = `apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: mtc-127-manual-subscription
-  namespace: %s
-spec:
-  channel: stable
-  installPlanApproval: Automatic
-  name: packageserver
-  source: operatorhubio-catalog
-  sourceNamespace: olm
-`
+// const manualSubscriptionSpecTemplate = `
+// `
 
 var _ = Describe("[MTC-127] Default Ignored resources", func() {
 	It("should be ignored", Label("tier0"), func() {
@@ -62,30 +52,32 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
-		manualEndpointsSpec := fmt.Sprintf(manualEndpointsSpecTemplate, namespace)
-		By("Create manual Endpoints resource from inline YAML")
-		Expect(kubectlSrc.ApplyYAMLSpec(manualEndpointsSpec)).NotTo(HaveOccurred())
-		output, err := kubectlSrc.Run(fmt.Sprintf("get endpoints %s -n %s", "mtc-127-manual-endpoint", namespace))
+		manualEndpointsSpec, err := utils.ReadTestdataFile("endpoints.yaml")
 		Expect(err).NotTo(HaveOccurred())
-		log.Printf("Endpoints resource is present on source cluster : %s\n", output)
+		By("Create manual Endpoints resource from inline YAML")
+		Expect(kubectlSrc.ApplyYAMLSpec(manualEndpointsSpec, namespace)).NotTo(HaveOccurred())
+		output, err := kubectlSrc.Run(fmt.Sprintf("get endpoints %s -n %s", "manual-endpoint", namespace))
+		Expect(err).NotTo(HaveOccurred())
+		log.Printf("Endpoints resource is present on source cluster \n%s\n", output)
 
 		// Create subscription resource
-		manualSubscriptionSpec := fmt.Sprintf(manualSubscriptionSpecTemplate, namespace)
+		manualSubscriptionSpec, err := utils.ReadTestdataFile("subscription.yaml")
+		Expect(err).NotTo(HaveOccurred())
 		By("Create manual Subscription resource")
-		Expect(kubectlSrc.ApplyYAMLSpec(manualSubscriptionSpec)).NotTo(HaveOccurred())
-		out, err := kubectlSrc.Run("get", "subscription", "mtc-127-manual-subscription", "-n", namespace)
+		Expect(kubectlSrc.ApplyYAMLSpec(manualSubscriptionSpec, namespace)).NotTo(HaveOccurred())
+		out, err := kubectlSrc.Run("get", "subscription", "manual-subscription", "-n", namespace)
 		Expect(err).NotTo(HaveOccurred(), "Subscription resource is not present on source cluster")
-		log.Printf("Subscription resource is present on source cluster : %s\n", out)
+		log.Printf("Subscription resource is present on source cluster\n %s\n", out)
 
 		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 		DeferCleanup(func() {
 			By("Cleanup manual Endpoints resource on source")
-			_, err := kubectlSrc.Run("delete", "endpoints", "mtc-127-manual-endpoint", "-n", namespace, "--ignore-not-found=true")
+			_, err := kubectlSrc.Run("delete", "endpoints", "manual-endpoint", "-n", namespace, "--ignore-not-found=true")
 			if err != nil {
 				log.Printf("cleanup manual endpoints failed: %v", err)
 			}
-			_, err = kubectlSrc.Run("delete", "subscription", "mtc-127-manual-subscription", "-n", namespace, "--ignore-not-found=true")
+			_, err = kubectlSrc.Run("delete", "subscription", "manual-subscription", "-n", namespace, "--ignore-not-found=true")
 			if err != nil {
 				log.Printf("cleanup manual subscription failed: %v", err)
 			}

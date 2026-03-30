@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -67,4 +68,22 @@ func HasFilesRecursively(dir string) (bool, string, error) {
 	}
 	hasFiles := !strings.Contains(files, "(no files)")
 	return hasFiles, files, nil
+}
+
+// ReadTestdataFile reads a file from the testdata directory.
+func ReadTestdataFile(filename string) (string, error) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+
+	baseDir := filepath.Dir(thisFile)
+	path := filepath.Join(baseDir, "..", "testdata", filename)
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file %s: %w", path, err)
+	}
+
+	return string(b), nil
 }
