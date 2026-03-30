@@ -278,6 +278,9 @@ func getObjects(g *groupResource, namespace string, labelSelector string, d dyna
 // iterateItemsByGet builds a full UnstructuredList by Get-ing each item name from list
 // in namespace (used where List does not return complete objects).
 func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResource, list runtime.Object, namespace string, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+	if g == nil {
+		return nil, fmt.Errorf("groupResource cannot be nil")
+	}
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {
 		u, ok := object.(*unstructured.Unstructured)
@@ -301,6 +304,9 @@ func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResourc
 
 // iterateItemsInList copies list items into an UnstructuredList, asserting *unstructured.Unstructured.
 func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+	if g == nil {
+		return nil, fmt.Errorf("groupResource cannot be nil")
+	}
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {
 		u, ok := object.(*unstructured.Unstructured)
