@@ -11,23 +11,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// const manualEndpointsSpecTemplate = `apiVersion: v1
-// kind: Endpoints
-// metadata:
-//   name: mtc-127-manual-endpoint
-//   namespace: %s
-// subsets:
-//   - addresses:
-//       - ip: 10.0.0.123
-//     ports:
-//       - name: http
-//         port: 80
-//         protocol: TCP
-// `
-
-// const manualSubscriptionSpecTemplate = `
-// `
-
 var _ = Describe("[MTC-127] Default Ignored resources", func() {
 	It("should be ignored", Label("tier0"), func() {
 		appName := "empty-namespace"
