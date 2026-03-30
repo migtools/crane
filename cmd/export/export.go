@@ -140,6 +140,10 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
+	crdResources, crdErrs := collectRelatedCRDs(resources, dynamicClient, log)
+	resourceErrs = append(resourceErrs, crdErrs...)
+	resources = append(resources, crdResources...)
+
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
