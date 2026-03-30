@@ -63,7 +63,7 @@ func (c *ClusterScopeHandler) filterRbacResources(resources []*groupResource, lo
 	}
 
 	if len(handler.clusterResources) == 0 {
-		log.Info("No cluster-scoped resources were collected, nothing to filter")
+		log.Debug("No cluster-scoped resources were collected, nothing to filter")
 		return filteredResources
 	}
 
