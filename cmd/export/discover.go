@@ -34,6 +34,39 @@ type groupResourceError struct {
 	Error       error              `json:"error"`
 }
 
+// hasClusterScopedManifests reports whether any object in resources would be written
+// under clusterResourceDir (objects with empty namespace).
+func hasClusterScopedManifests(resources []*groupResource) bool {
+	for _, g := range resources {
+		if g == nil || g.objects == nil {
+			continue
+		}
+		for _, obj := range g.objects.Items {
+			if obj.GetNamespace() == "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// prepareClusterResourceDir removes any previous _cluster export at clusterResourceDir
+// (so stale YAML from an earlier run is not left behind), then recreates the directory
+// only if this run has cluster-scoped manifests to write. If clusterResourceDir does
+// not exist, RemoveAll succeeds.
+func prepareClusterResourceDir(clusterResourceDir string, resources []*groupResource) error {
+	if err := os.RemoveAll(clusterResourceDir); err != nil {
+		return fmt.Errorf("clear cluster export directory %q: %w", clusterResourceDir, err)
+	}
+	if !hasClusterScopedManifests(resources) {
+		return nil
+	}
+	if err := os.MkdirAll(clusterResourceDir, 0700); err != nil {
+		return fmt.Errorf("create cluster export directory %q: %w", clusterResourceDir, err)
+	}
+	return nil
+}
+
 // writeResources writes each object in resources to a YAML file under resourceDir
 // or clusterResourceDir when the object has no namespace.
 func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {

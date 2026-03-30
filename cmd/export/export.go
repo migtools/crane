@@ -93,15 +93,6 @@ func (o *ExportOptions) Run() error {
 		log.Errorf("error creating the resources directory: %#v", err)
 		return err
 	}
-	// create _cluster directory if it doesnt exist (cluster-scoped RBAC YAML output)
-	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
-	err = os.MkdirAll(clusterResourceDir, 0700)
-	switch {
-	case os.IsExist(err):
-	case err != nil:
-		log.Errorf("error creating the cluster resources directory: %#v", err)
-		return err
-	}
 	// create export directory if it doesnt exist
 	err = os.MkdirAll(filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), 0700)
 	switch {
@@ -143,6 +134,13 @@ func (o *ExportOptions) Run() error {
 	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
+
+	// create cluster resources directory if it needs to be created
+	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
+	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
+		log.Errorf("error preparing cluster resources directory: %#v", err)
+		return err
+	}
 
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
