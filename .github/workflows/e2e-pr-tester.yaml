@@ -82,11 +82,16 @@ jobs:
           echo "test_paths=$TEST_PATHS" >> "$GITHUB_OUTPUT"
           echo "focus_file_regex=$FOCUS_FILE_REGEX" >> "$GITHUB_OUTPUT"
 
-      - name: Print touched tests
+      - name: Print execution plan
         run: |
           echo "Run mode: ${{ steps.changed_tests.outputs.run_mode }}"
-          echo "Running touched tests: ${{ steps.changed_tests.outputs.test_paths }}"
-          echo "Running focus-file regex: ${{ steps.changed_tests.outputs.focus_file_regex }}"
+          if [ "${{ steps.changed_tests.outputs.run_mode }}" = "all" ]; then
+            echo "Running full suite: e2e-tests/tests"
+            echo "Reason: impactful non-test file(s) changed under e2e-tests/"
+          else
+            echo "Running touched tests: ${{ steps.changed_tests.outputs.test_paths }}"
+            echo "Using focus-file regex: ${{ steps.changed_tests.outputs.focus_file_regex }}"
+          fi
 
   run-changed-e2e-tests:
     needs: detect-changes
