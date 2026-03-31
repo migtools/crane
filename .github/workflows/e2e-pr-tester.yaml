@@ -1,0 +1,94 @@
+name: E2E Tests PR Tester
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "e2e-tests/**"
+
+jobs:
+  run-touched-e2e:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect touched e2e test files
+        id: changed_tests
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          CHANGED_TEST_FILES="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 'e2e-tests/tests/**/*_test.go' || true)"
+
+          if [ -z "$CHANGED_TEST_FILES" ]; then
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
+            echo "test_paths=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TEST_PATHS="$(printf '%s\n' "$CHANGED_TEST_FILES" | sort -u | xargs)"
+          echo "has_tests=true" >> "$GITHUB_OUTPUT"
+          echo "test_paths=$TEST_PATHS" >> "$GITHUB_OUTPUT"
+
+      - name: Print touched tests
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        run: |
+          echo "Running touched tests: ${{ steps.changed_tests.outputs.test_paths }}"
+
+      - name: Setup minikube clusters
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        uses: ./.github/actions/setup-minikube-clusters
+        with:
+          cpus: max
+          memory: "8192"
+
+      - name: Setup Python
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone k8s-apps-deployer
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+
+      - name: Create venv and install package
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        run: |
+          cd k8s-apps-deployer
+          python3 -m venv venv
+          echo "$PWD/venv/bin" >> $GITHUB_PATH
+          ./venv/bin/pip install --upgrade pip
+          ./venv/bin/pip install -e .
+
+      - name: Setup Go
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Ginkgo CLI
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        run: |
+          GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
+          go install "github.com/onsi/ginkgo/v2/ginkgo@$GINKGO_VERSION"
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          ginkgo version
+
+      - name: Build crane CLI
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        run: go build -o crane .
+
+      - name: Run touched crane e2e tests
+        if: steps.changed_tests.outputs.has_tests == 'true'
+        run: |
+          ginkgo run -v ${{ steps.changed_tests.outputs.test_paths }} -- \
+            --k8sdeploy-bin="k8sdeploy" \
+            --crane-bin="${{ github.workspace }}/crane" \
+            --source-context=src \
+            --target-context=tgt \
+            --verbose-logs
