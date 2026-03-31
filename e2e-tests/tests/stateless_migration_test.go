@@ -56,5 +56,5 @@ var _ = Describe("Stateless migration", func() {
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
 		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
-	})
+	}) //End of [MTC-329] nginx app quiesce pod and apply to target cluster
 })
