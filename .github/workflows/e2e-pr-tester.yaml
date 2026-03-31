@@ -8,7 +8,7 @@ on:
       - "e2e-tests/**"
 
 jobs:
-  run-touched-e2e:
+  run-changed-e2e-tests:
     permissions:
       contents: read
     runs-on: ubuntu-22.04
