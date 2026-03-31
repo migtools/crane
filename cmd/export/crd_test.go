@@ -11,29 +11,28 @@ import (
 	"k8s.io/client-go/dynamic/fake"
 )
 
-func TestIsBuiltinAPIGroup(t *testing.T) {
+func TestShouldSkipCRDGroup_DefaultsAndOverrides(t *testing.T) {
 	tests := []struct {
-		group string
-		want  bool
+		name     string
+		group    string
+		includes []string
+		skips    []string
+		wantSkip bool
 	}{
-		{"", true},
-		{"apps", true},
-		{"batch", true},
-		{"rbac.authorization.k8s.io", true},
-		{"apiextensions.k8s.io", true},
-		{"operators.coreos.com", true},
-		{"packages.operators.coreos.com", true},
-		{"monitoring.coreos.com", true},
-		{"route.openshift.io", true},
-		{"config.openshift.io", true},
-		{"example.com", false},
-		{"widgets.example.com", false},
-		{"acme.corp", false},
+		{name: "default builtin skipped", group: "apps", wantSkip: true},
+		{name: "default openshift suffix skipped", group: "route.openshift.io", wantSkip: true},
+		{name: "custom group included by default", group: "example.com", wantSkip: false},
+		{name: "user skip works", group: "acme.corp", skips: []string{"acme.corp"}, wantSkip: true},
+		{name: "include overrides default builtin", group: "apps", includes: []string{"apps"}, wantSkip: false},
+		{name: "include overrides openshift suffix", group: "route.openshift.io", includes: []string{"route.openshift.io"}, wantSkip: false},
+		{name: "include overrides user skip", group: "acme.corp", includes: []string{"acme.corp"}, skips: []string{"acme.corp"}, wantSkip: false},
 	}
+
 	for _, tt := range tests {
-		t.Run(tt.group, func(t *testing.T) {
-			if got := isBuiltinAPIGroup(tt.group); got != tt.want {
-				t.Fatalf("isBuiltinAPIGroup(%q) = %v, want %v", tt.group, got, tt.want)
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldSkipCRDGroup(tt.group, normalizeGroupSet(tt.includes), normalizeGroupSet(tt.skips))
+			if got != tt.wantSkip {
+				t.Fatalf("shouldSkipCRDGroup(%q)=%v want %v", tt.group, got, tt.wantSkip)
 			}
 		})
 	}
@@ -68,7 +67,7 @@ func TestCollectRelatedCRDs_customResourceOneCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crdUnstructured("widgets.example.com"))
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log)
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -101,7 +100,7 @@ func TestCollectRelatedCRDs_builtinGroupNoFetch(t *testing.T) {
 			Items: []unstructured.Unstructured{{}},
 		},
 	}
-	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log)
+	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -119,7 +118,7 @@ func TestCollectRelatedCRDs_dedupePluralGroup(t *testing.T) {
 	w2 := widgetGroupResource()
 	w2.objects.Items[0].SetName("w2")
 
-	got, errs := collectRelatedCRDs([]*groupResource{w1, w2}, client, log)
+	got, errs := collectRelatedCRDs([]*groupResource{w1, w2}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -136,7 +135,7 @@ func TestCollectRelatedCRDs_skipsSubresourceName(t *testing.T) {
 	gr := widgetGroupResource()
 	gr.APIResource.Name = "widgets/status"
 
-	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log)
+	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -167,7 +166,7 @@ func TestCollectRelatedCRDs_multipleDistinctCRDs(t *testing.T) {
 		},
 	}
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource(), gadget}, client, log)
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource(), gadget}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -186,7 +185,7 @@ func TestCollectRelatedCRDs_getFailureReturnsGroupResourceError(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log)
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(got) != 0 {
 		t.Fatalf("expected no CRD rows, got %d", len(got))
 	}
@@ -201,5 +200,36 @@ func TestCollectRelatedCRDs_getFailureReturnsGroupResourceError(t *testing.T) {
 	}
 	if !apierrors.IsNotFound(errs[0].Error) {
 		t.Fatalf("expected NotFound, got %v", errs[0].Error)
+	}
+}
+
+func TestCollectRelatedCRDs_IncludeOverridesBuiltinGroup(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClient(scheme, crdUnstructured("routes.route.openshift.io"))
+	log := testLogger()
+
+	gr := &groupResource{
+		APIGroup:        "route.openshift.io",
+		APIVersion:      "v1",
+		APIGroupVersion: "route.openshift.io/v1",
+		APIResource: metav1.APIResource{
+			Name:       "routes",
+			Kind:       "Route",
+			Namespaced: true,
+		},
+		objects: &unstructured.UnstructuredList{
+			Items: []unstructured.Unstructured{{Object: map[string]interface{}{"metadata": map[string]interface{}{"name": "r1"}}}},
+		},
+	}
+
+	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log, nil, []string{"route.openshift.io"})
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	if got[0].objects.Items[0].GetName() != "routes.route.openshift.io" {
+		t.Fatalf("unexpected CRD object: %s", got[0].objects.Items[0].GetName())
 	}
 }
