@@ -144,6 +144,12 @@ func (o *ExportOptions) Run() error {
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
+	//count and log the no of crds
+	crdCount := len(crdResources)
+	if crdCount > 0 {
+		log.Infof("Exported %d CRDs for referenced custom resources to the _cluster resources directory\n", crdCount)
+	}
+
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
