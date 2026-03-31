@@ -62,11 +62,29 @@ func (c *ClusterScopeHandler) filterRbacResources(resources []*groupResource, lo
 		}
 	}
 
+	if len(handler.clusterResources) == 0 {
+		log.Debug("No cluster-scoped resources were collected, nothing to filter")
+		return filteredResources
+	}
+
+	acceptedCounts := map[string]int{}
 	for _, k := range admittedClusterScopeResources {
 		filtered, ok := handler.filteredResourcesOfKind(k)
 		if ok && len(filtered.objects.Items) > 0 {
 			filteredResources = append(filteredResources, filtered)
+			acceptedCounts[k.Kind] = len(filtered.objects.Items)
 		}
+	}
+
+	if len(acceptedCounts) > 0 {
+		var parts []string
+		for kind, count := range acceptedCounts {
+			parts = append(parts, fmt.Sprintf("%d %s", count, kind))
+		}
+		log.Infof("Cluster-scoped resources exported to _cluster/ directory: %s",
+			strings.Join(parts, ", "))
+	} else {
+		log.Info("No matching cluster-scoped resources found; _cluster/ directory will be empty")
 	}
 
 	return filteredResources
@@ -163,8 +181,7 @@ func (c *ClusterScopedRbacHandler) prepareForFiltering() {
 		APIResource:     metav1.APIResource{},
 	}
 	c.filteredClusterRoleBindings.objects = &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
-	c.log.Error("The export of cluster level RBAC resources is enabled but no ClusterRoleBinding resources have been collected:" +
-		" the actual error message can be found under the failures folder")
+	c.log.Error("Failed to collect cluster-scoped resources; check the failures/ directory for details")
 }
 
 func (c *ClusterScopedRbacHandler) filteredResourcesOfKind(resource admittedResource) (*groupResource, bool) {

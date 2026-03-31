@@ -1,5 +1,5 @@
 // Package export implements the crane export subcommand: discover API types,
-// list objects in a namespace (and optionally related cluster-scoped RBAC),
+// list objects in a namespace and related cluster-scoped RBAC (CRB, CR, SCC),
 // and write manifests and list failures under an export directory.
 package export
 
@@ -32,7 +32,6 @@ type ExportOptions struct {
 	exportDir              string
 	labelSelector          string
 	userSpecifiedNamespace string
-	clusterScopedRbac      bool
 	asExtras               string
 	extras                 map[string][]string
 	QPS                    float32
@@ -78,8 +77,8 @@ func (o *ExportOptions) Validate() error {
 	return nil
 }
 
-// Run performs discovery, lists resources, optionally filters cluster-scoped RBAC,
-// writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
+// Run performs discovery, lists resources, filters cluster-scoped RBAC to related
+// ServiceAccounts, writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
 func (o *ExportOptions) Run() error {
 	var err error
 
@@ -94,23 +93,10 @@ func (o *ExportOptions) Run() error {
 		log.Errorf("error creating the resources directory: %#v", err)
 		return err
 	}
-	// create _clluster directory if it doesnt exist
-	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
-	if o.clusterScopedRbac {
-		err = os.MkdirAll(clusterResourceDir, 0700)
-		switch {
-		case os.IsExist(err):
-		case err != nil:
-			log.Errorf("error creating the cluster resources directory: %#v", err)
-			return err
-		}
-	}
-	// create export directory if it doesnt exist
-	err = os.MkdirAll(filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), 0700)
-	switch {
-	case os.IsExist(err):
-	case err != nil:
-		log.Errorf("error creating the failures directory: %#v", err)
+	// create failures directory if it doesnt exist
+	failuresDir := filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace)
+	if err = prepareFailuresDir(failuresDir); err != nil {
+		log.Errorf("error preparing the failures directory: %#v", err)
 		return err
 	}
 
@@ -143,10 +129,15 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, o.clusterScopedRbac, dynamicClient, resourceLists, log)
+	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
 	clusterScopeHandler := NewClusterScopeHandler()
-	if o.clusterScopedRbac {
-		resources = clusterScopeHandler.filterRbacResources(resources, log)
+	resources = clusterScopeHandler.filterRbacResources(resources, log)
+
+	// create cluster resources directory if it needs to be created
+	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
+	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
+		log.Errorf("error preparing cluster resources directory: %#v", err)
+		return err
 	}
 
 	log.Debugf("attempting to write resources to files\n")
@@ -155,7 +146,7 @@ func (o *ExportOptions) Run() error {
 		log.Warnf("error writing manifests to file: %#v, ignoring\n", e)
 	}
 
-	writeErrorsErrors := writeErrors(resourceErrs, filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), log)
+	writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
 	for _, e := range writeErrorsErrors {
 		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
 	}
@@ -200,7 +191,6 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
 	cmd.Flags().StringVarP(&o.labelSelector, "label-selector", "l", "", "Restrict export to resources matching a label selector")
-	cmd.Flags().BoolVarP(&o.clusterScopedRbac, "cluster-scoped-rbac", "c", false, "Include cluster-scoped RBAC resources")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
