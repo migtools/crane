@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// App interface defines the methods for an application.
 type App interface {
 	Deploy() error
 	Validate() error
