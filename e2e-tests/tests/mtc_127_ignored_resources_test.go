@@ -105,5 +105,5 @@ var _ = Describe("[MTC-127] Default Ignored resources", func() {
 		Expect(err.Error()).To(ContainSubstring("NotFound"))
 		log.Printf("Confirmed: Subscription resource is correctly absent from target cluster\n")
 
-	})
+	}) //End of [MTC-127] Default Ignored resources
 })
