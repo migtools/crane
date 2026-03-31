@@ -93,12 +93,10 @@ func (o *ExportOptions) Run() error {
 		log.Errorf("error creating the resources directory: %#v", err)
 		return err
 	}
-	// create export directory if it doesnt exist
-	err = os.MkdirAll(filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), 0700)
-	switch {
-	case os.IsExist(err):
-	case err != nil:
-		log.Errorf("error creating the failures directory: %#v", err)
+	// create failures directory if it doesnt exist
+	failuresDir := filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace)
+	if err = prepareFailuresDir(failuresDir); err != nil {
+		log.Errorf("error preparing the failures directory: %#v", err)
 		return err
 	}
 
@@ -148,7 +146,7 @@ func (o *ExportOptions) Run() error {
 		log.Warnf("error writing manifests to file: %#v, ignoring\n", e)
 	}
 
-	writeErrorsErrors := writeErrors(resourceErrs, filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace), log)
+	writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
 	for _, e := range writeErrorsErrors {
 		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
 	}

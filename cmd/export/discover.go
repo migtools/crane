@@ -67,6 +67,19 @@ func prepareClusterResourceDir(clusterResourceDir string, resources []*groupReso
 	return nil
 }
 
+// prepareFailuresDir removes any previous failures export at failuresDir
+// (so stale failure YAML from an earlier run is not left behind), then
+// recreates the directory for the current run.
+func prepareFailuresDir(failuresDir string) error {
+	if err := os.RemoveAll(failuresDir); err != nil {
+		return fmt.Errorf("clear failures export directory %q: %w", failuresDir, err)
+	}
+	if err := os.MkdirAll(failuresDir, 0700); err != nil {
+		return fmt.Errorf("create failures export directory %q: %w", failuresDir, err)
+	}
+	return nil
+}
+
 // writeResources writes each object in resources to a YAML file under resourceDir
 // or clusterResourceDir when the object has no namespace.
 func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
