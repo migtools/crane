@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-// Test
 type App interface {
 	Deploy() error
 	Validate() error
