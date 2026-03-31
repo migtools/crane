@@ -8,11 +8,15 @@ on:
       - "e2e-tests/**"
 
 jobs:
-  run-changed-e2e-tests:
+  detect-changes:
     permissions:
       contents: read
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    outputs:
+      run_tests: ${{ steps.changed_tests.outputs.run_tests }}
+      run_mode: ${{ steps.changed_tests.outputs.run_mode }}
+      test_paths: ${{ steps.changed_tests.outputs.test_paths }}
+      focus_file_regex: ${{ steps.changed_tests.outputs.focus_file_regex }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,9 +28,7 @@ jobs:
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          CHANGED_E2E_FILES="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" | grep -E '^e2e-tests/' || true)"
-          CHANGED_TEST_FILES="$(printf '%s\n' "$CHANGED_E2E_FILES" | grep -E '^e2e-tests/tests/.*_test\.go$' || true)"
-          CHANGED_NON_TEST_FILES="$(printf '%s\n' "$CHANGED_E2E_FILES" | grep -Ev '^e2e-tests/tests/.*_test\.go$' || true)"
+          CHANGED_E2E_FILES="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- e2e-tests/ || true)"
 
           if [ -z "$CHANGED_E2E_FILES" ]; then
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
@@ -36,14 +38,42 @@ jobs:
             exit 0
           fi
 
-          TEST_PATHS="$(printf '%s\n' "$CHANGED_TEST_FILES" | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
-          FOCUS_FILE_REGEX="$(
-            printf '%s\n' "$CHANGED_TEST_FILES" \
-              | sort -u \
-              | sed -E 's/[][(){}.^$*+?|\\]/\\&/g' \
-              | paste -sd'|' -
-          )"
-          if [ -n "$CHANGED_NON_TEST_FILES" ]; then
+          has_tests=false
+          has_impactful_non_test=false
+          suite_file_changed=false
+          test_files=""
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              e2e-tests/tests/*_test.go)
+                has_tests=true
+                test_files="${test_files}${file}"$'\n'
+                if [ "$file" = "e2e-tests/tests/e2e_suite_test.go" ]; then
+                  suite_file_changed=true
+                fi
+                ;;
+              e2e-tests/framework/*|e2e-tests/config/*|e2e-tests/utils/*|e2e-tests/testdata/*|e2e-tests/tests/*)
+                has_impactful_non_test=true
+                ;;
+            esac
+          done <<EOF
+          $CHANGED_E2E_FILES
+          EOF
+
+          # README/docs-only edits under e2e-tests should not trigger E2E execution.
+          if [ "$has_tests" = "false" ] && [ "$has_impactful_non_test" = "false" ]; then
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "run_mode=none" >> "$GITHUB_OUTPUT"
+            echo "test_paths=" >> "$GITHUB_OUTPUT"
+            echo "focus_file_regex=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TEST_PATHS="$(printf '%s' "$test_files" | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+          FOCUS_FILE_REGEX="$(printf '%s' "$test_files" | sort -u | sed -E 's/[][(){}.^$*+?|\\]/\\&/g' | paste -sd'|' -)"
+
+          if [ "$has_impactful_non_test" = "true" ] || [ "$suite_file_changed" = "true" ] || [ "$has_tests" = "false" ]; then
             echo "run_mode=all" >> "$GITHUB_OUTPUT"
           else
             echo "run_mode=focused" >> "$GITHUB_OUTPUT"
@@ -53,31 +83,46 @@ jobs:
           echo "focus_file_regex=$FOCUS_FILE_REGEX" >> "$GITHUB_OUTPUT"
 
       - name: Print touched tests
-        if: steps.changed_tests.outputs.run_tests == 'true'
         run: |
           echo "Run mode: ${{ steps.changed_tests.outputs.run_mode }}"
           echo "Running touched tests: ${{ steps.changed_tests.outputs.test_paths }}"
           echo "Running focus-file regex: ${{ steps.changed_tests.outputs.focus_file_regex }}"
 
+  run-changed-e2e-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_tests == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      CRANE_BIN: ${{ github.workspace }}/crane
+      E2E_SUITE_DIR: e2e-tests/tests
+      GINKGO_COMMON_ARGS: >-
+        --k8sdeploy-bin=k8sdeploy
+        --crane-bin=${{ github.workspace }}/crane
+        --source-context=src
+        --target-context=tgt
+        --verbose-logs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup minikube clusters
-        if: steps.changed_tests.outputs.run_tests == 'true'
         uses: ./.github/actions/setup-minikube-clusters
         with:
           cpus: max
           memory: "8192"
 
       - name: Setup Python
-        if: steps.changed_tests.outputs.run_tests == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Clone k8s-apps-deployer
-        if: steps.changed_tests.outputs.run_tests == 'true'
         run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
 
       - name: Create venv and install package
-        if: steps.changed_tests.outputs.run_tests == 'true'
         run: |
           cd k8s-apps-deployer
           python3 -m venv venv
@@ -86,13 +131,11 @@ jobs:
           ./venv/bin/pip install -e .
 
       - name: Setup Go
-        if: steps.changed_tests.outputs.run_tests == 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
 
       - name: Install Ginkgo CLI
-        if: steps.changed_tests.outputs.run_tests == 'true'
         run: |
           GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
           go install "github.com/onsi/ginkgo/v2/ginkgo@$GINKGO_VERSION"
@@ -100,24 +143,12 @@ jobs:
           ginkgo version
 
       - name: Build crane CLI
-        if: steps.changed_tests.outputs.run_tests == 'true'
-        run: go build -o crane .
+        run: go build -o "$CRANE_BIN" .
 
       - name: Run touched crane e2e tests
-        if: steps.changed_tests.outputs.run_tests == 'true'
         run: |
-          if [ "${{ steps.changed_tests.outputs.run_mode }}" = "all" ]; then
-            ginkgo run -v e2e-tests/tests -- \
-              --k8sdeploy-bin="k8sdeploy" \
-              --crane-bin="${{ github.workspace }}/crane" \
-              --source-context=src \
-              --target-context=tgt \
-              --verbose-logs
+          if [ "${{ needs.detect-changes.outputs.run_mode }}" = "all" ]; then
+            ginkgo run -v "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
           else
-            ginkgo run -v --focus-file="${{ steps.changed_tests.outputs.focus_file_regex }}" e2e-tests/tests -- \
-              --k8sdeploy-bin="k8sdeploy" \
-              --crane-bin="${{ github.workspace }}/crane" \
-              --source-context=src \
-              --target-context=tgt \
-              --verbose-logs
+            ginkgo run -v --focus-file="${{ needs.detect-changes.outputs.focus_file_regex }}" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
           fi
