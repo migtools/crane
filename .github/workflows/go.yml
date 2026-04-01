@@ -22,7 +22,88 @@ jobs:
         run: cd main && go build ./...
 
       # E2E lives under e2e-tests/tests and requires k8sdeploy + clusters; CI runs unit tests only.
-      - name: Unit tests
+      - name: Unit tests with coverage
         env:
           GOPROXY: "https://proxy.golang.org"
-        run: cd main && go test -v $(go list ./... | grep -v '/e2e-tests/tests')
+        run: |
+          cd main
+          go test -v -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/e2e-tests/tests')
+          echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "<details><summary>Per-package coverage</summary>" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Coverage threshold check
+        run: |
+          cd main
+          COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          THRESHOLD=50
+          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            exit 1
+          fi
+
+      - name: Post coverage on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const output = require('child_process').execSync(
+              'cd main && go tool cover -func=coverage.out',
+              { encoding: 'utf-8' }
+            );
+            const totalLine = output.split('\n').find(l => l.startsWith('total:'));
+            const lines = output.trim().split('\n');
+
+            // Build per-package summary
+            const pkgMap = new Map();
+            for (const line of lines) {
+              if (line.startsWith('total:')) continue;
+              const parts = line.split(/\s+/);
+              if (parts.length < 3) continue;
+              const pkg = parts[0].replace(/^.*crane\//, '');
+              const pct = parts[parts.length - 1];
+              if (!pkgMap.has(pkg)) pkgMap.set(pkg, []);
+              pkgMap.get(pkg).push({ func: parts[1], pct });
+            }
+
+            let table = '| Package | Functions | Avg Coverage |\n|---|---|---|\n';
+            for (const [pkg, funcs] of pkgMap) {
+              const avg = funcs.reduce((s, f) => s + parseFloat(f.pct), 0) / funcs.length;
+              table += `| \`${pkg}\` | ${funcs.length} | ${avg.toFixed(1)}% |\n`;
+            }
+
+            const body = `## Test Coverage Report\n\n**${totalLine.trim()}**\n\n${table}\n<details><summary>Full function-level details</summary>\n\n\`\`\`\n${output}\n\`\`\`\n</details>\n\n*Posted by CI — no external tools used*`;
+
+            // Find and update existing comment or create new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const marker = '## Test Coverage Report';
+            const existing = comments.find(c => c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
