@@ -14,7 +14,6 @@ import (
 var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 	It("Should suspend a cronjob and apply to target cluster and unsuspend it", Label("tier0"), func() {
 		appName := "cronjob"
-		cronJobName := "external-cronjob"
 		namespace := "cronjob"
 		expectedHelloLog := fmt.Sprintf("Hello! from namespace %s", namespace)
 
@@ -30,6 +29,16 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 		tgtApp := scenario.TgtApp
 		kubectlSrc := scenario.KubectlSrc
 		kubectlTgt := scenario.KubectlTgt
+		paths := ScenarioPaths{}
+
+		//Override the extra vars for the source app
+		srcApp.ExtraVars = map[string]string{
+			"ext_app_name": appName,
+		}
+		//Override the extra vars for the target app
+		tgtApp.ExtraVars = map[string]string{
+			"ext_app_name": appName,
+		}
 
 		waitForLatestCronPod := func(k KubectlRunner) string {
 			var podName string
@@ -37,7 +46,7 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 				out, err := k.Run(
 					"get", "pod",
 					"-n", namespace,
-					"-l", "cronowner="+cronJobName,
+					"-l", "cronowner="+appName,
 					"--sort-by=.metadata.creationTimestamp",
 					"-o", "jsonpath={.items[*].metadata.name}",
 				)
@@ -66,7 +75,7 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 
 		patchCronSuspend := func(k KubectlRunner, suspend bool) {
 			_, err := k.Run(
-				"patch", "cronjob", cronJobName,
+				"patch", "cronjob", appName,
 				"-n", namespace,
 				"-p", fmt.Sprintf(`{"spec":{"suspend":%t}}`, suspend),
 			)
@@ -74,24 +83,33 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 		}
 
 		assertCronSuspendState := func(k KubectlRunner, expected string) {
-			suspended, err := k.Run("get", "cronjob", cronJobName, "-n", namespace, "-o", "jsonpath={.spec.suspend}")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(suspended).To(Equal(expected))
+			Eventually(func() string {
+				suspended, err := k.Run("get", "cronjob", appName, "-n", namespace, "-o", "jsonpath={.spec.suspend}")
+				if err != nil {
+					return ""
+				}
+				return suspended
+			}, "2m", "10s").Should(Equal(expected))
 		}
+
+		DeferCleanup(func() {
+			By("Cleanup source and target resources")
+			tempDir := ""
+			if paths.TempDir != "" {
+				tempDir = paths.TempDir
+			}
+			if err := CleanupScenario(tempDir, srcApp, tgtApp); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
+		})
 
 		By("Prepare source app")
 		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
 		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
-		paths, err := NewScenarioPaths("crane-export-*")
+		var err error
+		paths, err = NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
-
-		DeferCleanup(func() {
-			By("Cleanup source and target resources")
-			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
-				log.Printf("cleanup: %v", err)
-			}
-		})
 
 		By("Verify source cronjob runs and emits expected log")
 		sourcePodName := waitForLatestCronPod(kubectlSrc)
@@ -99,10 +117,10 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 
 		By("Suspend source cronjob")
 		patchCronSuspend(kubectlSrc, true)
-		log.Printf("Cronjob %s suspended successfully", cronJobName)
+		log.Printf("Cronjob %s suspended successfully", appName)
 		By("Verify source cronjob is suspended")
 		assertCronSuspendState(kubectlSrc, "true")
-		log.Printf("Cronjob %s is suspended", cronJobName)
+		log.Printf("Cronjob %s is suspended", appName)
 
 		// Run crane export/transform/apply pipeline
 		runner := scenario.Crane
@@ -118,13 +136,13 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 
 		By("Verify the cronjob is in a suspended state on target")
 		assertCronSuspendState(kubectlTgt, "true")
-		log.Printf("Cronjob %s is suspended on target", cronJobName)
+		log.Printf("Cronjob %s is suspended on target", appName)
 		By("Unsuspend the cronjob")
 		patchCronSuspend(kubectlTgt, false)
-		log.Printf("Cronjob %s unsuspended successfully", cronJobName)
+		log.Printf("Cronjob %s unsuspended successfully", appName)
 		By("Verify the cronjob is unsuspended on target")
 		assertCronSuspendState(kubectlTgt, "false")
-		log.Printf("Cronjob %s is unsuspended on target", cronJobName)
+		log.Printf("Cronjob %s is unsuspended on target", appName)
 		By("Verify target cronjob runs and emits expected log")
 		targetPodName := waitForLatestCronPod(kubectlTgt)
 		assertPodLogsHello(kubectlTgt, targetPodName)
