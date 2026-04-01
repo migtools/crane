@@ -32,6 +32,8 @@ type ExportOptions struct {
 	exportDir              string
 	labelSelector          string
 	userSpecifiedNamespace string
+	crdSkipGroups          []string
+	crdIncludeGroups       []string
 	asExtras               string
 	extras                 map[string][]string
 	QPS                    float32
@@ -140,6 +142,16 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
+	crdResources, crdErrs := collectRelatedCRDs(resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
+	resourceErrs = append(resourceErrs, crdErrs...)
+	resources = append(resources, crdResources...)
+
+	//count and log the no of crds
+	crdCount := len(crdResources)
+	if crdCount > 0 {
+		log.Infof("Exported %d CRDs for referenced custom resources to the _cluster resources directory\n", crdCount)
+	}
+
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
@@ -191,6 +203,8 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path where files are to be exported")
 	cmd.Flags().StringVarP(&o.labelSelector, "label-selector", "l", "", "Restrict export to resources matching a label selector")
+	cmd.Flags().StringSliceVar(&o.crdSkipGroups, "crd-skip-group", nil, "Additional API groups to skip for CRD export (repeatable)")
+	cmd.Flags().StringSliceVar(&o.crdIncludeGroups, "crd-include-group", nil, "API groups to force-include for CRD export, even if default-built-in (repeatable)")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
