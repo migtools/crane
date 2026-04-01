@@ -50,15 +50,36 @@ jobs:
         run: |
           cd main
           TOTAL=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}')
-          REPORT=$(go tool cover -func=coverage.out)
+
+          # Build per-package coverage: extract package path, average coverage across functions
+          PKG_COVERAGE=$(go tool cover -func=coverage.out | grep -v '^total:' | \
+            awk -F'\t+' '{
+              # extract package from file path (everything before the last /)
+              split($1, parts, "/")
+              file = parts[length(parts)]
+              sub(file, "", $1)
+              sub(/\/$/, "", $1)
+              pkg = $1
+              pct = $NF + 0
+              sum[pkg] += pct
+              count[pkg]++
+            } END {
+              for (pkg in sum) {
+                printf "- **%s** — %.1f%%\n", pkg, sum[pkg]/count[pkg]
+              }
+            }' | sort)
+
           BODY="## Test Coverage Report
 
           **Total: ${TOTAL}**
 
-          <details><summary>Function-level details</summary>
+          ### Per-package coverage
+          ${PKG_COVERAGE}
+
+          <details><summary>Full function-level details</summary>
 
           \`\`\`
-          ${REPORT}
+          $(go tool cover -func=coverage.out)
           \`\`\`
           </details>
 
