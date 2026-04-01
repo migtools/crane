@@ -112,7 +112,7 @@ func envWithBinDir(bin string) []string {
 	return append(env, "PATH="+updatedPath)
 }
 
-// Function to pass --extra-vars to k8sdeploy
+// withExtraVars appends --extra-vars to k8sdeploy arguments when ExtraVars is non-empty.
 func (a K8sDeployApp) withExtraVars(args []string) ([]string, error) {
 	if len(a.ExtraVars) == 0 {
 		return args, nil
