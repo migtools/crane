@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,6 +20,7 @@ type K8sDeployApp struct {
 	Namespace string
 	Bin       string
 	Context   string
+	ExtraVars map[string]string
 }
 
 // Deploy runs k8sdeploy deploy for the configured app and namespace.
@@ -28,6 +30,11 @@ func (a K8sDeployApp) Deploy() error {
 		args = append(args, "--context", a.Context)
 	}
 	args = append(args, "deploy", a.Name, "-n", a.Namespace)
+	var err error
+	args, err = a.withExtraVars(args)
+	if err != nil {
+		return err
+	}
 	logVerboseCommand(a.Bin, args)
 	cmd := a.buildCommand(args...)
 	out, err := cmd.CombinedOutput()
@@ -45,6 +52,11 @@ func (a K8sDeployApp) Validate() error {
 		args = append(args, "--context", a.Context)
 	}
 	args = append(args, "validate", a.Name, "-n", a.Namespace)
+	var err error
+	args, err = a.withExtraVars(args)
+	if err != nil {
+		return err
+	}
 	logVerboseCommand(a.Bin, args)
 	cmd := a.buildCommand(args...)
 	out, err := cmd.CombinedOutput()
@@ -62,6 +74,11 @@ func (a K8sDeployApp) Cleanup() error {
 		args = append(args, "--context", a.Context)
 	}
 	args = append(args, "remove", a.Name, "-n", a.Namespace)
+	var err error
+	args, err = a.withExtraVars(args)
+	if err != nil {
+		return err
+	}
 	logVerboseCommand(a.Bin, args)
 	cmd := a.buildCommand(args...)
 	out, err := cmd.CombinedOutput()
@@ -93,4 +110,19 @@ func envWithBinDir(bin string) []string {
 		updatedPath = binDir + string(os.PathListSeparator) + pathVal
 	}
 	return append(env, "PATH="+updatedPath)
+}
+
+// withExtraVars appends --extra-vars to k8sdeploy arguments when ExtraVars is non-empty.
+func (a K8sDeployApp) withExtraVars(args []string) ([]string, error) {
+	if len(a.ExtraVars) == 0 {
+		return args, nil
+	}
+
+	extraVarsJSON, err := json.Marshal(a.ExtraVars)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal extra vars: %v", err)
+	}
+
+	args = append(args, "--extra-vars", string(extraVarsJSON))
+	return args, nil
 }
