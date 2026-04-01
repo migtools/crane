@@ -4,8 +4,6 @@ jobs:
   build:
     name: Build and unit test
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
     steps:
       - name: Set up Go 1.25
         uses: actions/setup-go@v6
@@ -41,59 +39,6 @@ jobs:
           go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "</details>" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Post coverage on PR
-        if: github.event_name == 'pull_request'
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cd main
-          TOTAL=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}')
-
-          # Build per-package coverage: extract package path, average coverage across functions
-          PKG_COVERAGE=$(go tool cover -func=coverage.out | grep -v '^total:' | \
-            awk -F'\t+' '{
-              # extract package from file path (everything before the last /)
-              split($1, parts, "/")
-              file = parts[length(parts)]
-              sub(file, "", $1)
-              sub(/\/$/, "", $1)
-              pkg = $1
-              pct = $NF + 0
-              sum[pkg] += pct
-              count[pkg]++
-            } END {
-              for (pkg in sum) {
-                printf "- **%s** — %.1f%%\n", pkg, sum[pkg]/count[pkg]
-              }
-            }' | sort)
-
-          BODY="## Test Coverage Report
-
-          **Total: ${TOTAL}**
-
-          ### Per-package coverage
-          ${PKG_COVERAGE}
-
-          <details><summary>Full function-level details</summary>
-
-          \`\`\`
-          $(go tool cover -func=coverage.out)
-          \`\`\`
-          </details>
-
-          *Posted by CI*"
-          BODY=$(echo "$BODY" | sed 's/^          //')
-
-          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-            --jq '.[] | select(.body | startswith("## Test Coverage Report")) | .id' | head -1)
-
-          if [ -n "$COMMENT_ID" ]; then
-            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
-          else
-            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" -f body="$BODY"
-          fi
 
       - name: Save PR number
         if: github.event_name == 'pull_request'
