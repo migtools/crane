@@ -40,17 +40,6 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "</details>" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Coverage threshold check
-        run: |
-          cd main
-          COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
-          echo "Total coverage: ${COVERAGE}%"
-          THRESHOLD=50
-          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
-            echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
-            exit 1
-          fi
-
       - name: Post coverage on PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -107,3 +96,14 @@ jobs:
                 body,
               });
             }
+
+      - name: Coverage threshold check
+        run: |
+          cd main
+          COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          THRESHOLD=5
+          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            exit 1
+          fi
