@@ -280,9 +280,13 @@ func TestPrepareClusterResourceDir(t *testing.T) {
 
 	t.Run("stale content removed on re-run", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "_cluster")
-		os.MkdirAll(dir, 0700)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
 		sentinel := filepath.Join(dir, "old.yaml")
-		os.WriteFile(sentinel, []byte("x"), 0600)
+		if err := os.WriteFile(sentinel, []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
 
 		resources := []*groupResource{
 			{
@@ -370,7 +374,10 @@ func TestWriteResources_SkipsEmptyKind(t *testing.T) {
 	}
 
 	// No files should be written.
-	entries, _ := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".yaml") {
 			t.Errorf("unexpected file written: %s", e.Name())
@@ -426,7 +433,10 @@ func TestWriteErrors_SkipsEmptyKind(t *testing.T) {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 
-	entries, _ := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, e := range entries {
 		if strings.HasSuffix(e.Name(), ".yaml") {
 			t.Errorf("unexpected error file written: %s", e.Name())
