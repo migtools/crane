@@ -4,8 +4,6 @@ jobs:
   build:
     name: Build and unit test
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
     steps:
       - name: Set up Go 1.25
         uses: actions/setup-go@v6
@@ -42,40 +40,21 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "</details>" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Post coverage on PR
+      - name: Save coverage for PR comment
         if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           cd main
-          TOTAL=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}')
-          DETAILS=$(go tool cover -func=coverage.out)
+          go tool cover -func=coverage.out > coverage-report.txt
+          echo "${{ github.event.pull_request.number }}" > pr-number.txt
 
-          BODY="## Test Coverage Report
-
-          **Total: ${TOTAL}**
-
-          <details><summary>Function-level details</summary>
-
-          \`\`\`
-          ${DETAILS}
-          \`\`\`
-          </details>
-
-          *Posted by CI*"
-
-          # Remove leading whitespace from heredoc-style indentation
-          BODY=$(echo "$BODY" | sed 's/^          //')
-
-          # Update existing comment or create new one
-          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-            --jq '.[] | select(.body | startswith("## Test Coverage Report")) | .id' | head -1)
-
-          if [ -n "$COMMENT_ID" ]; then
-            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
-          else
-            gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" -f body="$BODY"
-          fi
+      - name: Upload coverage artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            main/coverage-report.txt
+            main/pr-number.txt
 
       - name: Coverage threshold check
         run: |
