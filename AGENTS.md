@@ -11,9 +11,9 @@ Crane is a Kubernetes migration tool that helps migrate workloads between cluste
 - Works with Kubernetes API, unstructured resources
 
 **Key repositories:**
-- konveyor/crane (this repo) - CLI tool
-- konveyor/crane-lib - transformation logic
-- konveyor/crane-plugins - community plugins
+- migtools/crane (this repo) - CLI tool
+- migtools/crane-lib - transformation logic
+- migtools/crane-plugins - community plugins
 - backube/pvc-transfer - PV migration
 
 ## Code Quality Standards
@@ -99,7 +99,7 @@ fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 - Always validate type assertions
 - Use `meta.Accessor` for metadata access when possible
 - Handle API errors gracefully (not found, forbidden, etc.)
-- Resource names format: `Kind_namespace_name.yaml`
+- Resource names format: `Kind_group_version_namespace_name.yaml`
 
 ### Discovery and Export
 - Respect namespace boundaries
