@@ -133,7 +133,8 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
 		Expect(ApplyOutputToTarget(kubectlTgt, namespace, paths.OutputDir)).NotTo(HaveOccurred())
-
+		By("Validate target app")
+		Expect(tgtApp.Validate()).NotTo(HaveOccurred())
 		By("Verify the cronjob is in a suspended state on target")
 		assertCronSuspendState(kubectlTgt, "true")
 		log.Printf("Cronjob %s is suspended on target", appName)
