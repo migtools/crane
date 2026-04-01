@@ -137,9 +137,9 @@ func (o *Options) run() error {
 		// If the transform does not exist, assume that the resource file is
 		// not needed and ignore for now.
 		_, tfStatErr := os.Stat(tfPath)
-		if err != nil && !errors.Is(tfStatErr, os.ErrNotExist) {
+		if tfStatErr != nil && !errors.Is(tfStatErr, os.ErrNotExist) {
 			// Some other error here err out
-			return err
+			return tfStatErr
 		}
 
 		if !errors.Is(tfStatErr, os.ErrNotExist) {
