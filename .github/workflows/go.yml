@@ -60,9 +60,13 @@ jobs:
         run: |
           cd main
           COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
+          if [ -z "$COVERAGE" ]; then
+            echo "::error::Could not parse coverage from coverage.out"
+            exit 1
+          fi
           echo "Total coverage: ${COVERAGE}%"
           THRESHOLD=5
-          if [ "$(echo "$COVERAGE < $THRESHOLD" | bc -l)" -eq 1 ]; then
+          if awk -v cov="$COVERAGE" -v thresh="$THRESHOLD" 'BEGIN {exit !(cov < thresh)}'; then
             echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
             exit 1
           fi
