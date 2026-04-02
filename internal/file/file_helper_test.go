@@ -54,67 +54,34 @@ data:
 	}
 }
 
-func TestReadFilesEmptyFile(t *testing.T) {
-	dir := createTestDir(t)
-	writeFile(t, filepath.Join(dir, "empty.yaml"), "")
+func TestReadFilesInvalidContent(t *testing.T) {
+	cases := []struct {
+		name     string
+		filename string
+		content  string
+	}{
+		{"empty file", "empty.yaml", ""},
+		{"null YAML", "null.yaml", "null"},
+		{"invalid YAML syntax", "bad.yaml", "this is not yaml {{{"},
+		{"YAML missing Kind", "nokind.yaml", "foo: bar"},
+	}
 
-	_, err := file.ReadFiles(context.TODO(), dir)
-	if err == nil {
-		t.Fatal("expected error for empty file, got nil")
-	}
-	if !strings.Contains(err.Error(), "empty.yaml") {
-		t.Errorf("error should contain file name, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "is not a valid Kubernetes resource") {
-		t.Errorf("error should contain descriptive message, got: %v", err)
-	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := createTestDir(t)
+			writeFile(t, filepath.Join(dir, tc.filename), tc.content)
 
-func TestReadFilesNullYAML(t *testing.T) {
-	dir := createTestDir(t)
-	writeFile(t, filepath.Join(dir, "null.yaml"), "null")
-
-	_, err := file.ReadFiles(context.TODO(), dir)
-	if err == nil {
-		t.Fatal("expected error for null YAML, got nil")
-	}
-	if !strings.Contains(err.Error(), "null.yaml") {
-		t.Errorf("error should contain file name, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "is not a valid Kubernetes resource") {
-		t.Errorf("error should contain descriptive message, got: %v", err)
-	}
-}
-
-func TestReadFilesInvalidYAMLSyntax(t *testing.T) {
-	dir := createTestDir(t)
-	writeFile(t, filepath.Join(dir, "bad.yaml"), "this is not yaml {{{")
-
-	_, err := file.ReadFiles(context.TODO(), dir)
-	if err == nil {
-		t.Fatal("expected error for invalid YAML, got nil")
-	}
-	if !strings.Contains(err.Error(), "bad.yaml") {
-		t.Errorf("error should contain file name, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "is not a valid Kubernetes resource") {
-		t.Errorf("error should contain descriptive message, got: %v", err)
-	}
-}
-
-func TestReadFilesYAMLMissingKind(t *testing.T) {
-	dir := createTestDir(t)
-	writeFile(t, filepath.Join(dir, "nokind.yaml"), "foo: bar")
-
-	_, err := file.ReadFiles(context.TODO(), dir)
-	if err == nil {
-		t.Fatal("expected error for YAML missing Kind, got nil")
-	}
-	if !strings.Contains(err.Error(), "nokind.yaml") {
-		t.Errorf("error should contain file name, got: %v", err)
-	}
-	if !strings.Contains(err.Error(), "is not a valid Kubernetes resource") {
-		t.Errorf("error should contain descriptive message, got: %v", err)
+			_, err := file.ReadFiles(context.TODO(), dir)
+			if err == nil {
+				t.Fatalf("expected error for %s, got nil", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.filename) {
+				t.Errorf("error should contain file name, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "is not a valid Kubernetes resource") {
+				t.Errorf("error should contain descriptive message, got: %v", err)
+			}
+		})
 	}
 }
 
@@ -153,9 +120,13 @@ metadata:
 }
 
 func TestReadFilesNonExistentDir(t *testing.T) {
-	_, err := file.ReadFiles(context.TODO(), "/does/not/exist")
+	dir := "/does/not/exist"
+	_, err := file.ReadFiles(context.TODO(), dir)
 	if err == nil {
 		t.Fatal("expected error for non-existent dir, got nil")
+	}
+	if !strings.Contains(err.Error(), dir) {
+		t.Errorf("error should contain directory path, got: %v", err)
 	}
 }
 

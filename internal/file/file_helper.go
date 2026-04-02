@@ -24,7 +24,7 @@ func ReadFiles(ctx context.Context, dir string) ([]File, error) {
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read directory %q: %w", dir, err)
 	}
 	return readFiles(ctx, dir, files, log)
 }
@@ -39,7 +39,7 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 			}
 			newFiles, err := ioutil.ReadDir(filePath)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to read directory %q: %w", filePath, err)
 			}
 			files, err := readFiles(ctx, filePath, newFiles, log)
 			if err != nil {
