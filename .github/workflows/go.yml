@@ -16,10 +16,22 @@ jobs:
           path: main
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Build
+      - name: Build all packages
         env:
           GOPROXY: "https://proxy.golang.org"
         run: cd main && go build ./...
+
+      - name: Build crane binary
+        env:
+          GOPROXY: "https://proxy.golang.org"
+        run: cd main && go build -o crane .
+
+      - name: Upload crane binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: crane-binary
+          path: main/crane
+          retention-days: 30
 
       # E2E lives under e2e-tests/tests and requires k8sdeploy + clusters; CI runs unit tests only.
       - name: Unit tests with coverage
