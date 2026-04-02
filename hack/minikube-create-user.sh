@@ -136,6 +136,7 @@ USER_CSR="${OUTPUT_DIR}/${USER_NAME}.csr"
 USER_CRT="${OUTPUT_DIR}/${USER_NAME}.crt"
 
 openssl genrsa -out "$USER_KEY" 2048 >/dev/null 2>&1
+chmod 600 "$USER_KEY"
 openssl req -new -key "$USER_KEY" -out "$USER_CSR" -subj "/CN=${USER_NAME}/O=${ORG_NAME}" >/dev/null 2>&1
 openssl x509 -req \
   -in "$USER_CSR" \
