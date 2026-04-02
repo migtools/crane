@@ -83,3 +83,36 @@ func GetClusterNodeIP(contextName string) (string, error) {
 	}
 	return "", fmt.Errorf("No node IP found")
 }
+
+// ResolveUsernameForContext returns the kubeconfig auth info name (user)
+// associated with the provided context. If contextName is empty, it falls back
+// to current-context.
+func ResolveUsernameForContext(contextName string) (string, error) {
+	kubeconfig := os.Getenv("KUBECONFIG")
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		loadingRules.ExplicitPath = kubeconfig
+	}
+	rawConfig, err := loadingRules.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed loading kubeconfig: %w", err)
+	}
+
+	ctxName := contextName
+	if ctxName == "" {
+		ctxName = rawConfig.CurrentContext
+	}
+	if ctxName == "" {
+		return "", fmt.Errorf("no context name provided and current context is not set in kubeconfig")
+	}
+
+	ctx, found := rawConfig.Contexts[ctxName]
+	if !found {
+		return "", fmt.Errorf("context %q not found in kubeconfig", ctxName)
+	}
+	if ctx.AuthInfo == "" {
+		return "", fmt.Errorf("no user/auth info name set for context %q", ctxName)
+	}
+	return ctx.AuthInfo, nil
+
+}

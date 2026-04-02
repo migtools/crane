@@ -23,25 +23,25 @@ jobs:
           cpus: "2"
           memory: "4096"
           create_users: "true"
-          src_user: "sajid"
-          tgt_user: "sajid"
+          src_user: "dev"
+          tgt_user: "dev"
 
       - name: Verify user contexts exist
         run: |
-          kubectl config get-contexts src-sajid
-          kubectl config get-contexts tgt-sajid
+          kubectl config get-contexts src-dev
+          kubectl config get-contexts tgt-dev
 
       - name: Check permissions before rolebinding
         run: |
           set +e
-          kubectl --context src-sajid auth can-i create deployments -n default --quiet
+          kubectl --context src-dev auth can-i create deployments -n default --quiet
           SRC_ALLOWED_RC=$?
-          kubectl --context tgt-sajid auth can-i create deployments -n default --quiet
+          kubectl --context tgt-dev auth can-i create deployments -n default --quiet
           TGT_ALLOWED_RC=$?
           set -e
 
-          SRC_CAN_I="$(kubectl --context src-sajid auth can-i create deployments -n default || true)"
-          TGT_CAN_I="$(kubectl --context tgt-sajid auth can-i create deployments -n default || true)"
+          SRC_CAN_I="$(kubectl --context src-dev auth can-i create deployments -n default || true)"
+          TGT_CAN_I="$(kubectl --context tgt-dev auth can-i create deployments -n default || true)"
           echo "src-sajid can create deployments in default (before): ${SRC_CAN_I} (rc=${SRC_ALLOWED_RC})"
           echo "tgt-sajid can create deployments in default (before): ${TGT_CAN_I} (rc=${TGT_ALLOWED_RC})"
 
@@ -50,29 +50,29 @@ jobs:
 
       - name: Grant namespace admin on default
         run: |
-          kubectl --context src create rolebinding sajid-admin \
+          kubectl --context src create rolebinding dev-admin \
             --clusterrole=admin \
-            --user=sajid \
+            --user=dev \
             --namespace=default || true
 
-          kubectl --context tgt create rolebinding sajid-admin \
+          kubectl --context tgt create rolebinding dev-admin \
             --clusterrole=admin \
-            --user=sajid \
+            --user=dev \
             --namespace=default || true
 
       - name: Check permissions after rolebinding
         run: |
           set +e
-          kubectl --context src-sajid auth can-i create deployments -n default --quiet
+          kubectl --context src-dev auth can-i create deployments -n default --quiet
           SRC_ALLOWED_RC=$?
-          kubectl --context tgt-sajid auth can-i create deployments -n default --quiet
+          kubectl --context tgt-dev auth can-i create deployments -n default --quiet
           TGT_ALLOWED_RC=$?
           set -e
 
-          SRC_CAN_I="$(kubectl --context src-sajid auth can-i create deployments -n default || true)"
-          TGT_CAN_I="$(kubectl --context tgt-sajid auth can-i create deployments -n default || true)"
-          echo "src-sajid can create deployments in default (after): ${SRC_CAN_I} (rc=${SRC_ALLOWED_RC})"
-          echo "tgt-sajid can create deployments in default (after): ${TGT_CAN_I} (rc=${TGT_ALLOWED_RC})"
+          SRC_CAN_I="$(kubectl --context src-dev auth can-i create deployments -n default || true)"
+          TGT_CAN_I="$(kubectl --context tgt-dev auth can-i create deployments -n default || true)"
+          echo "src-dev can create deployments in default (after): ${SRC_CAN_I} (rc=${SRC_ALLOWED_RC})"
+          echo "tgt-dev can create deployments in default (after): ${TGT_CAN_I} (rc=${TGT_ALLOWED_RC})"
 
           test "$SRC_ALLOWED_RC" -eq 0
           test "$TGT_ALLOWED_RC" -eq 0

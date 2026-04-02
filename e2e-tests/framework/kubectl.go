@@ -2,6 +2,7 @@ package framework
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -192,4 +193,27 @@ func (k KubectlRunner) ScaleDeploymentIfPresent(ns, appName string, replicas int
 		return nil
 	}
 	return k.ScaleDeployment(ns, appName, replicas)
+}
+
+func (k KubectlRunner) CanI(verb, resource, namespace string) (bool, error) {
+	args := []string{"auth", "can-i", verb, resource, "--quiet"}
+	if namespace != "" {
+		args = append(args, "-n", namespace)
+	}
+	if k.Context != "" {
+		args = append(args, "--context", k.Context)
+	}
+	logVerboseCommand(k.Bin, args)
+	cmd := exec.Command(k.Bin, args...)
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("kubectl auth can-i", out)
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		// "can-i --quiet" returns exit code 1 for an authorization denial.
+		return false, nil
+	}
+	return false, fmt.Errorf("kubectl auth can-i failed: %v, output: %s", err, string(out))
 }
