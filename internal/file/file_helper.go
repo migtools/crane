@@ -24,7 +24,7 @@ func ReadFiles(ctx context.Context, dir string) ([]File, error) {
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read directory %q: %w", dir, err)
 	}
 	return readFiles(ctx, dir, files, log)
 }
@@ -39,7 +39,7 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 			}
 			newFiles, err := ioutil.ReadDir(filePath)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to read directory %q: %w", filePath, err)
 			}
 			files, err := readFiles(ctx, filePath, newFiles, log)
 			if err != nil {
@@ -49,17 +49,17 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 		} else {
 			data, err := ioutil.ReadFile(filePath)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to read file %q: %w", filePath, err)
 			}
 			json, err := yaml.YAMLToJSON(data)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to parse YAML in file %q: %w", filePath, err)
 			}
 
 			u := unstructured.Unstructured{}
 			err = u.UnmarshalJSON(json)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("file %q is not a valid Kubernetes resource: %w", filePath, err)
 			}
 
 			jsonFiles = append(jsonFiles, File{
