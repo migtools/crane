@@ -75,7 +75,7 @@ func SetupNamespaceAdminUser(adminKubectl KubectlRunner, nonAdminContext, namesp
 	}
 
 	userKubectl := KubectlRunner{
-		Bin:     "kubectl",
+		Bin:     adminKubectl.Bin,
 		Context: nonAdminContext,
 	}
 
