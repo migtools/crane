@@ -191,6 +191,18 @@ func TestHasClusterScopedManifests(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "only CustomResourceDefinition cluster object",
+			resources: []*groupResource{
+				{
+					APIResource: metav1.APIResource{Kind: "CustomResourceDefinition"},
+					objects: &unstructured.UnstructuredList{
+						Items: []unstructured.Unstructured{crdObj("widgets.example.com")},
+					},
+				},
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -301,6 +313,39 @@ func TestPrepareClusterResourceDir(t *testing.T) {
 		}
 		if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
 			t.Fatal("stale file should have been removed")
+		}
+	})
+
+	t.Run("CRD-only cluster manifests create dir", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "_cluster")
+		resources := []*groupResource{
+			{
+				APIResource: metav1.APIResource{Kind: "Deployment"},
+				objects: &unstructured.UnstructuredList{
+					Items: []unstructured.Unstructured{namespacedObj("ns", "d1")},
+				},
+			},
+			{
+				APIResource: metav1.APIResource{
+					Kind:         "CustomResourceDefinition",
+					Name:         "customresourcedefinitions",
+					SingularName: "customresourcedefinition",
+					Namespaced:   false,
+				},
+				objects: &unstructured.UnstructuredList{
+					Items: []unstructured.Unstructured{crdObj("widgets.example.com")},
+				},
+			},
+		}
+		if err := prepareClusterResourceDir(dir, resources); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("dir not created: %v", err)
+		}
+		if !info.IsDir() {
+			t.Fatal("expected a directory")
 		}
 	})
 }
@@ -536,5 +581,14 @@ func namespacedObj(ns, name string) unstructured.Unstructured {
 func clusterScopedObj(name string) unstructured.Unstructured {
 	u := unstructured.Unstructured{}
 	u.SetName(name)
+	return u
+}
+
+// crdObj returns a cluster-scoped CRD-shaped object (empty namespace), matching collectRelatedCRDs output.
+func crdObj(name string) unstructured.Unstructured {
+	u := unstructured.Unstructured{}
+	u.SetName(name)
+	u.SetKind("CustomResourceDefinition")
+	u.SetAPIVersion("apiextensions.k8s.io/v1")
 	return u
 }
