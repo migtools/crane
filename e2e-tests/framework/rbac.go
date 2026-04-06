@@ -81,6 +81,9 @@ func SetupNamespaceAdminUser(adminKubectl KubectlRunner, nonAdminContext, namesp
 
 	can, err := userKubectl.CanI("create", "namespace", "")
 	if err != nil {
+		if revokeErr := adminKubectl.RevokeNamespaceAdminFromUser(namespace, username); revokeErr != nil {
+			log.Printf("failed to rollback namespace admin grant for user %q in namespace %q after preflight failure: %v", username, namespace, revokeErr)
+		}
 		return KubectlRunner{}, nil, fmt.Errorf(
 			"failed RBAC preflight for context %q (user %q): cannot evaluate cluster-scope permission create namespaces: %w",
 			nonAdminContext, username, err,
