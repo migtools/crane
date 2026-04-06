@@ -79,6 +79,23 @@ func SetupNamespaceAdminUser(adminKubectl KubectlRunner, nonAdminContext, namesp
 		Context: nonAdminContext,
 	}
 
+	can, err := userKubectl.CanI("create", "namespace", "")
+	if err != nil {
+		return KubectlRunner{}, nil, fmt.Errorf(
+			"failed RBAC preflight for context %q (user %q): cannot evaluate cluster-scope permission create namespaces: %w",
+			nonAdminContext, username, err,
+		)
+	}
+	if can {
+		if revokeErr := adminKubectl.RevokeNamespaceAdminFromUser(namespace, username); revokeErr != nil {
+			log.Printf("failed to rollback namespace admin grant for user %q in namespace %q after preflight failure: %v", username, namespace, revokeErr)
+		}
+		return KubectlRunner{}, nil, fmt.Errorf(
+			"RBAC preflight failed for context %q (user %q): expected non-admin, but user can create namespaces (cluster-scope)",
+			nonAdminContext, username,
+		)
+	}
+
 	cleanup := func() {
 		if err := adminKubectl.RevokeNamespaceAdminFromUser(namespace, username); err != nil {
 			log.Printf("failed to revoke namespace admin from user %q in namespace %q: %v", username, namespace, err)
@@ -86,4 +103,37 @@ func SetupNamespaceAdminUser(adminKubectl KubectlRunner, nonAdminContext, namesp
 	}
 
 	return userKubectl, cleanup, nil
+}
+
+// SetupNamespaceAdminUsersForScenario grants namespace-scoped admin permissions
+// on both source and target clusters for the configured non-admin contexts.
+// It returns kubectl runners bound to the non-admin contexts and a combined
+// cleanup callback that revokes both bindings.
+func SetupNamespaceAdminUsersForScenario(scenario MigrationScenario, namespace string) (KubectlRunner, KubectlRunner, func(), error) {
+	srcNonAdminKubectl, srcCleanup, err := SetupNamespaceAdminUser(
+		scenario.KubectlSrc,
+		scenario.KubectlSrcNonAdmin.Context,
+		namespace,
+	)
+	if err != nil {
+		return KubectlRunner{}, KubectlRunner{}, nil, err
+	}
+
+	tgtNonAdminKubectl, tgtCleanup, err := SetupNamespaceAdminUser(
+		scenario.KubectlTgt,
+		scenario.KubectlTgtNonAdmin.Context,
+		namespace,
+	)
+	if err != nil {
+		srcCleanup()
+		return KubectlRunner{}, KubectlRunner{}, nil, err
+	}
+
+	cleanup := func() {
+		// Revoke in reverse order of creation.
+		tgtCleanup()
+		srcCleanup()
+	}
+
+	return srcNonAdminKubectl, tgtNonAdminKubectl, cleanup, nil
 }

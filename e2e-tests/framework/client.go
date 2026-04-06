@@ -11,6 +11,15 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+func newKubeConfigLoadingRules() *clientcmd.ClientConfigLoadingRules {
+	kubeconfig := os.Getenv("KUBECONFIG")
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		loadingRules.ExplicitPath = kubeconfig
+	}
+	return loadingRules
+}
+
 // ListPVCs returns PVCs from a namespace, optionally filtered by label selector.
 func ListPVCs(namespace string, labelSelector string, contextName string) ([]corev1.PersistentVolumeClaim, error) {
 	clientSet, err := NewClientSetForContext(contextName)
@@ -35,11 +44,7 @@ func ListPVCs(namespace string, labelSelector string, contextName string) ([]cor
 
 // NewClientSetForContext creates a Kubernetes clientset for the given kube context.
 func NewClientSetForContext(contextName string) (*kubernetes.Clientset, error) {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if kubeconfig != "" {
-		loadingRules.ExplicitPath = kubeconfig
-	}
+	loadingRules := newKubeConfigLoadingRules()
 	overrides := &clientcmd.ConfigOverrides{}
 	if contextName != "" {
 		overrides.CurrentContext = contextName
@@ -88,11 +93,7 @@ func GetClusterNodeIP(contextName string) (string, error) {
 // associated with the provided context. If contextName is empty, it falls back
 // to current-context.
 func ResolveUsernameForContext(contextName string) (string, error) {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if kubeconfig != "" {
-		loadingRules.ExplicitPath = kubeconfig
-	}
+	loadingRules := newKubeConfigLoadingRules()
 	rawConfig, err := loadingRules.Load()
 	if err != nil {
 		return "", fmt.Errorf("failed loading kubeconfig: %w", err)
