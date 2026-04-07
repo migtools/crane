@@ -4,6 +4,7 @@
 package export
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,10 +13,13 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd/api"
 )
 
@@ -85,12 +89,47 @@ func (o *ExportOptions) Validate() error {
 	return nil
 }
 
+// validateExportNamespace returns an error if the namespace does not exist or cannot be read.
+func validateExportNamespace(ctx context.Context, client kubernetes.Interface, namespace string) error {
+	if namespace == "" {
+		return fmt.Errorf("namespace must be set (use -n/--namespace or your kubeconfig context default)")
+	}
+	_, err := client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return fmt.Errorf(`namespaces "%s" not found`, namespace)
+		}
+		return fmt.Errorf("cannot verify namespace %q exists: %w", namespace, err)
+	}
+	return nil
+}
+
 // Run performs discovery, lists resources, filters cluster-scoped RBAC to related
 // ServiceAccounts, writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
 func (o *ExportOptions) Run() error {
 	var err error
 
 	log := o.globalFlags.GetLogger()
+
+	restConfig, err := o.configFlags.ToRESTConfig()
+	if err != nil {
+		log.Errorf("cannot create rest config: %#v", err)
+		return err
+	}
+
+	// user/group impersonation is handled from genericclioptions.ConfigFlags
+	restConfig.Impersonate.Extra = o.extras
+	restConfig.Burst = o.Burst
+	restConfig.QPS = o.QPS
+
+	kubeClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		log.Errorf("cannot create kubernetes client: %#v", err)
+		return err
+	}
+	if err := validateExportNamespace(context.Background(), kubeClient, o.userSpecifiedNamespace); err != nil {
+		return err
+	}
 
 	// create export directory if it doesnt exist
 	resourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace)
@@ -117,18 +156,11 @@ func (o *ExportOptions) Run() error {
 	// Always request fresh data from the server
 	discoveryClient.Invalidate()
 
-	restConfig, err := o.configFlags.ToRESTConfig()
+	dynamicClient, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
-		log.Errorf("cannot create rest config: %#v", err)
+		log.Errorf("cannot create dynamic client: %#v", err)
 		return err
 	}
-
-	// user/group impersonation is handled from genericclioptions.ConfigFlags
-	restConfig.Impersonate.Extra = o.extras
-	restConfig.Burst = o.Burst
-	restConfig.QPS = o.QPS
-
-	dynamicClient := dynamic.NewForConfigOrDie(restConfig)
 
 	resourceLists, err := discoverPreferredResources(discoveryClient, log)
 	if err != nil {
