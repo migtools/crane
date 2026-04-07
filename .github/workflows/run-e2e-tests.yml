@@ -23,6 +23,9 @@ jobs:
         with:
           cpus: max
           memory: "8192"
+          create_users: "true"
+          src_user: "dev"
+          tgt_user: "dev"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -62,4 +65,6 @@ jobs:
             --crane-bin="${{ github.workspace }}/crane" \
             --source-context=src \
             --target-context=tgt \
+            --source-nonadmin-context=src-dev \
+            --target-nonadmin-context=tgt-dev \
             --verbose-logs

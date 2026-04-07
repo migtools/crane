@@ -21,13 +21,22 @@ The suite is built with Ginkgo/Gomega and is organized to keep scenario code rea
     - namespace creation
     - dry-run apply validation
     - recursive apply
+    - RBAC permission checks (`kubectl auth can-i`)
     - deployment scaling with label-first and fallback behavior
 - `framework/client.go`
-  - `client-go` helpers for Kubernetes API lookups (PVC listing and node IP resolution).
+  - `client-go` helpers for Kubernetes API lookups and kubeconfig context/user resolution.
 - `framework/pipeline.go`
   - Reusable migration pipeline helpers (run crane stages, verify artifacts, apply to target, prepare source app).
+  - Includes admin and non-admin apply paths (`ApplyOutputToTarget`, `ApplyOutputToTargetNonAdmin`).
 - `framework/scenario.go`
-  - Shared scenario object construction, temp path management, and standardized cleanup.
+  - Shared scenario object construction (admin and non-admin runners), temp path management, and standardized cleanup.
+- `framework/rbac.go`
+  - Namespace-admin setup helpers for non-admin contexts:
+    - grant/revoke namespace admin rolebinding
+    - scenario-level setup for source and target clusters
+    - RBAC preflight checks
+- `testdata/rolebinding_namespace_admin.yaml`
+  - RoleBinding template used by namespace-admin setup helpers.
 - `framework/logging.go`
   - Centralized verbose command/output logging helpers.
 - `utils/utils.go`
@@ -51,6 +60,12 @@ At a high level, each migration test follows the same pattern:
 
 Stateful scenarios add PVC discovery and `transfer-pvc` steps between pipeline generation and target validation.
 
+For namespace-admin scenarios, tests additionally:
+
+1. Use non-admin contexts (`source-nonadmin-context` and `target-nonadmin-context`).
+2. Grant namespace-scoped admin rolebindings using framework RBAC helpers.
+3. Apply manifests with `ApplyOutputToTargetNonAdmin(...)` (namespace already created via RBAC setup).
+
 ## Running the Tests
 
 From repo root:
@@ -61,6 +76,8 @@ ginkgo run -v e2e-tests/tests -- \
   --crane-bin=/path/to/crane \
   --source-context=src \
   --target-context=tgt \
+  --source-nonadmin-context=src-dev \
+  --target-nonadmin-context=tgt-dev \
   --verbose-logs
 ```
 
@@ -71,7 +88,9 @@ ginkgo run -v --focus="\[MTC-329\]" e2e-tests/tests -- \
   --k8sdeploy-bin=/path/to/k8sdeploy \
   --crane-bin=/path/to/crane \
   --source-context=src \
-  --target-context=tgt
+  --target-context=tgt \
+  --source-nonadmin-context=src-dev \
+  --target-nonadmin-context=tgt-dev
 ```
 
 ## Flags
@@ -82,6 +101,8 @@ Defined in `tests/e2e_suite_test.go`:
 - `--crane-bin` path to `crane` executable
 - `--source-context` source kube context
 - `--target-context` target kube context
+- `--source-nonadmin-context` source kube context for namespace-admin (non-cluster-admin) user flows
+- `--target-nonadmin-context` target kube context for namespace-admin (non-cluster-admin) user flows
 - `--verbose-logs` enable command and output logging for framework runners
 
 ## Adding a New Scenario
@@ -94,7 +115,9 @@ For consistency, prefer this structure:
 4. Reuse framework helpers:
    - `PrepareSourceApp(...)`
    - `RunCranePipelineWithChecks(...)`
-   - `ApplyOutputToTarget(...)`
+   - `ApplyOutputToTarget(...)` for admin flows
+   - `ApplyOutputToTargetNonAdmin(...)` for namespace-admin flows
+   - `SetupNamespaceAdminUsersForScenario(...)` for non-admin RBAC setup
 5. Keep test-specific assertions and scenario-specific logic in the `tests/` file.
 
 This keeps scenario files focused on behavior, while framework files handle command plumbing and shared orchestration.

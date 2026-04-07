@@ -30,6 +30,34 @@ inputs:
     description: Install OLM on src/tgt clusters
     required: false
     default: "true"
+  create_users:
+    description: "Optional: create additional cert-based kubeconfig users for src/tgt clusters (useful for non-admin/RBAC test scenarios)."
+    required: false
+    default: "false"
+  src_user:
+    description: "Username for the additional src-cluster user created when create_users=true."
+    required: false
+    default: "dev"
+  tgt_user:
+    description: "Username for the additional tgt-cluster user created when create_users=true."
+    required: false
+    default: "dev"
+  src_user_context:
+    description: "Optional kubeconfig context name for src user. If empty, defaults to <src-profile>-<src-user>."
+    required: false
+    default: ""
+  tgt_user_context:
+    description: "Optional kubeconfig context name for tgt user. If empty, defaults to <tgt-profile>-<tgt-user>."
+    required: false
+    default: ""
+  user_org:
+    description: "Organization (certificate subject O) to include in generated user certificates."
+    required: false
+    default: "developers"
+  user_cert_days:
+    description: "Validity period (days) for generated user certificates."
+    required: false
+    default: "365"
 
 runs:
   using: composite
@@ -60,6 +88,13 @@ runs:
         TGT_K8S_VERSION: ${{ inputs.tgt_k8s_version }}
         INGRESS_WAIT: ${{ inputs.ingress_wait }}
         ENABLE_OLM: ${{ inputs.enable_olm }}
+        CREATE_USERS: ${{ inputs.create_users }}
+        SRC_USER: ${{ inputs.src_user }}
+        TGT_USER: ${{ inputs.tgt_user }}
+        SRC_USER_CONTEXT: ${{ inputs.src_user_context }}
+        TGT_USER_CONTEXT: ${{ inputs.tgt_user_context }}
+        USER_ORG: ${{ inputs.user_org }}
+        USER_CERT_DAYS: ${{ inputs.user_cert_days }}
       run: make setup-minikube-same-network
 
     - name: Verify profiles
