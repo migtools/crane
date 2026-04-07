@@ -15,8 +15,8 @@ set -euo pipefail
 # Notes:
 # - This script signs a client cert using Minikube's CA key.
 # - It then updates kubeconfig with:
-#   - user: <user>
-#   - context: <context> (cluster from --profile context, user=<user>)
+#   - user entry key: <context>
+#   - context: <context> (cluster from --profile context, user=<context>)
 
 usage() {
   cat <<'EOF'
@@ -159,7 +159,7 @@ kubectl config set-credentials "$USER_NAME" \
 
 kubectl config set-context "$CONTEXT_NAME" \
   --cluster="$CLUSTER_NAME" \
-  --user="$USER_NAME" >/dev/null
+  --user="$CONTEXT_NAME" >/dev/null
 
 printf 'Created user and context successfully.\n'
 printf '  profile/context source: %s\n' "$PROFILE"
