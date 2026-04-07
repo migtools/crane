@@ -3,7 +3,6 @@ package framework
 import (
 	"context"
 	"fmt"
-	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,11 +34,7 @@ func ListPVCs(namespace string, labelSelector string, contextName string) ([]cor
 
 // NewClientSetForContext creates a Kubernetes clientset for the given kube context.
 func NewClientSetForContext(contextName string) (*kubernetes.Clientset, error) {
-	kubeconfig := os.Getenv("KUBECONFIG")
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	if kubeconfig != "" {
-		loadingRules.ExplicitPath = kubeconfig
-	}
 	overrides := &clientcmd.ConfigOverrides{}
 	if contextName != "" {
 		overrides.CurrentContext = contextName
@@ -82,4 +77,33 @@ func GetClusterNodeIP(contextName string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("No node IP found")
+}
+
+// ResolveUsernameForContext returns the kubeconfig auth info name (user)
+// associated with the provided context. If contextName is empty, it falls back
+// to current-context.
+func ResolveUsernameForContext(contextName string) (string, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	rawConfig, err := loadingRules.Load()
+	if err != nil {
+		return "", fmt.Errorf("failed loading kubeconfig: %w", err)
+	}
+
+	ctxName := contextName
+	if ctxName == "" {
+		ctxName = rawConfig.CurrentContext
+	}
+	if ctxName == "" {
+		return "", fmt.Errorf("no context name provided and current context is not set in kubeconfig")
+	}
+
+	ctx, found := rawConfig.Contexts[ctxName]
+	if !found {
+		return "", fmt.Errorf("context %q not found in kubeconfig", ctxName)
+	}
+	if ctx.AuthInfo == "" {
+		return "", fmt.Errorf("no user/auth info name set for context %q", ctxName)
+	}
+	return ctx.AuthInfo, nil
+
 }

@@ -6,17 +6,23 @@ import (
 	"log"
 	"os"
 
+	"github.com/konveyor/crane/e2e-tests/config"
 	"github.com/konveyor/crane/e2e-tests/utils"
 )
 
 type MigrationScenario struct {
-	AppName    string
-	Namespace  string
-	SrcApp     K8sDeployApp
-	TgtApp     K8sDeployApp
-	KubectlSrc KubectlRunner
-	KubectlTgt KubectlRunner
-	Crane      CraneRunner
+	AppName            string
+	Namespace          string
+	SrcApp             K8sDeployApp
+	TgtApp             K8sDeployApp
+	SrcAppNonAdmin     K8sDeployApp
+	TgtAppNonAdmin     K8sDeployApp
+	KubectlSrc         KubectlRunner
+	KubectlTgt         KubectlRunner
+	KubectlSrcNonAdmin KubectlRunner
+	KubectlTgtNonAdmin KubectlRunner
+	Crane              CraneRunner
+	CraneNonAdmin      CraneRunner
 }
 
 // NewMigrationScenario builds shared runners and app objects for a migration test.
@@ -36,11 +42,29 @@ func NewMigrationScenario(appName, namespace, k8sDeployBin, craneBin, srcCtx, tg
 			Bin:       k8sDeployBin,
 			Context:   tgtCtx,
 		},
-		KubectlSrc: KubectlRunner{Bin: "kubectl", Context: srcCtx},
-		KubectlTgt: KubectlRunner{Bin: "kubectl", Context: tgtCtx},
+		SrcAppNonAdmin: K8sDeployApp{
+			Name:      appName,
+			Namespace: namespace,
+			Bin:       k8sDeployBin,
+			Context:   config.SourceNonAdminContext,
+		},
+		TgtAppNonAdmin: K8sDeployApp{
+			Name:      appName,
+			Namespace: namespace,
+			Bin:       k8sDeployBin,
+			Context:   config.TargetNonAdminContext,
+		},
+		KubectlSrc:         KubectlRunner{Bin: "kubectl", Context: srcCtx},
+		KubectlTgt:         KubectlRunner{Bin: "kubectl", Context: tgtCtx},
+		KubectlSrcNonAdmin: KubectlRunner{Bin: "kubectl", Context: config.SourceNonAdminContext},
+		KubectlTgtNonAdmin: KubectlRunner{Bin: "kubectl", Context: config.TargetNonAdminContext},
 		Crane: CraneRunner{
 			Bin:           craneBin,
 			SourceContext: srcCtx,
+		},
+		CraneNonAdmin: CraneRunner{
+			Bin:           craneBin,
+			SourceContext: config.SourceNonAdminContext,
 		},
 	}
 }

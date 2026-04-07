@@ -17,6 +17,8 @@ func init() {
 	flag.StringVar(&config.SourceContext, "source-context", "", "Source cluster context for app deploy tests")
 	flag.StringVar(&config.K8sDeployBin, "k8sdeploy-bin", "k8sdeploy", "Path to k8sdeploy binary")
 	flag.BoolVar(&config.VerboseLogs, "verbose-logs", false, "Enable verbose command/output logs for e2e runners")
+	flag.StringVar(&config.SourceNonAdminContext, "source-nonadmin-context", "", "Source cluster non-admin context for RBAC scenarios")
+	flag.StringVar(&config.TargetNonAdminContext, "target-nonadmin-context", "", "Target cluster non-admin context for RBAC scenarios")
 }
 
 // TestE2E configures Ginkgo and executes the e2e test suite.

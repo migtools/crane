@@ -22,6 +22,13 @@ set -x
 #   INGRESS_WAIT       default: 300s
 #   OLM_WAIT           default: 300s
 #   ENABLE_OLM         default: true
+#   CREATE_USERS       default: false
+#   SRC_USER           default: dev
+#   TGT_USER           default: dev
+#   SRC_USER_CONTEXT   default: <SRC_PROFILE>-<SRC_USER>
+#   TGT_USER_CONTEXT   default: <TGT_PROFILE>-<TGT_USER>
+#   USER_ORG           default: developers
+#   USER_CERT_DAYS     default: 365
 #   RESET_PROFILES     default: true
 #   RECREATE_NETWORK   default: true
 
@@ -36,6 +43,13 @@ TGT_K8S_VERSION="${TGT_K8S_VERSION:-}"
 INGRESS_WAIT="${INGRESS_WAIT:-300s}"
 OLM_WAIT="${OLM_WAIT:-300s}"
 ENABLE_OLM="${ENABLE_OLM:-true}"
+CREATE_USERS="${CREATE_USERS:-false}"
+SRC_USER="${SRC_USER:-dev}"
+TGT_USER="${TGT_USER:-dev}"
+SRC_USER_CONTEXT="${SRC_USER_CONTEXT:-${SRC_PROFILE}-${SRC_USER}}"
+TGT_USER_CONTEXT="${TGT_USER_CONTEXT:-${TGT_PROFILE}-${TGT_USER}}"
+USER_ORG="${USER_ORG:-developers}"
+USER_CERT_DAYS="${USER_CERT_DAYS:-365}"
 RESET_PROFILES="${RESET_PROFILES:-true}"
 RECREATE_NETWORK="${RECREATE_NETWORK:-true}"
 set -x
@@ -49,6 +63,28 @@ require_cmd() {
     printf 'Error: required command not found: %s\n' "$1" >&2
     exit 1
   fi
+}
+
+create_user_context() {
+  local profile="$1"
+  local user_name="$2"
+  local context_name="$3"
+  local script_dir=""
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  local create_user_script="${script_dir}/minikube-create-user.sh"
+  if [[ ! -x "$create_user_script" ]]; then
+    printf 'Error: user creation script not executable: %s\n' "$create_user_script" >&2
+    exit 1
+  fi
+
+  log "Creating user=${user_name} context=${context_name} for profile=${profile}"
+  "$create_user_script" \
+    --profile "$profile" \
+    --user "$user_name" \
+    --context "$context_name" \
+    --org "$USER_ORG" \
+    --days "$USER_CERT_DAYS"
 }
 
 ensure_operator_sdk() {
@@ -212,6 +248,13 @@ if [[ "$ENABLE_OLM" == "true" ]]; then
   enable_olm "$TGT_PROFILE"
 else
   log "Skipping OLM installation (ENABLE_OLM=${ENABLE_OLM})"
+fi
+
+if [[ "$CREATE_USERS" == "true" ]]; then
+  create_user_context "$SRC_PROFILE" "$SRC_USER" "$SRC_USER_CONTEXT"
+  create_user_context "$TGT_PROFILE" "$TGT_USER" "$TGT_USER_CONTEXT"
+else
+  log "Skipping user creation (CREATE_USERS=${CREATE_USERS})"
 fi
 
 log "Setting up ingress on target profile: ${TGT_PROFILE}"

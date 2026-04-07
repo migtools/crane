@@ -8,7 +8,6 @@ import (
 type CraneRunner struct {
 	Bin           string
 	SourceContext string
-	TargetContext string
 	WorkDir       string
 }
 

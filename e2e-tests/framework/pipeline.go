@@ -58,6 +58,15 @@ func ApplyOutputToTarget(kubectlTgt KubectlRunner, namespace string, outputDir s
 	if err := kubectlTgt.CreateNamespace(namespace); err != nil {
 		return err
 	}
+	return applyOutputManifests(kubectlTgt, outputDir)
+}
+
+// ApplyOutputToTargetNonAdmin validates and applies rendered manifests without creating namespace.
+func ApplyOutputToTargetNonAdmin(kubectlTgt KubectlRunner, outputDir string) error {
+	return applyOutputManifests(kubectlTgt, outputDir)
+}
+
+func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
 	if err := kubectlTgt.ValidateApplyDir(outputDir); err != nil {
 		return err
 	}
