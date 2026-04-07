@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/konveyor/crane/internal/flags"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -99,8 +100,10 @@ func (o *ExportOptions) Validate() error {
 	return nil
 }
 
-// validateExportNamespace returns an error if the namespace does not exist or cannot be read.
-func validateExportNamespace(ctx context.Context, client kubernetes.Interface, namespace string) error {
+// validateExportNamespace returns an error if the namespace does not exist.
+// Non-NotFound errors (e.g. Forbidden) are logged as warnings so that users
+// without "get namespaces" RBAC permission are not blocked.
+func validateExportNamespace(ctx context.Context, client kubernetes.Interface, namespace string, log *logrus.Logger) error {
 	if namespace == "" {
 		return fmt.Errorf("namespace must be set (use -n/--namespace or your kubeconfig context default)")
 	}
@@ -109,7 +112,7 @@ func validateExportNamespace(ctx context.Context, client kubernetes.Interface, n
 		if apierrors.IsNotFound(err) {
 			return fmt.Errorf(`namespaces "%s" not found`, namespace)
 		}
-		return fmt.Errorf("cannot verify namespace %q exists: %w", namespace, err)
+		log.Warnf("cannot verify namespace %q exists (may lack RBAC permission): %v", namespace, err)
 	}
 	return nil
 }
@@ -137,7 +140,7 @@ func (o *ExportOptions) Run() error {
 		log.Errorf("cannot create kubernetes client: %#v", err)
 		return err
 	}
-	if err := validateExportNamespace(context.Background(), kubeClient, o.userSpecifiedNamespace); err != nil {
+	if err := validateExportNamespace(context.Background(), kubeClient, o.userSpecifiedNamespace, log); err != nil {
 		return err
 	}
 

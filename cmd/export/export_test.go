@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -225,11 +226,12 @@ func TestNewExportCommand(t *testing.T) {
 
 func TestValidateExportNamespace(t *testing.T) {
 	t.Parallel()
+	log := logrus.New()
 
 	t.Run("missing namespace returns not found message", func(t *testing.T) {
 		t.Parallel()
 		client := fake.NewClientset()
-		err := validateExportNamespace(context.Background(), client, "non-existent-namespace")
+		err := validateExportNamespace(context.Background(), client, "non-existent-namespace", log)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -244,7 +246,7 @@ func TestValidateExportNamespace(t *testing.T) {
 		client := fake.NewClientset(&v1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: "app-ns"},
 		})
-		if err := validateExportNamespace(context.Background(), client, "app-ns"); err != nil {
+		if err := validateExportNamespace(context.Background(), client, "app-ns", log); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -252,7 +254,7 @@ func TestValidateExportNamespace(t *testing.T) {
 	t.Run("empty namespace", func(t *testing.T) {
 		t.Parallel()
 		client := fake.NewClientset()
-		err := validateExportNamespace(context.Background(), client, "")
+		err := validateExportNamespace(context.Background(), client, "", log)
 		if err == nil {
 			t.Fatal("expected error")
 		}
