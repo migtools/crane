@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -78,10 +79,17 @@ var _ = Describe("ConfigMap Migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matches).NotTo(BeEmpty(), "expected at least one ConfigMap manifest")
 
-		configMap, err := os.ReadFile(matches[0])
-		Expect(err).NotTo(HaveOccurred())
-		Expect(string(configMap)).To(ContainSubstring(`redis-config: "maxmemory 2mb  \nmaxmemory-policy allkeys-lru\n"`))
-
+		expectedData := `redis-config: "maxmemory 2mb  \nmaxmemory-policy allkeys-lru\n"`
+		foundExpectedConfigMap := false
+		for _, match := range matches {
+			content, err := os.ReadFile(match)
+			Expect(err).NotTo(HaveOccurred())
+			if strings.Contains(string(content), expectedData) {
+				foundExpectedConfigMap = true
+			}
+		}
+		Expect(foundExpectedConfigMap).To(BeTrue(), "expected at least one ConfigMap manifest to contain redis-config data")
+		log.Printf("Verified output dir contains ConfigMap manifest with redis-config data")
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
