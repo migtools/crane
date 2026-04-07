@@ -12,6 +12,7 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"k8s.io/apimachinery/pkg/labels"
 	errorsutil "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/dynamic"
@@ -75,6 +76,11 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 func (o *ExportOptions) Validate() error {
 	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
 		return fmt.Errorf("extras requires specifying a user or group to impersonate")
+	}
+	if o.labelSelector != "" {
+		if _, err := labels.Parse(o.labelSelector); err != nil {
+			return fmt.Errorf("invalid --label-selector: %w", err)
+		}
 	}
 	return nil
 }

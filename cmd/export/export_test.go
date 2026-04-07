@@ -100,6 +100,7 @@ func TestValidate(t *testing.T) {
 	tests := []struct {
 		name            string
 		asExtras        string
+		labelSelector   string
 		impersonate     string
 		impersonateGrp  []string
 		wantErr         bool
@@ -123,13 +124,31 @@ func TestValidate(t *testing.T) {
 			asExtras: "key=val",
 			wantErr:  true,
 		},
+		{
+			name:          "empty label selector - ok",
+			labelSelector: "",
+		},
+		{
+			name:          "valid label selector equality - ok",
+			labelSelector: "app=nginx",
+		},
+		{
+			name:          "valid label selector set-based - ok",
+			labelSelector: "env in (prod,staging)",
+		},
+		{
+			name:          "invalid label selector - error",
+			labelSelector: "key in (unclosed",
+			wantErr:       true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
-				configFlags: genericclioptions.NewConfigFlags(true),
-				asExtras:    tt.asExtras,
+				configFlags:   genericclioptions.NewConfigFlags(true),
+				asExtras:      tt.asExtras,
+				labelSelector: tt.labelSelector,
 			}
 			o.configFlags.Impersonate = &tt.impersonate
 			o.configFlags.ImpersonateGroup = &tt.impersonateGrp
