@@ -61,6 +61,16 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		return err
 	}
 
+	// client-go treats --namespace "" as "no override" and falls back to the context default.
+	// Reject an explicit empty -n/--namespace so users do not silently export the wrong namespace.
+	if c != nil {
+		if f := c.Flags().Lookup("namespace"); f != nil && f.Changed {
+			if o.configFlags.Namespace != nil && strings.TrimSpace(*o.configFlags.Namespace) == "" {
+				return fmt.Errorf("namespace cannot be empty; omit -n/--namespace to use your kubeconfig context default")
+			}
+		}
+	}
+
 	if o.asExtras != "" {
 		keysAndStrings := strings.Split(o.asExtras, ";")
 		o.extras = map[string][]string{}

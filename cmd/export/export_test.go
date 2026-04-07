@@ -4,11 +4,35 @@ import (
 	"context"
 	"testing"
 
+	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes/fake"
 )
+
+func TestComplete_ExplicitEmptyNamespace(t *testing.T) {
+	o := &ExportOptions{
+		configFlags: genericclioptions.NewConfigFlags(true),
+	}
+	emptyKube := ""
+	o.configFlags.KubeConfig = &emptyKube
+
+	cmd := &cobra.Command{}
+	o.configFlags.AddFlags(cmd.Flags())
+	if err := cmd.ParseFlags([]string{"--namespace", ""}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	err := o.Complete(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error for explicit empty --namespace")
+	}
+	want := "namespace cannot be empty; omit -n/--namespace to use your kubeconfig context default"
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
 
 func TestComplete_AsExtras(t *testing.T) {
 	tests := []struct {
