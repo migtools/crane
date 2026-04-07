@@ -152,7 +152,7 @@ if [[ -z "$CLUSTER_NAME" ]]; then
   exit 1
 fi
 
-kubectl config set-credentials "$USER_NAME" \
+kubectl config set-credentials "$CONTEXT_NAME" \
   --client-certificate="$USER_CRT" \
   --client-key="$USER_KEY" \
   --embed-certs=true >/dev/null
