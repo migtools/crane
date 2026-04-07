@@ -141,16 +141,17 @@ func (o *ExportOptions) Run() error {
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
 
-	// create cluster resources directory if it needs to be created
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
-	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
-		log.Errorf("error preparing cluster resources directory: %#v", err)
-		return err
-	}
 
 	crdResources, crdErrs := collectRelatedCRDs(resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
+
+	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
+	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
+		log.Errorf("error preparing cluster resources directory: %#v", err)
+		return err
+	}
 
 	//count and log the no of crds
 	crdCount := len(crdResources)
