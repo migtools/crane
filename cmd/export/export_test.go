@@ -1,18 +1,47 @@
 package export
 
 import (
+	"context"
 	"testing"
 
+	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/kubernetes/fake"
 )
+
+func TestComplete_ExplicitEmptyNamespace(t *testing.T) {
+	o := &ExportOptions{
+		configFlags: genericclioptions.NewConfigFlags(true),
+	}
+	emptyKube := ""
+	o.configFlags.KubeConfig = &emptyKube
+
+	cmd := &cobra.Command{}
+	o.configFlags.AddFlags(cmd.Flags())
+	if err := cmd.ParseFlags([]string{"--namespace", ""}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	err := o.Complete(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error for explicit empty --namespace")
+	}
+	want := "namespace cannot be empty; omit -n/--namespace to use your kubeconfig context default"
+	if err.Error() != want {
+		t.Fatalf("error = %q, want %q", err.Error(), want)
+	}
+}
 
 func TestComplete_AsExtras(t *testing.T) {
 	tests := []struct {
-		name      string
-		asExtras  string
-		wantKeys  []string
-		wantVals  map[string][]string
-		wantErr   bool
+		name     string
+		asExtras string
+		wantKeys []string
+		wantVals map[string][]string
+		wantErr  bool
 	}{
 		{
 			name:     "empty extras, no parsing",
@@ -98,12 +127,12 @@ func TestComplete_AsExtras(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	tests := []struct {
-		name            string
-		asExtras        string
-		labelSelector   string
-		impersonate     string
-		impersonateGrp  []string
-		wantErr         bool
+		name           string
+		asExtras       string
+		labelSelector  string
+		impersonate    string
+		impersonateGrp []string
+		wantErr        bool
 	}{
 		{
 			name:     "no extras, no impersonation - ok",
@@ -193,4 +222,41 @@ func TestNewExportCommand(t *testing.T) {
 	if d := cmd.Flags().Lookup("burst").DefValue; d != "1000" {
 		t.Errorf("burst default = %q, want %q", d, "1000")
 	}
+}
+
+func TestValidateExportNamespace(t *testing.T) {
+	t.Parallel()
+	log := logrus.New()
+
+	t.Run("missing namespace returns not found message", func(t *testing.T) {
+		t.Parallel()
+		client := fake.NewClientset()
+		err := validateExportNamespace(context.Background(), client, "non-existent-namespace", log)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		want := `namespaces "non-existent-namespace" not found`
+		if err.Error() != want {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("existing namespace ok", func(t *testing.T) {
+		t.Parallel()
+		client := fake.NewClientset(&v1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: "app-ns"},
+		})
+		if err := validateExportNamespace(context.Background(), client, "app-ns", log); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("empty namespace", func(t *testing.T) {
+		t.Parallel()
+		client := fake.NewClientset()
+		err := validateExportNamespace(context.Background(), client, "", log)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
