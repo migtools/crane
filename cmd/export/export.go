@@ -24,7 +24,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd/api"
 )
 
-// ExportOptions holds CLI flags and runtime state for a single export run...
+// ExportOptions holds CLI flags and runtime state for a single export run.
 type ExportOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 
@@ -192,7 +192,7 @@ func (o *ExportOptions) Run() error {
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
-	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects...
+	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
 	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
 		log.Errorf("error preparing cluster resources directory: %#v", err)
 		return err

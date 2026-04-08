@@ -11,7 +11,7 @@
 [![Alt text](https://img.youtube.com/vi/PoSivlgVLf8/0.jpg)](https://www.youtube.com/watch?v=PoSivlgVLf8)
 
 ## Overview
-TEST
+
 Migrating an application between Kubernetes clusters may be more nuanced than one would imagine.  In an ideal situation, this would be as simple as applying the YAML manifests to the new cluster and adjusting DNS records to redirect external traffic, yet often there is more that is needed.  Below are a few of the common concerns that need to be addressed:
 * _YAML manifests_ - do we have the original YAML manifests stored in version control or accessible so we can reapply to the new cluster?
 * _Configuration Drift_ - if we do have the YAML manifests, do we have confidence they are still accurate and represent the application as it’s running in the cluster? Perhaps the application has been running for a period of time, been modified, and we no longer have confidence we can reproduce it exactly as it’s currently running.
