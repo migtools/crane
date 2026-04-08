@@ -301,7 +301,7 @@ func (p *Progress) Status() status {
 			return succeeded
 		}
 		if p.TransferredFiles == 0 &&
-			p.TransferredData.val == 0 &&
+			(p.TransferredData == nil || p.TransferredData.val == 0) &&
 			p.TotalFiles == nil {
 			return failed
 		}
