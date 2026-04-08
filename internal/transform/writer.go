@@ -62,6 +62,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 			continue
 		}
 
+		// Store original resource - patches will be applied by kubectl kustomize
 		resources = append(resources, artifact.Resource)
 
 		// Write patch if there are operations

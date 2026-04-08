@@ -128,7 +128,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Run transform up to and including this stage (e.g., '30_imagestream')")
 	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Run transform for specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
 	cmd.Flags().StringVar(&o.StageName, "stage-name", "10_transform", "Name for the output stage directory (default: '10_transform')")
-	cmd.Flags().StringVar(&o.PluginName, "plugin-name", "transform", "Plugin name for metadata (default: 'transform')")
+	cmd.Flags().StringVar(&o.PluginName, "plugin-name", "", "Plugin name to filter (empty = use all plugins)")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
 
 	// These flags pass down to subcommands
