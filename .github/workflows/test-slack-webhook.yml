@@ -1,0 +1,49 @@
+# Temporary test for .github/actions/slack-incoming-webhook.
+# Requires repository secret SLACK_WEBHOOK_URL. Remove this file when no longer needed.
+name: Test Slack incoming webhook
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  push:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: Message text to send to Slack
+        required: true
+        type: string
+        default: "Crane CI: slack-incoming-webhook smoke test"
+
+jobs:
+  notify-schedule:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/slack-incoming-webhook
+        with:
+          text: "Crane CI (scheduled): ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  notify-push:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/slack-incoming-webhook
+        with:
+          text: "Crane CI: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  notify-dispatch:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/slack-incoming-webhook
+        with:
+          text: ${{ inputs.message }}
