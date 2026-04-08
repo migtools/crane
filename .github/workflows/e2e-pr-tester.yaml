@@ -34,7 +34,7 @@ jobs:
           # Three-dot diff (merge-base..HEAD): only files changed on the PR branch.
           # Two-dot BASE..HEAD compares full trees and wrongly includes all of main
           # when the branch has not merged the latest base (shows outside_e2e for everything).
-          ALL_CHANGED="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" || true)"
+          ALL_CHANGED="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA")"
 
           # Full E2E for "outside e2e-tests" ignores CI/docs-only paths and root README.
           has_outside_e2e=false
@@ -57,7 +57,7 @@ jobs:
             exit 0
           fi
 
-          CHANGED_E2E_FILES="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" -- e2e-tests/ || true)"
+          CHANGED_E2E_FILES="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" -- e2e-tests/)"
 
           if [ -z "$CHANGED_E2E_FILES" ]; then
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
