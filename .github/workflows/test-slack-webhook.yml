@@ -13,7 +13,7 @@ on:
         required: true
         type: string
         default: "Crane CI: slack-incoming-webhook smoke test"
-#New comment
+
 jobs:
   notify-schedule:
     if: github.event_name == 'schedule'
@@ -30,12 +30,15 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} 
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/slack-incoming-webhook
         with:
-          text: "Crane CI: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          text: |
+            :warning: CI NIGHTLY · TIER-0 tests failed
+            Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
 
   notify-dispatch:
     if: github.event_name == 'workflow_dispatch'
