@@ -159,12 +159,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # TEMPORARY: fails before minikube — delete this entire step after testing Slack.
-      - name: Deliberate failure for Slack verification
-        run: |
-          echo "::notice::Intentional failure to verify Slack notify — remove this step after testing."
-          exit 1
-
       - name: Setup minikube clusters
         uses: ./.github/actions/setup-minikube-clusters
         with:
@@ -212,21 +206,3 @@ jobs:
           else
             ginkgo run -v --focus-file="${{ needs.detect-changes.outputs.focus_file_regex }}" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
           fi
-
-      # TEMPORARY: remove this step when Slack alerting is no longer needed on PR E2E failures.
-      - name: Notify Slack on E2E failure
-        if: failure()
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        uses: ./.github/actions/slack-incoming-webhook
-        with:
-          text: |
-            :warning: Crane E2E · PR tester failed
-            -----------------------------------------
-
-            Workflow run
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            PR: ${{ github.event.pull_request.html_url }}
-
-            Repo: ${{ github.repository }}  |  Ref: ${{ github.head_ref }}  |  SHA: ${{ github.sha }}

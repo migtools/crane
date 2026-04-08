@@ -76,5 +76,5 @@ jobs:
         uses: ./.github/actions/slack-incoming-webhook
         with:
           text: |
-            :warning: Crane E2E · TIER-0 tests failed
+            :warning: Crane E2E · TIER-0 Nightly Tests Failed
             Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
