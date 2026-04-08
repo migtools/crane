@@ -4,8 +4,10 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - "e2e-tests/**"
+
+concurrency:
+  group: e2e-pr-tester-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   detect-changes:
@@ -17,6 +19,7 @@ jobs:
       run_mode: ${{ steps.changed_tests.outputs.run_mode }}
       test_paths: ${{ steps.changed_tests.outputs.test_paths }}
       focus_file_regex: ${{ steps.changed_tests.outputs.focus_file_regex }}
+      full_reason: ${{ steps.changed_tests.outputs.full_reason }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,11 +31,38 @@ jobs:
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          CHANGED_E2E_FILES="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- e2e-tests/ || true)"
+          # Three-dot diff (merge-base..HEAD): only files changed on the PR branch.
+          # Two-dot BASE..HEAD compares full trees and wrongly includes all of main
+          # when the branch has not merged the latest base (shows outside_e2e for everything).
+          ALL_CHANGED="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" || true)"
+
+          # Full E2E for "outside e2e-tests" ignores CI/docs-only paths and root README.
+          has_outside_e2e=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              e2e-tests/*|.github/*|docs/*|README.md) ;;
+              *) has_outside_e2e=true; break ;;
+            esac
+          done <<EOF
+          $ALL_CHANGED
+          EOF
+
+          if [ "$has_outside_e2e" = "true" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "run_mode=all" >> "$GITHUB_OUTPUT"
+            echo "full_reason=outside_e2e" >> "$GITHUB_OUTPUT"
+            echo "test_paths=" >> "$GITHUB_OUTPUT"
+            echo "focus_file_regex=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_E2E_FILES="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" -- e2e-tests/ || true)"
 
           if [ -z "$CHANGED_E2E_FILES" ]; then
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
             echo "run_mode=none" >> "$GITHUB_OUTPUT"
+            echo "full_reason=skip" >> "$GITHUB_OUTPUT"
             echo "test_paths=" >> "$GITHUB_OUTPUT"
             echo "focus_file_regex=" >> "$GITHUB_OUTPUT"
             exit 0
@@ -65,6 +95,7 @@ jobs:
           if [ "$has_tests" = "false" ] && [ "$has_impactful_non_test" = "false" ]; then
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
             echo "run_mode=none" >> "$GITHUB_OUTPUT"
+            echo "full_reason=skip" >> "$GITHUB_OUTPUT"
             echo "test_paths=" >> "$GITHUB_OUTPUT"
             echo "focus_file_regex=" >> "$GITHUB_OUTPUT"
             exit 0
@@ -75,8 +106,10 @@ jobs:
 
           if [ "$has_impactful_non_test" = "true" ] || [ "$suite_file_changed" = "true" ] || [ "$has_tests" = "false" ]; then
             echo "run_mode=all" >> "$GITHUB_OUTPUT"
+            echo "full_reason=e2e_impact" >> "$GITHUB_OUTPUT"
           else
             echo "run_mode=focused" >> "$GITHUB_OUTPUT"
+            echo "full_reason=focused" >> "$GITHUB_OUTPUT"
           fi
           echo "run_tests=true" >> "$GITHUB_OUTPUT"
           echo "test_paths=$TEST_PATHS" >> "$GITHUB_OUTPUT"
@@ -85,13 +118,24 @@ jobs:
       - name: Print execution plan
         run: |
           echo "Run mode: ${{ steps.changed_tests.outputs.run_mode }}"
-          if [ "${{ steps.changed_tests.outputs.run_mode }}" = "all" ]; then
-            echo "Running full suite: e2e-tests/tests"
-            echo "Reason: impactful non-test file(s) changed under e2e-tests/"
-          else
-            echo "Running touched tests: ${{ steps.changed_tests.outputs.test_paths }}"
-            echo "Using focus-file regex: ${{ steps.changed_tests.outputs.focus_file_regex }}"
-          fi
+          echo "Full reason: ${{ steps.changed_tests.outputs.full_reason }}"
+          case "${{ steps.changed_tests.outputs.full_reason }}" in
+            outside_e2e)
+              echo "Running full suite: e2e-tests/tests"
+              echo "Reason: changes outside e2e-tests/ (crane or repo paths)"
+              ;;
+            e2e_impact)
+              echo "Running full suite: e2e-tests/tests"
+              echo "Reason: impactful non-test file(s) or suite bootstrap changed under e2e-tests/"
+              ;;
+            focused)
+              echo "Running touched tests: ${{ steps.changed_tests.outputs.test_paths }}"
+              echo "Using focus-file regex: ${{ steps.changed_tests.outputs.focus_file_regex }}"
+              ;;
+            *)
+              echo "Skipping E2E run (no applicable changes)."
+              ;;
+          esac
 
   run-changed-e2e-tests:
     needs: detect-changes
