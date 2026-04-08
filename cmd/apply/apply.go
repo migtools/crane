@@ -1,20 +1,15 @@
 package apply
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	craneApply "github.com/konveyor/crane-lib/apply"
 	"github.com/konveyor/crane/internal/apply"
-	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
 	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"sigs.k8s.io/yaml"
 )
 
 type Options struct {
@@ -41,7 +36,6 @@ type Flags struct {
 	FromStage string   `mapstructure:"from-stage"`
 	ToStage   string   `mapstructure:"to-stage"`
 	Stages    []string `mapstructure:"stages"`
-	FinalOnly bool     `mapstructure:"final-only"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -62,12 +56,9 @@ func (o *Options) Validate() error {
 	if len(o.Flags.Stages) > 0 {
 		flagCount++
 	}
-	if o.cmd != nil && o.cmd.Flags().Changed("final-only") {
-		flagCount++
-	}
 
 	if flagCount > 1 {
-		return fmt.Errorf("--stage, --from-stage/--to-stage, --stages, and --final-only are mutually exclusive")
+		return fmt.Errorf("--stage, --from-stage/--to-stage, and --stages are mutually exclusive")
 	}
 
 	return nil
@@ -119,32 +110,9 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Apply from this stage onwards (e.g., '20_openshift')")
 	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Apply up to and including this stage (e.g., '30_imagestream')")
 	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Apply specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
-	cmd.Flags().BoolVar(&o.FinalOnly, "final-only", true, "Apply only the final stage in the pipeline (default: true)")
 }
 
 func (o *Options) run() error {
-	// Determine if using new Kustomize workflow or legacy apply
-	useKustomize := o.shouldUseKustomizeWorkflow()
-
-	if useKustomize {
-		return o.runKustomizeWorkflow()
-	}
-
-	// Legacy apply workflow
-	return o.runLegacyWorkflow()
-}
-
-// shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
-func (o *Options) shouldUseKustomizeWorkflow() bool {
-	// Use Kustomize workflow if any multi-stage flags are explicitly set by the user
-	// OR if final-only is true (including default case when no flags are provided)
-	return o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
-		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") ||
-		o.cmd.Flags().Changed("final-only") || o.FinalOnly
-}
-
-// runKustomizeWorkflow executes the new Kustomize-based apply
-func (o *Options) runKustomizeWorkflow() error {
 	log := o.globalFlags.GetLogger()
 
 	transformDir, err := filepath.Abs(o.TransformDir)
@@ -169,8 +137,6 @@ func (o *Options) runKustomizeWorkflow() error {
 		OutputDir:    outputDir,
 	}
 
-	// Validation removed for simplicity
-
 	// Determine which stages to apply
 	// If user specified which stages to run, use those
 	if o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
@@ -187,103 +153,7 @@ func (o *Options) runKustomizeWorkflow() error {
 		return applier.ApplyMultiStage(selector)
 	}
 
-	// Default or explicit --final-only: apply final stage
+	// Default: apply final stage only
 	log.Info("Applying final stage...")
 	return applier.ApplyFinalStage()
-}
-
-// runLegacyWorkflow executes the old JSONPatch-based apply
-func (o *Options) runLegacyWorkflow() error {
-	log := o.globalFlags.GetLogger()
-	a := craneApply.Applier{}
-
-	// Load all the resources from the export dir
-	exportDir, err := filepath.Abs(o.ExportDir)
-	if err != nil {
-		// Handle errors better for users.
-		return err
-	}
-
-	transformDir, err := filepath.Abs(o.TransformDir)
-	if err != nil {
-		return err
-	}
-
-	outputDir, err := filepath.Abs(o.OutputDir)
-	if err != nil {
-		return err
-	}
-
-	files, err := file.ReadFiles(context.TODO(), exportDir)
-	if err != nil {
-		return err
-	}
-
-	opts := file.PathOpts{
-		TransformDir: transformDir,
-		ExportDir:    exportDir,
-		OutputDir:    outputDir,
-	}
-
-	//TODO: @shawn-hurley handle case where transform or whiteout file is not present.
-	for _, f := range files {
-		whPath := opts.GetWhiteOutFilePath(f.Path)
-		_, statErr := os.Stat(whPath)
-		if !errors.Is(statErr, os.ErrNotExist) {
-			log.Infof("resource file: %v is skipped due to white file: %v", f.Info.Name(), whPath)
-			continue
-		}
-
-		// Set doc to the object, only update the file if the transfrom file exists
-		doc, err := f.Unstructured.MarshalJSON()
-		if err != nil {
-			return err
-		}
-
-		tfPath := opts.GetTransformPath(f.Path)
-		// Check if transform file exists
-		// If the transform does not exist, assume that the resource file is
-		// not needed and ignore for now.
-		_, tfStatErr := os.Stat(tfPath)
-		if tfStatErr != nil && !errors.Is(tfStatErr, os.ErrNotExist) {
-			// Some other error here err out
-			return tfStatErr
-		}
-
-		if !errors.Is(tfStatErr, os.ErrNotExist) {
-			transformfile, err := os.ReadFile(tfPath)
-			if err != nil {
-				return err
-			}
-
-			doc, err = a.Apply(f.Unstructured, transformfile)
-			if err != nil {
-				return err
-			}
-		}
-
-		y, err := yaml.JSONToYAML(doc)
-		if err != nil {
-			return err
-		}
-		outputFilePath := opts.GetOutputFilePath(f.Path)
-		// We must create all the directories here.
-		err = os.MkdirAll(filepath.Dir(outputFilePath), 0700)
-		if err != nil {
-			return err
-		}
-		outputFile, err := os.Create(outputFilePath)
-		if err != nil {
-			return err
-		}
-		defer outputFile.Close()
-		i, err := outputFile.Write(y)
-		if err != nil {
-			return err
-		}
-		log.Debugf("wrote %v bytes for file: %v", i, outputFilePath)
-	}
-
-	return nil
-
 }
