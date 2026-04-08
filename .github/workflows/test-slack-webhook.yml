@@ -4,7 +4,7 @@ name: Test Slack incoming webhook
 
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/10 * * * *"
   push:
   workflow_dispatch:
     inputs:
