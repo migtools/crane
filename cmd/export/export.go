@@ -141,7 +141,7 @@ func (o *ExportOptions) Run() error {
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
 
-	// create cluster resources directory if it needs to be created
+	// create cluster resources directory if it needs to be created...
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
 		log.Errorf("error preparing cluster resources directory: %#v", err)
