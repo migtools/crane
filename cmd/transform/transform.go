@@ -1,17 +1,14 @@
 package transform
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/cmd/transform/listplugins"
 	"github.com/konveyor/crane/cmd/transform/optionals"
-	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	internalTransform "github.com/konveyor/crane/internal/transform"
@@ -141,28 +138,6 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	// Determine if using new Kustomize workflow or legacy JSONPatch workflow
-	useKustomize := o.shouldUseKustomizeWorkflow()
-
-	if useKustomize {
-		return o.runKustomizeWorkflow()
-	}
-
-	// Legacy JSONPatch workflow
-	return o.runLegacyWorkflow()
-}
-
-// shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
-func (o *Options) shouldUseKustomizeWorkflow() bool {
-	// Use Kustomize workflow if any multi-stage flags are explicitly set by the user
-	return o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
-		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") ||
-		o.cmd.Flags().Changed("stage-name") || o.cmd.Flags().Changed("plugin-name") ||
-		o.cmd.Flags().Changed("force")
-}
-
-// runKustomizeWorkflow executes the new Kustomize-based transform
-func (o *Options) runKustomizeWorkflow() error {
 	log := o.globalFlags.GetLogger()
 
 	exportDir, err := filepath.Abs(o.ExportDir)
@@ -227,139 +202,6 @@ func (o *Options) runKustomizeWorkflow() error {
 	// Single stage mode (default)
 	log.Infof("Running single-stage transform: %s", o.StageName)
 	return orchestrator.RunSingleStage(o.StageName, o.PluginName)
-}
-
-// runLegacyWorkflow executes the old JSONPatch-based transform
-func (o *Options) runLegacyWorkflow() error {
-	log := o.globalFlags.GetLogger()
-	// Load all the resources from the export dir
-	exportDir, err := filepath.Abs(o.ExportDir)
-	if err != nil {
-		// Handle errors better for users.
-		return err
-	}
-
-	pluginDir, err := filepath.Abs(o.PluginDir)
-	if err != nil {
-		return err
-	}
-
-	transformDir, err := filepath.Abs(o.TransformDir)
-	if err != nil {
-		return err
-	}
-
-	var ignoredPatchesDir string
-	if o.IgnoredPatchesDir != "" {
-		ignoredPatchesDir, err = filepath.Abs(o.IgnoredPatchesDir)
-		if err != nil {
-			return err
-		}
-	}
-
-	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
-	if err != nil {
-		return err
-	}
-	files, err := file.ReadFiles(context.TODO(), exportDir)
-	if err != nil {
-		return err
-	}
-
-	opts := file.PathOpts{
-		TransformDir:      transformDir,
-		ExportDir:         exportDir,
-		IgnoredPatchesDir: ignoredPatchesDir,
-	}
-
-	runner := transform.Runner{Log: log.WithField("command", "transform").Logger}
-	if len(o.PluginPriorities) > 0 {
-		runner.PluginPriorities = o.getPluginPrioritiesMap()
-	}
-
-	if len(o.OptionalFlags) > 0 {
-		err = json.Unmarshal([]byte(o.OptionalFlags), &runner.OptionalFlags)
-		if err != nil {
-			return err
-		}
-		runner.OptionalFlags = optionalFlagsToLower(runner.OptionalFlags)
-		log.Debugf("parsed optional-flags: %v", runner.OptionalFlags)
-	}
-
-	for _, f := range files {
-		response, err := runner.Run(f.Unstructured, plugins)
-		if err != nil {
-			return err
-		}
-
-		if response.HaveWhiteOut {
-			whPath := opts.GetWhiteOutFilePath(f.Path)
-			_, statErr := os.Stat(whPath)
-			if os.IsNotExist(statErr) {
-				log.Infof("resource file: %v creating whiteout file: %v", f.Info.Name(), whPath)
-				err = os.MkdirAll(filepath.Dir(whPath), 0700)
-				if err != nil {
-					return err
-				}
-				whFile, err := os.Create(whPath)
-				if err != nil {
-					return err
-				}
-				whFile.Close()
-			}
-			continue
-		} else {
-			// if whiteout file exists from prior run, remove it
-			whPath := opts.GetWhiteOutFilePath(f.Path)
-			_, statErr := os.Stat(whPath)
-			if !os.IsNotExist(statErr) {
-				log.Infof("resource file: %v removing stale whiteout file: %v", f.Info.Name(), whPath)
-				err := os.Remove(whPath)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		// TODO: log if file exists and is truncated
-		// TODO: delete transform file if it exists and haveWhiteOut
-		tfPath := opts.GetTransformPath(f.Path)
-		err = os.MkdirAll(filepath.Dir(tfPath), 0700)
-		if err != nil {
-			return err
-		}
-		transformFile, err := os.Create(tfPath)
-		if err != nil {
-			return err
-		}
-		defer transformFile.Close()
-		i, err := transformFile.Write(response.TransformFile)
-		if err != nil {
-			return err
-		}
-		log.Debugf("wrote %v bytes for file: %v", i, tfPath)
-		if len(response.IgnoredPatches) > 2 {
-			log.Infof("Ignoring patches: %v", string(response.IgnoredPatches))
-			if len(ignoredPatchesDir) > 0 {
-				ignorePath := opts.GetIgnoredPatchesPath(f.Path)
-				err = os.MkdirAll(filepath.Dir(ignorePath), 0700)
-				if err != nil {
-					return err
-				}
-				ignoreFile, err := os.Create(ignorePath)
-				if err != nil {
-					return err
-				}
-				defer ignoreFile.Close()
-				i, err := ignoreFile.Write(response.IgnoredPatches)
-				if err != nil {
-					return err
-				}
-				log.Debugf("wrote %v bytes for file: %v", i, ignorePath)
-			}
-		}
-	}
-	return nil
 }
 
 func (o *Options) getPluginPrioritiesMap() map[string]int {
