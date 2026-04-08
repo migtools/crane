@@ -28,6 +28,8 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	// Command reference for checking flag changes
+	cmd *cobra.Command
 }
 
 type Flags struct {
@@ -43,7 +45,8 @@ type Flags struct {
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
-	// TODO: @shawn-hurley
+	// Store command reference for flag checking
+	o.cmd = c
 	return nil
 }
 
@@ -134,8 +137,10 @@ func (o *Options) run() error {
 
 // shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
 func (o *Options) shouldUseKustomizeWorkflow() bool {
-	// Use Kustomize workflow if any multi-stage flags are explicitly set
-	return o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 || (o.FinalOnly != nil && *o.FinalOnly)
+	// Use Kustomize workflow if any multi-stage flags are explicitly set by the user
+	return o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
+		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") ||
+		o.cmd.Flags().Changed("final-only")
 }
 
 // runKustomizeWorkflow executes the new Kustomize-based apply
@@ -167,14 +172,10 @@ func (o *Options) runKustomizeWorkflow() error {
 	// Validation removed for simplicity
 
 	// Determine which stages to apply
-	if o.FinalOnly != nil && *o.FinalOnly {
-		// Explicitly requested: apply only final stage
-		log.Info("Applying final stage...")
-		return applier.ApplyFinalStage()
-	}
-
-	if o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 {
-		// Multi-stage apply
+	// If user specified which stages to run, use those
+	if o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
+		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") {
+		// Multi-stage apply with selector
 		selector := internalTransform.StageSelector{
 			Stage:     o.Stage,
 			FromStage: o.FromStage,
@@ -186,7 +187,8 @@ func (o *Options) runKustomizeWorkflow() error {
 		return applier.ApplyMultiStage(selector)
 	}
 
-	// Default: apply final stage
+	// Default or explicit --final-only: apply final stage
+	log.Info("Applying final stage...")
 	return applier.ApplyFinalStage()
 }
 

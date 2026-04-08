@@ -37,11 +37,15 @@ func (o *Orchestrator) RunSingleStage(stageName, pluginName string) error {
 		return fmt.Errorf("failed to read export directory: %w", err)
 	}
 
-	// Get filtered plugins
-	plugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
+	// Get all plugins
+	allPlugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
 	if err != nil {
 		return fmt.Errorf("failed to load plugins: %w", err)
 	}
+
+	// Filter plugins by the specified plugin name
+	stage := Stage{PluginName: pluginName}
+	plugins := o.filterPluginsByStage(allPlugins, stage)
 
 	// Run transform for each resource
 	runner := cranelib.Runner{
@@ -55,7 +59,9 @@ func (o *Orchestrator) RunSingleStage(stageName, pluginName string) error {
 	for _, f := range files {
 		response, err := runner.Run(f.Unstructured, plugins)
 		if err != nil {
-			return fmt.Errorf("failed to run transform for resource %s: %w", f.Info.Name(), err)
+			// Include stage name, resource identity, and type in error
+			resourceID := fmt.Sprintf("%s/%s/%s", f.Unstructured.GetKind(), f.Unstructured.GetNamespace(), f.Unstructured.GetName())
+			return fmt.Errorf("stage %s: failed to run transform for %s (type %T): %w", stageName, resourceID, f.Unstructured, err)
 		}
 
 		// Parse TransformFile (JSONPatch) to get patches
@@ -63,7 +69,9 @@ func (o *Orchestrator) RunSingleStage(stageName, pluginName string) error {
 		if len(response.TransformFile) > 2 && !response.HaveWhiteOut {
 			patches, err = jsonpatch.DecodePatch(response.TransformFile)
 			if err != nil {
-				return fmt.Errorf("failed to decode patches for resource %s: %w", f.Info.Name(), err)
+				// Include stage name, resource identity, and type in error
+				resourceID := fmt.Sprintf("%s/%s/%s", f.Unstructured.GetKind(), f.Unstructured.GetNamespace(), f.Unstructured.GetName())
+				return fmt.Errorf("stage %s: failed to decode patches for %s (type %T): %w", stageName, resourceID, response, err)
 			}
 		}
 
@@ -148,11 +156,14 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 // executeStage runs transform for a single stage
 func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.Unstructured) error {
-	// Get plugins for this stage (could be filtered by stage-specific config)
-	plugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
+	// Get all plugins
+	allPlugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
 	if err != nil {
 		return fmt.Errorf("failed to load plugins: %w", err)
 	}
+
+	// Filter plugins to only those matching this stage
+	plugins := o.filterPluginsByStage(allPlugins, stage)
 
 	// Run transform
 	runner := cranelib.Runner{
@@ -166,7 +177,9 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 	for _, resource := range inputResources {
 		response, err := runner.Run(resource, plugins)
 		if err != nil {
-			return fmt.Errorf("failed to run transform: %w", err)
+			// Include stage name, resource identity, and type in error
+			resourceID := fmt.Sprintf("%s/%s/%s", resource.GetKind(), resource.GetNamespace(), resource.GetName())
+			return fmt.Errorf("stage %s: failed to run transform for %s (type %T): %w", stage.DirName, resourceID, resource, err)
 		}
 
 		// Parse TransformFile (JSONPatch) to get patches
@@ -174,7 +187,9 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 		if len(response.TransformFile) > 2 && !response.HaveWhiteOut {
 			patches, err = jsonpatch.DecodePatch(response.TransformFile)
 			if err != nil {
-				return fmt.Errorf("failed to decode patches: %w", err)
+				// Include stage name, resource identity, and type in error
+				resourceID := fmt.Sprintf("%s/%s/%s", resource.GetKind(), resource.GetNamespace(), resource.GetName())
+				return fmt.Errorf("stage %s: failed to decode patches for %s (type %T): %w", stage.DirName, resourceID, response, err)
 			}
 		}
 
@@ -253,4 +268,22 @@ func (o *Orchestrator) loadStageOutput(stage Stage) ([]unstructured.Unstructured
 	}
 
 	return resources, nil
+}
+
+// filterPluginsByStage filters plugins to only those matching the stage's plugin name
+func (o *Orchestrator) filterPluginsByStage(allPlugins []cranelib.Plugin, stage Stage) []cranelib.Plugin {
+	// If stage has no specific plugin name, use all plugins
+	if stage.PluginName == "" {
+		return allPlugins
+	}
+
+	// Filter to only the plugin matching this stage
+	var filtered []cranelib.Plugin
+	for _, p := range allPlugins {
+		if p.Metadata().Name == stage.PluginName {
+			filtered = append(filtered, p)
+		}
+	}
+
+	return filtered
 }

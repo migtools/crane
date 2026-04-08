@@ -30,6 +30,8 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	// Command reference for checking flag changes
+	cmd *cobra.Command
 }
 
 type Flags struct {
@@ -51,7 +53,8 @@ type Flags struct {
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
-	// TODO: @sseago
+	// Store command reference for flag checking
+	o.cmd = c
 	return nil
 }
 
@@ -151,9 +154,11 @@ func (o *Options) run() error {
 
 // shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
 func (o *Options) shouldUseKustomizeWorkflow() bool {
-	// Use Kustomize workflow if any multi-stage flags are set
-	return o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 ||
-		o.StageName != "10_transform" || o.PluginName != "transform"
+	// Use Kustomize workflow if any multi-stage flags are explicitly set by the user
+	return o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
+		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") ||
+		o.cmd.Flags().Changed("stage-name") || o.cmd.Flags().Changed("plugin-name") ||
+		o.cmd.Flags().Changed("force")
 }
 
 // runKustomizeWorkflow executes the new Kustomize-based transform
@@ -204,8 +209,9 @@ func (o *Options) runKustomizeWorkflow() error {
 		CraneVersion:     "v1.0.0", // TODO: Get from build version
 	}
 
-	// Check if multi-stage mode
-	if o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 {
+	// Check if multi-stage mode (user specified which stages to run)
+	if o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
+		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") {
 		// Multi-stage mode
 		selector := internalTransform.StageSelector{
 			Stage:     o.Stage,

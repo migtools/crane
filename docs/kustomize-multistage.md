@@ -140,25 +140,6 @@ crane apply --to-stage 30_imagestream
 crane apply --stages 10_kubernetes,30_imagestream
 ```
 
-#### Validation
-
-Preflight validation is enabled by default:
-
-```bash
-# Run validation (default: enabled)
-crane apply --validate
-
-# Skip validation
-crane apply --validate=false
-```
-
-Validation checks:
-- Stage directory structure
-- kustomization.yaml syntax
-- Resource file existence
-- Patch file references
-- Stage chaining correctness
-
 ## Priority Assignment
 
 ### Auto-Assignment
@@ -407,7 +388,7 @@ if err != nil {
 
 3. **Version Control**: Commit transform directories to Git to track changes
 
-4. **Validation**: Always run validation before applying to production
+4. **Testing**: Always test transformed output before applying to production
 
 5. **Incremental Changes**: Use separate stages for different concerns (security, networking, storage)
 
