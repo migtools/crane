@@ -1,10 +1,13 @@
 package transform
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
@@ -67,6 +70,18 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 
 		// Write patch if there are operations
 		if len(artifact.Patches) > 0 {
+			// Filter out remove operations for non-existent paths to prevent kubectl kustomize errors
+			validPatches, err := filterValidRemoveOps(artifact.Resource, artifact.Patches)
+			if err != nil {
+				return fmt.Errorf("failed to filter patches for %s/%s/%s: %w",
+					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
+			}
+
+			// Skip writing patch file if all operations were filtered out
+			if len(validPatches) == 0 {
+				continue
+			}
+
 			patchFilename := kustomize.GeneratePatchFilename(
 				artifact.Target.Group,
 				artifact.Target.Version,
@@ -76,7 +91,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 			)
 			patchPath := filepath.Join(patchesDir, patchFilename)
 
-			patchYAML, err := kustomize.SerializePatchToYAML(artifact.Patches)
+			patchYAML, err := kustomize.SerializePatchToYAML(validPatches)
 			if err != nil {
 				return fmt.Errorf("failed to serialize patch for %s/%s/%s: %w",
 					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
@@ -166,6 +181,98 @@ func capitalizeFirst(s string) string {
 		return string(first-32) + s[1:]
 	}
 	return s
+}
+
+// filterValidRemoveOps filters out JSONPatch remove operations for paths that don't exist in the resource.
+// This prevents kubectl kustomize from failing when trying to remove non-existent fields.
+func filterValidRemoveOps(resource unstructured.Unstructured, patches jsonpatch.Patch) (jsonpatch.Patch, error) {
+	if len(patches) == 0 {
+		return patches, nil
+	}
+
+	// Convert resource to JSON for path checking
+	resourceJSON, err := resource.MarshalJSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal resource to JSON: %w", err)
+	}
+
+	var resourceMap map[string]interface{}
+	if err := json.Unmarshal(resourceJSON, &resourceMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal resource JSON: %w", err)
+	}
+
+	var validPatches jsonpatch.Patch
+	for _, op := range patches {
+		// Get operation type and path using the Operation methods
+		opType := op.Kind()
+		path, err := op.Path()
+		if err != nil {
+			// If we can't get the path, keep the operation
+			validPatches = append(validPatches, op)
+			continue
+		}
+
+		// Only filter remove operations
+		if opType != "remove" {
+			validPatches = append(validPatches, op)
+			continue
+		}
+
+		// Check if the path exists in the resource
+		if pathExists(resourceMap, path) {
+			validPatches = append(validPatches, op)
+		}
+		// If path doesn't exist, skip this remove operation (no-op)
+	}
+
+	return validPatches, nil
+}
+
+// pathExists checks if a JSON pointer path exists in the given map
+func pathExists(data map[string]interface{}, path string) bool {
+	if path == "" || path == "/" {
+		return true
+	}
+
+	// Remove leading slash
+	path = strings.TrimPrefix(path, "/")
+
+	// Split path into segments
+	segments := strings.Split(path, "/")
+
+	current := data
+	for i, segment := range segments {
+		// Unescape JSON pointer special characters
+		segment = strings.ReplaceAll(segment, "~1", "/")
+		segment = strings.ReplaceAll(segment, "~0", "~")
+
+		// Check if current level is a map
+		if current == nil {
+			return false
+		}
+
+		// Get the value at this segment
+		value, exists := current[segment]
+		if !exists {
+			return false
+		}
+
+		// If this is the last segment, we found it
+		if i == len(segments)-1 {
+			return true
+		}
+
+		// Try to continue traversing
+		switch v := value.(type) {
+		case map[string]interface{}:
+			current = v
+		default:
+			// Can't traverse further, but we haven't reached the end
+			return false
+		}
+	}
+
+	return true
 }
 
 // checkStageDirectory checks if a stage directory exists and is non-empty
