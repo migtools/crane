@@ -77,11 +77,13 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 
 			patchYAML, err := kustomize.SerializePatchToYAML(artifact.Patches)
 			if err != nil {
-				return fmt.Errorf("failed to serialize patch: %w", err)
+				return fmt.Errorf("failed to serialize patch for %s/%s/%s: %w",
+					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
 			}
 
 			if err := os.WriteFile(patchPath, patchYAML, 0644); err != nil {
-				return fmt.Errorf("failed to write patch file: %w", err)
+				return fmt.Errorf("failed to write patch file %s for %s/%s/%s: %w",
+					patchPath, artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
 			}
 
 			patches = append(patches, kustomize.Patch{

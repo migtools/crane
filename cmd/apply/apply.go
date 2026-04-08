@@ -23,8 +23,6 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
-	// Command reference for checking flag changes
-	cmd *cobra.Command
 }
 
 type Flags struct {
@@ -39,8 +37,6 @@ type Flags struct {
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
-	// Store command reference for flag checking
-	o.cmd = c
 	return nil
 }
 
@@ -138,15 +134,15 @@ func (o *Options) run() error {
 	}
 
 	// Determine which stages to apply
-	// If user specified which stages to run, use those
-	if o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
-		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") {
+	// If user specified which stages to run (via CLI or config), use those
+	if o.Flags.Stage != "" || o.Flags.FromStage != "" ||
+		o.Flags.ToStage != "" || len(o.Flags.Stages) > 0 {
 		// Multi-stage apply with selector
 		selector := internalTransform.StageSelector{
-			Stage:     o.Stage,
-			FromStage: o.FromStage,
-			ToStage:   o.ToStage,
-			Stages:    o.Stages,
+			Stage:     o.Flags.Stage,
+			FromStage: o.Flags.FromStage,
+			ToStage:   o.Flags.ToStage,
+			Stages:    o.Flags.Stages,
 		}
 
 		log.Info("Applying selected stages...")
