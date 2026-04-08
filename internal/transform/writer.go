@@ -40,10 +40,10 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	resourcesDir := w.opts.GetResourcesDir(w.stageName)
 	patchesDir := w.opts.GetPatchesDir(w.stageName)
 
-	if err := os.MkdirAll(resourcesDir, 0755); err != nil {
+	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		return fmt.Errorf("failed to create resources directory: %w", err)
 	}
-	if err := os.MkdirAll(patchesDir, 0755); err != nil {
+	if err := os.MkdirAll(patchesDir, 0700); err != nil {
 		return fmt.Errorf("failed to create patches directory: %w", err)
 	}
 

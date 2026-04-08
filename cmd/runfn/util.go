@@ -18,7 +18,7 @@ func WriteOutput(outDir string, content string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(outDir, 0755); err != nil {
+	if err := os.MkdirAll(outDir, 0700); err != nil {
 		return err
 	}
 	outputs = []kio.Writer{kio.LocalPackageWriter{PackagePath: outDir}}

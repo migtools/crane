@@ -32,7 +32,7 @@ transform/
 To see what will be deployed:
 
 ```bash
-kubectl kustomize build transform/10_transform/
+kubectl kustomize transform/10_transform/
 ```
 
 ### Applying to Cluster
@@ -55,7 +55,7 @@ You can edit resources in the `resources/` directory:
 vim transform/10_transform/resources/deployment.yaml
 
 # Preview changes
-kubectl kustomize build transform/10_transform/
+kubectl kustomize transform/10_transform/
 
 # Apply changes
 kubectl apply -k transform/10_transform/
@@ -188,13 +188,13 @@ Lists patches that were ignored due to conflicts:
 
 ```bash
 # View all resources after transformation
-kubectl kustomize build transform/10_transform/
+kubectl kustomize transform/10_transform/
 
 # View specific resource type
-kubectl kustomize build transform/10_transform/ | grep -A 20 "kind: Deployment"
+kubectl kustomize transform/10_transform/ | grep -A 20 "kind: Deployment"
 
 # Save to file for review
-kubectl kustomize build transform/10_transform/ > review.yaml
+kubectl kustomize transform/10_transform/ > review.yaml
 ```
 
 ### 2. Customize After Transform
@@ -303,7 +303,7 @@ crane transform --stage-name 20_custom
 **Solution**:
 ```bash
 # Validate manually
-kubectl kustomize build transform/10_transform/
+kubectl kustomize transform/10_transform/
 
 # Check for missing files
 ls -la transform/10_transform/resources/

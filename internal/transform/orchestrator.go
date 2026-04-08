@@ -1,8 +1,11 @@
 package transform
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
@@ -10,6 +13,7 @@ import (
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 // Orchestrator coordinates multi-stage transform execution
@@ -112,8 +116,11 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 		// Load input resources
 		var inputResources []unstructured.Unstructured
-		if i == 0 {
-			// First stage reads from export directory
+
+		// Check if there's a previous stage in the full pipeline
+		prevStage := GetPreviousStage(stages, stage)
+		if prevStage == nil {
+			// This is the first stage in the full pipeline, read from export directory
 			files, err := file.ReadFiles(context.TODO(), o.ExportDir)
 			if err != nil {
 				return fmt.Errorf("failed to read export directory: %w", err)
@@ -122,9 +129,8 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 				inputResources = append(inputResources, f.Unstructured)
 			}
 		} else {
-			// Subsequent stages read from previous stage's output
-			prevStage := selectedStages[i-1]
-			inputResources, err = o.loadStageOutput(prevStage)
+			// There's a previous stage, read from its output
+			inputResources, err = o.loadStageOutput(*prevStage)
 			if err != nil {
 				return fmt.Errorf("failed to load output from stage %s: %w", prevStage.DirName, err)
 			}
@@ -200,23 +206,50 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 
 // loadStageOutput loads resources from a completed stage's output
 func (o *Orchestrator) loadStageOutput(stage Stage) ([]unstructured.Unstructured, error) {
-	// Read all resource files from stage's resources directory
 	opts := file.PathOpts{
 		TransformDir: o.TransformDir,
 	}
 
-	resourcesDir := opts.GetResourcesDir(stage.DirName)
+	stageDir := opts.GetStageDir(stage.DirName)
 
-	// Use kubectl kustomize to build the final output
-	// For now, just read the resource files directly
-	files, err := file.ReadFiles(context.TODO(), resourcesDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read stage resources: %w", err)
+	// Run kubectl kustomize to build the stage with patches applied
+	cmd := exec.Command("kubectl", "kustomize", stageDir)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	o.Log.Debugf("Running: kubectl kustomize %s", stageDir)
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("failed to build stage %s: %w\nstderr: %s", stage.DirName, err, stderr.String())
 	}
 
+	// Parse the multi-document YAML output
 	var resources []unstructured.Unstructured
-	for _, f := range files {
-		resources = append(resources, f.Unstructured)
+	output := stdout.String()
+
+	// Split by YAML document separator
+	docs := strings.Split(output, "\n---\n")
+	for _, doc := range docs {
+		doc = strings.TrimSpace(doc)
+		if doc == "" || doc == "---" {
+			continue
+		}
+
+		// Convert YAML to JSON
+		jsonData, err := yaml.YAMLToJSON([]byte(doc))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse YAML document in stage %s: %w", stage.DirName, err)
+		}
+
+		// Unmarshal into unstructured
+		u := unstructured.Unstructured{}
+		if err := u.UnmarshalJSON(jsonData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal resource in stage %s: %w", stage.DirName, err)
+		}
+
+		resources = append(resources, u)
 	}
 
 	return resources, nil

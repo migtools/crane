@@ -39,8 +39,7 @@ type Flags struct {
 	FromStage string   `mapstructure:"from-stage"`
 	ToStage   string   `mapstructure:"to-stage"`
 	Stages    []string `mapstructure:"stages"`
-	FinalOnly bool     `mapstructure:"final-only"`
-	Force     bool     `mapstructure:"force"`
+	FinalOnly *bool    `mapstructure:"final-only"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -60,7 +59,7 @@ func (o *Options) Validate() error {
 	if len(o.Flags.Stages) > 0 {
 		flagCount++
 	}
-	if o.Flags.FinalOnly {
+	if o.Flags.FinalOnly != nil && *o.Flags.FinalOnly {
 		flagCount++
 	}
 
@@ -117,8 +116,8 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Apply from this stage onwards (e.g., '20_openshift')")
 	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Apply up to and including this stage (e.g., '30_imagestream')")
 	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Apply specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
-	cmd.Flags().BoolVar(&o.FinalOnly, "final-only", true, "Apply only the final stage in the pipeline (default: true)")
-	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of output directory if it exists and is not empty")
+	// Don't provide a default value - nil means not set, true means explicitly set to true
+	cmd.Flags().Bool("final-only", true, "Apply only the final stage in the pipeline (default: true)")
 }
 
 func (o *Options) run() error {
@@ -135,8 +134,8 @@ func (o *Options) run() error {
 
 // shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
 func (o *Options) shouldUseKustomizeWorkflow() bool {
-	// Use Kustomize workflow if any multi-stage flags are set
-	return o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 || o.FinalOnly
+	// Use Kustomize workflow if any multi-stage flags are explicitly set
+	return o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 || (o.FinalOnly != nil && *o.FinalOnly)
 }
 
 // runKustomizeWorkflow executes the new Kustomize-based apply
@@ -154,7 +153,7 @@ func (o *Options) runKustomizeWorkflow() error {
 	}
 
 	// Create output directory
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -168,8 +167,8 @@ func (o *Options) runKustomizeWorkflow() error {
 	// Validation removed for simplicity
 
 	// Determine which stages to apply
-	if o.FinalOnly {
-		// Default: apply only final stage
+	if o.FinalOnly != nil && *o.FinalOnly {
+		// Explicitly requested: apply only final stage
 		log.Info("Applying final stage...")
 		return applier.ApplyFinalStage()
 	}
@@ -267,7 +266,7 @@ func (o *Options) runLegacyWorkflow() error {
 		}
 		outputFilePath := opts.GetOutputFilePath(f.Path)
 		// We must create all the directories here.
-		err = os.MkdirAll(filepath.Dir(outputFilePath), 0777)
+		err = os.MkdirAll(filepath.Dir(outputFilePath), 0700)
 		if err != nil {
 			return err
 		}

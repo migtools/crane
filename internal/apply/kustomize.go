@@ -48,7 +48,7 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 
 	// Write output to output directory
 	outputPath := filepath.Join(k.OutputDir, stageName+".yaml")
-	if err := os.MkdirAll(k.OutputDir, 0755); err != nil {
+	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -86,7 +86,7 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 
 		// Write output
 		outputPath := filepath.Join(k.OutputDir, stage.DirName+".yaml")
-		if err := os.MkdirAll(k.OutputDir, 0755); err != nil {
+		if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
 			return fmt.Errorf("failed to create output directory: %w", err)
 		}
 
@@ -128,7 +128,7 @@ func (k *KustomizeApplier) ApplyFinalStage() error {
 
 	// Write to output.yaml (single file for final output)
 	outputPath := filepath.Join(k.OutputDir, "output.yaml")
-	if err := os.MkdirAll(k.OutputDir, 0755); err != nil {
+	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -140,15 +140,15 @@ func (k *KustomizeApplier) ApplyFinalStage() error {
 	return nil
 }
 
-// runKustomizeBuild executes kubectl kustomize build on a directory
+// runKustomizeBuild executes kubectl kustomize on a directory
 func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
-	cmd := exec.Command("kubectl", "kustomize", "build", dir)
+	cmd := exec.Command("kubectl", "kustomize", dir)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	k.Log.Debugf("Running: kubectl kustomize build %s", dir)
+	k.Log.Debugf("Running: kubectl kustomize %s", dir)
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())
@@ -159,7 +159,7 @@ func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
 
 // ValidateKubectlAvailable checks if kubectl command is available
 func ValidateKubectlAvailable() error {
-	cmd := exec.Command("kubectl", "version", "--client", "--short")
+	cmd := exec.Command("kubectl", "version", "--client")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("kubectl not found or not executable: %w", err)
 	}

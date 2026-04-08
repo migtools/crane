@@ -116,11 +116,14 @@ func FilterStages(allStages []Stage, selector StageSelector) []Stage {
 	// If from-stage or to-stage is specified
 	var filtered []Stage
 	inRange := selector.FromStage == "" // Start collecting if no from-stage
+	foundFrom := selector.FromStage == "" // True if no from-stage specified
+	foundTo := selector.ToStage == ""     // True if no to-stage specified
 
 	for _, stage := range allStages {
 		// Check if we should start collecting
 		if selector.FromStage != "" && stage.DirName == selector.FromStage {
 			inRange = true
+			foundFrom = true
 		}
 
 		// Collect if in range
@@ -130,8 +133,17 @@ func FilterStages(allStages []Stage, selector StageSelector) []Stage {
 
 		// Check if we should stop collecting
 		if selector.ToStage != "" && stage.DirName == selector.ToStage {
+			foundTo = true
 			break
 		}
+	}
+
+	// Validate that requested stages were found
+	if selector.FromStage != "" && !foundFrom {
+		return []Stage{} // FromStage not found
+	}
+	if selector.ToStage != "" && !foundTo {
+		return []Stage{} // ToStage not found
 	}
 
 	return filtered

@@ -122,7 +122,7 @@ crane apply \
   --output-dir output
 ```
 
-This builds the final stage using `kubectl kustomize build` and writes the result to `output/output.yaml`.
+This builds the final stage using `kubectl kustomize` and writes the result to `output/output.yaml`.
 
 #### Apply Specific Stages
 
@@ -314,40 +314,48 @@ transform/
 
 ### Stage Validation
 
-Validate stages before applying:
+Validate kubectl availability and stage names before applying:
 
 ```go
-import "github.com/konveyor/crane/internal/apply"
+import (
+    "github.com/konveyor/crane/internal/apply"
+    "github.com/konveyor/crane/internal/transform"
+)
 
-results, err := apply.ValidateAllStages(transformDir)
-for _, result := range results {
-    if !result.IsValid {
-        fmt.Printf("Stage %s has errors:\n", result.StageName)
-        for _, err := range result.Errors {
-            fmt.Printf("  - %s\n", err)
-        }
+// Check if kubectl is available
+err := apply.ValidateKubectlAvailable()
+if err != nil {
+    fmt.Printf("kubectl validation failed: %v\n", err)
+}
+
+// Validate stage names
+stages, err := transform.DiscoverStages(transformDir)
+if err != nil {
+    fmt.Printf("failed to discover stages: %v\n", err)
+}
+
+for _, stage := range stages {
+    if err := transform.ValidateStageName(stage.DirName); err != nil {
+        fmt.Printf("Invalid stage name %s: %v\n", stage.DirName, err)
     }
 }
 ```
 
 ### Custom Stage Naming
 
-Suggest stage names based on existing stages:
+Generate stage names with priority numbers:
 
 ```go
 import "github.com/konveyor/crane/internal/transform"
 
-stageName, err := transform.SuggestStageName(transformDir, "my-plugin")
-// Returns: "15_my-plugin" if gap exists, or "40_my-plugin" if appending
-```
+// Generate a stage name with priority
+stageName := transform.GenerateStageName(15, "my-plugin")
+// Returns: "15_my-plugin"
 
-### Priority Conflict Detection
-
-```go
-assignments, err := transform.GetPriorityAssignments(transformDir)
-err = transform.ValidatePriorityAssignments(assignments)
+// Validate a stage name
+err := transform.ValidateStageName("15_my-plugin")
 if err != nil {
-    // Handle priority conflicts
+    // Handle invalid stage name
 }
 ```
 
@@ -369,7 +377,7 @@ if err != nil {
 **Solution**:
 1. Check kustomization.yaml syntax
 2. Verify all resource files exist in resources/
-3. Run `kubectl kustomize build transform/STAGE/` manually to see detailed error
+3. Run `kubectl kustomize transform/STAGE/` manually to see detailed error
 
 ### Issue: Resources not appearing in output
 
@@ -420,13 +428,15 @@ selector := transform.StageSelector{
 }
 filtered := transform.FilterStages(stages, selector)
 
-// Priority assignment
-priorities := transform.AutoAssignPriorities(stages)
-merged := transform.MergePriorities(userPriorities, priorities)
+// Stage navigation
+first := transform.GetFirstStage(stages)
+last := transform.GetLastStage(stages)
+prev := transform.GetPreviousStage(stages, currentStage)
+next := transform.GetNextStage(stages, currentStage)
 
-// Dirty check
-dirty, err := transform.IsDirectoryDirty(stageDir)
-err = transform.EnsureCleanDirectory(stageDir, force)
+// Stage name validation and generation
+err = transform.ValidateStageName("10_kubernetes")
+stageName := transform.GenerateStageName(10, "kubernetes")
 ```
 
 ### Apply Package
@@ -439,11 +449,21 @@ applier := &apply.KustomizeApplier{
     OutputDir:    outputDir,
 }
 
+// Apply a single stage
+err = applier.ApplySingleStage("10_kubernetes")
+
+// Apply multiple stages with selector
+selector := transform.StageSelector{
+    FromStage: "10_kubernetes",
+    ToStage:   "30_imagestream",
+}
+err = applier.ApplyMultiStage(selector)
+
+// Apply only the final stage (most common)
 err = applier.ApplyFinalStage()
 
-// Validation
-result, err := apply.ValidateStage(transformDir, stageName)
-err = apply.ValidatePipeline(transformDir)
+// Validate kubectl availability
+err = apply.ValidateKubectlAvailable()
 ```
 
 ## Further Reading
