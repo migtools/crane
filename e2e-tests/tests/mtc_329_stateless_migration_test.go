@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Stateless migration", func() {
+var _ = Describe("Stateless migration", func() { //Test
 	It("[MTC-329] nginx app quiesce pod and apply to target cluster", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
