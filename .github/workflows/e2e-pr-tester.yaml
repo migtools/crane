@@ -159,6 +159,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # TEMPORARY: fails before minikube — delete this entire step after testing Slack.
+      - name: Deliberate failure for Slack verification
+        run: |
+          echo "::notice::Intentional failure to verify Slack notify — remove this step after testing."
+          exit 1
+
       - name: Setup minikube clusters
         uses: ./.github/actions/setup-minikube-clusters
         with:
