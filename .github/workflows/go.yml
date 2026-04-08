@@ -16,13 +16,66 @@ jobs:
           path: main
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Build
+      - name: Build all packages
         env:
           GOPROXY: "https://proxy.golang.org"
         run: cd main && go build ./...
 
-      # E2E lives under e2e-tests/tests and requires k8sdeploy + clusters; CI runs unit tests only.
-      - name: Unit tests
+      - name: Build crane binary
         env:
           GOPROXY: "https://proxy.golang.org"
-        run: cd main && go test -v $(go list ./... | grep -v '/e2e-tests/tests')
+        run: cd main && go build -o crane .
+
+      - name: Upload crane binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: crane-binary
+          path: main/crane
+          retention-days: 30
+
+      # E2E lives under e2e-tests/tests and requires k8sdeploy + clusters; CI runs unit tests only.
+      - name: Unit tests with coverage
+        env:
+          GOPROXY: "https://proxy.golang.org"
+        run: |
+          cd main
+          go test -v -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/e2e-tests/tests')
+          echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "<details><summary>Per-package coverage</summary>" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save PR number
+        if: github.event_name == 'pull_request'
+        run: echo "${{ github.event.pull_request.number }}" > main/pr-number.txt
+
+      - name: Upload coverage artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            main/coverage.out
+            main/pr-number.txt
+
+      - name: Coverage threshold check
+        run: |
+          cd main
+          COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
+          if [ -z "$COVERAGE" ]; then
+            echo "::error::Could not parse coverage from coverage.out"
+            exit 1
+          fi
+          echo "Total coverage: ${COVERAGE}%"
+          THRESHOLD=5
+          if awk -v cov="$COVERAGE" -v thresh="$THRESHOLD" 'BEGIN {exit !(cov < thresh)}'; then
+            echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            exit 1
+          fi

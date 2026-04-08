@@ -1,0 +1,80 @@
+name: Post coverage comment
+on:
+  workflow_run:
+    workflows: ["Go build and unit tests"]
+    types: [completed]
+
+jobs:
+  comment:
+    name: Post coverage on PR
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Check out source code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.25
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Post comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          PR_NUMBER=$(cat pr-number.txt)
+          TOTAL=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}')
+
+          PKG_COVERAGE=$(go tool cover -func=coverage.out | grep -v '^total:' | \
+            awk -F'\t+' '{
+              split($1, parts, "/")
+              file = parts[length(parts)]
+              sub(file, "", $1)
+              sub(/\/$/, "", $1)
+              pkg = $1
+              pct = $NF + 0
+              sum[pkg] += pct
+              count[pkg]++
+            } END {
+              for (pkg in sum) {
+                printf "- **%s** — %.1f%%\n", pkg, sum[pkg]/count[pkg]
+              }
+            }' | sort)
+
+          BODY="## Test Coverage Report
+
+          **Total: ${TOTAL}**
+
+          ### Per-package coverage
+          ${PKG_COVERAGE}
+
+          <details><summary>Full function-level details</summary>
+
+          \`\`\`
+          $(go tool cover -func=coverage.out)
+          \`\`\`
+          </details>
+
+          *Posted by CI*"
+          BODY=$(echo "$BODY" | sed 's/^          //')
+
+          COMMENT_ID=$(gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq '.[] | select(.body | startswith("## Test Coverage Report")) | .id' | head -1)
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${GH_REPO}/issues/comments/${COMMENT_ID}" -X PATCH -f body="$BODY"
+          else
+            gh api "repos/${GH_REPO}/issues/${PR_NUMBER}/comments" -f body="$BODY"
+          fi

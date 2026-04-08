@@ -34,6 +34,52 @@ type groupResourceError struct {
 	Error       error              `json:"error"`
 }
 
+// hasClusterScopedManifests reports whether any object in resources would be written
+// under clusterResourceDir (objects with empty namespace).
+func hasClusterScopedManifests(resources []*groupResource) bool {
+	for _, g := range resources {
+		if g == nil || g.objects == nil {
+			continue
+		}
+		for _, obj := range g.objects.Items {
+			if obj.GetNamespace() == "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// prepareClusterResourceDir removes any previous _cluster export at clusterResourceDir
+// (so stale YAML from an earlier run is not left behind), then recreates the directory
+// only if this run has cluster-scoped manifests to write. If clusterResourceDir does
+// not exist, RemoveAll succeeds.
+func prepareClusterResourceDir(clusterResourceDir string, resources []*groupResource) error {
+	if err := os.RemoveAll(clusterResourceDir); err != nil {
+		return fmt.Errorf("clear cluster export directory %q: %w", clusterResourceDir, err)
+	}
+	if !hasClusterScopedManifests(resources) {
+		return nil
+	}
+	if err := os.MkdirAll(clusterResourceDir, 0700); err != nil {
+		return fmt.Errorf("create cluster export directory %q: %w", clusterResourceDir, err)
+	}
+	return nil
+}
+
+// prepareFailuresDir removes any previous failures export at failuresDir
+// (so stale failure YAML from an earlier run is not left behind), then
+// recreates the directory for the current run.
+func prepareFailuresDir(failuresDir string) error {
+	if err := os.RemoveAll(failuresDir); err != nil {
+		return fmt.Errorf("clear failures export directory %q: %w", failuresDir, err)
+	}
+	if err := os.MkdirAll(failuresDir, 0700); err != nil {
+		return fmt.Errorf("create failures export directory %q: %w", failuresDir, err)
+	}
+	return nil
+}
+
 // writeResources writes each object in resources to a YAML file under resourceDir
 // or clusterResourceDir when the object has no namespace.
 func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
@@ -163,9 +209,9 @@ func discoverPreferredResources(
 }
 
 // resourceToExtract lists objects for each admitted API type in namespace (or cluster-wide
-// for allowed cluster-scoped kinds when clusterScopedRbac is true). It returns resources
+// for allowed cluster-scoped kinds: ClusterRoleBinding, ClusterRole, SCC). It returns resources
 // with non-empty lists and a parallel slice of per-type list errors.
-func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac bool, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -188,7 +234,7 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 				continue
 			}
 
-			if !isAdmittedResource(clusterScopedRbac, gv, resource) {
+			if !isAdmittedResource(gv, resource) {
 				log.Debugf("resource: %s.%s is clusterscoped or not admitted kind, skipping\n", gv.String(), resource.Kind)
 				continue
 			}
@@ -233,10 +279,10 @@ func resourceToExtract(namespace string, labelSelector string, clusterScopedRbac
 }
 
 // isAdmittedResource returns whether resource should be listed: all namespaced types,
-// or cluster-scoped types on the RBAC/SCC allowlist when clusterScopedRbac is set.
-func isAdmittedResource(clusterScopedRbac bool, gv schema.GroupVersion, resource metav1.APIResource) bool {
+// or cluster-scoped types on the RBAC/SCC allowlist (ClusterRoleBinding, ClusterRole, SCC).
+func isAdmittedResource(gv schema.GroupVersion, resource metav1.APIResource) bool {
 	if !resource.Namespaced {
-		return clusterScopedRbac && isClusterScopedResource(gv.Group, resource.Kind)
+		return isClusterScopedResource(gv.Group, resource.Kind)
 	}
 	return true
 }
@@ -278,13 +324,16 @@ func getObjects(g *groupResource, namespace string, labelSelector string, d dyna
 // iterateItemsByGet builds a full UnstructuredList by Get-ing each item name from list
 // in namespace (used where List does not return complete objects).
 func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResource, list runtime.Object, namespace string, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+	if g == nil {
+		return nil, fmt.Errorf("groupResource cannot be nil")
+	}
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", g, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 		}
 		obj, err := c.Namespace(namespace).Get(context.TODO(), u.GetName(), metav1.GetOptions{})
 		if err != nil {
@@ -301,13 +350,16 @@ func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResourc
 
 // iterateItemsInList copies list items into an UnstructuredList, asserting *unstructured.Unstructured.
 func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+	if g == nil {
+		return nil, fmt.Errorf("groupResource cannot be nil")
+	}
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", g, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 		}
 		unstructuredList.Items = append(unstructuredList.Items, *u)
 		return nil

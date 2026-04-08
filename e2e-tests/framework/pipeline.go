@@ -47,7 +47,7 @@ func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 	if err := srcApp.Validate(); err != nil {
 		return err
 	}
-	if err := kubectlSrc.ScaleDeployment(srcApp.Namespace, srcApp.Name, 0); err != nil {
+	if err := kubectlSrc.ScaleDeploymentIfPresent(srcApp.Namespace, srcApp.Name, 0); err != nil {
 		return err
 	}
 	return nil
@@ -58,6 +58,15 @@ func ApplyOutputToTarget(kubectlTgt KubectlRunner, namespace string, outputDir s
 	if err := kubectlTgt.CreateNamespace(namespace); err != nil {
 		return err
 	}
+	return applyOutputManifests(kubectlTgt, outputDir)
+}
+
+// ApplyOutputToTargetNonAdmin validates and applies rendered manifests without creating namespace.
+func ApplyOutputToTargetNonAdmin(kubectlTgt KubectlRunner, outputDir string) error {
+	return applyOutputManifests(kubectlTgt, outputDir)
+}
+
+func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
 	if err := kubectlTgt.ValidateApplyDir(outputDir); err != nil {
 		return err
 	}
