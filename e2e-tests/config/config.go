@@ -1,6 +1,5 @@
 package config
 
-// Test
 var (
 	K8sDeployBin          string
 	SourceContext         string
