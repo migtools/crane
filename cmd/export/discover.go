@@ -324,13 +324,16 @@ func getObjects(g *groupResource, namespace string, labelSelector string, d dyna
 // iterateItemsByGet builds a full UnstructuredList by Get-ing each item name from list
 // in namespace (used where List does not return complete objects).
 func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResource, list runtime.Object, namespace string, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+	if g == nil {
+		return nil, fmt.Errorf("groupResource cannot be nil")
+	}
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", g, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 		}
 		obj, err := c.Namespace(namespace).Get(context.TODO(), u.GetName(), metav1.GetOptions{})
 		if err != nil {
@@ -347,13 +350,16 @@ func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResourc
 
 // iterateItemsInList copies list items into an UnstructuredList, asserting *unstructured.Unstructured.
 func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+	if g == nil {
+		return nil, fmt.Errorf("groupResource cannot be nil")
+	}
 	unstructuredList := &unstructured.UnstructuredList{Items: []unstructured.Unstructured{}}
 	err := meta.EachListItem(list, func(object runtime.Object) error {
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", g, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 		}
 		unstructuredList.Items = append(unstructuredList.Items, *u)
 		return nil
