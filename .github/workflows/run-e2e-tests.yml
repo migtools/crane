@@ -68,3 +68,13 @@ jobs:
             --source-nonadmin-context=src-dev \
             --target-nonadmin-context=tgt-dev \
             --verbose-logs
+
+      - name: Notify Slack on E2E failure
+        if: failure() && github.event_name == 'schedule'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: ./.github/actions/slack-incoming-webhook
+        with:
+          text: |
+            :warning: Crane E2E · TIER-0 tests failed
+            Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
