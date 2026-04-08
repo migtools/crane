@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
+	yamlv3 "gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 )
@@ -137,7 +140,19 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 				inputResources = append(inputResources, f.Unstructured)
 			}
 		} else {
-			// There's a previous stage, read from its output
+			// There's a previous stage, check if its output exists
+			opts := file.PathOpts{
+				TransformDir: o.TransformDir,
+			}
+			prevStageDir := opts.GetStageDir(prevStage.DirName)
+
+			if _, err := os.Stat(prevStageDir); os.IsNotExist(err) {
+				return fmt.Errorf("stage %s requires output from stage %s, but %s does not exist. "+
+					"Run preceding stages in order, or use --stage %s for single-stage execution",
+					stage.DirName, prevStage.DirName, prevStageDir, stage.DirName)
+			}
+
+			// Load from previous stage's output
 			inputResources, err = o.loadStageOutput(*prevStage)
 			if err != nil {
 				return fmt.Errorf("failed to load output from stage %s: %w", prevStage.DirName, err)
@@ -242,20 +257,35 @@ func (o *Orchestrator) loadStageOutput(stage Stage) ([]unstructured.Unstructured
 
 	// Parse the multi-document YAML output
 	var resources []unstructured.Unstructured
-	output := stdout.String()
 
-	// Split by YAML document separator
-	docs := strings.Split(output, "\n---\n")
-	for _, doc := range docs {
-		doc = strings.TrimSpace(doc)
-		if doc == "" || doc == "---" {
+	// Use yaml.v3 Decoder to properly handle multi-document YAML streams
+	decoder := yamlv3.NewDecoder(strings.NewReader(stdout.String()))
+
+	for {
+		var doc interface{}
+		err := decoder.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode YAML document in stage %s: %w", stage.DirName, err)
+		}
+
+		// Skip empty documents
+		if doc == nil {
 			continue
 		}
 
-		// Convert YAML to JSON
-		jsonData, err := yaml.YAMLToJSON([]byte(doc))
+		// Convert the decoded document back to YAML bytes, then to JSON
+		docBytes, err := yamlv3.Marshal(doc)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse YAML document in stage %s: %w", stage.DirName, err)
+			return nil, fmt.Errorf("failed to marshal YAML document in stage %s: %w", stage.DirName, err)
+		}
+
+		// Convert YAML to JSON
+		jsonData, err := yaml.YAMLToJSON(docBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert YAML to JSON in stage %s: %w", stage.DirName, err)
 		}
 
 		// Unmarshal into unstructured

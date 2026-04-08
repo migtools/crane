@@ -41,7 +41,7 @@ type Flags struct {
 	FromStage string   `mapstructure:"from-stage"`
 	ToStage   string   `mapstructure:"to-stage"`
 	Stages    []string `mapstructure:"stages"`
-	FinalOnly *bool    `mapstructure:"final-only"`
+	FinalOnly bool     `mapstructure:"final-only"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -62,7 +62,7 @@ func (o *Options) Validate() error {
 	if len(o.Flags.Stages) > 0 {
 		flagCount++
 	}
-	if o.Flags.FinalOnly != nil && *o.Flags.FinalOnly {
+	if o.cmd != nil && o.cmd.Flags().Changed("final-only") {
 		flagCount++
 	}
 
@@ -119,8 +119,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Apply from this stage onwards (e.g., '20_openshift')")
 	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Apply up to and including this stage (e.g., '30_imagestream')")
 	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Apply specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
-	// Don't provide a default value - nil means not set, true means explicitly set to true
-	cmd.Flags().Bool("final-only", true, "Apply only the final stage in the pipeline (default: true)")
+	cmd.Flags().BoolVar(&o.FinalOnly, "final-only", true, "Apply only the final stage in the pipeline (default: true)")
 }
 
 func (o *Options) run() error {
@@ -138,9 +137,10 @@ func (o *Options) run() error {
 // shouldUseKustomizeWorkflow determines if new Kustomize workflow should be used
 func (o *Options) shouldUseKustomizeWorkflow() bool {
 	// Use Kustomize workflow if any multi-stage flags are explicitly set by the user
+	// OR if final-only is true (including default case when no flags are provided)
 	return o.cmd.Flags().Changed("stage") || o.cmd.Flags().Changed("from-stage") ||
 		o.cmd.Flags().Changed("to-stage") || o.cmd.Flags().Changed("stages") ||
-		o.cmd.Flags().Changed("final-only")
+		o.cmd.Flags().Changed("final-only") || o.FinalOnly
 }
 
 // runKustomizeWorkflow executes the new Kustomize-based apply

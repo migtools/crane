@@ -29,8 +29,13 @@ func NewKustomizeWriter(opts file.PathOpts, stageName string) *KustomizeWriter {
 func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, force bool) error {
 	stageDir := w.opts.GetStageDir(w.stageName)
 
-	// Remove existing stage directory if force is set
-	if force {
+	// Check if stage directory exists and is non-empty
+	if !force {
+		if err := w.checkStageDirectory(stageDir); err != nil {
+			return err
+		}
+	} else {
+		// Force is set, remove existing stage directory
 		if err := os.RemoveAll(stageDir); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove existing stage directory: %w", err)
 		}
@@ -158,4 +163,34 @@ func capitalizeFirst(s string) string {
 		return string(first-32) + s[1:]
 	}
 	return s
+}
+
+// checkStageDirectory checks if a stage directory exists and is non-empty
+// Returns an error if the directory exists and contains files (preventing accidental overwrites)
+func (w *KustomizeWriter) checkStageDirectory(stageDir string) error {
+	// Check if directory exists
+	info, err := os.Stat(stageDir)
+	if os.IsNotExist(err) {
+		// Directory doesn't exist, safe to create
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to check stage directory: %w", err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("stage path exists but is not a directory: %s", stageDir)
+	}
+
+	// Check if directory is empty
+	entries, err := os.ReadDir(stageDir)
+	if err != nil {
+		return fmt.Errorf("failed to read stage directory: %w", err)
+	}
+
+	if len(entries) > 0 {
+		return fmt.Errorf("stage directory %s is not empty (use --force to overwrite)", stageDir)
+	}
+
+	return nil
 }
