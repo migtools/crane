@@ -3,13 +3,18 @@ package apply
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/internal/file"
 	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/sirupsen/logrus"
+	yamlv3 "gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 // KustomizeApplier applies transformations using kubectl kustomize
@@ -137,6 +142,12 @@ func (k *KustomizeApplier) ApplyFinalStage() error {
 	}
 
 	k.Log.Infof("Successfully applied final stage to %s", outputPath)
+
+	// Also split into individual resource files for backward compatibility
+	if err := k.splitMultiDocYAMLToFiles(output); err != nil {
+		return fmt.Errorf("failed to split output into individual files: %w", err)
+	}
+
 	return nil
 }
 
@@ -163,5 +174,83 @@ func ValidateKubectlAvailable() error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("kubectl not found or not executable: %w", err)
 	}
+	return nil
+}
+
+// splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files
+// This maintains backward compatibility with tests/tools expecting separate files
+func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
+	// Parse multi-document YAML
+	decoder := yamlv3.NewDecoder(strings.NewReader(string(yamlData)))
+
+	for {
+		var doc interface{}
+		err := decoder.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to decode YAML document: %w", err)
+		}
+
+		// Skip empty documents
+		if doc == nil {
+			continue
+		}
+
+		// Convert to YAML bytes
+		docBytes, err := yamlv3.Marshal(doc)
+		if err != nil {
+			return fmt.Errorf("failed to marshal YAML document: %w", err)
+		}
+
+		// Convert YAML to JSON to extract metadata
+		jsonData, err := yaml.YAMLToJSON(docBytes)
+		if err != nil {
+			return fmt.Errorf("failed to convert YAML to JSON: %w", err)
+		}
+
+		// Unmarshal into unstructured to get resource identity
+		u := unstructured.Unstructured{}
+		if err := u.UnmarshalJSON(jsonData); err != nil {
+			return fmt.Errorf("failed to unmarshal resource: %w", err)
+		}
+
+		// Generate filename: Kind_namespace_name.yaml
+		kind := u.GetKind()
+		namespace := u.GetNamespace()
+		name := u.GetName()
+
+		if kind == "" || name == "" {
+			k.Log.Warnf("Skipping resource with missing kind or name")
+			continue
+		}
+
+		// Create directory structure: output/resources/namespace/
+		var resourceDir string
+		if namespace != "" {
+			resourceDir = filepath.Join(k.OutputDir, "resources", namespace)
+		} else {
+			resourceDir = filepath.Join(k.OutputDir, "resources", "_cluster")
+		}
+
+		if err := os.MkdirAll(resourceDir, 0700); err != nil {
+			return fmt.Errorf("failed to create resource directory %s: %w", resourceDir, err)
+		}
+
+		// Write individual file
+		filename := fmt.Sprintf("%s_%s_%s.yaml", kind, namespace, name)
+		if namespace == "" {
+			filename = fmt.Sprintf("%s_%s.yaml", kind, name)
+		}
+		filePath := filepath.Join(resourceDir, filename)
+
+		if err := os.WriteFile(filePath, docBytes, 0644); err != nil {
+			return fmt.Errorf("failed to write resource file %s: %w", filePath, err)
+		}
+
+		k.Log.Debugf("Wrote resource file: %s", filePath)
+	}
+
 	return nil
 }
