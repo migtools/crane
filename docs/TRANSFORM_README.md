@@ -8,7 +8,7 @@ After running `crane transform`, you'll see:
 
 ```
 transform/
-└── 10_transform/
+└── 10_KubernetesPlugin/
     ├── resources/
     │   ├── deployment.yaml
     │   └── service.yaml
@@ -32,7 +32,7 @@ transform/
 To see what will be deployed:
 
 ```bash
-kubectl kustomize transform/10_transform/
+kubectl kustomize transform/10_KubernetesPlugin/
 ```
 
 ### Applying to Cluster
@@ -43,7 +43,7 @@ crane apply --transform-dir transform --output-dir output
 kubectl apply -f output/output.yaml
 
 # Option 2: Direct apply
-kubectl apply -k transform/10_transform/
+kubectl apply -k transform/10_KubernetesPlugin/
 ```
 
 ### Making Manual Changes
@@ -52,13 +52,13 @@ You can edit resources in the `resources/` directory:
 
 ```bash
 # Edit a deployment
-vim transform/10_transform/resources/deployment.yaml
+vim transform/10_KubernetesPlugin/resources/deployment.yaml
 
 # Preview changes
-kubectl kustomize transform/10_transform/
+kubectl kustomize transform/10_KubernetesPlugin/
 
 # Apply changes
-kubectl apply -k transform/10_transform/
+kubectl apply -k transform/10_KubernetesPlugin/
 ```
 
 **Important**: If you run `crane transform` again, it will detect your changes and refuse to overwrite. Use `--force` to override.
@@ -188,30 +188,30 @@ Lists patches that were ignored due to conflicts:
 
 ```bash
 # View all resources after transformation
-kubectl kustomize transform/10_transform/
+kubectl kustomize transform/10_KubernetesPlugin/
 
 # View specific resource type
-kubectl kustomize transform/10_transform/ | grep -A 20 "kind: Deployment"
+kubectl kustomize transform/10_KubernetesPlugin/ | grep -A 20 "kind: Deployment"
 
 # Save to file for review
-kubectl kustomize transform/10_transform/ > review.yaml
+kubectl kustomize transform/10_KubernetesPlugin/ > review.yaml
 ```
 
 ### 2. Customize After Transform
 
 ```bash
 # Edit resources
-vim transform/10_transform/resources/deployment.yaml
+vim transform/10_KubernetesPlugin/resources/deployment.yaml
 
 # Add custom patches
-cat > transform/10_transform/patches/custom-patch.yaml <<EOF
+cat > transform/10_KubernetesPlugin/patches/custom-patch.yaml <<EOF
 - op: add
   path: /metadata/annotations/custom
   value: "my-value"
 EOF
 
 # Update kustomization.yaml to include custom patch
-vim transform/10_transform/kustomization.yaml
+vim transform/10_KubernetesPlugin/kustomization.yaml
 ```
 
 ### 3. Re-run Transform
@@ -272,10 +272,10 @@ output/
 git diff --staged transform/
 
 # Review resource changes
-git diff --staged transform/10_transform/resources/
+git diff --staged transform/10_KubernetesPlugin/resources/
 
 # Review patch changes
-git diff --staged transform/10_transform/patches/
+git diff --staged transform/10_KubernetesPlugin/patches/
 ```
 
 ## Troubleshooting
@@ -303,11 +303,11 @@ crane transform --stage-name 20_custom
 **Solution**:
 ```bash
 # Validate manually
-kubectl kustomize transform/10_transform/
+kubectl kustomize transform/10_KubernetesPlugin/
 
 # Check for missing files
-ls -la transform/10_transform/resources/
-ls -la transform/10_transform/patches/
+ls -la transform/10_KubernetesPlugin/resources/
+ls -la transform/10_KubernetesPlugin/patches/
 ```
 
 ### Resources Missing from Output
@@ -317,7 +317,7 @@ ls -la transform/10_transform/patches/
 **Solution**:
 ```bash
 # Check whiteout report
-cat transform/10_transform/whiteout-report.yaml
+cat transform/10_KubernetesPlugin/whiteout-report.yaml
 
 # Review plugin logs
 crane transform --verbose

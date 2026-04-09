@@ -14,7 +14,7 @@ Each stage is a directory following the naming convention `<priority>_<plugin-na
 
 ```
 transform/
-├── 10_kubernetes/
+├── 10_KubernetesPlugin/
 │   ├── resources/
 │   │   ├── deployment.yaml          # Grouped by resource type
 │   │   ├── service.yaml
@@ -26,9 +26,9 @@ transform/
 │   ├── whiteout-report.yaml          # Resources excluded from output
 │   ├── ignored-patches-report.yaml   # Patches discarded due to conflicts
 │   └── .crane-metadata.json          # Stage metadata with content hashes
-├── 20_openshift/
+├── 20_OpenshiftPlugin/
 │   └── ...
-└── 30_imagestream/
+└── 30_ImagestreamPlugin/
     └── ...
 ```
 
@@ -114,7 +114,7 @@ crane transform \
   --transform-dir transform
 ```
 
-This creates a `10_transform` stage directory and runs all plugins (including the built-in `kubernetes` plugin) to clean exported resources.
+This creates a `10_KubernetesPlugin` stage directory and runs all plugins (including the built-in `kubernetes` plugin) to clean exported resources.
 
 **Plugin Filtering** (optional):
 
@@ -124,7 +124,7 @@ To run only specific plugins:
 crane transform \
   --export-dir export \
   --transform-dir transform \
-  --stage-name 10_kubernetes \
+  --stage-name 10_KubernetesPlugin \
   --plugin-name kubernetes
 ```
 
@@ -136,16 +136,16 @@ Execute specific stages:
 
 ```bash
 # Run a specific stage
-crane transform --stage 20_openshift
+crane transform --stage 20_OpenshiftPlugin
 
 # Run from a stage onwards
-crane transform --from-stage 20_openshift
+crane transform --from-stage 20_OpenshiftPlugin
 
 # Run up to a specific stage
-crane transform --to-stage 30_imagestream
+crane transform --to-stage 30_ImagestreamPlugin
 
 # Run specific stages
-crane transform --stages 10_kubernetes,30_imagestream
+crane transform --stages 10_KubernetesPlugin,30_ImagestreamPlugin
 ```
 
 #### Force Overwrite
@@ -153,7 +153,7 @@ crane transform --stages 10_kubernetes,30_imagestream
 Override dirty check protection:
 
 ```bash
-crane transform --force --stage-name 10_kubernetes
+crane transform --force --stage-name 10_KubernetesPlugin
 ```
 
 ### Apply Command
@@ -174,16 +174,16 @@ This builds the final stage using `kubectl kustomize` and writes the result to `
 
 ```bash
 # Apply a specific stage
-crane apply --stage 20_openshift
+crane apply --stage 20_OpenshiftPlugin
 
 # Apply from a stage onwards
-crane apply --from-stage 20_openshift
+crane apply --from-stage 20_OpenshiftPlugin
 
 # Apply up to a specific stage
-crane apply --to-stage 30_imagestream
+crane apply --to-stage 30_ImagestreamPlugin
 
 # Apply specific stages
-crane apply --stages 10_kubernetes,30_imagestream
+crane apply --stages 10_KubernetesPlugin,30_ImagestreamPlugin
 ```
 
 ## Priority Assignment
@@ -194,9 +194,9 @@ Plugin priorities are automatically assigned from stage directory names:
 
 ```go
 // Stage directories
-10_kubernetes    → plugin "kubernetes" gets priority 10
-20_openshift     → plugin "openshift" gets priority 20
-30_imagestream   → plugin "imagestream" gets priority 30
+10_KubernetesPlugin    → plugin "kubernetes" gets priority 10
+20_OpenshiftPlugin     → plugin "openshift" gets priority 20
+30_ImagestreamPlugin   → plugin "imagestream" gets priority 30
 ```
 
 ### Manual Assignment
@@ -229,7 +229,7 @@ The system provides heuristic-based recommendations:
 Stages are chained automatically based on priority order:
 
 ```
-export/ → 10_kubernetes/ → 20_openshift/ → 30_imagestream/ → output/
+export/ → 10_KubernetesPlugin/ → 20_OpenshiftPlugin/ → 30_ImagestreamPlugin/ → output/
 ```
 
 Each stage:
@@ -266,19 +266,19 @@ crane export --kubeconfig source.yaml --export-dir export
 crane transform \
   --export-dir export \
   --transform-dir transform \
-  --stage-name 10_kubernetes \
+  --stage-name 10_KubernetesPlugin \
   --plugin-name kubernetes
 
 # Create OpenShift-specific transformations
 crane transform \
   --transform-dir transform \
-  --stage-name 20_openshift \
+  --stage-name 20_OpenshiftPlugin \
   --plugin-name openshift
 
 # Create ImageStream transformations
 crane transform \
   --transform-dir transform \
-  --stage-name 30_imagestream \
+  --stage-name 30_ImagestreamPlugin \
   --plugin-name imagestream
 
 # Apply final stage
@@ -291,7 +291,7 @@ crane apply --transform-dir transform --output-dir output
 # Initial transform
 crane transform --export-dir export --transform-dir transform
 
-# Make manual edits to resources in transform/10_transform/resources/
+# Make manual edits to resources in transform/10_KubernetesPlugin/resources/
 # Edit deployment.yaml to add annotations, etc.
 
 # Try to re-run transform (will fail due to dirty check)
@@ -321,7 +321,7 @@ transform/
 
 ```
 transform/
-└── 10_transform/
+└── 10_KubernetesPlugin/
     ├── resources/
     │   └── deployment.yaml         # Grouped by type
     ├── patches/
@@ -427,7 +427,7 @@ if err != nil {
 ## Best Practices
 
 1. **Stage Naming**: Use descriptive names that indicate the transformation purpose
-   - Good: `10_kubernetes-base`, `20_openshift-routes`, `30_security-context`
+   - Good: `10_KubernetesPlugin-base`, `20_OpenshiftPlugin-routes`, `30_security-context`
    - Bad: `10_stage1`, `20_stage2`
 
 2. **Priority Spacing**: Leave gaps (10, 20, 30) to allow insertion of new stages
@@ -450,8 +450,8 @@ stages, err := transform.DiscoverStages(transformDir)
 
 // Stage filtering
 selector := transform.StageSelector{
-    FromStage: "20_openshift",
-    ToStage:   "30_imagestream",
+    FromStage: "20_OpenshiftPlugin",
+    ToStage:   "30_ImagestreamPlugin",
 }
 filtered := transform.FilterStages(stages, selector)
 
@@ -462,7 +462,7 @@ prev := transform.GetPreviousStage(stages, currentStage)
 next := transform.GetNextStage(stages, currentStage)
 
 // Stage name validation and generation
-err = transform.ValidateStageName("10_kubernetes")
+err = transform.ValidateStageName("10_KubernetesPlugin")
 stageName := transform.GenerateStageName(10, "kubernetes")
 ```
 
@@ -477,12 +477,12 @@ applier := &apply.KustomizeApplier{
 }
 
 // Apply a single stage
-err = applier.ApplySingleStage("10_kubernetes")
+err = applier.ApplySingleStage("10_KubernetesPlugin")
 
 // Apply multiple stages with selector
 selector := transform.StageSelector{
-    FromStage: "10_kubernetes",
-    ToStage:   "30_imagestream",
+    FromStage: "10_KubernetesPlugin",
+    ToStage:   "30_ImagestreamPlugin",
 }
 err = applier.ApplyMultiStage(selector)
 
@@ -498,3 +498,56 @@ err = apply.ValidateKubectlAvailable()
 - [Kustomize Documentation](https://kubectl.docs.kubernetes.io/references/kustomize/)
 - [Crane Plugin Development](./plugin-development.md)
 - [Transform Architecture](./architecture.md)
+
+## Manual/Non-Plugin Stages
+
+Stages don't have to correspond to a plugin. If a stage directory name doesn't match any available plugin, the resources pass through unchanged.
+
+**Use case**: Manual transformation stages where you want to hand-edit resources.
+
+### Example
+
+```bash
+# Create a multi-stage pipeline
+crane transform --stage-name 10_KubernetesPlugin   # Plugin-backed
+crane transform --stage-name 50_ManualEdits        # No matching plugin
+crane transform --stage-name 90_FinalCleanup       # No matching plugin
+```
+
+**What happens:**
+
+1. **10_KubernetesPlugin**: Resources transformed by KubernetesPlugin (removes metadata.uid, etc.)
+2. **50_ManualEdits**: Resources copied unchanged to `transform/50_ManualEdits/resources/`
+   - No plugins match "ManualEdits" 
+   - No patches generated
+   - You can manually edit resources in this stage
+3. **90_FinalCleanup**: Resources from previous stage copied unchanged
+   - User can add manual patches or edits
+
+### Behavior
+
+When stage name doesn't match any plugin:
+- `filterPluginsByStage()` returns empty list `[]`
+- `runner.Run()` called with empty plugin list
+- Resources written unchanged (no transformations)
+- No patches generated
+- **This is intentional** - allows user-controlled stages
+
+### Mixed Pipeline Example
+
+```
+export/
+└── resources/
+    └── deployment.yaml (raw export with uid, resourceVersion, etc.)
+        ↓
+transform/10_KubernetesPlugin/  (plugin: removes server-managed fields)
+└── resources/deployment.yaml (cleaned)
+        ↓
+transform/50_ManualEdits/       (no plugin: user edits)
+└── resources/deployment.yaml (manually edited)
+        ↓
+transform/90_CustomPlugin/      (plugin: custom transformations)
+└── resources/deployment.yaml (custom patches applied)
+        ↓
+output/output.yaml (final result)
+```

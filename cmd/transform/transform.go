@@ -119,11 +119,11 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
 
 	// Multi-stage flags
-	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_kubernetes')")
-	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Run transform from this stage onwards (e.g., '20_openshift')")
-	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Run transform up to and including this stage (e.g., '30_imagestream')")
-	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Run transform for specific stages (comma-separated, e.g., '10_kubernetes,30_imagestream')")
-	cmd.Flags().StringVar(&o.StageName, "stage-name", "10_transform", "Name for the output stage directory (default: '10_transform')")
+	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin')")
+	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Run transform from this stage onwards (e.g., '20_OpenshiftPlugin')")
+	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Run transform up to and including this stage (e.g., '30_ImagestreamPlugin')")
+	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Run transform for specific stages (comma-separated, e.g., '10_KubernetesPlugin,30_ImagestreamPlugin')")
+	cmd.Flags().StringVar(&o.StageName, "stage-name", "10_KubernetesPlugin", "Name for the output stage directory (default: '10_KubernetesPlugin')")
 	cmd.Flags().StringVar(&o.PluginName, "plugin-name", "", "Plugin name to filter (empty = use all plugins)")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
 
