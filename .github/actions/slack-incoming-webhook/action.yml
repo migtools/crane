@@ -1,0 +1,48 @@
+name: slack-incoming-webhook
+description: POST {"Data":"..."} to a Slack Workflow trigger URL (hooks.slack.com/triggers/...)
+
+inputs:
+  webhook-url:
+    description: >
+      Webhook URL. If omitted, uses the SLACK_WEBHOOK_URL environment variable
+      (set on the job, typically from the SLACK_WEBHOOK_URL repository secret).
+    required: false
+    default: ""
+  text:
+    description: Message text (supports GitHub expressions and newlines from the caller)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Post to Slack
+      shell: bash
+      env:
+        SLACK_WEBHOOK_URL_INPUT: ${{ inputs.webhook-url }}
+        SLACK_TEXT: ${{ inputs.text }}
+      run: |
+        set -euo pipefail
+        # Input wins so we do not overwrite job-level SLACK_WEBHOOK_URL when the input is empty.
+        url="${SLACK_WEBHOOK_URL_INPUT:-${SLACK_WEBHOOK_URL:-}}"
+        # Secrets pasted with trailing newline/spaces break Slack URLs and often yield HTTP 404.
+        url="$(printf '%s' "$url" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/\r$//')"
+        if [[ -z "${url}" ]]; then
+          echo "::error::slack-incoming-webhook: set webhook-url or job env SLACK_WEBHOOK_URL (e.g. from secrets.SLACK_WEBHOOK_URL)"
+          exit 1
+        fi
+        payload="$(jq -nc --arg text "$SLACK_TEXT" '{data: $text}')"
+        set +e
+        http_code=$(curl -sS -o /tmp/slack_webhook_body -w '%{http_code}' -X POST -H 'Content-type: application/json' \
+          --data "$payload" \
+          "$url")
+        rc=$?
+        set -e
+        if [[ "$rc" -ne 0 ]]; then
+          echo "::error::slack-incoming-webhook: curl failed (exit ${rc}). Check SLACK_WEBHOOK_URL and network."
+          exit "$rc"
+        fi
+        if [[ "$http_code" != "200" ]]; then
+          body="$(cat /tmp/slack_webhook_body 2>/dev/null || true)"
+          echo "::error::slack-incoming-webhook: Slack returned HTTP ${http_code}. Body: ${body:-<empty>}. For 404, the URL is usually wrong, revoked, or not a Workflow trigger URL—re-copy from Slack and update the secret."
+          exit 1
+        fi
