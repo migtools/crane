@@ -3,6 +3,7 @@ package apply
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -418,6 +419,78 @@ func TestValidateKubectlAvailable(t *testing.T) {
 		t.Logf("kubectl not available (expected in some test environments): %v", err)
 	} else {
 		t.Log("kubectl is available")
+	}
+}
+
+func TestSplitMultiDocYAMLToFiles_Indentation(t *testing.T) {
+	// Verify that split YAML files use 2-space indentation
+	tmpDir, err := os.MkdirTemp("", "crane-indent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	yamlData := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-config
+  namespace: default
+data:
+  key1: value1
+  key2: value2
+`
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	applier := &KustomizeApplier{
+		Log:       logger,
+		OutputDir: tmpDir,
+	}
+
+	err = applier.splitMultiDocYAMLToFiles([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("splitMultiDocYAMLToFiles failed: %v", err)
+	}
+
+	// Read the generated file
+	filePath := filepath.Join(tmpDir, "resources/default/ConfigMap_default_test-config.yaml")
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("Failed to read output file: %v", err)
+	}
+
+	// Check for 2-space indentation
+	lines := strings.Split(string(content), "\n")
+	foundIndentedLine := false
+	for _, line := range lines {
+		if len(line) > 0 && line[0] == ' ' {
+			// Count leading spaces
+			spaces := 0
+			for _, ch := range line {
+				if ch == ' ' {
+					spaces++
+				} else {
+					break
+				}
+			}
+
+			// Indentation should be multiple of 2
+			if spaces%2 != 0 {
+				t.Errorf("Found line with odd indentation (%d spaces): %q", spaces, line)
+			}
+
+			// Should not have 4-space indentation (would indicate 4-space indent setting)
+			if spaces == 4 && strings.Contains(line, "name:") {
+				// This would be nested one level under metadata, should be 2 spaces
+				t.Errorf("Found 4-space indentation where 2 was expected: %q", line)
+			}
+
+			foundIndentedLine = true
+		}
+	}
+
+	if !foundIndentedLine {
+		t.Error("Expected to find indented lines in YAML output")
 	}
 }
 

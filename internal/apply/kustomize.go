@@ -198,11 +198,15 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 			continue
 		}
 
-		// Convert to YAML bytes
-		docBytes, err := yamlv3.Marshal(doc)
-		if err != nil {
-			return fmt.Errorf("failed to marshal YAML document: %w", err)
+		// Convert to YAML bytes with 2-space indentation
+		var buf bytes.Buffer
+		encoder := yamlv3.NewEncoder(&buf)
+		encoder.SetIndent(2) // Set 2-space indentation
+		if err := encoder.Encode(doc); err != nil {
+			return fmt.Errorf("failed to encode YAML document: %w", err)
 		}
+		encoder.Close() // Flush the encoder
+		docBytes := buf.Bytes()
 
 		// Convert YAML to JSON to extract metadata
 		jsonData, err := yaml.YAMLToJSON(docBytes)
