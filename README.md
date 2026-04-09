@@ -7,6 +7,12 @@
 ## Intro
 [Crane](https://konveyor.github.io/crane/overview/) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
 
+## Build and Test Status
+
+| branch | last merge tier-0 E2E | nightly tier-0 E2E |
+| :----- | :-------------------- | :----------------- |
+| main | [![Run Crane E2E Tests (pull_request)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml/badge.svg?branch=main&event=pull_request)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml?query=branch%3Amain+event%3Apull_request) | [![Run Crane E2E Tests (schedule)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml/badge.svg?branch=main&event=schedule)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml?query=branch%3Amain+event%3Aschedule) |
+
 ## YouTube Demo
 [![Alt text](https://img.youtube.com/vi/PoSivlgVLf8/0.jpg)](https://www.youtube.com/watch?v=PoSivlgVLf8)
 
