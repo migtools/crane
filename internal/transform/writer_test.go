@@ -101,6 +101,58 @@ func TestFilterValidRemoveOps(t *testing.T) {
 			expectedOps:    1,
 			expectFiltered: false,
 		},
+		{
+			name: "remove from existing array element",
+			resource: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{
+						map[string]interface{}{
+							"name":  "nginx",
+							"image": "nginx:latest",
+						},
+					},
+				},
+			},
+			patches: `[
+				{"op": "remove", "path": "/spec/containers/0/image"}
+			]`,
+			expectedOps:    1,
+			expectFiltered: false,
+		},
+		{
+			name: "remove from non-existent array element",
+			resource: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{
+						map[string]interface{}{
+							"name": "nginx",
+						},
+					},
+				},
+			},
+			patches: `[
+				{"op": "remove", "path": "/spec/containers/5/image"}
+			]`,
+			expectedOps:    0,
+			expectFiltered: true,
+		},
+		{
+			name: "remove from array element with non-existent field",
+			resource: map[string]interface{}{
+				"spec": map[string]interface{}{
+					"containers": []interface{}{
+						map[string]interface{}{
+							"name": "nginx",
+						},
+					},
+				},
+			},
+			patches: `[
+				{"op": "remove", "path": "/spec/containers/0/image"}
+			]`,
+			expectedOps:    0,
+			expectFiltered: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -176,6 +228,60 @@ func TestPathExists(t *testing.T) {
 			data:     map[string]interface{}{"metadata": map[string]interface{}{"annotations": map[string]interface{}{"example.com/key": "value"}}},
 			path:     "/metadata/annotations/example.com~1key",
 			expected: true,
+		},
+		{
+			name:     "array index - first element",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}, map[string]interface{}{"name": "sidecar"}}}},
+			path:     "/spec/containers/0",
+			expected: true,
+		},
+		{
+			name:     "array index - second element",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}, map[string]interface{}{"name": "sidecar"}}}},
+			path:     "/spec/containers/1",
+			expected: true,
+		},
+		{
+			name:     "array index - out of bounds",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}}}},
+			path:     "/spec/containers/5",
+			expected: false,
+		},
+		{
+			name:     "array index - nested field",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx", "image": "nginx:latest"}}}},
+			path:     "/spec/containers/0/image",
+			expected: true,
+		},
+		{
+			name:     "array index - non-existent nested field",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}}}},
+			path:     "/spec/containers/0/image",
+			expected: false,
+		},
+		{
+			name:     "array index - invalid (non-numeric)",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}}}},
+			path:     "/spec/containers/first",
+			expected: false,
+		},
+		{
+			name:     "array index - leading zero (invalid per RFC 6901)",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}, map[string]interface{}{"name": "sidecar"}}}},
+			path:     "/spec/containers/01",
+			expected: false,
+		},
+		{
+			name:     "array index - zero is valid",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}}}},
+			path:     "/spec/containers/0",
+			expected: true,
+		},
+		{
+			name:     "array index - empty segment",
+			data:     map[string]interface{}{"spec": map[string]interface{}{"containers": []interface{}{map[string]interface{}{"name": "nginx"}}}},
+			path:     "/spec/containers//name",
+			expected: false,
 		},
 	}
 

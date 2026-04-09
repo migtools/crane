@@ -228,7 +228,7 @@ func filterValidRemoveOps(resource unstructured.Unstructured, patches jsonpatch.
 	return validPatches, nil
 }
 
-// pathExists checks if a JSON pointer path exists in the given map
+// pathExists checks if a JSON pointer path exists in the given data structure
 func pathExists(data map[string]interface{}, path string) bool {
 	if path == "" || path == "/" {
 		return true
@@ -240,34 +240,64 @@ func pathExists(data map[string]interface{}, path string) bool {
 	// Split path into segments
 	segments := strings.Split(path, "/")
 
-	current := data
+	var current interface{} = data
 	for i, segment := range segments {
 		// Unescape JSON pointer special characters
 		segment = strings.ReplaceAll(segment, "~1", "/")
 		segment = strings.ReplaceAll(segment, "~0", "~")
 
-		// Check if current level is a map
-		if current == nil {
-			return false
-		}
-
-		// Get the value at this segment
-		value, exists := current[segment]
-		if !exists {
-			return false
-		}
-
-		// If this is the last segment, we found it
-		if i == len(segments)-1 {
-			return true
-		}
-
-		// Try to continue traversing
-		switch v := value.(type) {
+		// Handle based on current value type
+		switch v := current.(type) {
 		case map[string]interface{}:
-			current = v
+			// Traverse map
+			value, exists := v[segment]
+			if !exists {
+				return false
+			}
+
+			// If this is the last segment, we found it
+			if i == len(segments)-1 {
+				return true
+			}
+
+			current = value
+
+		case []interface{}:
+			// Traverse array - segment must be a valid numeric index
+			// Per RFC 6901, array indices must not have leading zeros (except "0" itself)
+			if segment == "" {
+				return false
+			}
+
+			// Check for leading zero (invalid except for "0")
+			if len(segment) > 1 && segment[0] == '0' {
+				return false
+			}
+
+			// Parse numeric index
+			index := 0
+			for _, ch := range segment {
+				if ch < '0' || ch > '9' {
+					// Not a valid array index
+					return false
+				}
+				index = index*10 + int(ch-'0')
+			}
+
+			// Check bounds
+			if index >= len(v) {
+				return false
+			}
+
+			// If this is the last segment, we found it
+			if i == len(segments)-1 {
+				return true
+			}
+
+			current = v[index]
+
 		default:
-			// Can't traverse further, but we haven't reached the end
+			// Can't traverse further (primitive value or nil), but we haven't reached the end
 			return false
 		}
 	}
