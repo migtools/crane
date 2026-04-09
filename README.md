@@ -5,7 +5,7 @@
 ---
 
 ## Intro
-[Crane](https://konveyor.github.io/crane/overview/) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
+[Crane](https://github.com/migtools/crane) is a migration tool under the migtools community that helps application owners migrate Kubernetes workloads and their state between clusters.
 
 ## Build and Test Status
 
@@ -29,14 +29,14 @@ Crane helps users do more than just handle a point in time migration of a worklo
 Crane follows the Unix philosophy of building small sharply focused tools that can be assembled in powerful ways.  It is designed with transparency and ease-of-diagnostics in mind. It drives migration through a pipeline of non-destructive tasks that output results to disk so the operation can be easily audited and versioned without impacting live workloads. The tasks can be run repeatedly and will output consistent results given the same inputs without side-effects on the system at large.
 
 Crane is composed of several repositories:
-* [konveyor/crane](https://github.com/konveyor/crane): (this repo) The command line tool that migrates applications to the terminal.
-* [konveyor/crane-lib](https://github.com/konveyor/crane-lib): The brains behind Crane functionality responsible for transforming resources.
-* [konveyor/crane-plugins](https://github.com/konveyor/crane-plugins): Collection of plugins from the Konveyor community based on experience from performing Kube migrations.
-* [konveyor/crane-plugin-openshift](https://github.com/konveyor/crane-plugin-openshift): An optional plugin specifically tailored to manage OpenShift migration workloads and an example of a repeatable best-practice.
+* [migtools/crane](https://github.com/migtools/crane): (this repo) The command line tool that migrates applications to the terminal.
+* [migtools/crane-lib](https://github.com/migtools/crane-lib): The brains behind Crane functionality responsible for transforming resources.
+* [migtools/crane-plugins](https://github.com/migtools/crane-plugins): Collection of plugins from the migtools community based on experience from performing Kube migrations.
+* [migtools/crane-plugin-openshift](https://github.com/migtools/crane-plugin-openshift): An optional plugin specifically tailored to manage OpenShift migration workloads and an example of a repeatable best-practice.
 * [backube/pvc-transfer](https://github.com/backube/pvc-transfer): The library that powers the Persistent Volume migration ability, shared with the [VolSync](https://volsync.readthedocs.io/en/stable/index.html) project.  State migration of Persistent Volumes is handled by rsync allowing storage migrations between different storage classes.  
-* [konveyor/crane-runner](https://github.com/konveyor/crane-runner): A collection of resources showing how to leverage Tekton to build migration workflows with Crane
-* [konveyor/crane-ui-plugin](https://github.com/konveyor/crane-ui-plugin): A dynamic UI plugin for the [openshift/console](https://github.com/openshift/console)
-* [konveyor/mtrho-operator](https://github.com/konveyor/mtrho-operator): An Operator which deploys Crane in an opinionated manner leveraging Tekton for migrating applications
+* [migtools/crane-runner](https://github.com/migtools/crane-runner): A collection of resources showing how to leverage Tekton to build migration workflows with Crane
+* [migtools/crane-ui-plugin](https://github.com/migtools/crane-ui-plugin): A dynamic UI plugin for the [openshift/console](https://github.com/openshift/console)
+* [migtools/crane-operator](https://github.com/migtools/crane-operator): An Operator which deploys Crane in an opinionated manner leveraging Tekton for migrating applications
 
 How does it work? Crane works by:
 1) Inspecting a running application and exporting all associated resources
@@ -47,13 +47,13 @@ How does it work? Crane works by:
 ## Install
 
   * Obtain the `crane` binary from either:
-    * Download a prebuilt release from https://github.com/konveyor/crane/releases
+    * Download a prebuilt release from https://github.com/migtools/crane/releases
     * Clone this repo and build the crane binary via: `go build -o crane main.go`
   * Install the `crane` binary in your `$PATH`
 
 ## Usage Example
 1. `$ kubectl create namespace guestbook`
-1. `$ kubectl --namespace guestbook apply -k github.com/konveyor/crane-runner/examples/resources/guestbook`
+1. `$ kubectl --namespace guestbook apply -k github.com/migtools/crane-runner/examples/resources/guestbook`
 1. `$ crane export -n guestbook`
   * Discovers and exports all resources in the 'guestbook' namespace
   * A directory 'export/resources/guestbook' is populated with the raw YAML content of each exported resource 
@@ -99,7 +99,7 @@ How does it work? Crane works by:
 
 ## Further Examples
 
-Please see [konveyor/crane-runner/main/examples](https://github.com/konveyor/crane-runner/tree/main/examples#readme) for further scenarios to explore what can be done with Crane + Tekton for migrating applications. 
+Please see [migtools/crane-runner/main/examples](https://github.com/migtools/crane-runner/tree/main/examples#readme) for further scenarios to explore what can be done with Crane + Tekton for migrating applications. 
 
 ## Known issues
 
