@@ -401,6 +401,26 @@ resources:
 	}
 }
 
+func TestValidateKubectlAvailable(t *testing.T) {
+	// This test verifies that ValidateKubectlAvailable correctly checks for kubectl
+	// We can't guarantee kubectl is available in all test environments,
+	// so we just verify the function executes without panic
+
+	err := ValidateKubectlAvailable()
+
+	// If kubectl is available, err should be nil
+	// If kubectl is not available, err should contain helpful message
+	if err != nil {
+		// Verify error message is helpful
+		if !contains(err.Error(), "kubectl") {
+			t.Errorf("Error message should mention kubectl, got: %v", err)
+		}
+		t.Logf("kubectl not available (expected in some test environments): %v", err)
+	} else {
+		t.Log("kubectl is available")
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && findInString(s, substr)
 }
