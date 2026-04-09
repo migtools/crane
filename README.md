@@ -7,6 +7,12 @@
 ## Intro
 [Crane](https://konveyor.github.io/crane/overview/) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
 
+## Build and Test Status
+
+| Branch | Build & unit tests (after merge) | E2E CI (after merge) | E2E Nightly (cron) |
+| :----- | :------------------------------- | :------------------- | :----------------- |
+| main | [![Go build and unit tests (push to main)](https://github.com/migtools/crane/actions/workflows/go.yml/badge.svg?branch=main&event=push)](https://github.com/migtools/crane/actions/workflows/go.yml?query=branch%3Amain+event%3Apush) | [![Run Crane E2E Tests (push to main)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml/badge.svg?branch=main&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml?query=branch%3Amain+event%3Apush) | [![Run Crane E2E Tests (schedule)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml/badge.svg?branch=main&event=schedule)](https://github.com/migtools/crane/actions/workflows/run-e2e-tests.yml?query=branch%3Amain+event%3Aschedule) |
+
 ## YouTube Demo
 [![Alt text](https://img.youtube.com/vi/PoSivlgVLf8/0.jpg)](https://www.youtube.com/watch?v=PoSivlgVLf8)
 
