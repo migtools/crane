@@ -26,6 +26,7 @@ type Options struct {
 }
 
 type Flags struct {
+	ExportDir    string `mapstructure:"export-dir"`
 	TransformDir string `mapstructure:"transform-dir"`
 	OutputDir    string `mapstructure:"output-dir"`
 	// Multi-stage flags
@@ -96,6 +97,9 @@ func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
+	// Note: export-dir is kept for compatibility and consistency with other commands,
+	// but is not used by apply (apply only reads from transform-dir)
+	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
 
