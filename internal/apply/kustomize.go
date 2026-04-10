@@ -1,0 +1,260 @@
+package apply
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/konveyor/crane/internal/file"
+	internalTransform "github.com/konveyor/crane/internal/transform"
+	"github.com/sirupsen/logrus"
+	yamlv3 "gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
+)
+
+// KustomizeApplier applies transformations using kubectl kustomize
+type KustomizeApplier struct {
+	Log          *logrus.Logger
+	TransformDir string
+	OutputDir    string
+}
+
+// ApplySingleStage applies a single transform stage to produce output
+func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
+	opts := file.PathOpts{
+		TransformDir: k.TransformDir,
+		OutputDir:    k.OutputDir,
+	}
+
+	stageDir := opts.GetStageDir(stageName)
+
+	// Verify stage exists
+	if _, err := os.Stat(stageDir); os.IsNotExist(err) {
+		return fmt.Errorf("stage directory does not exist: %s", stageDir)
+	}
+
+	// Verify kustomization.yaml exists
+	kustomizationPath := opts.GetKustomizationPath(stageName)
+	if _, err := os.Stat(kustomizationPath); os.IsNotExist(err) {
+		return fmt.Errorf("kustomization.yaml not found in stage: %s", stageName)
+	}
+
+	// Run kubectl kustomize build
+	k.Log.Infof("Building stage: %s", stageName)
+	output, err := k.runKustomizeBuild(stageDir)
+	if err != nil {
+		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stageName, err)
+	}
+
+	// Write output to output directory
+	outputPath := filepath.Join(k.OutputDir, stageName+".yaml")
+	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	k.Log.Infof("Successfully applied stage %s to %s", stageName, outputPath)
+	return nil
+}
+
+// ApplyMultiStage applies a multi-stage transform pipeline
+func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.StageSelector) error {
+	// Discover stages
+	stages, err := internalTransform.DiscoverStages(k.TransformDir)
+	if err != nil {
+		return fmt.Errorf("failed to discover stages: %w", err)
+	}
+
+	// Filter stages
+	selectedStages := internalTransform.FilterStages(stages, stageSelector)
+	if len(selectedStages) == 0 {
+		return fmt.Errorf("no stages found matching selector")
+	}
+
+	// Apply each stage
+	for _, stage := range selectedStages {
+		k.Log.Infof("Applying stage: %s", stage.DirName)
+
+		// Run kubectl kustomize build
+		output, err := k.runKustomizeBuild(stage.Path)
+		if err != nil {
+			return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stage.DirName, err)
+		}
+
+		// Write output
+		outputPath := filepath.Join(k.OutputDir, stage.DirName+".yaml")
+		if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+
+		if err := os.WriteFile(outputPath, output, 0644); err != nil {
+			return fmt.Errorf("failed to write output file: %w", err)
+		}
+
+		k.Log.Infof("Successfully applied stage %s to %s", stage.DirName, outputPath)
+	}
+
+	return nil
+}
+
+// ApplyFinalStage applies the last stage in the pipeline (typical use case)
+func (k *KustomizeApplier) ApplyFinalStage() error {
+	// Discover all stages
+	stages, err := internalTransform.DiscoverStages(k.TransformDir)
+	if err != nil {
+		return fmt.Errorf("failed to discover stages: %w", err)
+	}
+
+	if len(stages) == 0 {
+		return fmt.Errorf("no stages found in transform directory")
+	}
+
+	// Get last stage
+	lastStage := internalTransform.GetLastStage(stages)
+	if lastStage == nil {
+		return fmt.Errorf("failed to get last stage")
+	}
+
+	k.Log.Infof("Applying final stage: %s", lastStage.DirName)
+
+	// Run kubectl kustomize build
+	output, err := k.runKustomizeBuild(lastStage.Path)
+	if err != nil {
+		return fmt.Errorf("kubectl kustomize build failed: %w", err)
+	}
+
+	// Write to output.yaml (single file for final output)
+	outputPath := filepath.Join(k.OutputDir, "output.yaml")
+	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	k.Log.Infof("Successfully applied final stage to %s", outputPath)
+
+	// Also split into individual resource files for backward compatibility
+	if err := k.splitMultiDocYAMLToFiles(output); err != nil {
+		return fmt.Errorf("failed to split output into individual files: %w", err)
+	}
+
+	return nil
+}
+
+// runKustomizeBuild executes kubectl kustomize on a directory
+func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
+	cmd := exec.Command("kubectl", "kustomize", dir)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	k.Log.Debugf("Running: kubectl kustomize %s", dir)
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())
+	}
+
+	return stdout.Bytes(), nil
+}
+
+// ValidateKubectlAvailable checks if kubectl command is available
+func ValidateKubectlAvailable() error {
+	cmd := exec.Command("kubectl", "version", "--client")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kubectl not found or not executable: %w", err)
+	}
+	return nil
+}
+
+// splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files
+// This maintains backward compatibility with tests/tools expecting separate files
+func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
+	// Parse multi-document YAML
+	decoder := yamlv3.NewDecoder(strings.NewReader(string(yamlData)))
+
+	for {
+		var doc interface{}
+		err := decoder.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to decode YAML document: %w", err)
+		}
+
+		// Skip empty documents
+		if doc == nil {
+			continue
+		}
+
+		// Convert to YAML bytes with 2-space indentation
+		var buf bytes.Buffer
+		encoder := yamlv3.NewEncoder(&buf)
+		encoder.SetIndent(2) // Set 2-space indentation
+		if err := encoder.Encode(doc); err != nil {
+			return fmt.Errorf("failed to encode YAML document: %w", err)
+		}
+		encoder.Close() // Flush the encoder
+		docBytes := buf.Bytes()
+
+		// Convert YAML to JSON to extract metadata
+		jsonData, err := yaml.YAMLToJSON(docBytes)
+		if err != nil {
+			return fmt.Errorf("failed to convert YAML to JSON: %w", err)
+		}
+
+		// Unmarshal into unstructured to get resource identity
+		u := unstructured.Unstructured{}
+		if err := u.UnmarshalJSON(jsonData); err != nil {
+			return fmt.Errorf("failed to unmarshal resource: %w", err)
+		}
+
+		// Generate filename: Kind_namespace_name.yaml
+		kind := u.GetKind()
+		namespace := u.GetNamespace()
+		name := u.GetName()
+
+		if kind == "" || name == "" {
+			k.Log.Warnf("Skipping resource with missing kind or name")
+			continue
+		}
+
+		// Create directory structure: output/resources/namespace/
+		var resourceDir string
+		if namespace != "" {
+			resourceDir = filepath.Join(k.OutputDir, "resources", namespace)
+		} else {
+			resourceDir = filepath.Join(k.OutputDir, "resources", "_cluster")
+		}
+
+		if err := os.MkdirAll(resourceDir, 0700); err != nil {
+			return fmt.Errorf("failed to create resource directory %s: %w", resourceDir, err)
+		}
+
+		// Write individual file
+		filename := fmt.Sprintf("%s_%s_%s.yaml", kind, namespace, name)
+		if namespace == "" {
+			filename = fmt.Sprintf("%s_%s.yaml", kind, name)
+		}
+		filePath := filepath.Join(resourceDir, filename)
+
+		if err := os.WriteFile(filePath, docBytes, 0644); err != nil {
+			return fmt.Errorf("failed to write resource file %s: %w", filePath, err)
+		}
+
+		k.Log.Debugf("Wrote resource file: %s", filePath)
+	}
+
+	return nil
+}

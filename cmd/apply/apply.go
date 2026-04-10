@@ -1,17 +1,15 @@
 package apply
 
 import (
-	"context"
-	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/konveyor/crane-lib/apply"
-	"github.com/konveyor/crane/internal/file"
+	"github.com/konveyor/crane/internal/apply"
 	"github.com/konveyor/crane/internal/flags"
+	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"sigs.k8s.io/yaml"
 )
 
 type Options struct {
@@ -31,15 +29,34 @@ type Flags struct {
 	ExportDir    string `mapstructure:"export-dir"`
 	TransformDir string `mapstructure:"transform-dir"`
 	OutputDir    string `mapstructure:"output-dir"`
+	// Multi-stage flags
+	Stage     string   `mapstructure:"stage"`
+	FromStage string   `mapstructure:"from-stage"`
+	ToStage   string   `mapstructure:"to-stage"`
+	Stages    []string `mapstructure:"stages"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
-	// TODO: @shawn-hurley
 	return nil
 }
 
 func (o *Options) Validate() error {
-	// TODO: @shawn-hurley
+	// Validate mutually exclusive flags
+	flagCount := 0
+	if o.Flags.Stage != "" {
+		flagCount++
+	}
+	if o.Flags.FromStage != "" || o.Flags.ToStage != "" {
+		flagCount++
+	}
+	if len(o.Flags.Stages) > 0 {
+		flagCount++
+	}
+
+	if flagCount > 1 {
+		return fmt.Errorf("--stage, --from-stage/--to-stage, and --stages are mutually exclusive")
+	}
+
 	return nil
 }
 
@@ -80,19 +97,25 @@ func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
+	// Note: export-dir is kept for compatibility and consistency with other commands,
+	// but is not used by apply (apply only reads from transform-dir)
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
+
+	// Multi-stage flags
+	cmd.Flags().StringVar(&o.Stage, "stage", "", "Apply a specific stage only (e.g., '10_KubernetesPlugin')")
+	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Apply from this stage onwards (e.g., '20_OpenshiftPlugin')")
+	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Apply up to and including this stage (e.g., '30_ImagestreamPlugin')")
+	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Apply specific stages (comma-separated, e.g., '10_KubernetesPlugin,30_ImagestreamPlugin')")
 }
 
 func (o *Options) run() error {
 	log := o.globalFlags.GetLogger()
-	a := apply.Applier{}
 
-	// Load all the resources from the export dir
-	exportDir, err := filepath.Abs(o.ExportDir)
-	if err != nil {
-		// Handle errors better for users.
+	// Validate kubectl is available before proceeding
+	// All apply operations require kubectl kustomize
+	if err := apply.ValidateKubectlAvailable(); err != nil {
 		return err
 	}
 
@@ -106,76 +129,35 @@ func (o *Options) run() error {
 		return err
 	}
 
-	files, err := file.ReadFiles(context.TODO(), exportDir)
-	if err != nil {
-		return err
+	// Create output directory
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	opts := file.PathOpts{
+	// Create applier
+	applier := &apply.KustomizeApplier{
+		Log:          log.WithField("command", "apply").Logger,
 		TransformDir: transformDir,
-		ExportDir:    exportDir,
 		OutputDir:    outputDir,
 	}
 
-	//TODO: @shawn-hurley handle case where transform or whiteout file is not present.
-	for _, f := range files {
-		whPath := opts.GetWhiteOutFilePath(f.Path)
-		_, statErr := os.Stat(whPath)
-		if !errors.Is(statErr, os.ErrNotExist) {
-			log.Infof("resource file: %v is skipped due to white file: %v", f.Info.Name(), whPath)
-			continue
+	// Determine which stages to apply
+	// If user specified which stages to run (via CLI or config), use those
+	if o.Flags.Stage != "" || o.Flags.FromStage != "" ||
+		o.Flags.ToStage != "" || len(o.Flags.Stages) > 0 {
+		// Multi-stage apply with selector
+		selector := internalTransform.StageSelector{
+			Stage:     o.Flags.Stage,
+			FromStage: o.Flags.FromStage,
+			ToStage:   o.Flags.ToStage,
+			Stages:    o.Flags.Stages,
 		}
 
-		// Set doc to the object, only update the file if the transfrom file exists
-		doc, err := f.Unstructured.MarshalJSON()
-		if err != nil {
-			return err
-		}
-
-		tfPath := opts.GetTransformPath(f.Path)
-		// Check if transform file exists
-		// If the transform does not exist, assume that the resource file is
-		// not needed and ignore for now.
-		_, tfStatErr := os.Stat(tfPath)
-		if tfStatErr != nil && !errors.Is(tfStatErr, os.ErrNotExist) {
-			// Some other error here err out
-			return tfStatErr
-		}
-
-		if !errors.Is(tfStatErr, os.ErrNotExist) {
-			transformfile, err := os.ReadFile(tfPath)
-			if err != nil {
-				return err
-			}
-
-			doc, err = a.Apply(f.Unstructured, transformfile)
-			if err != nil {
-				return err
-			}
-		}
-
-		y, err := yaml.JSONToYAML(doc)
-		if err != nil {
-			return err
-		}
-		outputFilePath := opts.GetOutputFilePath(f.Path)
-		// We must create all the directories here.
-		err = os.MkdirAll(filepath.Dir(outputFilePath), 0777)
-		if err != nil {
-			return err
-		}
-		outputFile, err := os.Create(outputFilePath)
-		if err != nil {
-			return err
-		}
-		defer outputFile.Close()
-		i, err := outputFile.Write(y)
-		if err != nil {
-			return err
-		}
-		log.Debugf("wrote %v bytes for file: %v", i, outputFilePath)
+		log.Info("Applying selected stages...")
+		return applier.ApplyMultiStage(selector)
 	}
 
-	return nil
-
+	// Default: apply final stage only
+	log.Info("Applying final stage...")
+	return applier.ApplyFinalStage()
 }
