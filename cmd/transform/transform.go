@@ -1,18 +1,17 @@
 package transform
 
 import (
-	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/cmd/transform/listplugins"
 	"github.com/konveyor/crane/cmd/transform/optionals"
-	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
+	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -38,15 +37,37 @@ type Flags struct {
 	PluginPriorities  []string `mapstructure:"plugin-priorities"`
 	SkipPlugins       []string `mapstructure:"skip-plugins"`
 	OptionalFlags     string   `mapstructure:"optional-flags"`
+	// Multi-stage flags
+	Stage      string   `mapstructure:"stage"`
+	FromStage  string   `mapstructure:"from-stage"`
+	ToStage    string   `mapstructure:"to-stage"`
+	Stages     []string `mapstructure:"stages"`
+	StageName  string   `mapstructure:"stage-name"`
+	PluginName string   `mapstructure:"plugin-name"`
+	Force      bool     `mapstructure:"force"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
-	// TODO: @sseago
 	return nil
 }
 
 func (o *Options) Validate() error {
-	// TODO: @sseago
+	// Validate mutually exclusive flags
+	flagCount := 0
+	if o.Stage != "" {
+		flagCount++
+	}
+	if o.FromStage != "" || o.ToStage != "" {
+		flagCount++
+	}
+	if len(o.Stages) > 0 {
+		flagCount++
+	}
+
+	if flagCount > 1 {
+		return fmt.Errorf("--stage, --from-stage/--to-stage, and --stages are mutually exclusive")
+	}
+
 	return nil
 }
 
@@ -96,6 +117,16 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringSliceVar(&o.PluginPriorities, "plugin-priorities", nil, "A comma-separated list of plugin names. A plugin listed will take priority in the case of patch conflict over a plugin listed later in the list or over one not listed at all.")
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
+
+	// Multi-stage flags
+	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin')")
+	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Run transform from this stage onwards (e.g., '20_OpenshiftPlugin')")
+	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Run transform up to and including this stage (e.g., '30_ImagestreamPlugin')")
+	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Run transform for specific stages (comma-separated, e.g., '10_KubernetesPlugin,30_ImagestreamPlugin')")
+	cmd.Flags().StringVar(&o.StageName, "stage-name", "10_KubernetesPlugin", "Name for the output stage directory (default: '10_KubernetesPlugin')")
+	cmd.Flags().StringVar(&o.PluginName, "plugin-name", "", "Plugin name to filter (empty = use all plugins)")
+	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
+
 	// These flags pass down to subcommands
 	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", defaultPluginDir, "The path where binary plugins are located")
 	cmd.PersistentFlags().StringSliceVarP(&o.SkipPlugins, "skip-plugins", "s", nil, "A comma-separated list of plugins to skip")
@@ -104,10 +135,9 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 
 func (o *Options) run() error {
 	log := o.globalFlags.GetLogger()
-	// Load all the resources from the export dir
+
 	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
-		// Handle errors better for users.
 		return err
 	}
 
@@ -121,117 +151,53 @@ func (o *Options) run() error {
 		return err
 	}
 
-	var ignoredPatchesDir string
-	if o.IgnoredPatchesDir != "" {
-		ignoredPatchesDir, err = filepath.Abs(o.IgnoredPatchesDir)
-		if err != nil {
-			return err
-		}
-	}
-
-	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
-	if err != nil {
-		return err
-	}
-	files, err := file.ReadFiles(context.TODO(), exportDir)
-	if err != nil {
-		return err
-	}
-
-	opts := file.PathOpts{
-		TransformDir:      transformDir,
-		ExportDir:         exportDir,
-		IgnoredPatchesDir: ignoredPatchesDir,
-	}
-
-	runner := transform.Runner{Log: log.WithField("command", "transform").Logger}
+	// Parse plugin priorities
+	var pluginPriorities map[string]int
 	if len(o.PluginPriorities) > 0 {
-		runner.PluginPriorities = o.getPluginPrioritiesMap()
+		pluginPriorities = o.getPluginPrioritiesMap()
 	}
 
+	// Parse optional flags
+	var optionalFlags map[string]string
 	if len(o.OptionalFlags) > 0 {
-		err = json.Unmarshal([]byte(o.OptionalFlags), &runner.OptionalFlags)
+		err = json.Unmarshal([]byte(o.OptionalFlags), &optionalFlags)
 		if err != nil {
 			return err
 		}
-		runner.OptionalFlags = optionalFlagsToLower(runner.OptionalFlags)
-		log.Debugf("parsed optional-flags: %v", runner.OptionalFlags)
+		optionalFlags = optionalFlagsToLower(optionalFlags)
 	}
 
-	for _, f := range files {
-		response, err := runner.Run(f.Unstructured, plugins)
-		if err != nil {
-			return err
-		}
-
-		if response.HaveWhiteOut {
-			whPath := opts.GetWhiteOutFilePath(f.Path)
-			_, statErr := os.Stat(whPath)
-			if os.IsNotExist(statErr) {
-				log.Infof("resource file: %v creating whiteout file: %v", f.Info.Name(), whPath)
-				err = os.MkdirAll(filepath.Dir(whPath), 0700)
-				if err != nil {
-					return err
-				}
-				whFile, err := os.Create(whPath)
-				if err != nil {
-					return err
-				}
-				whFile.Close()
-			}
-			continue
-		} else {
-			// if whiteout file exists from prior run, remove it
-			whPath := opts.GetWhiteOutFilePath(f.Path)
-			_, statErr := os.Stat(whPath)
-			if !os.IsNotExist(statErr) {
-				log.Infof("resource file: %v removing stale whiteout file: %v", f.Info.Name(), whPath)
-				err := os.Remove(whPath)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		// TODO: log if file exists and is truncated
-		// TODO: delete transform file if it exists and haveWhiteOut
-		tfPath := opts.GetTransformPath(f.Path)
-		err = os.MkdirAll(filepath.Dir(tfPath), 0700)
-		if err != nil {
-			return err
-		}
-		transformFile, err := os.Create(tfPath)
-		if err != nil {
-			return err
-		}
-		defer transformFile.Close()
-		i, err := transformFile.Write(response.TransformFile)
-		if err != nil {
-			return err
-		}
-		log.Debugf("wrote %v bytes for file: %v", i, tfPath)
-		if len(response.IgnoredPatches) > 2 {
-			log.Infof("Ignoring patches: %v", string(response.IgnoredPatches))
-			if len(ignoredPatchesDir) > 0 {
-				ignorePath := opts.GetIgnoredPatchesPath(f.Path)
-				err = os.MkdirAll(filepath.Dir(ignorePath), 0700)
-				if err != nil {
-					return err
-				}
-				ignoreFile, err := os.Create(ignorePath)
-				if err != nil {
-					return err
-				}
-				defer ignoreFile.Close()
-				i, err := ignoreFile.Write(response.IgnoredPatches)
-				if err != nil {
-					return err
-				}
-				log.Debugf("wrote %v bytes for file: %v", i, ignorePath)
-			}
-		}
+	// Create orchestrator
+	orchestrator := &internalTransform.Orchestrator{
+		Log:              log.WithField("command", "transform").Logger,
+		ExportDir:        exportDir,
+		TransformDir:     transformDir,
+		PluginDir:        pluginDir,
+		SkipPlugins:      o.SkipPlugins,
+		PluginPriorities: pluginPriorities,
+		OptionalFlags:    optionalFlags,
+		Force:            o.Force,
+		CraneVersion:     "v1.0.0", // TODO: Get from build version
 	}
-	return nil
+
+	// Check if multi-stage mode (user specified which stages to run via CLI or config)
+	if o.Stage != "" || o.FromStage != "" ||
+		o.ToStage != "" || len(o.Stages) > 0 {
+		// Multi-stage mode
+		selector := internalTransform.StageSelector{
+			Stage:     o.Stage,
+			FromStage: o.FromStage,
+			ToStage:   o.ToStage,
+			Stages:    o.Stages,
+		}
+
+		log.Info("Running multi-stage transform")
+		return orchestrator.RunMultiStage(selector)
+	}
+
+	// Single stage mode (default)
+	log.Infof("Running single-stage transform: %s", o.StageName)
+	return orchestrator.RunSingleStage(o.StageName, o.PluginName)
 }
 
 func (o *Options) getPluginPrioritiesMap() map[string]int {

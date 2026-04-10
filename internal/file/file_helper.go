@@ -115,3 +115,71 @@ func (opts *PathOpts) GetOutputFilePath(filePath string) string {
 	dir = strings.Replace(dir, opts.ExportDir, opts.OutputDir, 1)
 	return filepath.Join(dir, fname)
 }
+
+// Kustomize Layout Path Helpers
+
+// GetStageDir returns the path to a stage directory
+// Format: <transformDir>/<stageName>
+func (opts *PathOpts) GetStageDir(stageName string) string {
+	return filepath.Join(opts.TransformDir, stageName)
+}
+
+// GetResourcesDir returns the path to the resources directory within a stage
+// Format: <transformDir>/<stageName>/resources
+func (opts *PathOpts) GetResourcesDir(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), "resources")
+}
+
+// GetPatchesDir returns the path to the patches directory within a stage
+// Format: <transformDir>/<stageName>/patches
+func (opts *PathOpts) GetPatchesDir(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), "patches")
+}
+
+// GetReportsDir returns the path to the reports directory within a stage
+// Format: <transformDir>/<stageName>/reports
+func (opts *PathOpts) GetReportsDir(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), "reports")
+}
+
+// GetWhiteoutsDir returns the path to the whiteouts directory within a stage
+// Format: <transformDir>/<stageName>/whiteouts
+func (opts *PathOpts) GetWhiteoutsDir(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), "whiteouts")
+}
+
+// GetKustomizationPath returns the path to kustomization.yaml within a stage
+// Format: <transformDir>/<stageName>/kustomization.yaml
+func (opts *PathOpts) GetKustomizationPath(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), "kustomization.yaml")
+}
+
+// GetMetadataPath returns the path to .crane-metadata.json within a stage
+// Format: <transformDir>/<stageName>/.crane-metadata.json
+func (opts *PathOpts) GetMetadataPath(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), ".crane-metadata.json")
+}
+
+// GetResourceTypeFilePath returns the path to a resource type file within a stage
+// Format: <transformDir>/<stageName>/resources/<filename>
+func (opts *PathOpts) GetResourceTypeFilePath(stageName, filename string) string {
+	return filepath.Join(opts.GetResourcesDir(stageName), filename)
+}
+
+// GetPatchFilePath returns the path to a patch file within a stage
+// Format: <transformDir>/<stageName>/patches/<filename>
+func (opts *PathOpts) GetPatchFilePath(stageName, filename string) string {
+	return filepath.Join(opts.GetPatchesDir(stageName), filename)
+}
+
+// GetWhiteoutReportPath returns the path to the whiteout report file
+// Format: <transformDir>/<stageName>/whiteouts/whiteouts.json
+func (opts *PathOpts) GetWhiteoutReportPath(stageName string) string {
+	return filepath.Join(opts.GetWhiteoutsDir(stageName), "whiteouts.json")
+}
+
+// GetIgnoredPatchReportPath returns the path to the ignored patches report file
+// Format: <transformDir>/<stageName>/reports/ignored-patches.json
+func (opts *PathOpts) GetIgnoredPatchReportPath(stageName string) string {
+	return filepath.Join(opts.GetReportsDir(stageName), "ignored-patches.json")
+}
