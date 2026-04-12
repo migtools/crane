@@ -3,6 +3,7 @@ package e2e
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
@@ -10,6 +11,45 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+// TODO: Remove once crane rsync pods support supplemental groups.
+// fixPVCPermissions makes mountPath world-readable/executable so that crane's
+// rsync pod (uid 1000) can traverse directories written by MongoDB (uid 999,
+// mode 0700). This is a temporary workaround until crane transfer-pvc supports
+// supplemental groups. See https://github.com/migtools/crane/issues/213.
+func fixPVCPermissions(k KubectlRunner, namespace, _ /* pvcName */, mountPath string) error {
+	podName, err := k.Run(
+		"get", "pod",
+		"-n", namespace,
+		"-l", "name=mongodb",
+		"-o", "jsonpath={.items[0].metadata.name}",
+	)
+	if err != nil {
+		return err
+	}
+	podName = strings.TrimSpace(podName)
+	_, err = k.Run("exec", podName, "-n", namespace, "--", "chmod", "-R", "o+rx", mountPath)
+	return err
+}
+
+// mongoDocumentCount returns the number of documents in sampledb.test_db via
+// mongosh exec into the given pod.
+func mongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error) {
+	out, err := k.Run(
+		"exec", podName, "-n", namespace, "--",
+		"mongosh", "sampledb",
+		"--eval", "db.test_db.countDocuments()",
+		"--quiet",
+	)
+	if err != nil {
+		return 0, err
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse document count %q: %w", strings.TrimSpace(out), err)
+	}
+	return count, nil
+}
 
 var _ = Describe("MongoDB Migration", func() {
 	It("[MTC-292] Should migrate a MongoDB resource with data intact as nonadmin user", Label("tier0"), func() {
@@ -53,11 +93,21 @@ var _ = Describe("MongoDB Migration", func() {
 			}
 		})
 		DeferCleanup(cleanup)
-		
+
 		By("Deploy and validate source MongoDB app")
 		log.Printf("Deploying %s in namespace %s on source cluster", appName, namespace)
 		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
 		log.Printf("Source app deployed successfully")
+
+		paths, err := NewScenarioPaths("crane-export-*")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			By("Cleanup source and target resources")
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
+		})
+
 		By("Seed test data into source MongoDB")
 		srcPodName, err := kubectlSrcNonAdmin.Run(
 			"get", "pod",
@@ -68,7 +118,7 @@ var _ = Describe("MongoDB Migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		srcPodName = strings.TrimSpace(srcPodName)
 		log.Printf("Source pod: %s", srcPodName)
- 
+
 		_, err = kubectlSrcNonAdmin.Run(
 			"exec", srcPodName, "-n", namespace, "--",
 			"mongosh", "sampledb",
@@ -84,16 +134,19 @@ var _ = Describe("MongoDB Migration", func() {
 		log.Printf("Source PVC permissions fixed")
 
 		By("Run crane export/transform/apply pipeline")
-		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s", namespace)
+
+		By("Apply rendered manifests to target")
+		log.Printf("Applying rendered manifests on target namespace %s from %s", namespace, paths.OutputDir)
+		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, namespace, paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("List PVCs and transfer to target")
 		pvcs, err := ListPVCs(namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in namespace %q", namespace)
- 
+
 		tgtIP, err := GetClusterNodeIP(tgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -117,7 +170,7 @@ var _ = Describe("MongoDB Migration", func() {
 		log.Printf("Target app validated successfully")
 
 		By("Verify data integrity on destination")
-		tgtPodName, err := kubectlTgt.Run(
+		tgtPodName, err := kubectlTgtNonAdmin.Run(
 			"get", "pod",
 			"-n", namespace,
 			"-l", "name=mongodb",
@@ -126,15 +179,14 @@ var _ = Describe("MongoDB Migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		tgtPodName = strings.TrimSpace(tgtPodName)
 		log.Printf("Target pod: %s", tgtPodName)
- 
+
 		Eventually(func() (int, error) {
-			return mongoDocumentCount(kubectlTgt, namespace, tgtPodName)
-		}, "2m", "10s").Should(BeNumerically(">=", 2),
-			"expected at least 2 documents on destination after migration")
- 
-		tgtCount, err := mongoDocumentCount(kubectlTgt, namespace, tgtPodName)
+			return mongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
+		}, "2m", "10s").Should(BeNumerically("==", 4),
+			"expected 4 documents on destination after migration")
+
+		tgtCount, err := mongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Destination document count: %d — migration verified", tgtCount)
-
 	})
 })
