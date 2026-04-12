@@ -2,7 +2,10 @@ package framework
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"os"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -10,7 +13,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// ListPVCs returns PVCs from a namespace, optionally filtered by label selector.
+// ListPVCs returns PersistentVolumeClaims from a namespace, optionally filtered
+// by label selector, using the provided kubeconfig context.
 func ListPVCs(namespace string, labelSelector string, contextName string) ([]corev1.PersistentVolumeClaim, error) {
 	clientSet, err := NewClientSetForContext(contextName)
 	if err != nil {
@@ -32,7 +36,8 @@ func ListPVCs(namespace string, labelSelector string, contextName string) ([]cor
 
 }
 
-// NewClientSetForContext creates a Kubernetes clientset for the given kube context.
+// NewClientSetForContext builds a client-go clientset scoped to the provided
+// kubeconfig context name.
 func NewClientSetForContext(contextName string) (*kubernetes.Clientset, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	overrides := &clientcmd.ConfigOverrides{}
@@ -53,7 +58,8 @@ func NewClientSetForContext(contextName string) (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
-// GetClusterNodeIP returns the first schedulable node internal IP for a context.
+// GetClusterNodeIP returns the first schedulable node internal IP visible from
+// the provided kubeconfig context.
 func GetClusterNodeIP(contextName string) (string, error) {
 	clientSet, err := NewClientSetForContext(contextName)
 	if err != nil {
@@ -79,9 +85,14 @@ func GetClusterNodeIP(contextName string) (string, error) {
 	return "", fmt.Errorf("No node IP found")
 }
 
-// ResolveUsernameForContext returns the kubeconfig auth info name (user)
-// associated with the provided context. If contextName is empty, it falls back
-// to current-context.
+// ResolveUsernameForContext resolves the Kubernetes username represented by a
+// kubeconfig context for use in RBAC subjects.
+//
+// For client-certificate contexts, this is the certificate subject CommonName
+// (CN), which is the identity used by Kubernetes RBAC. If no client certificate
+// is configured, it falls back to kubeconfig auth info key name.
+//
+// If contextName is empty, it falls back to current-context.
 func ResolveUsernameForContext(contextName string) (string, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	rawConfig, err := loadingRules.Load()
@@ -104,6 +115,71 @@ func ResolveUsernameForContext(contextName string) (string, error) {
 	if ctx.AuthInfo == "" {
 		return "", fmt.Errorf("no user/auth info name set for context %q", ctxName)
 	}
+
+	authInfo, found := rawConfig.AuthInfos[ctx.AuthInfo]
+	if !found {
+		return "", fmt.Errorf("auth info %q referenced by context %q not found in kubeconfig", ctx.AuthInfo, ctxName)
+	}
+
+	// Prefer certificate CN because that is the user identity evaluated by RBAC.
+	var certBytes []byte
+	if len(authInfo.ClientCertificateData) > 0 {
+		certBytes = authInfo.ClientCertificateData
+	} else if authInfo.ClientCertificate != "" {
+		certBytes, err = os.ReadFile(authInfo.ClientCertificate)
+		if err != nil {
+			return "", fmt.Errorf(
+				"failed reading client certificate file %q for context %q (auth info %q): %w",
+				authInfo.ClientCertificate, ctxName, ctx.AuthInfo, err,
+			)
+		}
+	}
+
+	if len(certBytes) > 0 {
+		cert, err := parseClientCertificate(certBytes)
+		if err != nil {
+			return "", fmt.Errorf(
+				"failed parsing client certificate for context %q (auth info %q): %w",
+				ctxName, ctx.AuthInfo, err,
+			)
+		}
+		if cert.Subject.CommonName == "" {
+			return "", fmt.Errorf(
+				"client certificate for context %q (auth info %q) has empty subject common name",
+				ctxName, ctx.AuthInfo,
+			)
+		}
+		return cert.Subject.CommonName, nil
+	}
+
 	return ctx.AuthInfo, nil
 
+}
+
+// parseClientCertificate parses a single X.509 client certificate from kubeconfig
+// certificate bytes. It accepts PEM bundles and falls back to DER parsing.
+func parseClientCertificate(certBytes []byte) (*x509.Certificate, error) {
+	rest := certBytes
+	for {
+		block, remaining := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		rest = remaining
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse PEM certificate block: %w", err)
+		}
+		return cert, nil
+	}
+
+	// Some kubeconfigs may store DER bytes directly.
+	cert, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate bytes as PEM or DER: %w", err)
+	}
+	return cert, nil
 }
