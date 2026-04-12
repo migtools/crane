@@ -133,6 +133,10 @@ var _ = Describe("MongoDB Migration", func() {
 		Expect(fixPVCPermissions(kubectlSrcNonAdmin, namespace, "mongodb-data", "/data/db")).NotTo(HaveOccurred())
 		log.Printf("Source PVC permissions fixed")
 
+		By("Scale down source MongoDB deployment")
+		Expect(kubectlSrcNonAdmin.ScaleDeploymentIfPresent(namespace, appName, 0)).NotTo(HaveOccurred())
+		log.Printf("Source deployment scaled down")
+
 		By("Run crane export/transform/apply pipeline")
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, namespace, paths)).NotTo(HaveOccurred())
@@ -164,6 +168,10 @@ var _ = Describe("MongoDB Migration", func() {
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 			log.Printf("PVC %s transferred successfully", pvc.Name)
 		}
+
+		By("Scale up target MongoDB")
+		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
+		log.Printf("Target deployment scaled up")
 
 		By("Validate target app is running")
 		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
