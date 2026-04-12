@@ -51,6 +51,47 @@ func mongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error)
 	return count, nil
 }
 
+// fixTargetPVCOwnership restores file ownership on the target PVC to uid/gid 999
+// (MongoDB's uid) after crane's rsync transfers them as uid 1000.
+// TODO: Remove once crane rsync pods support supplemental groups.
+func fixTargetPVCOwnership(k KubectlRunner, namespace, pvcName, mountPath string) error {
+	podName := fmt.Sprintf("fix-perms-%s", pvcName)
+	podSpec := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  restartPolicy: Never
+  containers:
+  - name: fix-perms
+    image: busybox
+    command: ["chown", "-R", "999:999", "%s"]
+    volumeMounts:
+    - name: data
+      mountPath: %s
+    securityContext:
+      runAsUser: 0
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: %s
+`, podName, namespace, mountPath, mountPath, pvcName)
+
+	_, err := k.RunWithStdin(podSpec, "apply", "-f", "-")
+	if err != nil {
+		return fmt.Errorf("failed to create fix-permissions pod: %w", err)
+	}
+	defer k.Run("delete", "pod", podName, "-n", namespace, "--ignore-not-found=true")
+
+	_, err = k.Run("wait", "pod", podName, "-n", namespace,
+		"--for=jsonpath={.status.phase}=Succeeded", "--timeout=60s")
+	if err != nil {
+		return fmt.Errorf("fix-permissions pod did not complete successfully: %w", err)
+	}
+	return nil
+}
+
 var _ = Describe("MongoDB Migration", func() {
 	It("[MTC-292] Should migrate a MongoDB resource with data intact as nonadmin user", Label("tier0"), func() {
 		appName := "mongodb"
@@ -167,6 +208,13 @@ var _ = Describe("MongoDB Migration", func() {
 			}
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 			log.Printf("PVC %s transferred successfully", pvc.Name)
+		}
+
+		By("Fix target PVC ownership after transfer")
+		// TODO: Remove once crane rsync pods support supplemental groups.
+		for _, pvc := range pvcs {
+			Expect(fixTargetPVCOwnership(scenario.KubectlTgt, namespace, pvc.Name, "/data/db")).NotTo(HaveOccurred())
+			log.Printf("Target PVC %s ownership fixed", pvc.Name)
 		}
 
 		By("Scale up target MongoDB")
