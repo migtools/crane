@@ -53,6 +53,17 @@ func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 	return nil
 }
 
+// PrepareSourceAppNoQuiesce deploys and validates the source application without scaling it down.
+func PrepareSourceAppNoQuiesce(srcApp K8sDeployApp) error {
+	if err := srcApp.Deploy(); err != nil {
+		return err
+	}
+	if err := srcApp.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ApplyOutputToTarget creates namespace, validates, and applies rendered manifests.
 func ApplyOutputToTarget(kubectlTgt KubectlRunner, namespace string, outputDir string) error {
 	if err := kubectlTgt.CreateNamespace(namespace); err != nil {
