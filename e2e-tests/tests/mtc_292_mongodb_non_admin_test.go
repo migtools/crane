@@ -96,7 +96,7 @@ var _ = Describe("MongoDB Migration", func() {
 
 		By("Deploy and validate source MongoDB app")
 		log.Printf("Deploying %s in namespace %s on source cluster", appName, namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
+		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
 		log.Printf("Source app deployed successfully")
 
 		paths, err := NewScenarioPaths("crane-export-*")
