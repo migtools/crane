@@ -140,7 +140,7 @@ var _ = Describe("MongoDB Migration", func() {
 
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s", namespace, paths.OutputDir)
-		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, namespace, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("List PVCs and transfer to target")
 		pvcs, err := ListPVCs(namespace, "", srcApp.Context)
