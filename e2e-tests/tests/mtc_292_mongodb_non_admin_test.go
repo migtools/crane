@@ -96,7 +96,7 @@ var _ = Describe("MongoDB Migration", func() {
 
 		By("Deploy and validate source MongoDB app")
 		log.Printf("Deploying %s in namespace %s on source cluster", appName, namespace)
-		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
+		Expect(PrepareSourceAppNoQuiesce(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
 		log.Printf("Source app deployed successfully")
 
 		paths, err := NewScenarioPaths("crane-export-*")
@@ -147,7 +147,7 @@ var _ = Describe("MongoDB Migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in namespace %q", namespace)
 
-		tgtIP, err := GetClusterNodeIP(tgtApp.Context)
+		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 
 		for _, pvc := range pvcs {
