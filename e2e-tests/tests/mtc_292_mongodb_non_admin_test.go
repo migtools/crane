@@ -173,6 +173,9 @@ var _ = Describe("MongoDB Migration", func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Test data seeded into source MongoDB")
+		srcCount, err := mongoDocumentCount(kubectlSrcNonAdmin, namespace, srcPodName)
+		Expect(err).NotTo(HaveOccurred())
+		log.Printf("Source document count: %d", srcCount)
 
 		By("Scale down source MongoDB deployment")
 		// Must scale down BEFORE fixing permissions — if MongoDB is still running
@@ -191,6 +194,7 @@ var _ = Describe("MongoDB Migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Source deployment scaled down and pod terminated")
 
+		// todo: remove this once crane rsync pods support supplemental groups.
 		By("Fix source PVC permissions after scale-down")
 		Expect(fixPVCPermissionsViaJob(scenario.KubectlSrc, namespace, "mongodb-data", "/data/db")).NotTo(HaveOccurred())
 		log.Printf("Source PVC permissions fixed")
@@ -255,8 +259,8 @@ var _ = Describe("MongoDB Migration", func() {
 
 		Eventually(func() (int, error) {
 			return mongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
-		}, "2m", "10s").Should(BeNumerically("==", 4),
-			"expected 4 documents on destination after migration")
+		}, "2m", "10s").Should(BeNumerically("==", srcCount),
+			"expected destination document count to match source after migration")
 
 		tgtCount, err := mongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
 		Expect(err).NotTo(HaveOccurred())
