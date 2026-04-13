@@ -195,9 +195,9 @@ var _ = Describe("MongoDB Migration", func() {
 		log.Printf("Source deployment scaled down and pod terminated")
 
 		// todo: remove this once crane rsync pods support supplemental groups.
-		By("Fix source PVC permissions after scale-down")
-		Expect(fixPVCPermissionsViaJob(scenario.KubectlSrc, namespace, "mongodb-data", "/data/db")).NotTo(HaveOccurred())
-		log.Printf("Source PVC permissions fixed")
+		// By("Fix source PVC permissions after scale-down")
+		// Expect(fixPVCPermissionsViaJob(scenario.KubectlSrc, namespace, "mongodb-data", "/data/db")).NotTo(HaveOccurred())
+		// log.Printf("Source PVC permissions fixed")
 
 		By("Run crane export/transform/apply pipeline")
 		runner.WorkDir = paths.TempDir
