@@ -79,27 +79,33 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 		return fmt.Errorf("no stages found matching selector")
 	}
 
-	// Apply each stage
-	for _, stage := range selectedStages {
-		k.Log.Infof("Applying stage: %s", stage.DirName)
+	// Get the last (final) stage
+	lastStage := selectedStages[len(selectedStages)-1]
 
-		// Run kubectl kustomize build
-		output, err := k.runKustomizeBuild(stage.Path)
-		if err != nil {
-			return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stage.DirName, err)
-		}
+	k.Log.Infof("Applying final stage: %s", lastStage.DirName)
 
-		// Write output
-		outputPath := filepath.Join(k.OutputDir, stage.DirName+".yaml")
-		if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
-		}
+	// Run kubectl kustomize build on the last stage
+	output, err := k.runKustomizeBuild(lastStage.Path)
+	if err != nil {
+		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", lastStage.DirName, err)
+	}
 
-		if err := os.WriteFile(outputPath, output, 0644); err != nil {
-			return fmt.Errorf("failed to write output file: %w", err)
-		}
+	// Write to output.yaml (single file with all resources)
+	outputPath := filepath.Join(k.OutputDir, "output.yaml")
+	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
 
-		k.Log.Infof("Successfully applied stage %s to %s", stage.DirName, outputPath)
+	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write output file: %w", err)
+	}
+
+	k.Log.Infof("Successfully applied final stage to %s", outputPath)
+
+	// Split into individual resource files organized by namespace
+	// This creates output/resources/<namespace>/<Kind>_<namespace>_<name>.yaml
+	if err := k.splitMultiDocYAMLToFiles(output); err != nil {
+		return fmt.Errorf("failed to split output into individual files: %w", err)
 	}
 
 	return nil
