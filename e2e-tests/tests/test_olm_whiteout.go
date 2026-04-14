@@ -88,7 +88,9 @@ var _ = Describe("OLM whiteout", func() {
 	Describe("Baseline full OLM graph", func() {
 		It("should omit OLM kinds from crane apply output", Label("olm"), func() {
 			kubectlPreflight := KubectlRunner{Bin: "kubectl", Context: config.SourceContext}
-			if !kubectlPreflight.OLMAPIAvailable() {
+			olmAvailable, err := kubectlPreflight.OLMAPIAvailable()
+			Expect(err).NotTo(HaveOccurred())
+			if !olmAvailable {
 				Skip("OLM APIs not installed (subscriptions.operators.coreos.com CRD missing)")
 			}
 
