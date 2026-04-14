@@ -142,10 +142,9 @@ func (o *Options) run() error {
 	}
 
 	// Determine which stages to apply
-	// If user specified which stages to run (via CLI or config), use those
 	if o.Flags.Stage != "" || o.Flags.FromStage != "" ||
 		o.Flags.ToStage != "" || len(o.Flags.Stages) > 0 {
-		// Multi-stage apply with selector
+		// User specified which stages to apply
 		selector := internalTransform.StageSelector{
 			Stage:     o.Flags.Stage,
 			FromStage: o.Flags.FromStage,
@@ -157,7 +156,11 @@ func (o *Options) run() error {
 		return applier.ApplyMultiStage(selector)
 	}
 
-	// Default: apply final stage only
-	log.Info("Applying final stage...")
-	return applier.ApplyFinalStage()
+	// Default: apply all stages
+	// This ensures sequential consistency - each stage output is materialized
+	log.Info("Applying all stages...")
+
+	// Empty selector means apply all discovered stages
+	emptySelector := internalTransform.StageSelector{}
+	return applier.ApplyMultiStage(emptySelector)
 }

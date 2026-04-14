@@ -275,6 +275,46 @@ func (o *Orchestrator) filterPluginsByStage(allPlugins []cranelib.Plugin, stage 
 	return filtered
 }
 
+// CreatePassThroughStage creates an empty pass-through stage that copies resources from input
+// without applying any transformations. This is useful for manual editing stages.
+func (o *Orchestrator) CreatePassThroughStage(stageName string, inputDir string) error {
+	o.Log.Infof("Creating pass-through stage: %s", stageName)
+
+	// Load input resources
+	inputResources, err := o.loadResourcesFromDirectory(inputDir)
+	if err != nil {
+		return fmt.Errorf("failed to load input resources: %w", err)
+	}
+
+	// Create empty artifacts (no patches, no whiteouts)
+	var artifacts []cranelib.TransformArtifact
+	for _, resource := range inputResources {
+		artifact := cranelib.TransformArtifact{
+			Resource:     resource,
+			HaveWhiteOut: false,
+			Patches:      nil, // No patches
+			IgnoredOps:   []cranelib.IgnoredOperation{},
+			Target:       cranelib.DeriveTargetFromResource(resource),
+			PluginName:   "", // No plugin
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	// Write stage output
+	opts := file.PathOpts{
+		TransformDir: o.TransformDir,
+		ExportDir:    o.ExportDir,
+	}
+
+	writer := NewKustomizeWriter(opts, stageName)
+	if err := writer.WriteStage(artifacts, o.Force); err != nil {
+		return fmt.Errorf("failed to write pass-through stage: %w", err)
+	}
+
+	o.Log.Infof("Created pass-through stage %s with %d resources (ready for manual editing)", stageName, len(artifacts))
+	return nil
+}
+
 // applyStageTransforms applies patches from a stage and returns the transformed resources
 // This materializes the output by running kubectl kustomize on the stage directory
 func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Unstructured, error) {
