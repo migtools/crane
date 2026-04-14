@@ -31,80 +31,9 @@ type Orchestrator struct {
 	OptionalFlags    map[string]string
 	Force            bool
 	CraneVersion     string
-}
-
-// RunSingleStage executes transform for a single stage (default mode)
-func (o *Orchestrator) RunSingleStage(stageName, pluginName string) error {
-	// Load all resources from export dir
-	files, err := file.ReadFiles(context.TODO(), o.ExportDir)
-	if err != nil {
-		return fmt.Errorf("failed to read export directory: %w", err)
-	}
-
-	// Get all plugins
-	allPlugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
-	if err != nil {
-		return fmt.Errorf("failed to load plugins: %w", err)
-	}
-
-	// Filter plugins by the specified plugin name
-	stage := Stage{PluginName: pluginName}
-	plugins := o.filterPluginsByStage(allPlugins, stage)
-
-	// Run transform for each resource
-	runner := cranelib.Runner{
-		Log:              o.Log,
-		PluginPriorities: o.PluginPriorities,
-		OptionalFlags:    o.OptionalFlags,
-	}
-
-	var artifacts []cranelib.TransformArtifact
-
-	for _, f := range files {
-		response, err := runner.Run(f.Unstructured, plugins)
-		if err != nil {
-			// Include stage name, resource identity, and type in error
-			resourceID := fmt.Sprintf("%s/%s/%s", f.Unstructured.GetKind(), f.Unstructured.GetNamespace(), f.Unstructured.GetName())
-			return fmt.Errorf("stage %s: failed to run transform for %s (type %T): %w", stageName, resourceID, f.Unstructured, err)
-		}
-
-		// Parse TransformFile (JSONPatch) to get patches
-		var patches jsonpatch.Patch
-		if len(response.TransformFile) > 2 && !response.HaveWhiteOut {
-			patches, err = jsonpatch.DecodePatch(response.TransformFile)
-			if err != nil {
-				// Include stage name, resource identity, and type in error
-				resourceID := fmt.Sprintf("%s/%s/%s", f.Unstructured.GetKind(), f.Unstructured.GetNamespace(), f.Unstructured.GetName())
-				return fmt.Errorf("stage %s: failed to decode patches for %s (type %T): %w", stageName, resourceID, response, err)
-			}
-		}
-
-		// Convert runner response to TransformArtifact
-		artifact := cranelib.TransformArtifact{
-			Resource:     f.Unstructured,
-			HaveWhiteOut: response.HaveWhiteOut,
-			Patches:      patches,
-			IgnoredOps:   []cranelib.IgnoredOperation{}, // TODO: Parse IgnoredPatches
-			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
-			PluginName:   pluginName,
-		}
-
-		artifacts = append(artifacts, artifact)
-	}
-
-	// Write stage output
-	opts := file.PathOpts{
-		TransformDir: o.TransformDir,
-		ExportDir:    o.ExportDir,
-	}
-
-	writer := NewKustomizeWriter(opts, stageName)
-	if err := writer.WriteStage(artifacts, o.Force); err != nil {
-		return fmt.Errorf("failed to write stage output: %w", err)
-	}
-
-	o.Log.Infof("Successfully wrote transform stage: %s", stageName)
-	return nil
+	// NewlyCreatedStages tracks stages created in this run that can be overwritten
+	// This prevents double-write errors when creating a stage and then running it
+	NewlyCreatedStages map[string]bool
 }
 
 // RunMultiStage executes transform with multi-stage pipeline
@@ -249,8 +178,18 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 		ExportDir:    o.ExportDir,
 	}
 
+	// Determine if we should force overwrite for this stage
+	// Force is true if:
+	// 1. Global Force flag is set, OR
+	// 2. This stage was created in the current run (tracked in NewlyCreatedStages)
+	forceWrite := o.Force
+	if o.NewlyCreatedStages != nil && o.NewlyCreatedStages[stage.DirName] {
+		forceWrite = true
+		o.Log.Debugf("Stage %s was created in this run, allowing overwrite", stage.DirName)
+	}
+
 	writer := NewKustomizeWriter(opts, stage.DirName)
-	if err := writer.WriteStage(artifacts, o.Force); err != nil {
+	if err := writer.WriteStage(artifacts, forceWrite); err != nil {
 		return err
 	}
 

@@ -167,15 +167,16 @@ func (o *Options) run() error {
 
 	// Create orchestrator
 	orchestrator := &internalTransform.Orchestrator{
-		Log:              log.WithField("command", "transform").Logger,
-		ExportDir:        exportDir,
-		TransformDir:     transformDir,
-		PluginDir:        pluginDir,
-		SkipPlugins:      o.SkipPlugins,
-		PluginPriorities: pluginPriorities,
-		OptionalFlags:    optionalFlags,
-		Force:            o.Force,
-		CraneVersion:     "v1.0.0", // TODO: Get from build version
+		Log:                log.WithField("command", "transform").Logger,
+		ExportDir:          exportDir,
+		TransformDir:       transformDir,
+		PluginDir:          pluginDir,
+		SkipPlugins:        o.SkipPlugins,
+		PluginPriorities:   pluginPriorities,
+		OptionalFlags:      optionalFlags,
+		Force:              o.Force,
+		CraneVersion:       "v1.0.0", // TODO: Get from build version
+		NewlyCreatedStages: make(map[string]bool),
 	}
 
 	// Determine which stages to run
@@ -206,20 +207,27 @@ func (o *Options) run() error {
 		}
 
 		if len(existingStages) == 0 {
-			// No stages exist - create default stage transform artifacts first
+			// No stages exist - will create default stage via multi-stage pipeline
+			// We create an empty directory so DiscoverStages will find it, then
+			// RunMultiStage → executeStage will populate it with artifacts
 			log.Info("No existing stages found, creating default stage: 10_KubernetesPlugin")
 			defaultStageName := "10_KubernetesPlugin"
 
-			// Create stage artifacts (this writes kustomization.yaml, resources, patches)
-			if err := orchestrator.RunSingleStage(defaultStageName, ""); err != nil {
-				return fmt.Errorf("failed to create default stage: %w", err)
+			// Create empty stage directory
+			stageDir := filepath.Join(transformDir, defaultStageName)
+			if err := os.MkdirAll(stageDir, 0700); err != nil {
+				return fmt.Errorf("failed to create default stage directory: %w", err)
 			}
 
-			// Now run multi-stage on the newly created stage for sequential consistency
+			// Mark this stage as newly created so executeStage can overwrite it
+			orchestrator.NewlyCreatedStages[defaultStageName] = true
+
+			// Run multi-stage on the default stage
+			// executeStage will populate it with artifacts (kustomization, resources, patches)
 			selector = internalTransform.StageSelector{
 				Stage: defaultStageName,
 			}
-			log.Info("Running newly created stage through multi-stage pipeline")
+			log.Info("Populating and executing default stage")
 		} else {
 			// Run all discovered stages
 			log.Infof("Discovered %d existing stage(s), running all", len(existingStages))
@@ -299,38 +307,43 @@ func (o *Options) ensureStageExists(orchestrator *internalTransform.Orchestrator
 
 	// Determine if this is a plugin stage or pass-through stage
 	if strings.HasSuffix(stageName, "Plugin") {
-		// Extract plugin name from stage name
-		// Format: <priority>_<PluginName>
-		parts := strings.SplitN(stageName, "_", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid stage name format: %s (expected <priority>_<PluginName>)", stageName)
-		}
-		pluginName := parts[1]
+		// Plugin-based stage
+		// Create empty stage directory, let RunMultiStage populate it via executeStage
+		log.Infof("Creating plugin-based stage %s", stageName)
 
-		log.Infof("Creating plugin-based stage %s using plugin: %s", stageName, pluginName)
-
-		// Create stage using RunSingleStage (which handles plugin execution)
-		if err := orchestrator.RunSingleStage(stageName, pluginName); err != nil {
-			return fmt.Errorf("failed to create plugin stage: %w", err)
+		// Create empty stage directory so DiscoverStages will find it
+		if err := os.MkdirAll(stageDir, 0700); err != nil {
+			return fmt.Errorf("failed to create stage directory: %w", err)
 		}
 
-		// Now run through multi-stage to generate .work/ directories
+		// Mark this stage as newly created so executeStage can populate it
+		orchestrator.NewlyCreatedStages[stageName] = true
+
+		// Run multi-stage pipeline
+		// executeStage will run the plugins and generate artifacts (kustomization, resources, patches)
+		// Then it will create .work/ directories with input/output snapshots
 		selector := internalTransform.StageSelector{Stage: stageName}
 		if err := orchestrator.RunMultiStage(selector); err != nil {
-			return fmt.Errorf("failed to run newly created stage: %w", err)
+			return fmt.Errorf("failed to execute stage: %w", err)
 		}
 	} else {
-		// Create pass-through stage for manual editing
+		// Pass-through stage for manual editing
 		log.Infof("Creating pass-through stage %s (no plugin, ready for manual editing)", stageName)
 
+		// For pass-through stages, use CreatePassThroughStage to copy resources
+		// without running any plugins
 		if err := orchestrator.CreatePassThroughStage(stageName, inputDir); err != nil {
 			return fmt.Errorf("failed to create pass-through stage: %w", err)
 		}
 
-		// Run through multi-stage to generate .work/ directories
+		// Mark as newly created so RunMultiStage can regenerate artifacts if needed
+		orchestrator.NewlyCreatedStages[stageName] = true
+
+		// Run multi-stage to generate .work/ directories
+		// executeStage will regenerate artifacts (no plugins for pass-through stages)
 		selector := internalTransform.StageSelector{Stage: stageName}
 		if err := orchestrator.RunMultiStage(selector); err != nil {
-			return fmt.Errorf("failed to run newly created stage: %w", err)
+			return fmt.Errorf("failed to execute stage: %w", err)
 		}
 	}
 
