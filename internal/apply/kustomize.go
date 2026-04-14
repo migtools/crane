@@ -151,15 +151,16 @@ func (k *KustomizeApplier) ApplyFinalStage() error {
 	return nil
 }
 
-// runKustomizeBuild executes kubectl kustomize on a directory
+// runKustomizeBuild executes kubectl kustomize or oc kustomize on a directory
 func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
-	cmd := exec.Command("kubectl", "kustomize", dir)
+	kustomizeCmd := file.GetKustomizeCommand()
+	cmd := exec.Command(kustomizeCmd, "kustomize", dir)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	k.Log.Debugf("Running: kubectl kustomize %s", dir)
+	k.Log.Debugf("Running: %s kustomize %s", kustomizeCmd, dir)
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())
@@ -168,13 +169,21 @@ func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// ValidateKubectlAvailable checks if kubectl command is available
+// ValidateKubectlAvailable checks if kubectl or oc command is available
 func ValidateKubectlAvailable() error {
+	// Try kubectl first
 	cmd := exec.Command("kubectl", "version", "--client")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kubectl not found or not executable: %w", err)
+	if err := cmd.Run(); err == nil {
+		return nil
 	}
-	return nil
+
+	// Fallback to oc
+	cmd = exec.Command("oc", "version", "--client")
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("neither kubectl nor oc found or executable")
 }
 
 // splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files

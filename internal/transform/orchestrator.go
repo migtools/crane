@@ -316,19 +316,20 @@ func (o *Orchestrator) CreatePassThroughStage(stageName string, inputDir string)
 }
 
 // applyStageTransforms applies patches from a stage and returns the transformed resources
-// This materializes the output by running kubectl kustomize on the stage directory
+// This materializes the output by running kubectl kustomize or oc kustomize on the stage directory
 func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Unstructured, error) {
-	// Run kubectl kustomize to build the stage with patches applied
-	cmd := exec.Command("kubectl", "kustomize", stageDir)
+	// Run kubectl kustomize or oc kustomize to build the stage with patches applied
+	kustomizeCmd := file.GetKustomizeCommand()
+	cmd := exec.Command(kustomizeCmd, "kustomize", stageDir)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	o.Log.Debugf("Running: kubectl kustomize %s", stageDir)
+	o.Log.Debugf("Running: %s kustomize %s", kustomizeCmd, stageDir)
 
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("kubectl kustomize failed: %w\nstderr: %s", err, stderr.String())
+		return nil, fmt.Errorf("%s kustomize failed: %w\nstderr: %s", kustomizeCmd, err, stderr.String())
 	}
 
 	// Parse the multi-document YAML output

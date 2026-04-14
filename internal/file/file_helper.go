@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -207,4 +208,22 @@ func (opts *PathOpts) GetStageTransformDir(stageName string) string {
 // Format: <transformDir>/.work/<stageName>/output
 func (opts *PathOpts) GetStageOutputDir(stageName string) string {
 	return filepath.Join(opts.GetStageWorkDir(stageName), "output")
+}
+
+// GetKustomizeCommand returns the appropriate command (kubectl or oc) for kustomize
+func GetKustomizeCommand() string {
+	// Try kubectl first
+	cmd := exec.Command("kubectl", "version", "--client")
+	if err := cmd.Run(); err == nil {
+		return "kubectl"
+	}
+
+	// Fallback to oc
+	cmd = exec.Command("oc", "version", "--client")
+	if err := cmd.Run(); err == nil {
+		return "oc"
+	}
+
+	// Default to kubectl (will fail later with appropriate error)
+	return "kubectl"
 }
