@@ -183,3 +183,28 @@ func (opts *PathOpts) GetWhiteoutReportPath(stageName string) string {
 func (opts *PathOpts) GetIgnoredPatchReportPath(stageName string) string {
 	return filepath.Join(opts.GetReportsDir(stageName), "ignored-patches.json")
 }
+
+// GetStageWorkDir returns the path to the working directory for a stage
+// Format: <transformDir>/.work/<stageName>
+func (opts *PathOpts) GetStageWorkDir(stageName string) string {
+	return filepath.Join(opts.TransformDir, ".work", stageName)
+}
+
+// GetStageInputDir returns the path to the input directory for a stage
+// Format: <transformDir>/.work/<stageName>/input
+func (opts *PathOpts) GetStageInputDir(stageName string) string {
+	return filepath.Join(opts.GetStageWorkDir(stageName), "input")
+}
+
+// GetStageTransformDir returns the path to the transform directory for a stage
+// This is the actual stage directory containing kustomization.yaml
+// Format: <transformDir>/<stageName>
+func (opts *PathOpts) GetStageTransformDir(stageName string) string {
+	return opts.GetStageDir(stageName)
+}
+
+// GetStageOutputDir returns the path to the output directory for a stage
+// Format: <transformDir>/.work/<stageName>/output
+func (opts *PathOpts) GetStageOutputDir(stageName string) string {
+	return filepath.Join(opts.GetStageWorkDir(stageName), "output")
+}

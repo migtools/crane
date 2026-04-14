@@ -69,18 +69,69 @@ For complex transformations, you can create multiple stages:
 
 ```
 transform/
-├── 10_kubernetes/     # Base Kubernetes transformations
-├── 20_openshift/      # OpenShift-specific changes
-└── 30_imagestream/    # ImageStream configurations
+├── 10_KubernetesPlugin/     # Base Kubernetes transformations
+├── 20_OpenshiftPlugin/      # OpenShift-specific changes
+└── 30_ImagestreamPlugin/    # ImageStream configurations
 ```
 
-Each stage processes resources from the previous stage. To apply all stages:
+**Sequential Consistency**: Each stage runs on the **fully applied output** of the previous stage. This means:
+
+- Stage 1 reads from the export directory
+- Stage 1's patches are applied, producing materialized output
+- Stage 2 reads Stage 1's applied output (not the raw patches)
+- Stage 2's patches are applied to the already-transformed resources
+- And so on...
+
+This ensures that:
+- Structural changes from earlier stages are visible to later stages
+- Resources marked as whiteout (deleted) don't appear in subsequent stages
+- Each stage sees the actual state of resources, not just patch instructions
+
+### Working Directory Structure
+
+When running multistage transforms, Crane creates a working directory structure for debugging:
+
+```
+transform/
+├── 10_KubernetesPlugin/     # Stage 1 transform artifacts
+│   ├── resources/
+│   ├── patches/
+│   └── kustomization.yaml
+├── 20_OpenshiftPlugin/      # Stage 2 transform artifacts
+│   ├── resources/
+│   ├── patches/
+│   └── kustomization.yaml
+└── .work/                   # Intermediate working artifacts
+    ├── 10_KubernetesPlugin/
+    │   ├── input/           # Stage 1 input snapshot (from export)
+    │   └── output/          # Stage 1 materialized output
+    └── 20_OpenshiftPlugin/
+        ├── input/           # Stage 2 input snapshot (Stage 1 output)
+        └── output/          # Stage 2 materialized output
+```
+
+The `.work/` directory contains intermediate snapshots useful for debugging multi-stage pipelines.
+
+### Running Multi-Stage Transforms
+
+```bash
+# Run all stages in sequence
+crane transform --from-stage 10_KubernetesPlugin
+
+# Run specific stage range
+crane transform --from-stage 10_KubernetesPlugin --to-stage 20_OpenshiftPlugin
+
+# Run specific stages only
+crane transform --stages 10_KubernetesPlugin,30_ImagestreamPlugin
+```
+
+To apply all stages:
 
 ```bash
 crane apply --transform-dir transform --output-dir output
 ```
 
-This applies only the final stage (30_imagestream), which includes all transformations.
+This applies only the final stage (30_ImagestreamPlugin), which includes all transformations.
 
 ## Directory Contents Explained
 
@@ -231,11 +282,11 @@ crane transform --export-dir export --transform-dir transform --stage-name 15_cu
 
 ```bash
 # Create base transformations
-crane transform --stage-name 10_base --plugin-name base
+crane transform --stage-name 10_KubernetesPlugin --plugin-name KubernetesPlugin
 
 # Create OpenShift transformations on top of base
-# (manually ensure 10_base exists first)
-crane transform --stage-name 20_openshift --plugin-name openshift
+# (manually ensure 10_KubernetesPlugin exists first)
+crane transform --stage-name 20_OpenshiftPlugin --plugin-name OpenshiftPlugin
 
 # Apply final stage
 crane apply --transform-dir transform --output-dir output

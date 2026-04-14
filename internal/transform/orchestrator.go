@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -107,6 +108,7 @@ func (o *Orchestrator) RunSingleStage(stageName, pluginName string) error {
 }
 
 // RunMultiStage executes transform with multi-stage pipeline
+// Each stage runs on the fully applied output of the previous stage
 func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 	// Discover all stages
 	stages, err := DiscoverStages(o.TransformDir)
@@ -121,48 +123,69 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 		return fmt.Errorf("no stages found matching selector")
 	}
 
-	// Execute each stage in order
+	opts := file.PathOpts{
+		TransformDir: o.TransformDir,
+		ExportDir:    o.ExportDir,
+	}
+
+	// Execute each stage in order with sequential consistency
 	for i, stage := range selectedStages {
 		o.Log.Infof("Executing stage %d/%d: %s", i+1, len(selectedStages), stage.DirName)
 
-		// Load input resources
-		var inputResources []unstructured.Unstructured
-
-		// Check if there's a previous stage in the full pipeline
-		prevStage := GetPreviousStage(stages, stage)
-		if prevStage == nil {
-			// This is the first stage in the full pipeline, read from export directory
-			files, err := file.ReadFiles(context.TODO(), o.ExportDir)
-			if err != nil {
-				return fmt.Errorf("failed to read export directory: %w", err)
-			}
-			for _, f := range files {
-				inputResources = append(inputResources, f.Unstructured)
-			}
+		// Step 1: Determine input for this stage
+		var inputDir string
+		if i == 0 {
+			// First stage reads from export directory
+			inputDir = o.ExportDir
+			o.Log.Debugf("Stage %s input: export directory (%s)", stage.DirName, inputDir)
 		} else {
-			// There's a previous stage, check if its output exists
-			opts := file.PathOpts{
-				TransformDir: o.TransformDir,
-			}
-			prevStageDir := opts.GetStageDir(prevStage.DirName)
+			// Subsequent stages read from previous stage's output
+			prevStage := selectedStages[i-1]
+			inputDir = opts.GetStageOutputDir(prevStage.DirName)
+			o.Log.Debugf("Stage %s input: previous stage output (%s)", stage.DirName, inputDir)
 
-			if _, err := os.Stat(prevStageDir); os.IsNotExist(err) {
-				return fmt.Errorf("stage %s requires output from stage %s, but %s does not exist. "+
-					"Run preceding stages in order, or use --stage %s for single-stage execution",
-					stage.DirName, prevStage.DirName, prevStageDir, stage.DirName)
-			}
-
-			// Load from previous stage's output
-			inputResources, err = o.loadStageOutput(*prevStage)
-			if err != nil {
-				return fmt.Errorf("failed to load output from stage %s: %w", prevStage.DirName, err)
+			// Verify previous stage output exists
+			if _, err := os.Stat(inputDir); os.IsNotExist(err) {
+				return fmt.Errorf("stage %s requires output from stage %s, but output directory does not exist: %s",
+					stage.DirName, prevStage.DirName, inputDir)
 			}
 		}
 
-		// Execute transform for this stage
+		// Step 2: Load input resources
+		inputResources, err := o.loadResourcesFromDirectory(inputDir)
+		if err != nil {
+			return fmt.Errorf("stage %s: failed to load input resources from %s: %w", stage.DirName, inputDir, err)
+		}
+
+		o.Log.Infof("Stage %s: loaded %d input resource(s)", stage.DirName, len(inputResources))
+
+		// Step 3: Save input to working directory for debugging
+		stageInputDir := opts.GetStageInputDir(stage.DirName)
+		if err := o.writeResourcesToDirectory(inputResources, stageInputDir); err != nil {
+			return fmt.Errorf("stage %s: failed to write input snapshot: %w", stage.DirName, err)
+		}
+
+		// Step 4: Execute transform for this stage (generates transform artifacts)
 		if err := o.executeStage(stage, inputResources); err != nil {
-			return fmt.Errorf("failed to execute stage %s: %w", stage.DirName, err)
+			return fmt.Errorf("stage %s: transform execution failed: %w", stage.DirName, err)
 		}
+
+		// Step 5: Apply transforms to get output resources
+		stageTransformDir := opts.GetStageTransformDir(stage.DirName)
+		outputResources, err := o.applyStageTransforms(stageTransformDir)
+		if err != nil {
+			return fmt.Errorf("stage %s: failed to apply transforms: %w", stage.DirName, err)
+		}
+
+		o.Log.Infof("Stage %s: produced %d output resource(s)", stage.DirName, len(outputResources))
+
+		// Step 6: Write output to working directory (becomes input for next stage)
+		stageOutputDir := opts.GetStageOutputDir(stage.DirName)
+		if err := o.writeResourcesToDirectory(outputResources, stageOutputDir); err != nil {
+			return fmt.Errorf("stage %s: failed to write output: %w", stage.DirName, err)
+		}
+
+		o.Log.Debugf("Stage %s: wrote output to %s", stage.DirName, stageOutputDir)
 	}
 
 	o.Log.Infof("Successfully completed %d stage(s)", len(selectedStages))
@@ -234,72 +257,6 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 	return nil
 }
 
-// loadStageOutput loads resources from a completed stage's output
-func (o *Orchestrator) loadStageOutput(stage Stage) ([]unstructured.Unstructured, error) {
-	opts := file.PathOpts{
-		TransformDir: o.TransformDir,
-	}
-
-	stageDir := opts.GetStageDir(stage.DirName)
-
-	// Run kubectl kustomize to build the stage with patches applied
-	cmd := exec.Command("kubectl", "kustomize", stageDir)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	o.Log.Debugf("Running: kubectl kustomize %s", stageDir)
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to build stage %s: %w\nstderr: %s", stage.DirName, err, stderr.String())
-	}
-
-	// Parse the multi-document YAML output
-	var resources []unstructured.Unstructured
-
-	// Use yaml.v3 Decoder to properly handle multi-document YAML streams
-	decoder := yamlv3.NewDecoder(strings.NewReader(stdout.String()))
-
-	for {
-		var doc interface{}
-		err := decoder.Decode(&doc)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode YAML document in stage %s: %w", stage.DirName, err)
-		}
-
-		// Skip empty documents
-		if doc == nil {
-			continue
-		}
-
-		// Convert the decoded document back to YAML bytes, then to JSON
-		docBytes, err := yamlv3.Marshal(doc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal YAML document in stage %s: %w", stage.DirName, err)
-		}
-
-		// Convert YAML to JSON
-		jsonData, err := yaml.YAMLToJSON(docBytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert YAML to JSON in stage %s: %w", stage.DirName, err)
-		}
-
-		// Unmarshal into unstructured
-		u := unstructured.Unstructured{}
-		if err := u.UnmarshalJSON(jsonData); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal resource in stage %s: %w", stage.DirName, err)
-		}
-
-		resources = append(resources, u)
-	}
-
-	return resources, nil
-}
-
 // filterPluginsByStage filters plugins to only those matching the stage's plugin name
 func (o *Orchestrator) filterPluginsByStage(allPlugins []cranelib.Plugin, stage Stage) []cranelib.Plugin {
 	// If stage has no specific plugin name, use all plugins
@@ -316,4 +273,140 @@ func (o *Orchestrator) filterPluginsByStage(allPlugins []cranelib.Plugin, stage 
 	}
 
 	return filtered
+}
+
+// applyStageTransforms applies patches from a stage and returns the transformed resources
+// This materializes the output by running kubectl kustomize on the stage directory
+func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Unstructured, error) {
+	// Run kubectl kustomize to build the stage with patches applied
+	cmd := exec.Command("kubectl", "kustomize", stageDir)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	o.Log.Debugf("Running: kubectl kustomize %s", stageDir)
+
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("kubectl kustomize failed: %w\nstderr: %s", err, stderr.String())
+	}
+
+	// Parse the multi-document YAML output
+	var resources []unstructured.Unstructured
+
+	// Use yaml.v3 Decoder to properly handle multi-document YAML streams
+	decoder := yamlv3.NewDecoder(strings.NewReader(stdout.String()))
+
+	for {
+		var doc interface{}
+		err := decoder.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode YAML document: %w", err)
+		}
+
+		// Skip empty documents
+		if doc == nil {
+			continue
+		}
+
+		// Convert the decoded document back to YAML bytes, then to JSON
+		docBytes, err := yamlv3.Marshal(doc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal YAML document: %w", err)
+		}
+
+		// Convert YAML to JSON
+		jsonData, err := yaml.YAMLToJSON(docBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert YAML to JSON: %w", err)
+		}
+
+		// Unmarshal into unstructured
+		u := unstructured.Unstructured{}
+		if err := u.UnmarshalJSON(jsonData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal resource: %w", err)
+		}
+
+		resources = append(resources, u)
+	}
+
+	return resources, nil
+}
+
+// loadResourcesFromDirectory loads all Kubernetes resources from a directory
+func (o *Orchestrator) loadResourcesFromDirectory(dir string) ([]unstructured.Unstructured, error) {
+	files, err := file.ReadFiles(context.TODO(), dir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory %s: %w", dir, err)
+	}
+
+	var resources []unstructured.Unstructured
+	for _, f := range files {
+		resources = append(resources, f.Unstructured)
+	}
+
+	return resources, nil
+}
+
+// writeResourcesToDirectory writes resources as individual YAML files to a directory
+func (o *Orchestrator) writeResourcesToDirectory(resources []unstructured.Unstructured, outputDir string) error {
+	// Clear output directory if it exists
+	if err := os.RemoveAll(outputDir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove existing output directory: %w", err)
+	}
+
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Write each resource to a separate file
+	for _, resource := range resources {
+		kind := resource.GetKind()
+		namespace := resource.GetNamespace()
+		name := resource.GetName()
+
+		if kind == "" || name == "" {
+			o.Log.Warnf("Skipping resource with missing kind or name")
+			continue
+		}
+
+		// Determine subdirectory based on namespace
+		var resourceDir string
+		if namespace != "" {
+			resourceDir = filepath.Join(outputDir, namespace)
+		} else {
+			resourceDir = filepath.Join(outputDir, "_cluster")
+		}
+
+		if err := os.MkdirAll(resourceDir, 0700); err != nil {
+			return fmt.Errorf("failed to create resource directory: %w", err)
+		}
+
+		// Generate filename
+		var filename string
+		if namespace != "" {
+			filename = fmt.Sprintf("%s_%s_%s.yaml", kind, namespace, name)
+		} else {
+			filename = fmt.Sprintf("%s_%s.yaml", kind, name)
+		}
+
+		filePath := filepath.Join(resourceDir, filename)
+
+		// Marshal resource to YAML
+		yamlBytes, err := yaml.Marshal(resource.Object)
+		if err != nil {
+			return fmt.Errorf("failed to marshal resource to YAML: %w", err)
+		}
+
+		if err := os.WriteFile(filePath, yamlBytes, 0644); err != nil {
+			return fmt.Errorf("failed to write resource file: %w", err)
+		}
+
+		o.Log.Debugf("Wrote resource: %s", filePath)
+	}
+
+	return nil
 }
