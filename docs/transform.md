@@ -91,7 +91,7 @@ This ensures that:
 
 When running multistage transforms, Crane creates a working directory structure for debugging:
 
-```
+```text
 transform/
 ├── 10_KubernetesPlugin/     # Stage 1 transform artifacts
 │   ├── resources/
