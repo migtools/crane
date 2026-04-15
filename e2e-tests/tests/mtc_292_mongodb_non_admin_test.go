@@ -96,7 +96,7 @@ func mongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error)
 }
 
 var _ = Describe("MongoDB Migration", func() {
-	It("[BUG #213][MTC-292] Should migrate a MongoDB resource with data intact as nonadmin user", Label("tier0"), func() {
+	It("[BUG #213][MTC-292] Should migrate a MongoDB resource with data intact as nonadmin user", Label("BUG #213", "tier0"), func() {
 		appName := "mongodb"
 		namespace := appName
 		scenario := NewMigrationScenario(
