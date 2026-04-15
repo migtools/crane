@@ -109,10 +109,10 @@ var _ = Describe("MongoDB Migration", func() {
 		)
 
 		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin stateless migration test")
+			Skip("source-nonadmin-context is required for non-admin statelfull migration test")
 		}
 		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin stateless migration test")
+			Skip("target-nonadmin-context is required for non-admin statelfull migration test")
 		}
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
