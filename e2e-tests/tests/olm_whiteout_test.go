@@ -33,31 +33,29 @@ func assertNoOLMWhiteoutKindsInOutput(root string) error {
 	for _, k := range olmWhiteoutKinds {
 		denyKind[k] = struct{}{}
 	}
-	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			rel = path
-		}
+
+	files, err := utils.ListFilesRecursivelyAsList(root)
+	if err != nil {
+		return err
+	}
+
+	for _, rel := range files {
 		for _, kind := range olmWhiteoutKinds {
 			if strings.Contains(rel, kind) {
 				return fmt.Errorf("output path %q contains forbidden OLM kind substring %q", rel, kind)
 			}
 		}
-		if !utils.LooksLikeYAMLFile(path) {
-			return nil
+
+		absPath := filepath.Join(root, rel)
+		if !utils.LooksLikeYAMLFile(absPath) {
+			continue
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(absPath)
 		if err != nil {
 			return err
 		}
 		if len(strings.TrimSpace(string(data))) == 0 {
-			return nil
+			continue
 		}
 		dec := yaml.NewDecoder(strings.NewReader(string(data)))
 		for {
@@ -80,13 +78,13 @@ func assertNoOLMWhiteoutKindsInOutput(root string) error {
 				return fmt.Errorf("%s: document kind %q must not appear in crane output", rel, kindVal)
 			}
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 var _ = Describe("OLM whiteout", func() {
 	Describe("Baseline full OLM graph", func() {
-		It("should omit OLM kinds from crane apply output", Label("olm"), func() {
+		It("should omit OLM kinds from crane apply output", Label("olm", "tier0"), func() {
 			kubectlPreflight := KubectlRunner{Bin: "kubectl", Context: config.SourceContext}
 			olmAvailable, err := kubectlPreflight.OLMAPIAvailable()
 			Expect(err).NotTo(HaveOccurred())
