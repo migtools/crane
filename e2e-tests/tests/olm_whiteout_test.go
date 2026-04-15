@@ -139,6 +139,7 @@ var _ = Describe("OLM whiteout", func() {
 			By("Run crane export/transform/apply pipeline")
 			log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 			Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+			log.Printf("Crane pipeline completed for namespace %s", srcApp.Namespace)
 
 			By("Verify output directory does not contain OLM whiteout kinds")
 			Expect(assertNoOLMWhiteoutKindsInOutput(paths.OutputDir)).NotTo(HaveOccurred())
