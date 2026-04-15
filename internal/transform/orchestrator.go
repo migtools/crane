@@ -22,15 +22,14 @@ import (
 
 // Orchestrator coordinates multi-stage transform execution
 type Orchestrator struct {
-	Log              *logrus.Logger
-	ExportDir        string
-	TransformDir     string
-	PluginDir        string
-	SkipPlugins      []string
-	PluginPriorities map[string]int
-	OptionalFlags    map[string]string
-	Force            bool
-	CraneVersion     string
+	Log            *logrus.Logger
+	ExportDir      string
+	TransformDir   string
+	PluginDir      string
+	SkipPlugins    []string
+	OptionalFlags  map[string]string
+	Force          bool
+	CraneVersion   string
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
 	// This prevents double-write errors when creating a stage and then running it
 	NewlyCreatedStages map[string]bool
@@ -123,53 +122,16 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 // executeStage runs transform for a single stage
 func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.Unstructured) error {
-	// Get all plugins
-	allPlugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
+	// Get the plugin for this stage (if any)
+	stagePlugin, err := o.getPluginForStage(stage)
 	if err != nil {
-		return fmt.Errorf("failed to load plugins: %w", err)
+		return err
 	}
 
-	// Filter plugins to only those matching this stage
-	plugins := o.filterPluginsByStage(allPlugins, stage)
-
-	// Run transform
-	runner := cranelib.Runner{
-		Log:              o.Log,
-		PluginPriorities: o.PluginPriorities,
-		OptionalFlags:    o.OptionalFlags,
-	}
-
-	var artifacts []cranelib.TransformArtifact
-
-	for _, resource := range inputResources {
-		response, err := runner.Run(resource, plugins)
-		if err != nil {
-			// Include stage name, resource identity, and type in error
-			resourceID := fmt.Sprintf("%s/%s/%s", resource.GetKind(), resource.GetNamespace(), resource.GetName())
-			return fmt.Errorf("stage %s: failed to run transform for %s (type %T): %w", stage.DirName, resourceID, resource, err)
-		}
-
-		// Parse TransformFile (JSONPatch) to get patches
-		var patches jsonpatch.Patch
-		if len(response.TransformFile) > 2 && !response.HaveWhiteOut {
-			patches, err = jsonpatch.DecodePatch(response.TransformFile)
-			if err != nil {
-				// Include stage name, resource identity, and type in error
-				resourceID := fmt.Sprintf("%s/%s/%s", resource.GetKind(), resource.GetNamespace(), resource.GetName())
-				return fmt.Errorf("stage %s: failed to decode patches for %s (type %T): %w", stage.DirName, resourceID, response, err)
-			}
-		}
-
-		artifact := cranelib.TransformArtifact{
-			Resource:     resource,
-			HaveWhiteOut: response.HaveWhiteOut,
-			Patches:      patches,
-			IgnoredOps:   []cranelib.IgnoredOperation{}, // TODO: Parse IgnoredPatches
-			Target:       cranelib.DeriveTargetFromResource(resource),
-			PluginName:   stage.PluginName,
-		}
-
-		artifacts = append(artifacts, artifact)
+	// Transform all resources through the plugin (or pass-through if no plugin)
+	artifacts, err := o.transformResources(stage, stagePlugin, inputResources)
+	if err != nil {
+		return err
 	}
 
 	// Write stage output
@@ -196,62 +158,108 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 	return nil
 }
 
-// filterPluginsByStage filters plugins to only those matching the stage's plugin name
-func (o *Orchestrator) filterPluginsByStage(allPlugins []cranelib.Plugin, stage Stage) []cranelib.Plugin {
-	// If stage has no specific plugin name, use all plugins
-	if stage.PluginName == "" {
-		return allPlugins
+// transformResources runs the plugin (if any) on all input resources
+// Returns transform artifacts ready to be written to the stage directory
+func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plugin, inputResources []unstructured.Unstructured) ([]cranelib.TransformArtifact, error) {
+	// Build plugins list for runner (0 or 1 plugin)
+	// Note: Runner.Run expects a slice, even though we only pass 0 or 1 plugin
+	var plugins []cranelib.Plugin
+	if stagePlugin != nil {
+		plugins = []cranelib.Plugin{stagePlugin}
 	}
 
-	// Filter to only the plugin matching this stage
-	var filtered []cranelib.Plugin
-	for _, p := range allPlugins {
-		if p.Metadata().Name == stage.PluginName {
-			filtered = append(filtered, p)
-		}
+	// Run transform
+	// Note: PluginPriorities are not needed since each stage runs at most one plugin
+	runner := cranelib.Runner{
+		Log:              o.Log,
+		PluginPriorities: nil, // No priorities needed - max 1 plugin per stage
+		OptionalFlags:    o.OptionalFlags,
 	}
 
-	return filtered
-}
-
-// CreatePassThroughStage creates an empty pass-through stage that copies resources from input
-// without applying any transformations. This is useful for manual editing stages.
-func (o *Orchestrator) CreatePassThroughStage(stageName string, inputDir string) error {
-	o.Log.Infof("Creating pass-through stage: %s", stageName)
-
-	// Load input resources
-	inputResources, err := o.loadResourcesFromDirectory(inputDir)
-	if err != nil {
-		return fmt.Errorf("failed to load input resources: %w", err)
-	}
-
-	// Create empty artifacts (no patches, no whiteouts)
 	var artifacts []cranelib.TransformArtifact
+
 	for _, resource := range inputResources {
+		response, err := runner.Run(resource, plugins)
+		if err != nil {
+			resourceID := o.formatResourceID(resource)
+			return nil, fmt.Errorf("stage %s: failed to run transform for %s: %w", stage.DirName, resourceID, err)
+		}
+
+		// Parse TransformFile (JSONPatch) to get patches
+		var patches jsonpatch.Patch
+		if len(response.TransformFile) > 2 && !response.HaveWhiteOut {
+			patches, err = jsonpatch.DecodePatch(response.TransformFile)
+			if err != nil {
+				resourceID := o.formatResourceID(resource)
+				return nil, fmt.Errorf("stage %s: failed to decode patches for %s: %w", stage.DirName, resourceID, err)
+			}
+		}
+
 		artifact := cranelib.TransformArtifact{
 			Resource:     resource,
-			HaveWhiteOut: false,
-			Patches:      nil, // No patches
-			IgnoredOps:   []cranelib.IgnoredOperation{},
+			HaveWhiteOut: response.HaveWhiteOut,
+			Patches:      patches,
+			IgnoredOps:   []cranelib.IgnoredOperation{}, // TODO: Parse IgnoredPatches
 			Target:       cranelib.DeriveTargetFromResource(resource),
-			PluginName:   "", // No plugin
+			PluginName:   stage.PluginName,
 		}
+
 		artifacts = append(artifacts, artifact)
 	}
 
-	// Write stage output
-	opts := file.PathOpts{
-		TransformDir: o.TransformDir,
-		ExportDir:    o.ExportDir,
+	return artifacts, nil
+}
+
+// formatResourceID returns a human-readable identifier for a resource
+func (o *Orchestrator) formatResourceID(resource unstructured.Unstructured) string {
+	return fmt.Sprintf("%s/%s/%s", resource.GetKind(), resource.GetNamespace(), resource.GetName())
+}
+
+// getPluginForStage loads plugins and returns the one matching this stage
+// Returns nil for pass-through stages (no plugin)
+// Returns error if stage requires a plugin but it's not found
+func (o *Orchestrator) getPluginForStage(stage Stage) (cranelib.Plugin, error) {
+	// Load all available plugins
+	allPlugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load plugins: %w", err)
 	}
 
-	writer := NewKustomizeWriter(opts, stageName)
-	if err := writer.WriteStage(artifacts, o.Force); err != nil {
-		return fmt.Errorf("failed to write pass-through stage: %w", err)
+	// Find the plugin matching this stage's name
+	var stagePlugin cranelib.Plugin
+	for _, p := range allPlugins {
+		if p.Metadata().Name == stage.PluginName {
+			stagePlugin = p
+			break
+		}
 	}
 
-	o.Log.Infof("Created pass-through stage %s with %d resources (ready for manual editing)", stageName, len(artifacts))
-	return nil
+	// Validate: if stage name ends with "Plugin", the plugin must exist
+	if strings.HasSuffix(stage.PluginName, "Plugin") && stagePlugin == nil {
+		return nil, fmt.Errorf("stage %s requires plugin '%s' but it was not found (available plugins: %s). Stage names ending with 'Plugin' must have a corresponding plugin installed",
+			stage.DirName, stage.PluginName, o.getAvailablePluginNames(allPlugins))
+	}
+
+	// Log which plugin (if any) will be used
+	if stagePlugin != nil {
+		o.Log.Debugf("Stage %s: using plugin %s", stage.DirName, stagePlugin.Metadata().Name)
+	} else {
+		o.Log.Debugf("Stage %s: pass-through (no plugin)", stage.DirName)
+	}
+
+	return stagePlugin, nil
+}
+
+// getAvailablePluginNames returns a comma-separated list of available plugin names
+func (o *Orchestrator) getAvailablePluginNames(plugins []cranelib.Plugin) string {
+	if len(plugins) == 0 {
+		return "none"
+	}
+	names := make([]string, len(plugins))
+	for i, p := range plugins {
+		names[i] = p.Metadata().Name
+	}
+	return strings.Join(names, ", ")
 }
 
 // applyStageTransforms applies patches from a stage and returns the transformed resources
