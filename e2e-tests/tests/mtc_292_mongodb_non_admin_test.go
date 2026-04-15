@@ -109,10 +109,10 @@ var _ = Describe("MongoDB Migration", func() {
 		)
 
 		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin statelfull migration test")
+			Skip("source-nonadmin-context is required for non-admin stateful migration test")
 		}
 		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin statelfull migration test")
+			Skip("target-nonadmin-context is required for non-admin stateful migration test")
 		}
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
@@ -195,9 +195,9 @@ var _ = Describe("MongoDB Migration", func() {
 		log.Printf("Source deployment scaled down and pod terminated")
 
 		// todo: remove this once crane rsync pods support supplemental groups.
-		// By("Fix source PVC permissions after scale-down")
-		// Expect(fixPVCPermissionsViaJob(scenario.KubectlSrc, namespace, "mongodb-data", "/data/db")).NotTo(HaveOccurred())
-		// log.Printf("Source PVC permissions fixed")
+		By("[BUG #213] Fix source PVC permissions after scale-down")
+		Expect(fixPVCPermissionsViaJob(scenario.KubectlSrc, namespace, "mongodb-data", "/data/db")).NotTo(HaveOccurred())
+		log.Printf("Source PVC permissions fixed")
 
 		By("Run crane export/transform/apply pipeline")
 		runner.WorkDir = paths.TempDir
