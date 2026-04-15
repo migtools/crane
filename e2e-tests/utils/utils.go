@@ -87,3 +87,14 @@ func ReadTestdataFile(filename string) (string, error) {
 
 	return string(b), nil
 }
+
+// LooksLikeYAMLFile returns true for paths that look like YAML (by extension or no extension, e.g. output fragments).
+func LooksLikeYAMLFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".yaml", ".yml":
+		return true
+	default:
+		return ext == ""
+	}
+}

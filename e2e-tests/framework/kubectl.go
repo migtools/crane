@@ -45,6 +45,18 @@ func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, e
 	return strings.TrimSpace(string(out)), nil
 }
 
+// OLMAPIAvailable reports whether the Subscription CRD is registered on the cluster.
+func (k KubectlRunner) OLMAPIAvailable() (bool, error) {
+	_, err := k.Run("get", "crd", "subscriptions.operators.coreos.com")
+	if err == nil {
+		return true, nil
+	}
+	if strings.Contains(err.Error(), "Error from server (NotFound)") {
+		return false, nil
+	}
+	return false, fmt.Errorf("check OLM CRD subscriptions.operators.coreos.com: %w", err)
+}
+
 // normalizeKubectlArgs accepts either tokenized args
 // (Run("get","po","-n","ns")) or a single command string
 // (Run("get po -n ns")) and converts to tokens.
