@@ -51,7 +51,7 @@ func (k KubectlRunner) OLMAPIAvailable() (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "not found") {
+	if strings.Contains(err.Error(), "Error from server (NotFound)") {
 		return false, nil
 	}
 	return false, fmt.Errorf("check OLM CRD subscriptions.operators.coreos.com: %w", err)
