@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"slices"
 )
 
 type KubectlRunner struct {
@@ -30,7 +31,11 @@ func (k KubectlRunner) RunWithStdin(stdin string, args ...string) (string, error
 func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, error) {
 	finalArgs := append([]string{}, normalizeKubectlArgs(args...)...)
 	if k.Context != "" {
-		finalArgs = append(finalArgs, "--context", k.Context)
+		if idx := slices.Index(finalArgs, "--"); idx != -1 {
+			finalArgs = slices.Insert(finalArgs, idx, "--context", k.Context)
+		} else {
+			finalArgs = append(finalArgs, "--context", k.Context)
+		}
 	}
 	logVerboseCommand(k.Bin, finalArgs)
 	cmd := exec.Command(k.Bin, finalArgs...)
