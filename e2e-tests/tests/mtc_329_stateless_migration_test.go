@@ -48,14 +48,14 @@ var _ = Describe("Stateless migration", func() {
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Compare YAML semantic diff of golden and actual output files")
-		goldenDir, err := utils.GoldenManifestsDir(appName, "output")
+		goldenOutputDir, err := utils.GoldenManifestsDir(appName, "output")
 		Expect(err).NotTo(HaveOccurred())
-		if err := utils.CompareDirectoryYAMLSemantics(goldenDir, paths.OutputDir); err != nil {
+		if err := utils.CompareDirectoryYAMLSemantics(goldenOutputDir, paths.OutputDir); err != nil {
 			Fail(fmt.Sprintf("YAML semantic diff of golden and actual output files: %v", err))
 		} else {
 			log.Printf("YAML semantic diff of golden and actual output files: no differences found")
 		}
-		log.Printf("Yaml diff comparison completed")
+		log.Printf("Yaml diff comparison completed for output files successfully")
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
 		Expect(ApplyOutputToTarget(kubectlTgt, namespace, paths.OutputDir)).NotTo(HaveOccurred())
