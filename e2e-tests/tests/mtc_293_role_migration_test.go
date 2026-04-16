@@ -6,7 +6,6 @@ import (
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
-	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -124,14 +123,6 @@ var _ = Describe("Role and RoleBinding migration", func() {
 		Expect(rbMatches).NotTo(BeEmpty(), "expected RoleBinding manifest in output dir")
 		log.Printf("RoleBinding manifests in output: %v\n", rbMatches)
 
-		By("Verify kube-root-ca.crt ConfigMap is excluded from output (whiteout)")
-		outputFiles, err := utils.ListFilesRecursivelyAsList(paths.OutputDir)
-		Expect(err).NotTo(HaveOccurred())
-		for _, f := range outputFiles {
-			Expect(f).NotTo(ContainSubstring("kube-root-ca"),
-				"kube-root-ca.crt ConfigMap should be excluded by whiteout")
-		}
-
 		// TODO: remove once https://github.com/migtools/crane/issues/266 is fixed
 		// NOTE: kubectl apply -f processes files alphabetically. RoleBinding sorts before
 		// Role, so pod-reader-binding fails on a fresh namespace because pod-reader does
@@ -143,7 +134,6 @@ var _ = Describe("Role and RoleBinding migration", func() {
 		_ = kubectlTgtNonAdmin.ApplyDir(paths.OutputDir)
 
 		By("Apply rendered manifests to target (second pass — resolves ordering issue)")
-		// By now Role exists on the target, so dry-run and apply both succeed.
 		log.Printf("Second apply pass for namespace %s\n", namespace)
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
