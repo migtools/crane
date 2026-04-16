@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -78,9 +76,17 @@ var _ = Describe("Empty PVC migration", func() {
 		for _, pvc := range pvcs {
 			log.Printf("Found pvc %s in namespace %q\n", pvc.Name, pvc.Namespace)
 		}
+
+		By("Verify PVC is empty on source cluster")
+		podName := srcApp.Name
+		output, err := kubectlSrcNonAdmin.Run("exec", podName, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(output).To(BeEmpty(), "expected PVC to be empty on source cluster, but found files: %s", output)
+		log.Printf("Verified PVC is empty on source cluster (namespace: %s)\n", srcApp.Namespace)
+
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		runner := scenario.Crane
+		runner := scenario.CraneNonAdmin
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for source namespace %s\n", srcApp.Namespace)
@@ -94,9 +100,8 @@ var _ = Describe("Empty PVC migration", func() {
 				TargetContext:   tgtApp.Context,
 				PVCName:         pvcName,
 				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Endpoint:        "route",
-				IngressClass:    "",
-				Subdomain:       "",
+				Endpoint:        "nginx-ingress",
+				IngressClass:    "nginx",
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
@@ -107,82 +112,23 @@ var _ = Describe("Empty PVC migration", func() {
 		tgtpvcs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tgtpvcs).NotTo(BeEmpty(), "expected at least one pvc in target namespace %q", tgtApp.Namespace)
-
-		By("Remove OpenShift-injected resources and fix Pod security context")
-		err = filepath.Walk(paths.OutputDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() || !strings.HasSuffix(path, ".yaml") {
-				return nil
-			}
-			filename := filepath.Base(path)
-
-			// Remove OpenShift auto-injected resources and RBAC bindings
-			if strings.Contains(filename, "openshift-service-ca.crt") ||
-				strings.Contains(filename, "crane-user-admin") ||
-				strings.Contains(filename, "RoleBinding_system") ||
-				strings.Contains(filename, "ServiceAccount_builder") ||
-				strings.Contains(filename, "ServiceAccount_deployer") {
-				log.Printf("Removing OpenShift-injected resource: %s\n", path)
-				if err := os.Remove(path); err != nil {
-					log.Printf("Warning: failed to remove %s: %v", path, err)
-				}
-				return nil
-			}
-
-			// Strip securityContext from Pod manifests (crane exports runtime UIDs that differ between clusters)
-			if strings.Contains(filename, "Pod_") {
-				log.Printf("Stripping securityContext from Pod manifest: %s\n", path)
-				content, err := os.ReadFile(path)
-				if err != nil {
-					log.Printf("Warning: failed to read %s: %v", path, err)
-					return nil
-				}
-
-				// Remove pod-level and container-level securityContext
-				lines := strings.Split(string(content), "\n")
-				var filtered []string
-				skipUntilUnindent := false
-				indentLevel := 0
-
-				for _, line := range lines {
-					trimmed := strings.TrimLeft(line, " ")
-					currentIndent := len(line) - len(trimmed)
-
-					if strings.HasPrefix(trimmed, "securityContext:") {
-						skipUntilUnindent = true
-						indentLevel = currentIndent
-						continue
-					}
-
-					if skipUntilUnindent {
-						if currentIndent <= indentLevel && trimmed != "" {
-							skipUntilUnindent = false
-						} else {
-							continue
-						}
-					}
-
-					filtered = append(filtered, line)
-				}
-
-				if err := os.WriteFile(path, []byte(strings.Join(filtered, "\n")), 0644); err != nil {
-					log.Printf("Warning: failed to write %s: %v", path, err)
-				}
-			}
-
-			return nil
-		})
-		Expect(err).NotTo(HaveOccurred())
+		log.Printf("Found %d pvcs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
 
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", tgtApp.Namespace, paths.OutputDir)
-		Expect(kubectlTgtNonAdmin.ApplyDir(paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
+		By("Validate target application")
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
 		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
+
+		By("Verify PVC is empty on target cluster after migration")
+		tgtPodName := tgtApp.Name
+		tgtOutput, err := kubectlTgtNonAdmin.Run("exec", tgtPodName, "-n", tgtApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(tgtOutput).To(BeEmpty(), "expected PVC to be empty on target cluster after migration, but found files: %s", tgtOutput)
+		log.Printf("Verified PVC is empty on target cluster after migration (namespace: %s)\n", tgtApp.Namespace)
 
 	})
 })

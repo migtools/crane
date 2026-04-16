@@ -118,7 +118,7 @@ func (k KubectlRunner) ApplyYAMLSpec(spec string, namespace string) error {
 
 // ValidateApplyDir performs a server-side dry-run apply for a directory.
 func (k KubectlRunner) ValidateApplyDir(dir string) error {
-	args := []string{"apply", "-R", "-f", dir, "--dry-run=server", "--warnings-as-errors=false"}
+	args := []string{"apply", "-R", "-f", dir, "--dry-run=server"}
 	if k.Context != "" {
 		args = append(args, "--context", k.Context)
 	}
