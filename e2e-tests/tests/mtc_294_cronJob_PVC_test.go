@@ -15,7 +15,6 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 	It("Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("tier0"), func() {
 		appName := "cronjob"
 		namespace := "mtc-294-ns"
-		pvcName := "cronjob-data-pvc"
 		expectedLogSubstring := fmt.Sprintf("Hello! from namespace %s", namespace)
 
 		scenario := NewMigrationScenario(
@@ -144,6 +143,8 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		for _, pvc := range pvcs {
 			log.Printf("  PVC: %s\n", pvc.Name)
 		}
+		pvcName := pvcs[0].Name
+		log.Printf("Using PVC name for data integrity check: %s\n", pvcName)
 
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline as non-admin")
@@ -179,7 +180,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 
 		By("Apply rendered manifests to target as non-admin")
 		log.Printf("Applying manifests from %s to namespace %s\n", paths.OutputDir, tgtApp.Namespace)
-		Expect(ApplyOutputToTargetNonAdmin(scenario.KubectlTgt, scenario.KubectlTgtNonAdmin, tgtApp.Namespace, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(scenario.KubectlTgtNonAdmin, tgtApp.Namespace, paths.OutputDir)).NotTo(HaveOccurred())
 		log.Printf("Manifests applied to target\n")
 
 		By("Verify CronJob landed on target with correct schedule")
