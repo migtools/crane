@@ -11,7 +11,7 @@ import (
 )
 
 var _ = Describe("Role and RoleBinding migration", func() {
-	It("[BUG #266][MTC-293] Should migrate a project with Role and RoleBinding as namespace-admin user", Label("BUG #266", "tier1"), func() {
+	It("[BUG #266][MTC-293] Should migrate a project with Role and RoleBinding as namespace-admin user", Label("BUG #266", "tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := appName
 
