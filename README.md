@@ -5,7 +5,7 @@
 ---
 
 ## Intro
-[Crane](https://konveyor.github.io/crane/overview/) is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
+Crane is a migration tool under the [Konveyor](https://www.konveyor.io/) community that helps application owners migrate Kubernetes workloads and their state between clusters.
 
 ## Build and Test Status
 
@@ -72,30 +72,42 @@ How does it work? Crane works by:
               .dockercfg: < ...SNIP.... >
 
 4. `$ crane transform`
-  * A directory 'transform/resources/guestbook' is populated with 'transforms' which are JSONPatch content to be applied to each of the YAML files produced by the prior 'export'
+  * A directory `transform/10_KubernetesPlugin/` is created with a Kustomize layout:
+    * `resources/` - Exported resources grouped by type
+    * `patches/` - JSONPatch operations to clean resources
+    * `kustomization.yaml` - Kustomize configuration
+  * The built-in Kubernetes plugin generates patches to remove live/runtime metadata
   * Example: 
-    * `$ cat transform/resources/guestbook/transform-Secret_guestbook_builder-dockercfg-5ztj6.yaml` 
+    * `$ cat transform/10_KubernetesPlugin/patches/guestbook--v1--Secret--builder-dockercfg-5ztj6.patch.yaml`
 
-            [{"op":"remove","path":"/metadata/uid"},{"op":"remove","path":"/metadata/resourceVersion"},{"op":"remove","path":"/metadata/creationTimestamp"}]
+            - op: remove
+              path: /metadata/uid
+            - op: remove
+              path: /metadata/resourceVersion
+            - op: remove
+              path: /metadata/creationTimestamp
           
-      * We can see that this transform is part of the standard Kubernetes plugin included with Crane and is configured to remove several fields from the 'metadata' section.
+      * These patches remove server-managed fields that would conflict when applying to a new cluster.
+    * `$ cat transform/10_KubernetesPlugin/resources/secret.yaml` - Contains the original exported Secret with all metadata
 
 5. `$ crane apply`
-  * A directory `output/resources/guestbook/` is populated with redeployable YAML content, this is the result of the 'export' content modified via the transforms produced by 'transform'.
+  * Runs `kubectl kustomize` on the transform stage to apply patches
+  * Outputs clean, declarative YAML to `output/output.yaml`
   * Example:
-    * `$ cat output/resources/guestbook/Secret_guestbook_builder-dockercfg-5ztj6.yaml`
+    * `$ cat output/output.yaml`
 
-            kind: Secret
+            ---
             apiVersion: v1
+            kind: Secret
             metadata:
               name: builder-dockercfg-5ztj6
               namespace: guestbook
-              ... 
             data:
               .dockercfg: < ...SNIP.... > 
 
-    * Note, that the fields 'metadata.uid', 'metadata.resourceVersion', and 'metadata.creationTimestamp' are removed from this YAML.
-6. The content in the  `output/resources/guestbook` directory is now ready to be used as needed, this could be redeployed to a new cluster or checked into Git to be leveraged with a GitOps solution.
+    * Note that the fields `metadata.uid`, `metadata.resourceVersion`, and `metadata.creationTimestamp` have been removed.
+6. The content in `output/output.yaml` is now ready to be deployed to the target cluster or checked into Git for GitOps workflows:
+    * `$ kubectl apply -f output/output.yaml`
 
 ## Further Examples
 
