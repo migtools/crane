@@ -1,0 +1,64 @@
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints:
+- addresses:
+  - 10.244.3.191
+  conditions:
+    ready: true
+    serving: true
+    terminating: false
+  nodeName: src
+  targetRef:
+    kind: Pod
+    name: simple-nginx-nopv-deployment-764987f958-6m454
+    namespace: simple-nginx-nopv
+    uid: 1deb4311-5096-40e7-89a7-42463d889c3c
+kind: EndpointSlice
+metadata:
+  annotations:
+    endpoints.kubernetes.io/last-change-trigger-time: "2026-04-10T05:05:02Z"
+  creationTimestamp: "2026-04-10T05:05:01Z"
+  generateName: my-simple-nginx-nopv-
+  generation: 2
+  labels:
+    app: simple-nginx-nopv
+    endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+    kubernetes.io/service-name: my-simple-nginx-nopv
+  managedFields:
+  - apiVersion: discovery.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:addressType: {}
+      f:endpoints: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:endpoints.kubernetes.io/last-change-trigger-time: {}
+        f:generateName: {}
+        f:labels:
+          .: {}
+          f:app: {}
+          f:endpointslice.kubernetes.io/managed-by: {}
+          f:kubernetes.io/service-name: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"e002c6c4-3895-40f3-93ce-e8f5753c5616"}: {}
+      f:ports: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-04-10T05:05:02Z"
+  name: my-simple-nginx-nopv-tb9c2
+  namespace: simple-nginx-nopv
+  ownerReferences:
+  - apiVersion: v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Service
+    name: my-simple-nginx-nopv
+    uid: e002c6c4-3895-40f3-93ce-e8f5753c5616
+  resourceVersion: "1083692"
+  uid: 5d9a21f1-c3ea-4c77-9fa6-225f53e10251
+ports:
+- name: ""
+  port: 8080
+  protocol: TCP

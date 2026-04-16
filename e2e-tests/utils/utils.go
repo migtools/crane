@@ -153,7 +153,6 @@ func CompareDirectoryFileSets(goldenDir, gotDir string) error {
 }
 
 // CompareDirectoryYAMLSemantics compares the YAML semantics of the files in two directories and returns an error if they differ.
-// TODO: implement using yaml.v3 decode + go-cmp (see issue #202 discussion).
 func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
 		return err
