@@ -38,12 +38,9 @@ type Flags struct {
 	IgnoredPatchesDir string   `mapstructure:"ignored-patches-dir"`
 	SkipPlugins       []string `mapstructure:"skip-plugins"`
 	OptionalFlags     string   `mapstructure:"optional-flags"`
-	// Multi-stage flags
-	Stage     string   `mapstructure:"stage"`
-	FromStage string   `mapstructure:"from-stage"`
-	ToStage   string   `mapstructure:"to-stage"`
-	Stages    []string `mapstructure:"stages"`
-	Force     bool     `mapstructure:"force"`
+	// Multi-stage flag
+	Stage string `mapstructure:"stage"`
+	Force bool   `mapstructure:"force"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -51,22 +48,7 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// Validate mutually exclusive flags
-	flagCount := 0
-	if o.Stage != "" {
-		flagCount++
-	}
-	if o.FromStage != "" || o.ToStage != "" {
-		flagCount++
-	}
-	if len(o.Stages) > 0 {
-		flagCount++
-	}
-
-	if flagCount > 1 {
-		return fmt.Errorf("--stage, --from-stage/--to-stage, and --stages are mutually exclusive")
-	}
-
+	// No validation needed - only --stage flag exists
 	return nil
 }
 
@@ -116,11 +98,8 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
 
-	// Multi-stage flags
-	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin')")
-	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Run transform from this stage onwards (e.g., '20_OpenshiftPlugin')")
-	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Run transform up to and including this stage (e.g., '30_ImagestreamPlugin')")
-	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Run transform for specific stages (comma-separated, e.g., '10_KubernetesPlugin,30_ImagestreamPlugin')")
+	// Multi-stage flag
+	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are run.")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
 
 	// These flags pass down to subcommands
@@ -173,23 +152,17 @@ func (o *Options) run() error {
 	// Determine which stages to run
 	var selector internalTransform.StageSelector
 
-	if o.Stage != "" || o.FromStage != "" || o.ToStage != "" || len(o.Stages) > 0 {
-		// User specified which stages to run
-
-		// Special handling for --stage: ensure directory exists before running
-		if o.Stage != "" {
-			if err := o.ensureStageDirectoryExists(orchestrator, o.Stage, transformDir, exportDir, log); err != nil {
-				return fmt.Errorf("failed to ensure stage directory exists: %w", err)
-			}
+	if o.Stage != "" {
+		// User specified a specific stage to run
+		// Ensure directory exists before running
+		if err := o.ensureStageDirectoryExists(orchestrator, o.Stage, transformDir, exportDir, log); err != nil {
+			return fmt.Errorf("failed to ensure stage directory exists: %w", err)
 		}
 
 		selector = internalTransform.StageSelector{
-			Stage:     o.Stage,
-			FromStage: o.FromStage,
-			ToStage:   o.ToStage,
-			Stages:    o.Stages,
+			Stage: o.Stage,
 		}
-		log.Info("Running selected stages")
+		log.Infof("Running stage: %s", o.Stage)
 	} else {
 		// No stage parameters given - discover existing stages or create default
 		existingStages, err := internalTransform.DiscoverStages(transformDir)

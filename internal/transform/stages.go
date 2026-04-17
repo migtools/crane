@@ -72,81 +72,28 @@ func DiscoverStages(transformDir string) ([]Stage, error) {
 }
 
 // FilterStages filters stages based on selectors
-// Selectors can be: specific stage, from-stage, to-stage, or list of stages
+// StageSelector specifies which stage(s) to run
+// If Stage is empty, all stages are run
 type StageSelector struct {
-	Stage     string   // Specific stage to run
-	FromStage string   // Run from this stage to end
-	ToStage   string   // Run from start to this stage
-	Stages    []string // Specific list of stages to run
+	Stage string // Specific stage to run (empty = all stages)
 }
 
-// FilterStages applies selectors to stage list
+// FilterStages applies selector to stage list
 func FilterStages(allStages []Stage, selector StageSelector) []Stage {
-	// If no selectors specified, return all stages
-	if selector.Stage == "" && selector.FromStage == "" && selector.ToStage == "" && len(selector.Stages) == 0 {
+	// If no stage specified, return all stages
+	if selector.Stage == "" {
 		return allStages
 	}
 
-	// If specific stage is selected
-	if selector.Stage != "" {
-		for _, stage := range allStages {
-			if stage.DirName == selector.Stage {
-				return []Stage{stage}
-			}
-		}
-		return []Stage{}
-	}
-
-	// If specific stages list is provided
-	if len(selector.Stages) > 0 {
-		stageMap := make(map[string]bool)
-		for _, s := range selector.Stages {
-			stageMap[s] = true
-		}
-
-		var filtered []Stage
-		for _, stage := range allStages {
-			if stageMap[stage.DirName] {
-				filtered = append(filtered, stage)
-			}
-		}
-		return filtered
-	}
-
-	// If from-stage or to-stage is specified
-	var filtered []Stage
-	inRange := selector.FromStage == "" // Start collecting if no from-stage
-	foundFrom := selector.FromStage == "" // True if no from-stage specified
-	foundTo := selector.ToStage == ""     // True if no to-stage specified
-
+	// Find the specific stage
 	for _, stage := range allStages {
-		// Check if we should start collecting
-		if selector.FromStage != "" && stage.DirName == selector.FromStage {
-			inRange = true
-			foundFrom = true
-		}
-
-		// Collect if in range
-		if inRange {
-			filtered = append(filtered, stage)
-		}
-
-		// Check if we should stop collecting
-		if selector.ToStage != "" && stage.DirName == selector.ToStage {
-			foundTo = true
-			break
+		if stage.DirName == selector.Stage {
+			return []Stage{stage}
 		}
 	}
 
-	// Validate that requested stages were found
-	if selector.FromStage != "" && !foundFrom {
-		return []Stage{} // FromStage not found
-	}
-	if selector.ToStage != "" && !foundTo {
-		return []Stage{} // ToStage not found
-	}
-
-	return filtered
+	// Stage not found, return empty
+	return []Stage{}
 }
 
 // GetFirstStage returns the stage with the lowest priority
