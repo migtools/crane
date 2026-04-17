@@ -227,3 +227,20 @@ func GetKustomizeCommand() string {
 	// Default to kubectl (will fail later with appropriate error)
 	return "kubectl"
 }
+
+// GetResourceFilename returns a stable filename from kind, group, version, namespace, and name.
+// Format matches export: Kind_group_version_namespace_name.yaml
+// Examples: "ConfigMap__v1_default_my-config.yaml", "Deployment_apps_v1_default_my-app.yaml"
+func GetResourceFilename(obj unstructured.Unstructured) string {
+	namespace := obj.GetNamespace()
+	if namespace == "" {
+		namespace = "clusterscoped"
+	}
+	return strings.Join([]string{
+		obj.GetKind(),
+		obj.GetObjectKind().GroupVersionKind().GroupKind().Group,
+		obj.GetObjectKind().GroupVersionKind().Version,
+		namespace,
+		obj.GetName(),
+	}, "_") + ".yaml"
+}

@@ -904,31 +904,49 @@ data:
 		t.Errorf("Expected 2 resource type files (configmap.yaml, secret.yaml), but found %d: %v", len(resourceFileMap), resourceFileMap)
 	}
 
-	// Verify configmap.yaml exists and contains keep-me
-	configMapPath, hasConfigMap := resourceFileMap["configmap.yaml"]
+	// Verify ConfigMap file exists and contains keep-me
+	// File should be named: ConfigMap__v1_default_keep-me.yaml
+	var configMapPath string
+	var hasConfigMap bool
+	for filename, path := range resourceFileMap {
+		if strings.Contains(filename, "ConfigMap") && strings.Contains(filename, "keep-me") {
+			configMapPath = path
+			hasConfigMap = true
+			break
+		}
+	}
 	if !hasConfigMap {
-		t.Errorf("Expected configmap.yaml in resources/, but not found")
+		t.Errorf("Expected ConfigMap (keep-me) in resources/, but not found. Files: %v", resourceFileMap)
 	} else {
 		content, err := os.ReadFile(configMapPath)
 		if err != nil {
-			t.Fatalf("Failed to read configmap.yaml: %v", err)
+			t.Fatalf("Failed to read ConfigMap file: %v", err)
 		}
 		if !contains(string(content), "name: keep-me") {
-			t.Errorf("configmap.yaml should contain keep-me, got: %s", string(content))
+			t.Errorf("ConfigMap file should contain keep-me, got: %s", string(content))
 		}
 	}
 
-	// Verify secret.yaml exists and contains whiteout-secret
-	secretPath, hasSecret := resourceFileMap["secret.yaml"]
+	// Verify Secret file exists and contains whiteout-secret
+	// File should be named: Secret__v1_default_whiteout-secret.yaml
+	var secretPath string
+	var hasSecret bool
+	for filename, path := range resourceFileMap {
+		if strings.Contains(filename, "Secret") && strings.Contains(filename, "whiteout-secret") {
+			secretPath = path
+			hasSecret = true
+			break
+		}
+	}
 	if !hasSecret {
-		t.Errorf("Expected secret.yaml in resources/ (complete snapshot), but not found")
+		t.Errorf("Expected Secret (whiteout-secret) in resources/ (complete snapshot), but not found. Files: %v", resourceFileMap)
 	} else {
 		content, err := os.ReadFile(secretPath)
 		if err != nil {
-			t.Fatalf("Failed to read secret.yaml: %v", err)
+			t.Fatalf("Failed to read Secret file: %v", err)
 		}
 		if !contains(string(content), "name: whiteout-secret") {
-			t.Errorf("secret.yaml should contain whiteout-secret, got: %s", string(content))
+			t.Errorf("Secret file should contain whiteout-secret, got: %s", string(content))
 		}
 	}
 
@@ -941,12 +959,12 @@ data:
 
 	kustomizationStr := string(kustomizationContent)
 
-	// Should reference configmap.yaml (non-whiteout)
-	if !contains(kustomizationStr, "resources/configmap.yaml") {
-		t.Errorf("kustomization.yaml should reference configmap.yaml in resources list, got: %s", kustomizationStr)
+	// Should reference ConfigMap file (non-whiteout)
+	if !contains(kustomizationStr, "ConfigMap") || !contains(kustomizationStr, "keep-me") {
+		t.Errorf("kustomization.yaml should reference ConfigMap keep-me in resources list, got: %s", kustomizationStr)
 	}
 
-	// Should NOT reference secret.yaml in resources list (whiteout type)
+	// Should NOT reference Secret in resources list (whiteout type)
 	// BUT should have a comment about whiteout
 	lines := strings.Split(kustomizationStr, "\n")
 	hasWhiteoutComment := false
@@ -960,7 +978,8 @@ data:
 		if strings.Contains(line, "resources:") {
 			inResources = true
 		}
-		if inResources && strings.Contains(line, "secret.yaml") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+		// Check if Secret is in active resources list (not as comment)
+		if inResources && strings.Contains(line, "Secret") && strings.Contains(line, "whiteout-secret") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
 			secretInResourcesList = true
 		}
 	}
@@ -970,7 +989,7 @@ data:
 	}
 
 	if secretInResourcesList {
-		t.Errorf("kustomization.yaml should NOT list secret.yaml in active resources (it's whiteout), got: %s", kustomizationStr)
+		t.Errorf("kustomization.yaml should NOT list Secret in active resources (it's whiteout), got: %s", kustomizationStr)
 	}
 
 	t.Log("✓ Both resource type files exist in resources/ (complete snapshot)")
@@ -1224,12 +1243,22 @@ data:
 		return nil
 	})
 
-	// Stage 2 should only have configmap.yaml, NOT secret.yaml
-	if !stage2Files["configmap.yaml"] {
-		t.Errorf("Stage 2 should have configmap.yaml, got files: %v", stage2Files)
+	// Stage 2 should only have ConfigMap file, NOT Secret file
+	hasConfigMap := false
+	hasSecret := false
+	for filename := range stage2Files {
+		if strings.Contains(filename, "ConfigMap") && strings.Contains(filename, "config") {
+			hasConfigMap = true
+		}
+		if strings.Contains(filename, "Secret") {
+			hasSecret = true
+		}
 	}
-	if stage2Files["secret.yaml"] {
-		t.Errorf("Stage 2 should NOT have secret.yaml (it was whiteouted in stage 1), got files: %v", stage2Files)
+	if !hasConfigMap {
+		t.Errorf("Stage 2 should have ConfigMap file, got files: %v", stage2Files)
+	}
+	if hasSecret {
+		t.Errorf("Stage 2 should NOT have Secret file (it was whiteouted in stage 1), got files: %v", stage2Files)
 	}
 
 	// Apply stage 2 transforms to get final output
@@ -1341,23 +1370,41 @@ data:
 		return nil
 	})
 
-	// Should have 1 resource type file (configmap.yaml) containing both ConfigMaps
-	if len(resourceFiles) != 1 {
-		t.Errorf("Expected 1 resource type file (configmap.yaml), got %d: %v", len(resourceFiles), resourceFiles)
+	// Should have 2 resource files (one for each ConfigMap)
+	if len(resourceFiles) != 2 {
+		t.Errorf("Expected 2 resource files (one per ConfigMap), got %d: %v", len(resourceFiles), resourceFiles)
 	}
 
-	configMapPath, hasConfigMap := resourceFiles["configmap.yaml"]
-	if !hasConfigMap {
-		t.Fatalf("Expected configmap.yaml, got files: %v", resourceFiles)
+	// Find the active and whiteout ConfigMap files
+	var activeConfigMapPath, whiteoutConfigMapPath string
+	for filename, path := range resourceFiles {
+		if strings.Contains(filename, "config-active") {
+			activeConfigMapPath = path
+		} else if strings.Contains(filename, "config-whiteout") {
+			whiteoutConfigMapPath = path
+		}
 	}
 
-	// Read configmap.yaml content
-	content, err := os.ReadFile(configMapPath)
+	if activeConfigMapPath == "" {
+		t.Fatalf("Expected config-active file, got files: %v", resourceFiles)
+	}
+	if whiteoutConfigMapPath == "" {
+		t.Fatalf("Expected config-whiteout file, got files: %v", resourceFiles)
+	}
+
+	// Read active ConfigMap content
+	activeContent, err := os.ReadFile(activeConfigMapPath)
 	if err != nil {
-		t.Fatalf("Failed to read configmap.yaml: %v", err)
+		t.Fatalf("Failed to read active ConfigMap file: %v", err)
 	}
 
-	contentStr := string(content)
+	// Read whiteout ConfigMap content
+	whiteoutContent, err := os.ReadFile(whiteoutConfigMapPath)
+	if err != nil {
+		t.Fatalf("Failed to read whiteout ConfigMap file: %v", err)
+	}
+
+	contentStr := string(activeContent) + "\n" + string(whiteoutContent)
 	hasActive := contains(contentStr, "name: config-active")
 	hasWhiteout := contains(contentStr, "name: config-whiteout")
 
@@ -1377,17 +1424,22 @@ data:
 
 	kustomizationStr := string(kustomizationContent)
 
-	// CURRENT BEHAVIOR: If ANY resource in the type is non-whiteout, the type is active
-	// So kustomization.yaml should reference configmap.yaml
-	if !contains(kustomizationStr, "resources/configmap.yaml") {
-		t.Errorf("kustomization.yaml should reference configmap.yaml (at least one non-whiteout resource), got: %s", kustomizationStr)
+	// CURRENT BEHAVIOR: Each resource has its own file, whiteout is per-resource
+	// kustomization.yaml should reference only the active ConfigMap
+	if !contains(kustomizationStr, "config-active") {
+		t.Errorf("kustomization.yaml should reference config-active ConfigMap, got: %s", kustomizationStr)
+	}
+
+	// Should NOT reference config-whiteout in active resources
+	if strings.Contains(kustomizationStr, "resources/ConfigMap") && strings.Contains(kustomizationStr, "config-whiteout") && !strings.Contains(kustomizationStr, "# - resources/ConfigMap") {
+		t.Errorf("kustomization.yaml should NOT reference config-whiteout in active resources, got: %s", kustomizationStr)
 	}
 
 	t.Log("✓ Mixed whiteout/non-whiteout within same type detected")
-	t.Log("✓ Resource type file contains ALL resources (complete snapshot)")
-	t.Log("✓ Type is active because at least one resource is non-whiteout")
-	t.Log("⚠ NOTE: Current granularity is resource-level, not type-level")
-	t.Log("⚠ Future enhancement: may need type-level or object-level whiteout granularity")
+	t.Log("✓ Each resource has its own file (complete snapshot)")
+	t.Log("✓ Only non-whiteout resource is in kustomization.yaml resources list")
+	t.Log("✓ Whiteout resource is commented in kustomization.yaml")
+	t.Log("✓ Whiteout granularity is per-resource (not per-type)")
 }
 
 // TestStageWorkingDirectoryStructure tests the intermediate artifact layout

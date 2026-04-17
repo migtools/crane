@@ -13,6 +13,7 @@ import (
 	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 // KustomizeWriter handles writing transform artifacts to Kustomize layout
@@ -121,35 +122,36 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		}
 	}
 
-	// Group ALL resources by type and write resource files (including whiteout)
-	allGroups := cranelib.GroupResourcesByType(allResources)
-
-	// Group only ACTIVE resources to determine what goes in kustomization.yaml
-	activeGroups := cranelib.GroupResourcesByType(activeResources)
-	activeTypeKeys := make(map[string]bool)
-	for _, group := range activeGroups {
-		activeTypeKeys[group.TypeKey] = true
+	// Build a set of active (non-whiteout) resources for quick lookup
+	activeResourceIDs := make(map[string]bool)
+	for _, res := range activeResources {
+		id := getResourceID(res)
+		activeResourceIDs[id] = true
 	}
 
 	var resourcePaths []string
 	var whiteoutComments []string
 
-	for _, resourceGroup := range allGroups {
-		// Parse TypeKey to extract kind and group
-		kind, group := parseTypeKey(resourceGroup.TypeKey)
-		filename := kustomize.GetResourceTypeFilename(kind, group)
+	// Write each resource to its own file (similar to export structure)
+	for _, resource := range allResources {
+		filename := file.GetResourceFilename(resource)
 		fullPath := filepath.Join(resourcesDir, filename)
 
-		// Write resource file (even for whiteout types - complete snapshot)
-		if err := cranelib.WriteResourceTypeFile(fullPath, resourceGroup.Resources); err != nil {
+		// Write individual resource file
+		yamlBytes, err := yaml.Marshal(resource.Object)
+		if err != nil {
+			return fmt.Errorf("failed to marshal resource %s to YAML: %w", filename, err)
+		}
+		if err := os.WriteFile(fullPath, yamlBytes, 0644); err != nil {
 			return fmt.Errorf("failed to write resource file %s: %w", filename, err)
 		}
 
-		// Only add to active resources list if NOT whiteout
-		if activeTypeKeys[resourceGroup.TypeKey] {
+		// Check if this resource is active or whiteout
+		resourceID := getResourceID(resource)
+		if activeResourceIDs[resourceID] {
 			resourcePaths = append(resourcePaths, filepath.Join("resources", filename))
 		} else {
-			// This type is whiteout - add comment
+			// This resource is whiteout - add comment
 			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - resources/%s", filename))
 		}
 	}
@@ -168,41 +170,17 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	return nil
 }
 
-// parseTypeKey extracts kind and group from ResourceGroup's TypeKey
-// Format: "<kind>" for core resources, "<kind>.<group>" for others
-// Examples: "deployment" -> ("Deployment", ""), "route.route.openshift.io" -> ("Route", "route.openshift.io")
-func parseTypeKey(typeKey string) (kind, group string) {
-	// Check if typeKey contains a dot (indicating non-core resource)
-	dotIndex := -1
-	for i, ch := range typeKey {
-		if ch == '.' {
-			dotIndex = i
-			break
-		}
-	}
+// getResourceID returns a unique identifier for a resource
+// Format: kind/namespace/name or kind/name for cluster-scoped
+func getResourceID(resource unstructured.Unstructured) string {
+	kind := resource.GetKind()
+	namespace := resource.GetNamespace()
+	name := resource.GetName()
 
-	if dotIndex == -1 {
-		// Core resource - capitalize first letter
-		return capitalizeFirst(typeKey), ""
+	if namespace != "" {
+		return fmt.Sprintf("%s/%s/%s", kind, namespace, name)
 	}
-
-	// Non-core resource - split on first dot
-	kindPart := typeKey[:dotIndex]
-	groupPart := typeKey[dotIndex+1:]
-	return capitalizeFirst(kindPart), groupPart
-}
-
-// capitalizeFirst capitalizes the first letter of a string
-func capitalizeFirst(s string) string {
-	if s == "" {
-		return ""
-	}
-	// Simple capitalization - assumes ASCII
-	first := s[0]
-	if first >= 'a' && first <= 'z' {
-		return string(first-32) + s[1:]
-	}
-	return s
+	return fmt.Sprintf("%s/%s", kind, name)
 }
 
 // filterValidRemoveOps filters out JSONPatch remove operations for paths that don't exist in the resource.
