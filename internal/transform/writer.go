@@ -34,15 +34,16 @@ func NewKustomizeWriter(opts file.PathOpts, stageName string) *KustomizeWriter {
 func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, force bool) error {
 	stageDir := w.opts.GetStageDir(w.stageName)
 
-	// Check if stage directory exists and is non-empty
-	if !force {
-		if err := w.checkStageDirectory(stageDir); err != nil {
-			return err
-		}
-	} else {
-		// Force is set, remove existing stage directory
+	// Handle directory preparation based on force flag
+	if force {
+		// Force mode - remove existing stage directory completely and recreate
 		if err := os.RemoveAll(stageDir); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove existing stage directory: %w", err)
+		}
+	} else {
+		// Safe mode - fail if stage directory is not empty
+		if err := w.checkStageDirectory(stageDir); err != nil {
+			return err
 		}
 	}
 

@@ -140,14 +140,27 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 		ExportDir:    o.ExportDir,
 	}
 
-	// Determine if we should force overwrite for this stage
-	// Force is true if:
-	// 1. Global Force flag is set, OR
-	// 2. This stage was created in the current run (tracked in NewlyCreatedStages)
-	forceWrite := o.Force
+	// Determine write behavior based on stage type
+	// Plugin stages: always allow overwrite (auto-regenerate)
+	// Custom stages: require --force flag
+	// Newly created stages: always allow overwrite
+	var forceWrite bool
 	if o.NewlyCreatedStages != nil && o.NewlyCreatedStages[stage.DirName] {
+		// Stage was just created in this run: safe to populate
 		forceWrite = true
-		o.Log.Debugf("Stage %s was created in this run, allowing overwrite", stage.DirName)
+		o.Log.Debugf("Stage %s: allowing write (newly created in this run)", stage.DirName)
+	} else if strings.HasSuffix(stage.PluginName, "Plugin") {
+		// Plugin-based stage: automatically regenerate
+		forceWrite = true
+		o.Log.Debugf("Stage %s: allowing write (plugin-based stage auto-regeneration)", stage.DirName)
+	} else {
+		// Custom stage: respect --force flag
+		forceWrite = o.Force
+		if forceWrite {
+			o.Log.Debugf("Stage %s: allowing write (--force flag for custom stage)", stage.DirName)
+		} else {
+			o.Log.Debugf("Stage %s: checking for empty directory (custom stage without --force)", stage.DirName)
+		}
 	}
 
 	writer := NewKustomizeWriter(opts, stage.DirName)
