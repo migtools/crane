@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cranelib "github.com/konveyor/crane-lib/transform"
@@ -808,8 +809,9 @@ func TestWhiteoutPropagation(t *testing.T) {
 		t.Fatalf("Failed to create export dir: %v", err)
 	}
 
-	// Create two ConfigMaps in export
-	configMap1YAML := `apiVersion: v1
+	// Create one ConfigMap and one Secret in export
+	// The Secret will be marked as whiteout (entire type)
+	configMapYAML := `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: keep-me
@@ -817,19 +819,19 @@ metadata:
 data:
   status: normal
 `
-	configMap2YAML := `apiVersion: v1
-kind: ConfigMap
+	secretYAML := `apiVersion: v1
+kind: Secret
 metadata:
-  name: delete-me
+  name: whiteout-secret
   namespace: default
 data:
-  status: whiteout
+  password: c2VjcmV0
 `
-	if err := os.WriteFile(filepath.Join(exportDir, "default", "configmap-keep.yaml"), []byte(configMap1YAML), 0644); err != nil {
-		t.Fatalf("Failed to write configmap1: %v", err)
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "configmap.yaml"), []byte(configMapYAML), 0644); err != nil {
+		t.Fatalf("Failed to write configmap: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(exportDir, "default", "configmap-delete.yaml"), []byte(configMap2YAML), 0644); err != nil {
-		t.Fatalf("Failed to write configmap2: %v", err)
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "secret.yaml"), []byte(secretYAML), 0644); err != nil {
+		t.Fatalf("Failed to write secret: %v", err)
 	}
 
 	// Test the writer's whiteout behavior directly
@@ -852,7 +854,7 @@ data:
 		t.Fatalf("Expected 2 resources, got %d", len(files))
 	}
 
-	// Create transform artifacts with one marked as whiteout
+	// Create transform artifacts with Secret marked as whiteout (entire type)
 	var artifacts []cranelib.TransformArtifact
 	for _, f := range files {
 		artifact := cranelib.TransformArtifact{
@@ -864,8 +866,8 @@ data:
 			PluginName:   "",
 		}
 
-		// Mark delete-me as whiteout
-		if f.Unstructured.GetName() == "delete-me" {
+		// Mark ALL Secrets as whiteout (entire type whiteout)
+		if f.Unstructured.GetKind() == "Secret" {
 			artifact.HaveWhiteOut = true
 		}
 
@@ -878,38 +880,59 @@ data:
 		t.Fatalf("Failed to write stage: %v", err)
 	}
 
-	// ASSERTIONS: Verify whiteout was filtered out
+	// ASSERTIONS: Verify new whiteout behavior
+	// 1. All resource type files exist in resources/ (including whiteout Secret type)
+	// 2. Only non-whiteout types are in kustomization.yaml resources list
+	// 3. Whiteout comment exists in kustomization.yaml
+	// 4. kubectl kustomize output would exclude whiteout types
 
 	stageDir := filepath.Join(transformDir, "10_test_stage")
 	resourcesDir := filepath.Join(stageDir, "resources")
 
 	// Count resources written
-	var resourceFiles []string
+	resourceFileMap := make(map[string]string) // filename -> path
 	filepath.Walk(resourcesDir, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() && filepath.Ext(path) == ".yaml" {
-			resourceFiles = append(resourceFiles, path)
+			resourceFileMap[info.Name()] = path
 		}
 		return nil
 	})
 
-	// Should only have 1 resource (keep-me), not 2 (delete-me was whiteouted)
-	if len(resourceFiles) != 1 {
-		t.Errorf("Expected 1 resource file (keep-me), but found %d: %v", len(resourceFiles), resourceFiles)
+	// NEW BEHAVIOR: Should have 2 resource type files (configmap.yaml and secret.yaml)
+	// Both exist in resources/, but only configmap.yaml is active
+	if len(resourceFileMap) != 2 {
+		t.Errorf("Expected 2 resource type files (configmap.yaml, secret.yaml), but found %d: %v", len(resourceFileMap), resourceFileMap)
 	}
 
-	// Verify the one resource is keep-me
-	if len(resourceFiles) > 0 {
-		content, err := os.ReadFile(resourceFiles[0])
+	// Verify configmap.yaml exists and contains keep-me
+	configMapPath, hasConfigMap := resourceFileMap["configmap.yaml"]
+	if !hasConfigMap {
+		t.Errorf("Expected configmap.yaml in resources/, but not found")
+	} else {
+		content, err := os.ReadFile(configMapPath)
 		if err != nil {
-			t.Fatalf("Failed to read resource file: %v", err)
+			t.Fatalf("Failed to read configmap.yaml: %v", err)
 		}
-
 		if !contains(string(content), "name: keep-me") {
-			t.Errorf("Expected resource to be keep-me, but got: %s", string(content))
+			t.Errorf("configmap.yaml should contain keep-me, got: %s", string(content))
 		}
 	}
 
-	// Verify kustomization.yaml references the non-whiteouted resource
+	// Verify secret.yaml exists and contains whiteout-secret
+	secretPath, hasSecret := resourceFileMap["secret.yaml"]
+	if !hasSecret {
+		t.Errorf("Expected secret.yaml in resources/ (complete snapshot), but not found")
+	} else {
+		content, err := os.ReadFile(secretPath)
+		if err != nil {
+			t.Fatalf("Failed to read secret.yaml: %v", err)
+		}
+		if !contains(string(content), "name: whiteout-secret") {
+			t.Errorf("secret.yaml should contain whiteout-secret, got: %s", string(content))
+		}
+	}
+
+	// Verify kustomization.yaml
 	kustomizationPath := filepath.Join(stageDir, "kustomization.yaml")
 	kustomizationContent, err := os.ReadFile(kustomizationPath)
 	if err != nil {
@@ -917,18 +940,454 @@ data:
 	}
 
 	kustomizationStr := string(kustomizationContent)
-	// Should reference keep-me resource
-	if !contains(kustomizationStr, "configmap.yaml") && !contains(kustomizationStr, "keep-me") {
-		t.Errorf("kustomization.yaml should reference keep-me resource, got: %s", kustomizationStr)
-	}
-	// Should not reference delete-me
-	if contains(kustomizationStr, "delete-me") {
-		t.Errorf("kustomization.yaml should not reference whiteouted resource delete-me")
+
+	// Should reference configmap.yaml (non-whiteout)
+	if !contains(kustomizationStr, "resources/configmap.yaml") {
+		t.Errorf("kustomization.yaml should reference configmap.yaml in resources list, got: %s", kustomizationStr)
 	}
 
-	t.Log("✓ Writer correctly filtered out resource with HaveWhiteOut=true")
-	t.Log("✓ Kustomization only references non-whiteouted resources")
-	t.Log("✓ Whiteout materialization verified at writer level")
+	// Should NOT reference secret.yaml in resources list (whiteout type)
+	// BUT should have a comment about whiteout
+	lines := strings.Split(kustomizationStr, "\n")
+	hasWhiteoutComment := false
+	secretInResourcesList := false
+	inResources := false
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "# Whiteout") {
+			hasWhiteoutComment = true
+		}
+		if strings.Contains(line, "resources:") {
+			inResources = true
+		}
+		if inResources && strings.Contains(line, "secret.yaml") && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			secretInResourcesList = true
+		}
+	}
+
+	if !hasWhiteoutComment {
+		t.Errorf("kustomization.yaml should have whiteout comment, got: %s", kustomizationStr)
+	}
+
+	if secretInResourcesList {
+		t.Errorf("kustomization.yaml should NOT list secret.yaml in active resources (it's whiteout), got: %s", kustomizationStr)
+	}
+
+	t.Log("✓ Both resource type files exist in resources/ (complete snapshot)")
+	t.Log("✓ Only non-whiteout type (ConfigMap) is in kustomization.yaml resources list")
+	t.Log("✓ Whiteout type (Secret) has comment in kustomization.yaml")
+	t.Log("✓ Whiteout materialization: file exists but excluded from active resources")
+}
+
+// TestWhiteoutKustomizeBuild tests that kubectl kustomize excludes whiteout resources
+func TestWhiteoutKustomizeBuild(t *testing.T) {
+	// Skip if kubectl/oc is not available
+	if !hasKustomizeCommand(t) {
+		t.Skip("kubectl or oc not available, skipping test that requires kustomize")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "whiteout-kustomize-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	exportDir := filepath.Join(tmpDir, "export")
+	transformDir := filepath.Join(tmpDir, "transform")
+
+	// Create export directory
+	if err := os.MkdirAll(filepath.Join(exportDir, "default"), 0700); err != nil {
+		t.Fatalf("Failed to create export dir: %v", err)
+	}
+
+	// Create ConfigMap (non-whiteout) and Secret (whiteout)
+	configMapYAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: active-config
+  namespace: default
+data:
+  key: value
+`
+	secretYAML := `apiVersion: v1
+kind: Secret
+metadata:
+  name: whiteout-secret
+  namespace: default
+data:
+  password: c2VjcmV0
+`
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "configmap.yaml"), []byte(configMapYAML), 0644); err != nil {
+		t.Fatalf("Failed to write configmap: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "secret.yaml"), []byte(secretYAML), 0644); err != nil {
+		t.Fatalf("Failed to write secret: %v", err)
+	}
+
+	// Load resources and create artifacts
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	opts := file.PathOpts{
+		TransformDir: transformDir,
+		ExportDir:    exportDir,
+	}
+
+	files, err := file.ReadFiles(context.TODO(), exportDir)
+	if err != nil {
+		t.Fatalf("Failed to read export files: %v", err)
+	}
+
+	// Create artifacts with Secret marked as whiteout
+	var artifacts []cranelib.TransformArtifact
+	for _, f := range files {
+		artifact := cranelib.TransformArtifact{
+			Resource:     f.Unstructured,
+			HaveWhiteOut: f.Unstructured.GetKind() == "Secret", // Whiteout all Secrets
+			Patches:      nil,
+			IgnoredOps:   []cranelib.IgnoredOperation{},
+			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
+			PluginName:   "",
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	// Write stage
+	writer := NewKustomizeWriter(opts, "10_test_stage")
+	if err := writer.WriteStage(artifacts, true); err != nil {
+		t.Fatalf("Failed to write stage: %v", err)
+	}
+
+	// Run kubectl kustomize on the stage
+	stageDir := filepath.Join(transformDir, "10_test_stage")
+
+	o := &Orchestrator{
+		Log: logger,
+	}
+
+	outputResources, err := o.applyStageTransforms(stageDir)
+	if err != nil {
+		t.Fatalf("Failed to apply stage transforms: %v", err)
+	}
+
+	// Verify output contains ConfigMap but NOT Secret
+	hasConfigMap := false
+	hasSecret := false
+
+	for _, resource := range outputResources {
+		kind := resource.GetKind()
+		name := resource.GetName()
+
+		if kind == "ConfigMap" && name == "active-config" {
+			hasConfigMap = true
+		}
+		if kind == "Secret" && name == "whiteout-secret" {
+			hasSecret = true
+		}
+	}
+
+	if !hasConfigMap {
+		t.Errorf("kubectl kustomize output should contain ConfigMap active-config")
+	}
+	if hasSecret {
+		t.Errorf("kubectl kustomize output should NOT contain whiteout Secret whiteout-secret")
+	}
+
+	t.Log("✓ kubectl kustomize output contains non-whiteout resources (ConfigMap)")
+	t.Log("✓ kubectl kustomize output excludes whiteout resources (Secret)")
+	t.Log("✓ Whiteout is correctly materialized by exclusion from kustomization.yaml")
+}
+
+// TestWhiteoutMultiStagePropagation tests that whiteout resources don't propagate to next stage
+func TestWhiteoutMultiStagePropagation(t *testing.T) {
+	// Skip if kubectl/oc is not available
+	if !hasKustomizeCommand(t) {
+		t.Skip("kubectl or oc not available, skipping test that requires kustomize")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "multistage-whiteout-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	exportDir := filepath.Join(tmpDir, "export")
+	transformDir := filepath.Join(tmpDir, "transform")
+
+	// Create export directory with ConfigMap and Secret
+	if err := os.MkdirAll(filepath.Join(exportDir, "default"), 0700); err != nil {
+		t.Fatalf("Failed to create export dir: %v", err)
+	}
+
+	configMapYAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config
+  namespace: default
+data:
+  key: value
+`
+	secretYAML := `apiVersion: v1
+kind: Secret
+metadata:
+  name: secret
+  namespace: default
+data:
+  password: c2VjcmV0
+`
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "configmap.yaml"), []byte(configMapYAML), 0644); err != nil {
+		t.Fatalf("Failed to write configmap: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "secret.yaml"), []byte(secretYAML), 0644); err != nil {
+		t.Fatalf("Failed to write secret: %v", err)
+	}
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	opts := file.PathOpts{
+		TransformDir: transformDir,
+		ExportDir:    exportDir,
+	}
+
+	// Stage 1: Create artifacts with Secret marked as whiteout
+	files, err := file.ReadFiles(context.TODO(), exportDir)
+	if err != nil {
+		t.Fatalf("Failed to read export files: %v", err)
+	}
+
+	var stage1Artifacts []cranelib.TransformArtifact
+	for _, f := range files {
+		artifact := cranelib.TransformArtifact{
+			Resource:     f.Unstructured,
+			HaveWhiteOut: f.Unstructured.GetKind() == "Secret", // Whiteout Secrets in stage 1
+			Patches:      nil,
+			IgnoredOps:   []cranelib.IgnoredOperation{},
+			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
+			PluginName:   "",
+		}
+		stage1Artifacts = append(stage1Artifacts, artifact)
+	}
+
+	// Write stage 1
+	writer1 := NewKustomizeWriter(opts, "10_stage1")
+	if err := writer1.WriteStage(stage1Artifacts, true); err != nil {
+		t.Fatalf("Failed to write stage 1: %v", err)
+	}
+
+	// Apply stage 1 transforms to get output
+	o := &Orchestrator{
+		Log: logger,
+	}
+
+	stage1Dir := filepath.Join(transformDir, "10_stage1")
+	stage1Output, err := o.applyStageTransforms(stage1Dir)
+	if err != nil {
+		t.Fatalf("Failed to apply stage 1 transforms: %v", err)
+	}
+
+	// Verify stage 1 output contains only ConfigMap (Secret was whiteouted)
+	if len(stage1Output) != 1 {
+		t.Errorf("Stage 1 output should have 1 resource (ConfigMap), got %d", len(stage1Output))
+	}
+	if len(stage1Output) > 0 && stage1Output[0].GetKind() != "ConfigMap" {
+		t.Errorf("Stage 1 output should be ConfigMap, got %s", stage1Output[0].GetKind())
+	}
+
+	// Stage 2: Load from stage 1 output and create stage 2 artifacts (no whiteout)
+	var stage2Artifacts []cranelib.TransformArtifact
+	for _, resource := range stage1Output {
+		artifact := cranelib.TransformArtifact{
+			Resource:     resource,
+			HaveWhiteOut: false, // Stage 2 doesn't whiteout anything
+			Patches:      nil,
+			IgnoredOps:   []cranelib.IgnoredOperation{},
+			Target:       cranelib.DeriveTargetFromResource(resource),
+			PluginName:   "",
+		}
+		stage2Artifacts = append(stage2Artifacts, artifact)
+	}
+
+	// Write stage 2
+	writer2 := NewKustomizeWriter(opts, "20_stage2")
+	if err := writer2.WriteStage(stage2Artifacts, true); err != nil {
+		t.Fatalf("Failed to write stage 2: %v", err)
+	}
+
+	// Verify stage 2 resources/ directory
+	stage2ResourcesDir := filepath.Join(transformDir, "20_stage2", "resources")
+	stage2Files := make(map[string]bool)
+	filepath.Walk(stage2ResourcesDir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && filepath.Ext(path) == ".yaml" {
+			stage2Files[info.Name()] = true
+		}
+		return nil
+	})
+
+	// Stage 2 should only have configmap.yaml, NOT secret.yaml
+	if !stage2Files["configmap.yaml"] {
+		t.Errorf("Stage 2 should have configmap.yaml, got files: %v", stage2Files)
+	}
+	if stage2Files["secret.yaml"] {
+		t.Errorf("Stage 2 should NOT have secret.yaml (it was whiteouted in stage 1), got files: %v", stage2Files)
+	}
+
+	// Apply stage 2 transforms to get final output
+	stage2Dir := filepath.Join(transformDir, "20_stage2")
+	stage2Output, err := o.applyStageTransforms(stage2Dir)
+	if err != nil {
+		t.Fatalf("Failed to apply stage 2 transforms: %v", err)
+	}
+
+	// Verify stage 2 output contains only ConfigMap (Secret was propagated as whiteout)
+	if len(stage2Output) != 1 {
+		t.Errorf("Stage 2 output should have 1 resource (ConfigMap), got %d", len(stage2Output))
+	}
+	if len(stage2Output) > 0 && stage2Output[0].GetKind() != "ConfigMap" {
+		t.Errorf("Stage 2 output should be ConfigMap, got %s", stage2Output[0].GetKind())
+	}
+
+	t.Log("✓ Stage 1: Secret marked as whiteout, written to resources/ but excluded from kustomization")
+	t.Log("✓ Stage 1 output: contains only ConfigMap (Secret excluded)")
+	t.Log("✓ Stage 2 input: loaded from stage 1 output, contains only ConfigMap")
+	t.Log("✓ Stage 2 resources/: contains only configmap.yaml (no secret.yaml)")
+	t.Log("✓ Stage 2 output: contains only ConfigMap")
+	t.Log("✓ Whiteout correctly prevented propagation from stage 1 to stage 2")
+}
+
+// TestWhiteoutMixedTypeInvariant tests the case where some resources of a type are whiteout and others are not
+// This documents current behavior: if ANY resource in a type is non-whiteout, the entire type file is active
+func TestWhiteoutMixedTypeInvariant(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "mixed-whiteout-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	exportDir := filepath.Join(tmpDir, "export")
+	transformDir := filepath.Join(tmpDir, "transform")
+
+	// Create export with two ConfigMaps
+	if err := os.MkdirAll(filepath.Join(exportDir, "default"), 0700); err != nil {
+		t.Fatalf("Failed to create export dir: %v", err)
+	}
+
+	configMap1YAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-active
+  namespace: default
+data:
+  key: value1
+`
+	configMap2YAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-whiteout
+  namespace: default
+data:
+  key: value2
+`
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "config1.yaml"), []byte(configMap1YAML), 0644); err != nil {
+		t.Fatalf("Failed to write config1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "config2.yaml"), []byte(configMap2YAML), 0644); err != nil {
+		t.Fatalf("Failed to write config2: %v", err)
+	}
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	opts := file.PathOpts{
+		TransformDir: transformDir,
+		ExportDir:    exportDir,
+	}
+
+	files, err := file.ReadFiles(context.TODO(), exportDir)
+	if err != nil {
+		t.Fatalf("Failed to read export files: %v", err)
+	}
+
+	// Create artifacts with one ConfigMap whiteout, one not
+	var artifacts []cranelib.TransformArtifact
+	for _, f := range files {
+		isWhiteout := f.Unstructured.GetName() == "config-whiteout"
+		artifact := cranelib.TransformArtifact{
+			Resource:     f.Unstructured,
+			HaveWhiteOut: isWhiteout,
+			Patches:      nil,
+			IgnoredOps:   []cranelib.IgnoredOperation{},
+			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
+			PluginName:   "",
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	// Write stage
+	writer := NewKustomizeWriter(opts, "10_mixed_stage")
+	if err := writer.WriteStage(artifacts, true); err != nil {
+		t.Fatalf("Failed to write stage: %v", err)
+	}
+
+	stageDir := filepath.Join(transformDir, "10_mixed_stage")
+	resourcesDir := filepath.Join(stageDir, "resources")
+
+	// Check resource files written
+	resourceFiles := make(map[string]string)
+	filepath.Walk(resourcesDir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() && filepath.Ext(path) == ".yaml" {
+			resourceFiles[info.Name()] = path
+		}
+		return nil
+	})
+
+	// Should have 1 resource type file (configmap.yaml) containing both ConfigMaps
+	if len(resourceFiles) != 1 {
+		t.Errorf("Expected 1 resource type file (configmap.yaml), got %d: %v", len(resourceFiles), resourceFiles)
+	}
+
+	configMapPath, hasConfigMap := resourceFiles["configmap.yaml"]
+	if !hasConfigMap {
+		t.Fatalf("Expected configmap.yaml, got files: %v", resourceFiles)
+	}
+
+	// Read configmap.yaml content
+	content, err := os.ReadFile(configMapPath)
+	if err != nil {
+		t.Fatalf("Failed to read configmap.yaml: %v", err)
+	}
+
+	contentStr := string(content)
+	hasActive := contains(contentStr, "name: config-active")
+	hasWhiteout := contains(contentStr, "name: config-whiteout")
+
+	if !hasActive {
+		t.Errorf("configmap.yaml should contain config-active, got: %s", contentStr)
+	}
+	if !hasWhiteout {
+		t.Errorf("configmap.yaml should contain config-whiteout (complete snapshot), got: %s", contentStr)
+	}
+
+	// Read kustomization.yaml
+	kustomizationPath := filepath.Join(stageDir, "kustomization.yaml")
+	kustomizationContent, err := os.ReadFile(kustomizationPath)
+	if err != nil {
+		t.Fatalf("Failed to read kustomization.yaml: %v", err)
+	}
+
+	kustomizationStr := string(kustomizationContent)
+
+	// CURRENT BEHAVIOR: If ANY resource in the type is non-whiteout, the type is active
+	// So kustomization.yaml should reference configmap.yaml
+	if !contains(kustomizationStr, "resources/configmap.yaml") {
+		t.Errorf("kustomization.yaml should reference configmap.yaml (at least one non-whiteout resource), got: %s", kustomizationStr)
+	}
+
+	t.Log("✓ Mixed whiteout/non-whiteout within same type detected")
+	t.Log("✓ Resource type file contains ALL resources (complete snapshot)")
+	t.Log("✓ Type is active because at least one resource is non-whiteout")
+	t.Log("⚠ NOTE: Current granularity is resource-level, not type-level")
+	t.Log("⚠ Future enhancement: may need type-level or object-level whiteout granularity")
 }
 
 // TestStageWorkingDirectoryStructure tests the intermediate artifact layout

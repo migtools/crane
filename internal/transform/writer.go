@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -55,18 +56,23 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		return fmt.Errorf("failed to create patches directory: %w", err)
 	}
 
-	// Group resources and patches
-	var resources []unstructured.Unstructured
+	// Separate artifacts into whiteout and non-whiteout
+	// ALL artifacts will be written to resources/, but only non-whiteout will be in kustomization.yaml
+	var allResources []unstructured.Unstructured
+	var activeResources []unstructured.Unstructured
 	var patches []kustomize.Patch
 
 	for _, artifact := range artifacts {
-		// Skip whiteout resources
+		// Store all resources (including whiteout) for complete snapshot
+		allResources = append(allResources, artifact.Resource)
+
+		// Track whiteout status - whiteout resources don't get active references or patches
 		if artifact.HaveWhiteOut {
 			continue
 		}
 
-		// Store original resource - patches will be applied by kubectl kustomize
-		resources = append(resources, artifact.Resource)
+		// Non-whiteout resources are active
+		activeResources = append(activeResources, artifact.Resource)
 
 		// Write patch if there are operations
 		if len(artifact.Patches) > 0 {
@@ -115,25 +121,41 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		}
 	}
 
-	// Group resources by type and write resource files
-	groups := cranelib.GroupResourcesByType(resources)
-	var resourcePaths []string
+	// Group ALL resources by type and write resource files (including whiteout)
+	allGroups := cranelib.GroupResourcesByType(allResources)
 
-	for _, resourceGroup := range groups {
+	// Group only ACTIVE resources to determine what goes in kustomization.yaml
+	activeGroups := cranelib.GroupResourcesByType(activeResources)
+	activeTypeKeys := make(map[string]bool)
+	for _, group := range activeGroups {
+		activeTypeKeys[group.TypeKey] = true
+	}
+
+	var resourcePaths []string
+	var whiteoutComments []string
+
+	for _, resourceGroup := range allGroups {
 		// Parse TypeKey to extract kind and group
 		kind, group := parseTypeKey(resourceGroup.TypeKey)
 		filename := kustomize.GetResourceTypeFilename(kind, group)
 		fullPath := filepath.Join(resourcesDir, filename)
 
+		// Write resource file (even for whiteout types - complete snapshot)
 		if err := cranelib.WriteResourceTypeFile(fullPath, resourceGroup.Resources); err != nil {
 			return fmt.Errorf("failed to write resource file %s: %w", filename, err)
 		}
 
-		resourcePaths = append(resourcePaths, filepath.Join("resources", filename))
+		// Only add to active resources list if NOT whiteout
+		if activeTypeKeys[resourceGroup.TypeKey] {
+			resourcePaths = append(resourcePaths, filepath.Join("resources", filename))
+		} else {
+			// This type is whiteout - add comment
+			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# Whiteout: resources/%s (excluded from active resources)", filename))
+		}
 	}
 
-	// Generate and write kustomization.yaml
-	kustomizationYAML, err := kustomize.GenerateKustomization(resourcePaths, patches)
+	// Generate and write kustomization.yaml with whiteout comments
+	kustomizationYAML, err := w.generateKustomizationWithComments(resourcePaths, patches, whiteoutComments)
 	if err != nil {
 		return fmt.Errorf("failed to generate kustomization.yaml: %w", err)
 	}
@@ -303,6 +325,36 @@ func pathExists(data map[string]interface{}, path string) bool {
 	}
 
 	return true
+}
+
+// generateKustomizationWithComments creates a kustomization.yaml with human-readable whiteout comments
+func (w *KustomizeWriter) generateKustomizationWithComments(resources []string, patches []kustomize.Patch, whiteoutComments []string) ([]byte, error) {
+	var result strings.Builder
+
+	// Write whiteout comments if present (sorted for determinism)
+	if len(whiteoutComments) > 0 {
+		// Sort comments for stable output
+		sortedComments := make([]string, len(whiteoutComments))
+		copy(sortedComments, whiteoutComments)
+		sort.Strings(sortedComments)
+
+		result.WriteString("# Whiteout resources are written to resources/ for complete snapshot\n")
+		result.WriteString("# but excluded from active resources list below:\n")
+		for _, comment := range sortedComments {
+			result.WriteString(comment)
+			result.WriteString("\n")
+		}
+		result.WriteString("\n")
+	}
+
+	// Generate and append base kustomization YAML
+	baseYAML, err := kustomize.GenerateKustomization(resources, patches)
+	if err != nil {
+		return nil, err
+	}
+	result.Write(baseYAML)
+
+	return []byte(result.String()), nil
 }
 
 // checkStageDirectory checks if a stage directory exists and is non-empty
