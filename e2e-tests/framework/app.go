@@ -20,7 +20,7 @@ type K8sDeployApp struct {
 	Namespace string
 	Bin       string
 	Context   string
-	ExtraVars map[string]string
+	ExtraVars map[string]any
 }
 
 // Deploy runs k8sdeploy deploy for the configured app and namespace.
@@ -114,13 +114,16 @@ func envWithBinDir(bin string) []string {
 
 // withExtraVars appends --extra-vars to k8sdeploy arguments when ExtraVars is non-empty.
 func (a K8sDeployApp) withExtraVars(args []string) ([]string, error) {
-	if len(a.ExtraVars) == 0 {
+	if a.ExtraVars == nil {
 		return args, nil
 	}
 
 	extraVarsJSON, err := json.Marshal(a.ExtraVars)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal extra vars: %v", err)
+	}
+	if string(extraVarsJSON) == "null" || string(extraVarsJSON) == "{}" {
+		return args, nil
 	}
 
 	args = append(args, "--extra-vars", string(extraVarsJSON))

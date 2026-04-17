@@ -32,11 +32,11 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 		paths := ScenarioPaths{}
 
 		//Override the extra vars for the source app
-		srcApp.ExtraVars = map[string]string{
+		srcApp.ExtraVars = map[string]any{
 			"ext_app_name": appName,
 		}
 		//Override the extra vars for the target app
-		tgtApp.ExtraVars = map[string]string{
+		tgtApp.ExtraVars = map[string]any{
 			"ext_app_name": appName,
 		}
 

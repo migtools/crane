@@ -35,10 +35,10 @@ var _ = Describe("Role and RoleBinding migration", func() {
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
 
-		srcApp.ExtraVars = map[string]string{
+		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
-		tgtApp.ExtraVars = map[string]string{
+		tgtApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
 
