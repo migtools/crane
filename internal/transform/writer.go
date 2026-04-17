@@ -12,6 +12,7 @@ import (
 	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 )
@@ -60,13 +61,44 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 
 	// Separate artifacts into whiteout and non-whiteout
 	// ALL artifacts will be written to resources/, but only non-whiteout will be in kustomization.yaml
-	var allResources []unstructured.Unstructured
-	var activeResources []unstructured.Unstructured
+	// Use maps to deduplicate resources by canonical ID
+	allResourcesMap := make(map[string]unstructured.Unstructured)
+	whiteoutStatusMap := make(map[string]bool) // tracks whether resource is whiteout
+	activeResourcesMap := make(map[string]unstructured.Unstructured)
 	var patches []kustomize.Patch
 
 	for _, artifact := range artifacts {
-		// Store all resources (including whiteout) for complete snapshot
-		allResources = append(allResources, artifact.Resource)
+		resourceID := getResourceID(artifact.Resource)
+
+		// Check for duplicates
+		if _, exists := allResourcesMap[resourceID]; exists {
+			// Duplicate detected - determine which to keep
+			existingIsWhiteout := whiteoutStatusMap[resourceID]
+
+			if existingIsWhiteout && !artifact.HaveWhiteOut {
+				// Replace whiteout with non-whiteout
+				logrus.Warnf("Duplicate resource %s: replacing whiteout with active resource", resourceID)
+				allResourcesMap[resourceID] = artifact.Resource
+				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+				// Update active resources map
+				delete(activeResourcesMap, resourceID) // remove old entry if any
+				activeResourcesMap[resourceID] = artifact.Resource
+			} else if !existingIsWhiteout && artifact.HaveWhiteOut {
+				// Keep non-whiteout, skip whiteout duplicate
+				logrus.Warnf("Duplicate resource %s: keeping active resource, ignoring whiteout duplicate", resourceID)
+				continue
+			} else {
+				// Both same type - last one wins, but log warning
+				logrus.Warnf("Duplicate resource %s (both %s): last occurrence will be used",
+					resourceID, map[bool]string{true: "whiteout", false: "active"}[artifact.HaveWhiteOut])
+				allResourcesMap[resourceID] = artifact.Resource
+				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+			}
+		} else {
+			// First occurrence - store it
+			allResourcesMap[resourceID] = artifact.Resource
+			whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+		}
 
 		// Track whiteout status - whiteout resources don't get active references or patches
 		if artifact.HaveWhiteOut {
@@ -74,7 +106,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		}
 
 		// Non-whiteout resources are active
-		activeResources = append(activeResources, artifact.Resource)
+		activeResourcesMap[resourceID] = artifact.Resource
 
 		// Write patch if there are operations
 		if len(artifact.Patches) > 0 {
@@ -123,10 +155,15 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		}
 	}
 
+	// Convert maps to slices for writing
+	var allResources []unstructured.Unstructured
+	for _, res := range allResourcesMap {
+		allResources = append(allResources, res)
+	}
+
 	// Build a set of active (non-whiteout) resources for quick lookup
 	activeResourceIDs := make(map[string]bool)
-	for _, res := range activeResources {
-		id := getResourceID(res)
+	for id := range activeResourcesMap {
 		activeResourceIDs[id] = true
 	}
 
