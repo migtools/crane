@@ -150,7 +150,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 			resourcePaths = append(resourcePaths, filepath.Join("resources", filename))
 		} else {
 			// This type is whiteout - add comment
-			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# Whiteout: resources/%s (excluded from active resources)", filename))
+			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - resources/%s", filename))
 		}
 	}
 
