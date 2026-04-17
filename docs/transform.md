@@ -10,16 +10,17 @@ After running `crane transform`, you'll see:
 transform/
 └── 10_KubernetesPlugin/
     ├── resources/
-    │   ├── deployment.yaml
-    │   └── service.yaml
+    │   ├── ConfigMap__v1_default_nginx-config.yaml
+    │   ├── Deployment_apps_v1_default_wordpress.yaml
+    │   └── Service__v1_default_kubernetes.yaml
     ├── patches/
-    │   └── deployment-myapp-default.yaml
+    │   └── default--apps-v1--Deployment--wordpress.patch.yaml
     └── kustomization.yaml
 ```
 
 ### What's in Each Directory?
 
-- **`resources/`**: Kubernetes manifests grouped by resource type
+- **`resources/`**: Individual Kubernetes manifest files, one per resource
 - **`patches/`**: Kustomize patches to apply to resources
 - **`kustomization.yaml`**: Kustomize configuration file
 
@@ -50,7 +51,7 @@ You can edit resources in the `resources/` directory:
 
 ```bash
 # Edit a deployment
-vim transform/10_KubernetesPlugin/resources/deployment.yaml
+vi transform/10_KubernetesPlugin/resources/Deployment_apps_v1_default_wordpress.yaml
 
 # Preview changes
 kubectl kustomize transform/10_KubernetesPlugin/
@@ -59,7 +60,9 @@ kubectl kustomize transform/10_KubernetesPlugin/
 kubectl apply -k transform/10_KubernetesPlugin/
 ```
 
-**Important**: If you run `crane transform` again, it will detect your changes and refuse to overwrite. Use `--force` to override.
+**Important**: 
+- **Plugin stages** (ending with `Plugin`): Automatically regenerate on rerun - your manual edits will be overwritten
+- **Custom stages** (not ending with `Plugin`): Refuse to overwrite without `--force` flag to protect your edits
 
 ## Multi-Stage Pipelines
 
@@ -245,39 +248,49 @@ EOF
 
 # Update kustomization.yaml to reference the patch
 # Then run transform to apply it
-crane transform
+# Note: Custom stage requires --force to overwrite (protects your edits)
+crane transform --force
 ```
+
+**Important**: Custom stages (not ending with `Plugin`) are protected from accidental overwrites. You must use `--force` to regenerate them.
+
+**Best Practice**: Always add custom stages as the **last stage** in your pipeline. This ensures that:
+- The `resources/` directory contains the most up-to-date output from all previous stages
+- You're editing the final state of resources after all plugin transformations
+- Re-running earlier plugin stages won't leave your custom stage with stale data
+
+If you add a custom stage in the middle of the pipeline and later update an earlier stage, you'll need to use `--force` to refresh the custom stage's `resources/` directory with the updated output. **Warning**: Using `--force` will delete the entire stage directory including any manual changes you made to `resources/`, `patches/`, and `kustomization.yaml`.
 
 ## Directory Contents Explained
 
 ### resources/
 
-Contains Kubernetes manifests grouped by resource type:
+Contains individual Kubernetes manifest files, one per resource:
 
-- **`deployment.yaml`**: All Deployment resources
-- **`service.yaml`**: All Service resources
-- **`configmap.yaml`**: All ConfigMap resources
-- **`route.route.openshift.io.yaml`**: OpenShift Route resources
+- **Naming format**: `Kind_group_version_namespace_name.yaml`
+- **Core resources** (no group): `ConfigMap__v1_default_nginx-config.yaml`
+- **Resources with API group**: `Deployment_apps_v1_default_wordpress.yaml`
+- **Cluster-scoped resources**: `Namespace__v1_clusterscoped_default.yaml`
 
-Each file is a multi-document YAML (separated by `---`).
+Each file contains a single Kubernetes resource (not multi-document YAML).
 
 ### patches/
 
 Contains Kustomize patches for modifying resources:
 
-- **Naming**: `<kind>-<name>-<namespace>.yaml`
-- **Format**: Strategic merge patch or JSON patch
+- **Naming**: `<namespace>--<group>-<version>--<kind>--<name>.patch.yaml`
+- **Format**: JSON patch
 - **Purpose**: Apply plugin transformations
 
-Example patch (`deployment-myapp-default.yaml`):
+Example patch (`default--apps-v1--Deployment--wordpress.patch.yaml`):
 
 ```yaml
-- op: add
-  path: /metadata/labels/transformed
-  value: "true"
-- op: replace
-  path: /spec/replicas
-  value: 3
+- op: remove
+  path: /metadata/uid
+- op: remove
+  path: /metadata/resourceVersion
+- op: remove
+  path: /status
 ```
 
 ### kustomization.yaml
@@ -287,15 +300,22 @@ Kustomize configuration that ties everything together:
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources:
-- resources/deployment.yaml
-- resources/service.yaml
 patches:
-- path: patches/deployment-myapp-default.yaml
+- path: patches/default--apps-v1--Deployment--wordpress.patch.yaml
   target:
+    group: apps
     kind: Deployment
-    name: myapp
+    name: wordpress
     namespace: default
+    version: v1
+resources:
+- resources/ConfigMap__v1_default_nginx-config.yaml
+- resources/Deployment_apps_v1_default_wordpress.yaml
+- resources/Service__v1_default_kubernetes.yaml
+
+# Whiteout resources are written to resources/ for complete snapshot
+# but excluded from active resources list above:
+# - resources/Pod__v1_default_wordpress-74b89cc84c-nm9f8.yaml
 ```
 
 
@@ -316,19 +336,24 @@ kubectl kustomize transform/10_KubernetesPlugin/ > review.yaml
 
 ### 2. Customize After Transform
 
+**Note**: Plugin stages (ending with `Plugin`) will be automatically regenerated on next run, overwriting manual edits. For manual customizations, create a custom stage (not ending with `Plugin`).
+
 ```bash
+# Create a custom stage for manual edits
+crane transform --stage 40_CustomEdits
+
 # Edit resources
-vim transform/10_KubernetesPlugin/resources/deployment.yaml
+vi transform/40_CustomEdits/resources/Deployment_apps_v1_default_wordpress.yaml
 
 # Add custom patches
-cat > transform/10_KubernetesPlugin/patches/custom-patch.yaml <<EOF
+cat > transform/40_CustomEdits/patches/custom-patch.yaml <<EOF
 - op: add
   path: /metadata/annotations/custom
   value: "my-value"
 EOF
 
 # Update kustomization.yaml to include custom patch
-vim transform/10_KubernetesPlugin/kustomization.yaml
+vi transform/40_CustomEdits/kustomization.yaml
 ```
 
 ### 3. Re-run Transform
@@ -337,11 +362,15 @@ vim transform/10_KubernetesPlugin/kustomization.yaml
 # Default: discovers and runs all existing stages
 crane transform
 
-# This will fail if you made manual changes - use force to overwrite
+# Plugin stages (ending with "Plugin") regenerate automatically
+# Custom stages (not ending with "Plugin") require --force to overwrite
 crane transform --force
 
-# Run specific stage only (if you want to regenerate just one stage)
-crane transform --stage 10_KubernetesPlugin --force
+# Run specific plugin stage (regenerates automatically)
+crane transform --stage 10_KubernetesPlugin
+
+# Run specific custom stage (requires --force if directory not empty)
+crane transform --stage 40_CustomEdits --force
 ```
 
 ### 4. Working with Multiple Stages
@@ -357,11 +386,12 @@ crane transform --stage 30_ImagestreamPlugin
 # Add a manual editing stage
 crane transform --stage 40_CustomEdits
 
-# Edit the manual stage
-vim transform/40_CustomEdits/resources/deployment.yaml
+# Edit the manual stage (example: edit a specific deployment)
+vi transform/40_CustomEdits/resources/Deployment_apps_v1_default_wordpress.yaml
 
 # Run all stages sequentially
-crane transform
+# Note: requires --force for custom stages
+crane transform --force
 
 # Apply all stages
 crane apply --transform-dir transform --output-dir output
@@ -383,7 +413,7 @@ crane transform --stage 20_OpenshiftPlugin
 
 # 4. Add a manual customization stage
 crane transform --stage 50_CustomLabels
-# Creates: 50_CustomLabels/ as empty pass-through
+# Creates: 50_CustomLabels/ as pass-through (resources copied from previous stage)
 
 # 5. Manually add custom labels
 cat > transform/50_CustomLabels/patches/add-labels.yaml <<EOF
@@ -393,10 +423,12 @@ cat > transform/50_CustomLabels/patches/add-labels.yaml <<EOF
 EOF
 
 # Update kustomization.yaml to include the patch
-vim transform/50_CustomLabels/kustomization.yaml
+vi transform/50_CustomLabels/kustomization.yaml
 
 # 6. Run the entire pipeline
-crane transform
+# Note: 10_KubernetesPlugin and 20_OpenshiftPlugin regenerate automatically
+# 50_CustomLabels will fail unless --force is used (protects manual edits)
+crane transform --force
 
 # 7. Verify the output
 kubectl kustomize transform/50_CustomLabels/
@@ -444,20 +476,23 @@ git diff --staged transform/10_KubernetesPlugin/patches/
 
 ## Troubleshooting
 
-### "Directory contains user modifications"
+### "Stage directory is not empty (use --force to overwrite)"
 
-**Problem**: Crane detects manual changes and refuses to overwrite.
+**Problem**: Crane detects a custom stage already exists and refuses to overwrite to protect manual edits.
 
 **Solution**:
 ```bash
-# Option 1: Use force flag
+# Option 1: Use force flag to overwrite
 crane transform --force
 
 # Option 2: Check what changed
 git diff transform/
 
-# Option 3: Create new stage preserving changes
-crane transform --stage-name 20_custom
+# Option 3: Only regenerate plugin stages (they auto-regenerate)
+crane transform --stage 10_KubernetesPlugin
+
+# Note: Plugin stages (ending with "Plugin") regenerate automatically without --force
+# Custom stages (not ending with "Plugin") require --force to protect manual edits
 ```
 
 ### "kustomization.yaml validation failed"
@@ -501,7 +536,7 @@ You can extend generated kustomizations:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- resources/deployment.yaml
+- resources/Deployment_apps_v1_default_wordpress.yaml
 
 configMapGenerator:
 - name: app-config
@@ -515,7 +550,7 @@ configMapGenerator:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- resources/deployment.yaml
+- resources/Deployment_apps_v1_default_wordpress.yaml
 
 commonLabels:
   app: myapp
@@ -530,7 +565,7 @@ kind: Kustomization
 namespace: production
 
 resources:
-- resources/deployment.yaml
+- resources/Deployment_apps_v1_default_wordpress.yaml
 ```
 
 ## Further Help
