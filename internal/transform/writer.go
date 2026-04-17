@@ -329,30 +329,30 @@ func pathExists(data map[string]interface{}, path string) bool {
 
 // generateKustomizationWithComments creates a kustomization.yaml with human-readable whiteout comments
 func (w *KustomizeWriter) generateKustomizationWithComments(resources []string, patches []kustomize.Patch, whiteoutComments []string) ([]byte, error) {
-	var result strings.Builder
-
-	// Write whiteout comments if present (sorted for determinism)
-	if len(whiteoutComments) > 0 {
-		// Sort comments for stable output
-		sortedComments := make([]string, len(whiteoutComments))
-		copy(sortedComments, whiteoutComments)
-		sort.Strings(sortedComments)
-
-		result.WriteString("# Whiteout resources are written to resources/ for complete snapshot\n")
-		result.WriteString("# but excluded from active resources list below:\n")
-		for _, comment := range sortedComments {
-			result.WriteString(comment)
-			result.WriteString("\n")
-		}
-		result.WriteString("\n")
-	}
-
-	// Generate and append base kustomization YAML
+	// Generate base kustomization YAML
 	baseYAML, err := kustomize.GenerateKustomization(resources, patches)
 	if err != nil {
 		return nil, err
 	}
+
+	// If no whiteout comments, return as-is
+	if len(whiteoutComments) == 0 {
+		return baseYAML, nil
+	}
+
+	// Append whiteout comments at the end (sorted for determinism)
+	sortedComments := make([]string, len(whiteoutComments))
+	copy(sortedComments, whiteoutComments)
+	sort.Strings(sortedComments)
+
+	var result strings.Builder
 	result.Write(baseYAML)
+	result.WriteString("\n# Whiteout resources are written to resources/ for complete snapshot\n")
+	result.WriteString("# but excluded from active resources list above:\n")
+	for _, comment := range sortedComments {
+		result.WriteString(comment)
+		result.WriteString("\n")
+	}
 
 	return []byte(result.String()), nil
 }
