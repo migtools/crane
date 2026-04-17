@@ -244,9 +244,9 @@ func (o *Options) ensureStageDirectoryExists(orchestrator *internalTransform.Orc
 			// Previous stage hasn't been run yet, run it first
 			log.Infof("Previous stage %s hasn't been run yet, running it first...", lastStage.DirName)
 
-			// Mark as newly created to allow population
-			orchestrator.NewlyCreatedStages[lastStage.DirName] = true
-
+			// Run the stage - it will regenerate based on its type:
+			// - Plugin stages: auto-regenerate (no --force needed)
+			// - Custom stages: fail if directory not empty (require --force)
 			selector := internalTransform.StageSelector{Stage: lastStage.DirName}
 			if err := orchestrator.RunMultiStage(selector); err != nil {
 				return fmt.Errorf("failed to run previous stage %s: %w", lastStage.DirName, err)

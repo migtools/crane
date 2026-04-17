@@ -63,11 +63,26 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 		// Step 1: Determine input for this stage
 		var inputDir string
 		if i == 0 {
-			// First stage reads from export directory
-			inputDir = o.ExportDir
-			o.Log.Debugf("Stage %s input: export directory (%s)", stage.DirName, inputDir)
+			// First selected stage - check if it's actually the first in the full pipeline
+			// If not, use the previous stage's output instead of export
+			prevStage := GetPreviousStage(stages, stage)
+			if prevStage != nil {
+				// This is not the first stage in the pipeline - use previous stage's output
+				inputDir = opts.GetStageOutputDir(prevStage.DirName)
+				o.Log.Debugf("Stage %s input: previous stage output (%s)", stage.DirName, inputDir)
+
+				// Verify previous stage output exists
+				if _, err := os.Stat(inputDir); os.IsNotExist(err) {
+					return fmt.Errorf("stage %s requires output from stage %s, but output directory does not exist: %s",
+						stage.DirName, prevStage.DirName, inputDir)
+				}
+			} else {
+				// This is the first stage in the pipeline - read from export directory
+				inputDir = o.ExportDir
+				o.Log.Debugf("Stage %s input: export directory (%s)", stage.DirName, inputDir)
+			}
 		} else {
-			// Subsequent stages read from previous stage's output
+			// Subsequent stages in selected set read from previous selected stage's output
 			prevStage := selectedStages[i-1]
 			inputDir = opts.GetStageOutputDir(prevStage.DirName)
 			o.Log.Debugf("Stage %s input: previous stage output (%s)", stage.DirName, inputDir)

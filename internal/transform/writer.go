@@ -157,6 +157,9 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		}
 	}
 
+	// Sort resourcePaths for deterministic kustomization.yaml generation
+	sort.Strings(resourcePaths)
+
 	// Generate and write kustomization.yaml with whiteout comments
 	kustomizationYAML, err := w.generateKustomizationWithComments(resourcePaths, patches, whiteoutComments)
 	if err != nil {
