@@ -114,16 +114,13 @@ func envWithBinDir(bin string) []string {
 
 // withExtraVars appends --extra-vars to k8sdeploy arguments when ExtraVars is non-empty.
 func (a K8sDeployApp) withExtraVars(args []string) ([]string, error) {
-	if a.ExtraVars == nil {
+	if len(a.ExtraVars) == 0 {
 		return args, nil
 	}
 
 	extraVarsJSON, err := json.Marshal(a.ExtraVars)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal extra vars: %v", err)
-	}
-	if string(extraVarsJSON) == "null" || string(extraVarsJSON) == "{}" {
-		return args, nil
 	}
 
 	args = append(args, "--extra-vars", string(extraVarsJSON))

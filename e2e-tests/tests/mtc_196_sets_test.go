@@ -14,9 +14,9 @@ var _ = Describe("Sets", func() {
 	It("[MTC-196] Should migrate ReplicaSet, DaemonSet and StatefulSet as namespace-admin", Label("tier0"), func() {
 		appName := "sets"
 		namespace := "sets"
-		daemonSet_appName := "hello-daemonset-sajid"
-		replicaSet_appName := "frontend"
-		statefulSet_appName := "hello"
+		daemonSetAppName := "hello-daemonset"
+		replicaSetAppName := "frontend"
+		statefulSetAppName := "hello"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -38,14 +38,14 @@ var _ = Describe("Sets", func() {
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 			"daemonset": map[string]any{
-				"app_name": daemonSet_appName,
+				"app_name": daemonSetAppName,
 			},
 			"replicaset": map[string]any{
-				"app_name": replicaSet_appName,
+				"app_name": replicaSetAppName,
 				"replicas": 2,
 			},
 			"statefulset": map[string]any{
-				"app_name": statefulSet_appName,
+				"app_name": statefulSetAppName,
 				"replicas": 1,
 			},
 		}
@@ -88,22 +88,22 @@ var _ = Describe("Sets", func() {
 
 		By("Validate output directory contains DaemonSet , ReplicaSet and StatefulSet resource manifest")
 		log.Println("Checking for DaemonSet resource manifest")
-		daemonset_pattern := filepath.Join(paths.OutputDir, "resources", namespace, "DaemonSet_*.yaml")
-		matches, err := filepath.Glob(daemonset_pattern)
+		daemonSetPattern := filepath.Join(paths.OutputDir, "resources", namespace, "DaemonSet_*.yaml")
+		matches, err := filepath.Glob(daemonSetPattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matches).NotTo(BeEmpty(), "Expected at least one DaemonSet manifest")
 		log.Printf("DaemonSet resource present in output dir: %s\n", matches[0])
 
 		log.Println("Checking for ReplicaSet resource manifest")
-		replicaset_pattern := filepath.Join(paths.OutputDir, "resources", namespace, "ReplicaSet_*.yaml")
-		matches, err = filepath.Glob(replicaset_pattern)
+		replicaSetPattern := filepath.Join(paths.OutputDir, "resources", namespace, "ReplicaSet_*.yaml")
+		matches, err = filepath.Glob(replicaSetPattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matches).NotTo(BeEmpty(), "Expected at least one ReplicaSet manifest")
 		log.Printf("ReplicaSet resource present in output dir: %s\n", matches[0])
 
 		log.Println("Checking for StatefulSet resource manifest")
-		statefulset_pattern := filepath.Join(paths.OutputDir, "resources", namespace, "StatefulSet_*.yaml")
-		matches, err = filepath.Glob(statefulset_pattern)
+		statefulSetPattern := filepath.Join(paths.OutputDir, "resources", namespace, "StatefulSet_*.yaml")
+		matches, err = filepath.Glob(statefulSetPattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matches).NotTo(BeEmpty(), "Expected at least one StatefulSet manifest")
 		log.Printf("StatefulSet resource present in output dir: %s\n", matches[0])
