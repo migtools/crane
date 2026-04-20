@@ -65,7 +65,7 @@ func (a K8sDeployApp) Validate() error {
 		return fmt.Errorf("failed to validate app: %v, output: %s", err, string(out))
 	}
 	return nil
-} // End of Validate
+}
 
 // Cleanup runs k8sdeploy remove for the configured app and namespace.
 func (a K8sDeployApp) Cleanup() error {
