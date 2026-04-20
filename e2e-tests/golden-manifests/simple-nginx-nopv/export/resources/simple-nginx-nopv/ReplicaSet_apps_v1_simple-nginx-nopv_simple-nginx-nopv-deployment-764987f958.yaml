@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  annotations:
+    deployment.kubernetes.io/desired-replicas: "1"
+    deployment.kubernetes.io/max-replicas: "2"
+    deployment.kubernetes.io/revision: "1"
+  creationTimestamp: "2026-04-10T05:05:01Z"
+  generation: 1
+  labels:
+    app: simple-nginx-nopv
+    pod-template-hash: 764987f958
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:deployment.kubernetes.io/desired-replicas: {}
+          f:deployment.kubernetes.io/max-replicas: {}
+          f:deployment.kubernetes.io/revision: {}
+        f:labels:
+          .: {}
+          f:app: {}
+          f:pod-template-hash: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"6197e000-4630-4585-8aac-63b914011609"}: {}
+      f:spec:
+        f:replicas: {}
+        f:selector: {}
+        f:template:
+          f:metadata:
+            f:labels:
+              .: {}
+              f:app: {}
+              f:pod-template-hash: {}
+          f:spec:
+            f:containers:
+              k:{"name":"simple-nginx-nopv"}:
+                .: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:name: {}
+                f:ports:
+                  .: {}
+                  k:{"containerPort":8080,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:protocol: {}
+                f:resources: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext: {}
+            f:terminationGracePeriodSeconds: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-04-10T05:05:01Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:availableReplicas: {}
+        f:fullyLabeledReplicas: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+        f:terminatingReplicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-04-10T05:05:02Z"
+  name: simple-nginx-nopv-deployment-764987f958
+  namespace: simple-nginx-nopv
+  ownerReferences:
+  - apiVersion: apps/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Deployment
+    name: simple-nginx-nopv-deployment
+    uid: 6197e000-4630-4585-8aac-63b914011609
+  resourceVersion: "1083691"
+  uid: 479f0cc4-96a3-4253-94ce-8a92d7f37145
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: simple-nginx-nopv
+      pod-template-hash: 764987f958
+  template:
+    metadata:
+      labels:
+        app: simple-nginx-nopv
+        pod-template-hash: 764987f958
+    spec:
+      containers:
+      - image: quay.io/migqe/nginx-unprivileged:1.23
+        imagePullPolicy: IfNotPresent
+        name: simple-nginx-nopv
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  fullyLabeledReplicas: 1
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0

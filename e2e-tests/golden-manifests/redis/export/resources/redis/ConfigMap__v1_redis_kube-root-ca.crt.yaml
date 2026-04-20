@@ -1,0 +1,48 @@
+apiVersion: v1
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIDBjCCAe6gAwIBAgIBATANBgkqhkiG9w0BAQsFADAVMRMwEQYDVQQDEwptaW5p
+    a3ViZUNBMB4XDTI0MDYwNTExNTUxOFoXDTM0MDYwNDExNTUxOFowFTETMBEGA1UE
+    AxMKbWluaWt1YmVDQTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOai
+    oVBIUmFj/LqDEiTlKuD7AuuB5tJvIiQYZ/bXUSEb2aW1fyHvl/0isJM2D/mWqs9c
+    LDVVEII7p7oPtvXu1os12tlP2rV9sBE6ncma227uW7u/1Zo2KfZHZBIsLZN6MHzk
+    NJFXb9Zmwv7w5zaprIWXVFl8SNWdzDSBomS88J//LGqqnBfms+Yydqad7WtvMbvF
+    Wr6dyRklIlmQdID3dXuJfRETTplsZaR8w4SHRaGvqfEdoT+mJauJPhRAZS/2/2KV
+    xGPK5aegX/LBWlWUcVkUfQl1bK3UhqTaHMdviF+SQAt6QtBCjRUm9rUkBiv2wJWk
+    +pdW3ee932zSGuAq/90CAwEAAaNhMF8wDgYDVR0PAQH/BAQDAgKkMB0GA1UdJQQW
+    MBQGCCsGAQUFBwMCBggrBgEFBQcDATAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQW
+    BBT6hRmcQIVhZKHNP85+TAvFNpy6pzANBgkqhkiG9w0BAQsFAAOCAQEAhZxU43tz
+    dNKvURVhQiMlH2zznzksUYkIK/jMxHgrN/TPd2OuS+g0zuQs3/flK12gb/olmMfD
+    ovR+oj+gyLW3kh89ESEBEfoRqjixN19YTzGx+POpX6wEwsYVbsTwk5uWJ0gmUXJ+
+    A0h8zeY5NUYpvw2KAH49/yHKgoEYp1IWjoBLWv63wDeJf0OFrrpYjtmolFpLrBL2
+    hMSw8YejDvhUW3xR+KKXcLjZ11l+5bOknEMETNGE1KUUn6TjtOn4ScApFKZ+G7Ro
+    SZqeAtlS7bxhMXp3CdV+NAaWwBEPlu9SD4xQfGC7OGt75dhr3o71gFkvAShe7waD
+    yAI8OTm2VgmpfA==
+    -----END CERTIFICATE-----
+kind: ConfigMap
+metadata:
+  annotations:
+    kubernetes.io/description: Contains a CA bundle that can be used to verify the
+      kube-apiserver when using internal endpoints such as the internal service IP
+      or kubernetes.default.svc. No other usage is guaranteed across distributions
+      of Kubernetes clusters.
+  creationTimestamp: "2026-03-24T09:41:13Z"
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:ca.crt: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubernetes.io/description: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-03-24T09:41:13Z"
+  name: kube-root-ca.crt
+  namespace: redis
+  resourceVersion: "466861"
+  uid: 733c3447-db43-4f1b-9d98-b0d04060009e

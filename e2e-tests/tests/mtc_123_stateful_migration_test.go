@@ -6,6 +6,7 @@ import (
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -54,6 +55,15 @@ var _ = Describe("Stateful app migration", func() {
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
+		By("Compare YAML semantic diff of golden and actual output files")
+		goldenOutputDir, err := utils.GoldenManifestsDir(appName, "output")
+		Expect(err).NotTo(HaveOccurred())
+		if err := utils.CompareDirectoryYAMLSemantics(goldenOutputDir, paths.OutputDir); err != nil {
+			Fail(fmt.Sprintf("YAML semantic diff of golden and actual output files: %v", err))
+		} else {
+			log.Printf("YAML semantic diff of golden and actual output files: no differences found")
+		}
+		log.Printf("Yaml diff comparison for output files completed successfully")
 		By("Create namespace on target cluster")
 		log.Printf("Creating ns %s on target cluster", tgtApp.Namespace)
 		Expect(kubectlTgt.CreateNamespace(tgtApp.Namespace)).NotTo(HaveOccurred())

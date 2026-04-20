@@ -1,0 +1,64 @@
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints:
+- addresses:
+  - 10.244.3.175
+  conditions:
+    ready: true
+    serving: true
+    terminating: false
+  nodeName: src
+  targetRef:
+    kind: Pod
+    name: redis-fd76f5747-d2qrd
+    namespace: redis
+    uid: aee84c4c-36aa-4d3e-a079-4a5e0dbfe22c
+kind: EndpointSlice
+metadata:
+  annotations:
+    endpoints.kubernetes.io/last-change-trigger-time: "2026-04-10T05:03:35Z"
+  creationTimestamp: "2026-03-24T09:41:14Z"
+  generateName: redis-
+  generation: 8
+  labels:
+    endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+    kubernetes.io/service-name: redis
+    name: redis
+  managedFields:
+  - apiVersion: discovery.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:addressType: {}
+      f:endpoints: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:endpoints.kubernetes.io/last-change-trigger-time: {}
+        f:generateName: {}
+        f:labels:
+          .: {}
+          f:endpointslice.kubernetes.io/managed-by: {}
+          f:kubernetes.io/service-name: {}
+          f:name: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"8721ae4e-0585-404d-8966-3ba0aee75ed8"}: {}
+      f:ports: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-04-10T05:03:35Z"
+  name: redis-7q2dh
+  namespace: redis
+  ownerReferences:
+  - apiVersion: v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Service
+    name: redis
+    uid: 8721ae4e-0585-404d-8966-3ba0aee75ed8
+  resourceVersion: "1083294"
+  uid: 4ee78687-35e9-4413-b853-ceeb9e16a320
+ports:
+- name: redis
+  port: 6379
+  protocol: TCP
