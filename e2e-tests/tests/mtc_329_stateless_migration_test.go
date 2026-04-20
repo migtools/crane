@@ -1,10 +1,12 @@
 package e2e
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -45,6 +47,15 @@ var _ = Describe("Stateless migration", func() {
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
+		By("Compare YAML semantic diff of golden and actual output files")
+		goldenOutputDir, err := utils.GoldenManifestsDir(appName, "output")
+		Expect(err).NotTo(HaveOccurred())
+		if err := utils.CompareDirectoryYAMLSemantics(goldenOutputDir, paths.OutputDir); err != nil {
+			Fail(fmt.Sprintf("YAML semantic diff of golden and actual output files: %v", err))
+		} else {
+			log.Printf("YAML semantic diff of golden and actual output files: no differences found")
+		}
+		log.Printf("Yaml diff comparison completed for output files successfully")
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
 		Expect(ApplyOutputToTarget(kubectlTgt, namespace, paths.OutputDir)).NotTo(HaveOccurred())

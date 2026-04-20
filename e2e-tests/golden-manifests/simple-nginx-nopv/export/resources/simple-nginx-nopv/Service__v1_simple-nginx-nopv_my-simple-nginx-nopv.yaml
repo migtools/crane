@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2026-04-10T05:05:01Z"
+  labels:
+    app: simple-nginx-nopv
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:app: {}
+      f:spec:
+        f:internalTrafficPolicy: {}
+        f:ports:
+          .: {}
+          k:{"port":8081,"protocol":"TCP"}:
+            .: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+        f:selector: {}
+        f:sessionAffinity: {}
+        f:type: {}
+    manager: OpenAPI-Generator
+    operation: Update
+    time: "2026-04-10T05:05:01Z"
+  name: my-simple-nginx-nopv
+  namespace: simple-nginx-nopv
+  resourceVersion: "1083672"
+  uid: e002c6c4-3895-40f3-93ce-e8f5753c5616
+spec:
+  clusterIP: 10.97.88.169
+  clusterIPs:
+  - 10.97.88.169
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 8081
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: simple-nginx-nopv
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
