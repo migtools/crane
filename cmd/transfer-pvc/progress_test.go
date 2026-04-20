@@ -1,7 +1,9 @@
 package transfer_pvc
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -616,5 +618,47 @@ func TestProgressMerge_ErrorAndFailedFileAppending(t *testing.T) {
 	}
 	if len(p.FailedFiles) != 3 {
 		t.Errorf("Merge() len(FailedFiles) = %v, want 3", len(p.FailedFiles))
+	}
+}
+
+func TestWriteProgressToFile_WriteValidFile(t *testing.T) {
+	resetGlobals()
+	tmpPath := t.TempDir() + "/test-progress.json"
+
+	pct := int64(50)
+	p := &Progress{
+		TransferPercentage: &pct,
+		TransferredFiles:   100,
+		startedAt:          time.Now(),
+	}
+
+	err := writeProgressToFile(tmpPath, p)
+	if err != nil {
+		t.Errorf("writeProgressToFile() error = %v", err)
+	}
+
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Errorf("Failed to read written file: %v", err)
+	}
+
+	var readProgress Progress
+	if err := json.Unmarshal(data, &readProgress); err != nil {
+		t.Errorf("Failed to unmarshal progress: %v", err)
+	}
+
+	if readProgress.TransferredFiles != 100 {
+		t.Errorf("Written TransferredFiles = %v, want 100", readProgress.TransferredFiles)
+	}
+}
+
+func TestWriteProgressToFile_InvalidPath(t *testing.T) {
+	resetGlobals()
+	p := &Progress{
+		TransferredFiles: 100,
+	}
+	err := writeProgressToFile("/nonexistent/directory/file.json", p)
+	if err == nil {
+		t.Errorf("writeProgressToFile() with invalid path should return error")
 	}
 }
