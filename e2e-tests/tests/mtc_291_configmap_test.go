@@ -46,9 +46,9 @@ var _ = Describe("ConfigMap Migration", func() {
 		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			By("Delete test namespace on source and target (best effort)")
+			By("Delete test namespace on source and target (wait for completion)")
 			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
-				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=false"); err != nil {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
 					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
 				}
 			}
