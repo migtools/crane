@@ -11,8 +11,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("[MTC-127] Default Ignored resources", func() {
-	It("should be ignored", Label("tier0"), func() {
+var _ = Describe("Default Ignored resources", func() {
+	It("[MTC-127] should be ignored", Label("tier0"), func() {
 		appName := "empty-namespace"
 		namespace := appName
 		scenario := NewMigrationScenario(

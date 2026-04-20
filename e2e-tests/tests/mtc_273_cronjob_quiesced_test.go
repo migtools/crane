@@ -11,8 +11,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
-	It("Should suspend a cronjob and apply to target cluster and unsuspend it", Label("tier0"), func() {
+var _ = Describe("Cronjob Quiesced", func() {
+	It("[MTC-273] Should suspend a cronjob and apply to target cluster and unsuspend it", Label("tier0"), func() {
 		appName := "cronjob"
 		namespace := "cronjob"
 		expectedHelloLog := fmt.Sprintf("Hello! from namespace %s", namespace)
@@ -32,11 +32,11 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 		paths := ScenarioPaths{}
 
 		//Override the extra vars for the source app
-		srcApp.ExtraVars = map[string]string{
+		srcApp.ExtraVars = map[string]any{
 			"ext_app_name": appName,
 		}
 		//Override the extra vars for the target app
-		tgtApp.ExtraVars = map[string]string{
+		tgtApp.ExtraVars = map[string]any{
 			"ext_app_name": appName,
 		}
 
@@ -148,4 +148,4 @@ var _ = Describe("[MTC-273] Cronjob Quiesced", func() {
 		targetPodName := waitForLatestCronPod(kubectlTgt)
 		assertPodLogsHello(kubectlTgt, targetPodName)
 	})
-}) //End of [MTC-273] Cronjob Quiesced
+}) // End of Cronjob Quiesced

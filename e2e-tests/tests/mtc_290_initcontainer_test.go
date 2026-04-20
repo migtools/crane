@@ -33,11 +33,11 @@ var _ = Describe("InitContainer Migration", func() {
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
 
-		srcApp.ExtraVars = map[string]string{
+		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 			"ext_app_name":   appName,
 		}
-		tgtApp.ExtraVars = map[string]string{
+		tgtApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 			"ext_app_name":   appName,
 		}
