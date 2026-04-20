@@ -32,11 +32,13 @@ var _ = Describe("Empty PVC migration", func() {
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 
-		srcApp.ExtraVars = map[string]string{
+		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
+			"app_name":       "app-with-empty-pvc",
 		}
-		tgtApp.ExtraVars = map[string]string{
+		tgtApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
+			"app_name":       "app-with-empty-pvc",
 		}
 
 		By("Grant ns admin permissions to nonadmin user on source and target")
@@ -68,13 +70,13 @@ var _ = Describe("Empty PVC migration", func() {
 				}
 			}
 		})
-		By("List pvcs in the source namespace")
+		By("List PVCs in the source namespace")
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(pvcs).NotTo(BeEmpty(), "expected at least one pvc in source namespace %q", srcApp.Namespace)
-		log.Printf("Found %d pvcs in namespace %q", len(pvcs), srcApp.Namespace)
+		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", srcApp.Namespace)
+		log.Printf("Found %d PVCs in source namespace %q", len(pvcs), srcApp.Namespace)
 		for _, pvc := range pvcs {
-			log.Printf("Found pvc %s in namespace %q\n", pvc.Name, pvc.Namespace)
+			log.Printf("Found PVC %s in source namespace %q\n", pvc.Name, pvc.Namespace)
 		}
 
 		By("Verify PVC is empty on source cluster")
@@ -92,6 +94,8 @@ var _ = Describe("Empty PVC migration", func() {
 		log.Printf("Crane pipeline completed for source namespace %s\n", srcApp.Namespace)
 
 		By("Transfer PVCs")
+		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
+		Expect(err).NotTo(HaveOccurred())
 		for _, pvc := range pvcs {
 			pvcName := pvc.Name
 
@@ -102,17 +106,18 @@ var _ = Describe("Empty PVC migration", func() {
 				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
 				Endpoint:        "nginx-ingress",
 				IngressClass:    "nginx",
+				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 			log.Printf("PVC transfer complete : %s -> namespace %s", pvcName, tgtApp.Namespace)
 		}
 
-		By("List pvcs on target cluster")
+		By("List PVCs on target cluster")
 		tgtpvcs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(tgtpvcs).NotTo(BeEmpty(), "expected at least one pvc in target namespace %q", tgtApp.Namespace)
-		log.Printf("Found %d pvcs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
+		Expect(tgtpvcs).NotTo(BeEmpty(), "expected at least one PVC in target namespace %q", tgtApp.Namespace)
+		log.Printf("Found %d PVCs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
 
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", tgtApp.Namespace, paths.OutputDir)
