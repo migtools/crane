@@ -20,7 +20,7 @@ type K8sDeployApp struct {
 	Namespace string
 	Bin       string
 	Context   string
-	ExtraVars map[string]string
+	ExtraVars map[string]any
 }
 
 // Deploy runs k8sdeploy deploy for the configured app and namespace.
