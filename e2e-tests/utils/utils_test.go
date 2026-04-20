@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestParseYAMLDocuments(t *testing.T) {
@@ -556,6 +558,223 @@ func TestLooksLikeYAMLFile(t *testing.T) {
 			if got != tc.want {
 				t.Fatalf("LooksLikeYAMLFile(%q) = %v, want %v", tc.path, got, tc.want)
 			}
+		})
+	}
+}
+
+func TestNormalizeUnstableFields(t *testing.T) {
+	// Table-driven checks for export-field normalization behavior.
+	cases := []struct {
+		name     string
+		in       any
+		validate func(t *testing.T, got any)
+	}{
+		{
+			name: "drops_top_level_status",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"status": map[string]any{
+					"phase": "Running",
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m, ok := got.(map[string]any)
+				if !ok {
+					t.Fatalf("got type = %T, want map[string]any", got)
+				}
+				if _, exists := m["status"]; exists {
+					t.Fatalf("expected top-level status to be removed, got: %#v", m["status"])
+				}
+			},
+		},
+		{
+			name: "drops_unstable_metadata_fields",
+			in: map[string]any{
+				"metadata": map[string]any{
+					"name":              "demo",
+					"uid":               "abc-123",
+					"resourceVersion":   "42",
+					"creationTimestamp": "2026-01-01T00:00:00Z",
+					"managedFields":     []any{map[string]any{"manager": "kube-controller"}},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m, ok := got.(map[string]any)
+				if !ok {
+					t.Fatalf("got type = %T, want map[string]any", got)
+				}
+				meta, ok := m["metadata"].(map[string]any)
+				if !ok {
+					t.Fatalf("metadata type = %T, want map[string]any", m["metadata"])
+				}
+				for _, k := range []string{"uid", "resourceVersion", "creationTimestamp", "managedFields"} {
+					if _, exists := meta[k]; exists {
+						t.Fatalf("expected metadata.%s to be removed", k)
+					}
+				}
+				if meta["name"] != "demo" {
+					t.Fatalf("expected metadata.name to stay, got: %v", meta["name"])
+				}
+			},
+		},
+		{
+			name: "drops_unstable_service_network_fields",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Service",
+				"spec": map[string]any{
+					"clusterIP":  "10.96.0.10",
+					"clusterIPs": []any{"10.96.0.10"},
+					"type":       "ClusterIP",
+					"ports":      []any{map[string]any{"port": 8080}},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m, ok := got.(map[string]any)
+				if !ok {
+					t.Fatalf("got type = %T, want map[string]any", got)
+				}
+				spec, ok := m["spec"].(map[string]any)
+				if !ok {
+					t.Fatalf("spec type = %T, want map[string]any", m["spec"])
+				}
+				if _, exists := spec["clusterIP"]; exists {
+					t.Fatal("expected spec.clusterIP to be removed")
+				}
+				if _, exists := spec["clusterIPs"]; exists {
+					t.Fatal("expected spec.clusterIPs to be removed")
+				}
+				if spec["type"] != "ClusterIP" {
+					t.Fatalf("expected spec.type to stay, got: %v", spec["type"])
+				}
+			},
+		},
+		{
+			name: "keeps_stable_metadata_fields",
+			in: map[string]any{
+				"metadata": map[string]any{
+					"name":      "demo",
+					"namespace": "app-ns",
+					"labels":    map[string]any{"app": "demo"},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m, ok := got.(map[string]any)
+				if !ok {
+					t.Fatalf("got type = %T, want map[string]any", got)
+				}
+				meta := m["metadata"].(map[string]any)
+				if meta["name"] != "demo" || meta["namespace"] != "app-ns" {
+					t.Fatalf("stable metadata changed unexpectedly: %#v", meta)
+				}
+				labels, ok := meta["labels"].(map[string]any)
+				if !ok || labels["app"] != "demo" {
+					t.Fatalf("labels changed unexpectedly: %#v", meta["labels"])
+				}
+			},
+		},
+		{
+			name: "noop_when_fields_missing",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata":   map[string]any{"name": "cfg"},
+				"data":       map[string]any{"k": "v"},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				want := map[string]any{
+					"apiVersion": "v1",
+					"kind":       "ConfigMap",
+					"metadata":   map[string]any{"name": "cfg"},
+					"data":       map[string]any{"k": "v"},
+				}
+				if !cmp.Equal(want, got) {
+					t.Fatalf("expected no-op normalization; diff:\n%s", cmp.Diff(want, got))
+				}
+			},
+		},
+		{
+			name: "works_for_slice_root",
+			in: []any{
+				map[string]any{
+					"metadata": map[string]any{
+						"name": "a",
+						"uid":  "u1",
+					},
+					"status": map[string]any{"phase": "Running"},
+				},
+				map[string]any{
+					"metadata": map[string]any{
+						"name":            "b",
+						"resourceVersion": "99",
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				docs, ok := got.([]any)
+				if !ok {
+					t.Fatalf("got type = %T, want []any", got)
+				}
+				if len(docs) != 2 {
+					t.Fatalf("len(docs) = %d, want 2", len(docs))
+				}
+				first := docs[0].(map[string]any)
+				if _, exists := first["status"]; exists {
+					t.Fatal("expected first doc status removed")
+				}
+				firstMeta := first["metadata"].(map[string]any)
+				if _, exists := firstMeta["uid"]; exists {
+					t.Fatal("expected first doc metadata.uid removed")
+				}
+				secondMeta := docs[1].(map[string]any)["metadata"].(map[string]any)
+				if _, exists := secondMeta["resourceVersion"]; exists {
+					t.Fatal("expected second doc metadata.resourceVersion removed")
+				}
+			},
+		},
+		{
+			name: "drops_owner_reference_uid_only",
+			in: map[string]any{
+				"metadata": map[string]any{
+					"ownerReferences": []any{
+						map[string]any{
+							"apiVersion": "apps/v1",
+							"kind":       "Deployment",
+							"name":       "demo",
+							"uid":        "owner-uid-123",
+							"controller": true,
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				meta := m["metadata"].(map[string]any)
+				refs := meta["ownerReferences"].([]any)
+				ref := refs[0].(map[string]any)
+				if _, exists := ref["uid"]; exists {
+					t.Fatal("expected metadata.ownerReferences[].uid to be removed")
+				}
+				if ref["kind"] != "Deployment" || ref["name"] != "demo" {
+					t.Fatalf("expected stable ownerReference fields to remain, got: %#v", ref)
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := normalizeUnstableFields(tc.in)
+			tc.validate(t, got)
 		})
 	}
 }

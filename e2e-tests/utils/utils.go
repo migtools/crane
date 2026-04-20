@@ -229,3 +229,54 @@ func LooksLikeYAMLFile(path string) bool {
 		return ext == ""
 	}
 }
+
+func normalizeUnstableFields(doc any) any {
+	return normalizeWithPath(doc, nil)
+}
+
+func normalizeWithPath(value any, path []string) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, child := range v {
+			if shouldDropField(path, k) {
+				continue
+			}
+			nextPath := append(append([]string{}, path...), k)
+			out[k] = normalizeWithPath(child, nextPath)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			out = append(out, normalizeWithPath(item, path))
+		}
+		return out
+	case string, int, float64, bool, nil:
+		return v
+	}
+	return value
+}
+
+func shouldDropField(path []string, key string) bool {
+	if len(path) == 0 && key == "status" {
+		return true
+	}
+	if len(path) == 1 && path[0] == "metadata" {
+		switch key {
+		case "uid", "resourceVersion", "creationTimestamp", "managedFields":
+			return true
+		}
+	} else if len(path) == 2 && path[0] == "metadata" && path[1] == "ownerReferences" {
+		switch key {
+		case "uid":
+			return true
+		}
+	} else if len(path) == 1 && path[0] == "spec" {
+		switch key {
+		case "clusterIP", "clusterIPs":
+			return true
+		}
+	}
+	return false
+}
