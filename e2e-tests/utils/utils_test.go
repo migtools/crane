@@ -730,6 +730,7 @@ func TestNormalizeUnstableFields(t *testing.T) {
 					"uid":               "abc-123",
 					"resourceVersion":   "42",
 					"creationTimestamp": "2026-01-01T00:00:00Z",
+					"generation":        7,
 					"managedFields":     []any{map[string]any{"manager": "kube-controller"}},
 				},
 			},
@@ -743,7 +744,7 @@ func TestNormalizeUnstableFields(t *testing.T) {
 				if !ok {
 					t.Fatalf("metadata type = %T, want map[string]any", m["metadata"])
 				}
-				for _, k := range []string{"uid", "resourceVersion", "creationTimestamp", "managedFields"} {
+				for _, k := range []string{"uid", "resourceVersion", "creationTimestamp", "managedFields", "generation"} {
 					if _, exists := meta[k]; exists {
 						t.Fatalf("expected metadata.%s to be removed", k)
 					}
@@ -783,6 +784,36 @@ func TestNormalizeUnstableFields(t *testing.T) {
 				}
 				if spec["type"] != "ClusterIP" {
 					t.Fatalf("expected spec.type to stay, got: %v", spec["type"])
+				}
+			},
+		},
+		{
+			name: "drops_unstable_pvc_volume_name",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "PersistentVolumeClaim",
+				"spec": map[string]any{
+					"accessModes":      []any{"ReadWriteOnce"},
+					"storageClassName": "standard",
+					"volumeMode":       "Filesystem",
+					"volumeName":       "pvc-9a11245c-1789-49d1-a666-b877de7201d6",
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m, ok := got.(map[string]any)
+				if !ok {
+					t.Fatalf("got type = %T, want map[string]any", got)
+				}
+				spec, ok := m["spec"].(map[string]any)
+				if !ok {
+					t.Fatalf("spec type = %T, want map[string]any", m["spec"])
+				}
+				if _, exists := spec["volumeName"]; exists {
+					t.Fatal("expected spec.volumeName to be removed")
+				}
+				if spec["storageClassName"] != "standard" {
+					t.Fatalf("expected stable PVC fields to stay, got: %v", spec["storageClassName"])
 				}
 			},
 		},

@@ -502,7 +502,7 @@ func shouldDropField(path []string, key string) bool {
 	}
 	if len(path) == 1 && path[0] == "metadata" {
 		switch key {
-		case "uid", "resourceVersion", "creationTimestamp", "managedFields":
+		case "uid", "resourceVersion", "creationTimestamp", "managedFields", "generation":
 			return true
 		}
 	} else if len(path) == 2 && path[0] == "metadata" && path[1] == "annotations" {
@@ -517,7 +517,7 @@ func shouldDropField(path []string, key string) bool {
 		}
 	} else if len(path) == 1 && path[0] == "spec" {
 		switch key {
-		case "clusterIP", "clusterIPs":
+		case "clusterIP", "clusterIPs", "volumeName":
 			return true
 		}
 	} else if len(path) == 1 && path[0] == "endpoints" {
