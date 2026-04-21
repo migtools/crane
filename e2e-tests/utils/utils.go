@@ -152,7 +152,8 @@ func CompareDirectoryFileSets(goldenDir, gotDir string) error {
 	return nil
 }
 
-// CompareDirectoryYAMLSemantics compares the YAML semantics of the files in two directories and returns an error if they differ.
+// CompareDirectoryYAMLSemantics compares YAML semantics for matching files in two
+// directories using strict file-set equality and without export-specific normalization.
 func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
 		return err
@@ -175,6 +176,55 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 			return fmt.Errorf("read got file %q: %w", gotPath, err)
 		}
 		if err := compareYAMLFileBytes(relativeFilePath, goldenBytes, gotBytes); err != nil {
+			return fmt.Errorf("compare YAML file %q: %w", relativeFilePath, err)
+		}
+	}
+	return nil
+}
+
+// compareYAMLFileBytesExport compares two YAML files after normalizing unstable
+// cluster-generated fields used by export-stage validation.
+func compareYAMLFileBytesExport(relPath string, golden, got []byte) error {
+	goldenDocs, err := parseYAMLDocuments(golden)
+	if err != nil {
+		return fmt.Errorf("parse golden file %q: %w", relPath, err)
+	}
+	gotDocs, err := parseYAMLDocuments(got)
+	if err != nil {
+		return fmt.Errorf("parse got file %q: %w", relPath, err)
+	}
+
+	normalizedGoldenDocs := normalizeUnstableFields(goldenDocs)
+	normalizedGotDocs := normalizeUnstableFields(gotDocs)
+	if !cmp.Equal(normalizedGoldenDocs, normalizedGotDocs) {
+		return fmt.Errorf("YAML differs in %q:\n%s", relPath, cmp.Diff(normalizedGoldenDocs, normalizedGotDocs))
+	}
+	return nil
+}
+
+// CompareDirectoryYAMLSemanticsExport compares YAML semantics for matching files
+// in two directories using export-field normalization.
+func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
+	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
+		return err
+	}
+	relativeFilePaths, err := ListFilesRecursivelyAsList(goldenDir)
+	if err != nil {
+		return fmt.Errorf("list files in golden directory %q: %w", goldenDir, err)
+	}
+	for _, relativeFilePath := range relativeFilePaths {
+		goldenPath := filepath.Join(goldenDir, relativeFilePath)
+		gotPath := filepath.Join(gotDir, relativeFilePath)
+
+		goldenBytes, err := os.ReadFile(goldenPath)
+		if err != nil {
+			return fmt.Errorf("read golden file %q: %w", goldenPath, err)
+		}
+		gotBytes, err := os.ReadFile(gotPath)
+		if err != nil {
+			return fmt.Errorf("read got file %q: %w", gotPath, err)
+		}
+		if err := compareYAMLFileBytesExport(relativeFilePath, goldenBytes, gotBytes); err != nil {
 			return fmt.Errorf("compare YAML file %q: %w", relativeFilePath, err)
 		}
 	}
@@ -230,10 +280,14 @@ func LooksLikeYAMLFile(path string) bool {
 	}
 }
 
+// normalizeUnstableFields removes selected unstable fields from a decoded YAML
+// document tree (maps/slices/scalars) for stable export comparisons.
 func normalizeUnstableFields(doc any) any {
 	return normalizeWithPath(doc, nil)
 }
 
+// normalizeWithPath recursively normalizes a decoded YAML value while tracking
+// the current map path for field-drop decisions.
 func normalizeWithPath(value any, path []string) any {
 	switch v := value.(type) {
 	case map[string]any:
@@ -258,6 +312,8 @@ func normalizeWithPath(value any, path []string) any {
 	return value
 }
 
+// shouldDropField reports whether a key at the given map path should be removed
+// as unstable during export normalization.
 func shouldDropField(path []string, key string) bool {
 	if len(path) == 0 && key == "status" {
 		return true

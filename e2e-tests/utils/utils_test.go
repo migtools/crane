@@ -136,6 +136,70 @@ func TestCompareYAMLFileBytes(t *testing.T) {
 	}
 }
 
+func TestCompareYAMLFileBytesExport(t *testing.T) {
+	// Export compare should ignore configured unstable fields but still catch real semantic drift.
+	cases := []struct {
+		name        string
+		relPath     string
+		golden      []byte
+		got         []byte
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name:    "equivalent_after_export_normalization",
+			relPath: "svc.yaml",
+			golden:  []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\n  uid: old\n  resourceVersion: \"1\"\nspec:\n  clusterIP: 10.0.0.1\n  clusterIPs: [10.0.0.1]\n  type: ClusterIP\nstatus:\n  loadBalancer: {}\n"),
+			got:     []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\n  uid: new\n  resourceVersion: \"2\"\nspec:\n  clusterIP: 10.0.0.2\n  clusterIPs: [10.0.0.2]\n  type: ClusterIP\nstatus:\n  loadBalancer: {}\n"),
+		},
+		{
+			name:        "detects_real_semantic_difference",
+			relPath:     "svc.yaml",
+			golden:      []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\nspec:\n  type: ClusterIP\n"),
+			got:         []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\nspec:\n  type: NodePort\n"),
+			wantErr:     true,
+			errContains: []string{"YAML differs in", "svc.yaml"},
+		},
+		{
+			name:        "invalid_golden_yaml",
+			relPath:     "bad.yaml",
+			golden:      []byte("{\n"),
+			got:         []byte("a: 1\n"),
+			wantErr:     true,
+			errContains: []string{"parse golden file"},
+		},
+		{
+			name:        "invalid_got_yaml",
+			relPath:     "bad.yaml",
+			golden:      []byte("a: 1\n"),
+			got:         []byte("{\n"),
+			wantErr:     true,
+			errContains: []string{"parse got file"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			err := compareYAMLFileBytesExport(tc.relPath, tc.golden, tc.got)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, s := range tc.errContains {
+					if !strings.Contains(err.Error(), s) {
+						t.Fatalf("error %q does not contain %q", err.Error(), s)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("compareYAMLFileBytesExport: %v", err)
+			}
+		})
+	}
+}
+
 func TestListFilesRecursivelyAsList(t *testing.T) {
 	// Verify recursive listing returns sorted, relative paths.
 	root := t.TempDir()
@@ -515,6 +579,36 @@ func TestCompareDirectoryYAMLSemantics(t *testing.T) {
 			wantErr:     true,
 			errContains: []string{"file sets differ"},
 		},
+		{
+			name: "invalid_yaml_bubbles_with_compare_context",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n")
+				write(t, got, "resources/cm.yaml", "{\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"compare YAML file", "parse got file"},
+		},
+		{
+			name: "read_error_from_unreadable_got_file",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				rel := filepath.Join("resources", "cm.yaml")
+				write(t, golden, rel, "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n")
+				write(t, got, rel, "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n")
+				gotPath := filepath.Join(got, rel)
+				if err := os.Chmod(gotPath, 0o000); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(gotPath, 0o644) })
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"read got file"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -535,6 +629,84 @@ func TestCompareDirectoryYAMLSemantics(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("CompareDirectoryYAMLSemantics: %v", err)
+			}
+		})
+	}
+}
+
+func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
+	// Export directory compare should normalize unstable fields and still enforce file-set equality.
+	write := func(t *testing.T, dir, rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cases := []struct {
+		name        string
+		build       func(t *testing.T) (string, string)
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name: "semantic_match_after_normalization",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  name: s\n  uid: one\nspec:\n  clusterIP: 10.0.0.1\n  clusterIPs: [10.0.0.1]\n  type: ClusterIP\nstatus:\n  loadBalancer: {}\n")
+				write(t, got, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  name: s\n  uid: two\nspec:\n  clusterIP: 10.0.0.9\n  clusterIPs: [10.0.0.9]\n  type: ClusterIP\nstatus:\n  loadBalancer: {}\n")
+				return golden, got
+			},
+		},
+		{
+			name: "real_semantic_diff_detected",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  name: s\nspec:\n  type: ClusterIP\n")
+				write(t, got, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  name: s\nspec:\n  type: NodePort\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"compare YAML file", "YAML differs"},
+		},
+		{
+			name: "file_set_mismatch_detected",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "only-golden.yaml", "a: 1\n")
+				write(t, got, "only-got.yaml", "a: 1\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"file sets differ"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			goldenDir, gotDir := tc.build(t)
+			err := CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, s := range tc.errContains {
+					if !strings.Contains(err.Error(), s) {
+						t.Fatalf("error %q does not contain %q", err.Error(), s)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CompareDirectoryYAMLSemanticsExport: %v", err)
 			}
 		})
 	}
