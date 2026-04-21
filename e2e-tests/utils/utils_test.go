@@ -636,7 +636,19 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 			errContains: []string{"index got export directory", "parse file"},
 		},
 		{
-			name: "duplicate_identity_in_single_directory_fails",
+			name: "same_identity_multiplicity_match_passes",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/one.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  a: one\n")
+				write(t, golden, "resources/two.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  b: two\n")
+				write(t, got, "resources/x.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  b: two\n")
+				write(t, got, "resources/y.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  a: one\n")
+				return golden, got
+			},
+		},
+		{
+			name: "same_identity_multiplicity_mismatch_fails",
 			build: func(t *testing.T) (string, string) {
 				golden := t.TempDir()
 				got := t.TempDir()
@@ -646,7 +658,7 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 				return golden, got
 			},
 			wantErr:     true,
-			errContains: []string{"duplicate resource identity"},
+			errContains: []string{"YAML differs for identity"},
 		},
 	}
 

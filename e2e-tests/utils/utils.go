@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -21,7 +22,9 @@ func CreateTempDir(prefix string) (string, error) {
 	return os.MkdirTemp("", prefix)
 }
 
-// ListFilesRecursively returns a formatted list of files under a directory.
+// ListFilesRecursively returns a human-readable, newline-delimited list of files
+// under dir using relative paths (prefixed with "  - ").
+// It returns "  (no files)" when dir contains no files.
 func ListFilesRecursively(dir string) (string, error) {
 	files, err := ListFilesRecursivelyAsList(dir)
 	if err != nil {
@@ -43,7 +46,8 @@ func ListFilesRecursively(dir string) (string, error) {
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
-// ListFilesRecursivelyAsList returns sorted file paths under dir as relative paths.
+// ListFilesRecursivelyAsList walks dir recursively and returns sorted relative
+// file paths. Directory entries are excluded.
 func ListFilesRecursivelyAsList(dir string) ([]string, error) {
 	var files []string
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -77,7 +81,8 @@ func HasFilesRecursively(dir string) (bool, string, error) {
 	return hasFiles, files, nil
 }
 
-// ReadTestdataFile reads a file from the testdata directory.
+// ReadTestdataFile reads a file from e2e-tests/testdata relative to this package.
+// filename should be a path relative to that testdata directory.
 func ReadTestdataFile(filename string) (string, error) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -153,8 +158,9 @@ func CompareDirectoryFileSets(goldenDir, gotDir string) error {
 	return nil
 }
 
-// CompareDirectoryYAMLSemantics compares YAML semantics for matching files in two
-// directories using strict file-set equality and without export-specific normalization.
+// CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
+// two directories using strict file-set equality and no export-specific normalization.
+// This is intended for stable outputs (for example transform/output artifacts).
 func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
 		return err
@@ -183,10 +189,12 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 	return nil
 }
 
-// CompareDirectoryYAMLSemanticsExport compares YAML semantics for matching files
-// in two directories using export-field normalization and resource-identity matching.
+// CompareDirectoryYAMLSemanticsExport compares export YAML semantics using
+// normalization and resource-identity grouping instead of strict filename matching.
 // This avoids false diffs caused by unstable export filenames (for example, Pod or
 // EndpointSlice names with generated suffixes encoded in file paths).
+// When multiple documents map to the same identity, both sides are compared as
+// multisets after canonical JSON normalization.
 func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
 	goldenIndex, err := buildNormalizedExportIndex(goldenDir)
 	if err != nil {
@@ -214,10 +222,18 @@ func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
 	}
 
 	for _, identity := range goldenIDs {
-		goldenEntry := goldenIndex[identity]
-		gotEntry := gotIndex[identity]
-		if !cmp.Equal(goldenEntry.doc, gotEntry.doc) {
-			return fmt.Errorf("YAML differs for identity %q (golden: %q, got: %q):\n%s", identity, goldenEntry.source, gotEntry.source, cmp.Diff(goldenEntry.doc, gotEntry.doc))
+		goldenEntries := goldenIndex[identity]
+		gotEntries := gotIndex[identity]
+		goldenDocs, err := canonicalizeDocs(goldenEntries)
+		if err != nil {
+			return fmt.Errorf("canonicalize golden docs for identity %q: %w", identity, err)
+		}
+		gotDocs, err := canonicalizeDocs(gotEntries)
+		if err != nil {
+			return fmt.Errorf("canonicalize got docs for identity %q: %w", identity, err)
+		}
+		if !cmp.Equal(goldenDocs, gotDocs) {
+			return fmt.Errorf("YAML differs for identity %q:\n%s", identity, cmp.Diff(goldenDocs, gotDocs))
 		}
 	}
 	return nil
@@ -228,15 +244,16 @@ type exportIndexedDoc struct {
 	source string
 }
 
-// buildNormalizedExportIndex reads YAML files under dir and indexes normalized
-// documents by stable resource identity.
-func buildNormalizedExportIndex(dir string) (map[string]exportIndexedDoc, error) {
+// buildNormalizedExportIndex reads YAML-like files under dir, extracts a stable
+// identity from each document, normalizes unstable fields, and groups documents
+// by identity.
+func buildNormalizedExportIndex(dir string) (map[string][]exportIndexedDoc, error) {
 	relativeFilePaths, err := ListFilesRecursivelyAsList(dir)
 	if err != nil {
 		return nil, fmt.Errorf("list files in directory %q: %w", dir, err)
 	}
 
-	index := make(map[string]exportIndexedDoc)
+	index := make(map[string][]exportIndexedDoc)
 	for _, relativeFilePath := range relativeFilePaths {
 		if !LooksLikeYAMLFile(relativeFilePath) {
 			continue
@@ -262,16 +279,28 @@ func buildNormalizedExportIndex(dir string) (map[string]exportIndexedDoc, error)
 			if len(docs) > 1 {
 				identity = identity + "#doc=" + strconv.Itoa(i+1)
 			}
-			if previous, exists := index[identity]; exists {
-				return nil, fmt.Errorf("duplicate resource identity %q in %q and %q", identity, previous.source, relativeFilePath)
-			}
-			index[identity] = exportIndexedDoc{
+			index[identity] = append(index[identity], exportIndexedDoc{
 				doc:    normalized,
 				source: relativeFilePath,
-			}
+			})
 		}
 	}
 	return index, nil
+}
+
+// canonicalizeDocs marshals normalized docs to JSON strings and sorts them so
+// order-insensitive multiset comparison is deterministic.
+func canonicalizeDocs(entries []exportIndexedDoc) ([]string, error) {
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		b, err := json.Marshal(entry.doc)
+		if err != nil {
+			return nil, fmt.Errorf("marshal doc from %q: %w", entry.source, err)
+		}
+		out = append(out, string(b))
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // extractResourceIdentity returns a stable resource key from a decoded YAML document.
@@ -336,8 +365,8 @@ func extractResourceIdentity(doc any) (string, error) {
 	return fmt.Sprintf("%s|%s|%s|%s", apiVersion, kind, namespace, name), nil
 }
 
-// parseYAMLDocuments decodes every YAML document in data (including multi-document streams
-// separated by ---) into Go values, typically map[string]any for mapping roots.
+// parseYAMLDocuments decodes all YAML documents in data (including multi-document
+// streams separated by "---") into generic Go values.
 func parseYAMLDocuments(data []byte) ([]any, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var docs []any
@@ -354,8 +383,9 @@ func parseYAMLDocuments(data []byte) ([]any, error) {
 	return docs, nil
 }
 
-// compareYAMLFileBytes parses two YAML inputs and compares their decoded document streams.
-// relPath is used only to provide context in returned errors.
+// compareYAMLFileBytes parses two YAML inputs and compares their decoded document
+// streams without export-specific normalization.
+// relPath is used only for error context.
 func compareYAMLFileBytes(relPath string, golden, got []byte) error {
 	goldenDocs, err := parseYAMLDocuments(golden)
 	if err != nil {
@@ -468,8 +498,10 @@ func normalizePodServiceAccountVolumeNames(root map[string]any) {
 	}
 }
 
-// normalizeWithPath recursively normalizes a decoded YAML value while tracking
-// the current map path for field-drop decisions.
+// normalizeWithPath recursively copies and normalizes a decoded YAML value while
+// tracking the current key path for field-drop decisions.
+// For list elements, path is unchanged because list indices are not part of
+// field-selection rules.
 func normalizeWithPath(value any, path []string) any {
 	switch v := value.(type) {
 	case map[string]any:
@@ -494,8 +526,12 @@ func normalizeWithPath(value any, path []string) any {
 	return value
 }
 
-// shouldDropField reports whether a key at the given map path should be removed
-// as unstable during export normalization.
+// shouldDropField reports whether key should be removed at the given map path
+// during export normalization.
+// Path examples:
+//   - [] + "status" -> top-level status
+//   - ["metadata"] + "uid" -> metadata.uid
+//   - ["subsets","addresses"] + "ip" -> subsets[].addresses[].ip
 func shouldDropField(path []string, key string) bool {
 	if len(path) == 0 && key == "status" {
 		return true
