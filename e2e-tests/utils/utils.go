@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -276,9 +275,6 @@ func buildNormalizedExportIndex(dir string) (map[string][]exportIndexedDoc, erro
 				return nil, fmt.Errorf("extract identity for %q doc #%d: %w", relativeFilePath, i+1, err)
 			}
 			normalized := normalizeUnstableFields(doc)
-			if len(docs) > 1 {
-				identity = identity + "#doc=" + strconv.Itoa(i+1)
-			}
 			index[identity] = append(index[identity], exportIndexedDoc{
 				doc:    normalized,
 				source: relativeFilePath,
@@ -466,6 +462,7 @@ func normalizePodServiceAccountVolumeNames(root map[string]any) {
 		canonicalName   = "kube-api-access"
 	)
 
+	canonicalizedVolumeNames := make(map[string]string)
 	volumes, _ := spec["volumes"].([]any)
 	for _, volumeValue := range volumes {
 		volume, ok := volumeValue.(map[string]any)
@@ -477,6 +474,7 @@ func normalizePodServiceAccountVolumeNames(root map[string]any) {
 			continue
 		}
 		if _, projected := volume["projected"].(map[string]any); projected {
+			canonicalizedVolumeNames[name] = canonicalName
 			volume["name"] = canonicalName
 		}
 	}
@@ -494,8 +492,8 @@ func normalizePodServiceAccountVolumeNames(root map[string]any) {
 					continue
 				}
 				name, _ := mount["name"].(string)
-				if strings.HasPrefix(name, generatedPrefix) {
-					mount["name"] = canonicalName
+				if replacement, ok := canonicalizedVolumeNames[name]; ok {
+					mount["name"] = replacement
 				}
 			}
 		}

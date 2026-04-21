@@ -648,6 +648,17 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 			},
 		},
 		{
+			name: "same_identity_multidoc_vs_split_match",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/bundle.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  a: one\n---\napiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  b: two\n")
+				write(t, got, "resources/one.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  a: one\n")
+				write(t, got, "resources/two.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\ndata:\n  b: two\n")
+				return golden, got
+			},
+		},
+		{
 			name: "same_identity_multiplicity_mismatch_fails",
 			build: func(t *testing.T) (string, string) {
 				golden := t.TempDir()
@@ -1219,6 +1230,73 @@ func TestNormalizeUnstableFields(t *testing.T) {
 				secondMount := mounts[1].(map[string]any)
 				if secondMount["name"] != "data" {
 					t.Fatalf("expected non-generated volumeMount name unchanged, got: %v", secondMount["name"])
+				}
+			},
+		},
+		{
+			name: "does_not_rename_mount_when_generated_volume_is_not_projected",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"metadata": map[string]any{
+					"name":      "web-abc12",
+					"namespace": "ns",
+				},
+				"spec": map[string]any{
+					"volumes": []any{
+						map[string]any{
+							"name":     "kube-api-access-82kxw",
+							"emptyDir": map[string]any{},
+						},
+					},
+					"containers": []any{
+						map[string]any{
+							"name": "app",
+							"volumeMounts": []any{
+								map[string]any{
+									"name":      "kube-api-access-82kxw",
+									"mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+								},
+							},
+						},
+					},
+					"initContainers": []any{
+						map[string]any{
+							"name": "init",
+							"volumeMounts": []any{
+								map[string]any{
+									"name":      "kube-api-access-82kxw",
+									"mountPath": "/init",
+								},
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				spec := m["spec"].(map[string]any)
+				volumes := spec["volumes"].([]any)
+				firstVolume := volumes[0].(map[string]any)
+				if firstVolume["name"] != "kube-api-access-82kxw" {
+					t.Fatalf("expected non-projected generated volume name unchanged, got: %v", firstVolume["name"])
+				}
+
+				containers := spec["containers"].([]any)
+				firstContainer := containers[0].(map[string]any)
+				mounts := firstContainer["volumeMounts"].([]any)
+				firstMount := mounts[0].(map[string]any)
+				if firstMount["name"] != "kube-api-access-82kxw" {
+					t.Fatalf("expected container mount name unchanged when volume was not canonicalized, got: %v", firstMount["name"])
+				}
+
+				initContainers := spec["initContainers"].([]any)
+				firstInit := initContainers[0].(map[string]any)
+				initMounts := firstInit["volumeMounts"].([]any)
+				firstInitMount := initMounts[0].(map[string]any)
+				if firstInitMount["name"] != "kube-api-access-82kxw" {
+					t.Fatalf("expected initContainer mount name unchanged when volume was not canonicalized, got: %v", firstInitMount["name"])
 				}
 			},
 		},
