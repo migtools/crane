@@ -10,6 +10,7 @@ import (
 
 	"github.com/olekukonko/tablewriter"
 	"github.com/sirupsen/logrus"
+	sigsyaml "sigs.k8s.io/yaml"
 )
 
 // FormatTable writes a human-readable table to w.
@@ -51,6 +52,16 @@ func FormatJSON(w io.Writer, report *ValidationReport) error {
 	return enc.Encode(report)
 }
 
+// FormatYAML writes the report as YAML to w.
+func FormatYAML(w io.Writer, report *ValidationReport) error {
+	data, err := sigsyaml.Marshal(report)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
 // WriteFailures writes incompatible results as individual YAML files under
 // failuresDir, following the same pattern used by the export command's
 // failures/ directory. Each file is named by apiVersion-kind-namespace.yaml.
@@ -71,7 +82,7 @@ func WriteFailures(failuresDir string, report *ValidationReport, log logrus.Fiel
 		filename := failureFileName(r)
 		path := filepath.Join(failuresDir, filename)
 
-		data, err := json.MarshalIndent(r, "", "  ")
+		data, err := sigsyaml.Marshal(r)
 		if err != nil {
 			log.Warnf("error marshaling failure for %s/%s: %v", r.APIVersion, r.Kind, err)
 			continue

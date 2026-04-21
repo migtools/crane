@@ -3,6 +3,7 @@ package validate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -26,8 +27,8 @@ func TestNewValidateCommand(t *testing.T) {
 	if d := cmd.Flags().Lookup("export-dir").DefValue; d != "export" {
 		t.Errorf("export-dir default = %q, want %q", d, "export")
 	}
-	if d := cmd.Flags().Lookup("output").DefValue; d != "table" {
-		t.Errorf("output default = %q, want %q", d, "table")
+	if d := cmd.Flags().Lookup("output").DefValue; d != "json" {
+		t.Errorf("output default = %q, want %q", d, "json")
 	}
 	if d := cmd.Flags().Lookup("validate-dir").DefValue; d != "validate" {
 		t.Errorf("validate-dir default = %q, want %q", d, "validate")
@@ -46,7 +47,7 @@ func TestValidate_Flags(t *testing.T) {
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
 					exportDir:    "/nonexistent/path/validate-test",
-					outputFormat: "table",
+					outputFormat: "yaml",
 				}
 			},
 			wantErr:  true,
@@ -62,7 +63,7 @@ func TestValidate_Flags(t *testing.T) {
 				}
 				return &ValidateOptions{
 					exportDir:    f,
-					outputFormat: "table",
+					outputFormat: "yaml",
 				}
 			},
 			wantErr:  true,
@@ -77,14 +78,14 @@ func TestValidate_Flags(t *testing.T) {
 				}
 			},
 			wantErr:  true,
-			errMatch: "table",
+			errMatch: "yaml",
 		},
 		{
-			name: "valid table format",
+			name: "valid yaml format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
 					exportDir:    t.TempDir(),
-					outputFormat: "table",
+					outputFormat: "yaml",
 				}
 			},
 			wantErr: false,
@@ -110,7 +111,7 @@ func TestValidate_Flags(t *testing.T) {
 					t.Fatal("expected error, got nil")
 				}
 				if tt.errMatch != "" {
-					if got := err.Error(); !contains(got, tt.errMatch) {
+					if got := err.Error(); !strings.Contains(got, tt.errMatch) {
 						t.Fatalf("error = %q, want substring %q", got, tt.errMatch)
 					}
 				}
@@ -123,15 +124,3 @@ func TestValidate_Flags(t *testing.T) {
 	}
 }
 
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsSubstring(s, sub))
-}
-
-func containsSubstring(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}

@@ -55,15 +55,18 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 				return fmt.Errorf("read %s: %w", path, err)
 			}
 
-			decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
-			for {
+			documents := splitDocuments(data)
+			for docIdx, doc := range documents {
+				if len(bytes.TrimSpace(doc)) == 0 {
+					continue
+				}
+				decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), len(doc)+256)
 				var meta manifestMeta
 				if err := decoder.Decode(&meta); err != nil {
-					if err == io.EOF {
-						break
+					if err != io.EOF {
+						log.Warnf("skipping unparseable document #%d in %s: %v", docIdx+1, path, err)
 					}
-					log.Warnf("skipping unparseable document in %s: %v", path, err)
-					break
+					continue
 				}
 				if meta.APIVersion == "" || meta.Kind == "" {
 					continue
@@ -114,4 +117,13 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 	})
 
 	return entries, nil
+}
+
+var yamlDocSeparator = []byte("\n---")
+
+func splitDocuments(data []byte) [][]byte {
+	if bytes.HasPrefix(bytes.TrimLeftFunc(data, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }), []byte("{")) {
+		return [][]byte{data}
+	}
+	return bytes.Split(data, yamlDocSeparator)
 }

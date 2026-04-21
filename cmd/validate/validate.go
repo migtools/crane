@@ -45,8 +45,8 @@ func (o *ValidateOptions) Validate() error {
 		return fmt.Errorf("export-dir %q is not a directory", o.exportDir)
 	}
 
-	if o.outputFormat != "table" && o.outputFormat != "json" {
-		return fmt.Errorf("--output must be \"table\" or \"json\", got %q", o.outputFormat)
+	if o.outputFormat != "yaml" && o.outputFormat != "json" {
+		return fmt.Errorf("--output must be \"yaml\" or \"json\", got %q", o.outputFormat)
 	}
 
 	return nil
@@ -74,34 +74,37 @@ func (o *ValidateOptions) Run() error {
 		return fmt.Errorf("matching against target cluster: %w", err)
 	}
 
-	switch o.outputFormat {
-	case "json":
-		if err := internalValidate.FormatJSON(o.Out, report); err != nil {
-			return fmt.Errorf("writing JSON report: %w", err)
-		}
-	default:
-		internalValidate.FormatTable(o.Out, report)
-	}
+	internalValidate.FormatTable(o.Out, report)
 
 	if err := os.MkdirAll(o.validateDir, 0700); err != nil {
 		return fmt.Errorf("creating validate directory: %w", err)
 	}
-	reportPath := filepath.Join(o.validateDir, "report.json")
+	reportExt := o.outputFormat
+	reportPath := filepath.Join(o.validateDir, "report."+reportExt)
 	reportFile, err := os.Create(reportPath)
 	if err != nil {
-		log.Warnf("error creating report file: %v", err)
-	} else {
-		if err := internalValidate.FormatJSON(reportFile, report); err != nil {
-			log.Warnf("error writing report file: %v", err)
-		}
-		reportFile.Close()
-		log.Infof("Wrote validation report to %s", reportPath)
+		return fmt.Errorf("creating validation report %q: %w", reportPath, err)
 	}
+	var writeErr error
+	switch o.outputFormat {
+	case "json":
+		writeErr = internalValidate.FormatJSON(reportFile, report)
+	default:
+		writeErr = internalValidate.FormatYAML(reportFile, report)
+	}
+	if writeErr != nil {
+		_ = reportFile.Close()
+		return fmt.Errorf("writing validation report %q: %w", reportPath, writeErr)
+	}
+	if err := reportFile.Close(); err != nil {
+		return fmt.Errorf("closing validation report %q: %w", reportPath, err)
+	}
+	log.Infof("Wrote validation report to %s", reportPath)
 
 	if report.HasIncompatible() {
 		failuresDir := filepath.Join(o.validateDir, "failures")
 		if err := internalValidate.WriteFailures(failuresDir, report, log); err != nil {
-			log.Warnf("error writing failures: %v", err)
+			return fmt.Errorf("writing validation failures to %q: %w", failuresDir, err)
 		}
 		return internalValidate.ErrValidationFailed
 	}
@@ -141,17 +144,32 @@ failed (or another error occurred).`,
 			}
 			return nil
 		},
-		PreRun: func(cmd *cobra.Command, args []string) {
-			viper.BindPFlags(cmd.Flags())
-			viper.Unmarshal(&o.globalFlags)
-			viper.Unmarshal(&o.configFlags)
-			viper.UnmarshalKey("export-dir", &o.exportDir)
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if err := viper.BindPFlags(cmd.Flags()); err != nil {
+				return fmt.Errorf("binding validate flags: %w", err)
+			}
+			if err := viper.Unmarshal(&o.globalFlags); err != nil {
+				return fmt.Errorf("loading global flags: %w", err)
+			}
+			if err := viper.Unmarshal(&o.configFlags); err != nil {
+				return fmt.Errorf("loading kube config flags: %w", err)
+			}
+			if err := viper.UnmarshalKey("export-dir", &o.exportDir); err != nil {
+				return fmt.Errorf("loading export-dir: %w", err)
+			}
+			if err := viper.UnmarshalKey("validate-dir", &o.validateDir); err != nil {
+				return fmt.Errorf("loading validate-dir: %w", err)
+			}
+			if err := viper.UnmarshalKey("output", &o.outputFormat); err != nil {
+				return fmt.Errorf("loading output: %w", err)
+			}
+			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path to the exported resources directory")
 	cmd.Flags().StringVar(&o.validateDir, "validate-dir", "validate", "The path where validation results and failures are saved")
-	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "table", "Report format: table or json")
+	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "json", "Report file format: json or yaml")
 	o.configFlags.AddFlags(cmd.Flags())
 
 	return cmd
