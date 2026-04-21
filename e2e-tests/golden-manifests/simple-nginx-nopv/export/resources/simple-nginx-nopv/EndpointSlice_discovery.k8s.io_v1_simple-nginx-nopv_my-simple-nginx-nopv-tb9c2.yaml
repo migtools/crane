@@ -1,18 +1,6 @@
 addressType: IPv4
 apiVersion: discovery.k8s.io/v1
-endpoints:
-- addresses:
-  - 10.244.3.191
-  conditions:
-    ready: true
-    serving: true
-    terminating: false
-  nodeName: src
-  targetRef:
-    kind: Pod
-    name: simple-nginx-nopv-deployment-764987f958-6m454
-    namespace: simple-nginx-nopv
-    uid: 1deb4311-5096-40e7-89a7-42463d889c3c
+endpoints: null
 kind: EndpointSlice
 metadata:
   annotations:
@@ -58,7 +46,4 @@ metadata:
     uid: e002c6c4-3895-40f3-93ce-e8f5753c5616
   resourceVersion: "1083692"
   uid: 5d9a21f1-c3ea-4c77-9fa6-225f53e10251
-ports:
-- name: ""
-  port: 8080
-  protocol: TCP
+ports: null

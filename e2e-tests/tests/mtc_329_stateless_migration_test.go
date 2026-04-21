@@ -43,10 +43,56 @@ var _ = Describe("Stateless migration", func() {
 		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline")
+		By("Wait for source quiesce to stabilize before export")
+		log.Printf("Waiting for source pods and EndpointSlice endpoints to drain for app %s", appName)
+		Eventually(func() (string, error) {
+			out, err := kubectlSrc.Run(
+				"get", "pods",
+				"--namespace", namespace,
+				"-l", "app="+appName,
+				"-o", "name",
+			)
+			if err != nil {
+				return "", err
+			}
+			return StripKubectlWarnings(out), nil
+		}, "90s", "3s").Should(BeEmpty())
+		Eventually(func() (string, error) {
+			out, err := kubectlSrc.Run(
+				"get", "endpointslice",
+				"--namespace", namespace,
+				"-l", "kubernetes.io/service-name=my-simple-nginx-nopv",
+				"-o", "jsonpath={range .items[*].endpoints[*]}x{end}",
+			)
+			if err != nil {
+				return "", err
+			}
+			return StripKubectlWarnings(out), nil
+		}, "90s", "3s").Should(BeEmpty())
+		Eventually(func() (string, error) {
+			out, err := kubectlSrc.Run(
+				"get", "endpoints", "my-simple-nginx-nopv",
+				"--namespace", namespace,
+				"-o", "jsonpath={range .subsets[*].addresses[*]}x{end}",
+			)
+			if err != nil {
+				return "", err
+			}
+			return StripKubectlWarnings(out), nil
+		}, "90s", "3s").Should(BeEmpty())
+
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
+		By("Compare YAML semantic diff of golden and actual export files")
+		goldenExportDir, err := utils.GoldenManifestsDir(appName, "export")
+		Expect(err).NotTo(HaveOccurred())
+		if err := utils.CompareDirectoryYAMLSemanticsExport(goldenExportDir, paths.ExportDir); err != nil {
+			Fail(fmt.Sprintf("YAML semantic diff of golden and actual export files: %v", err))
+		} else {
+			log.Printf("YAML semantic diff of golden and actual export files: no differences found")
+		}
 		By("Compare YAML semantic diff of golden and actual output files")
 		goldenOutputDir, err := utils.GoldenManifestsDir(appName, "output")
 		Expect(err).NotTo(HaveOccurred())

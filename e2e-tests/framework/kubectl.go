@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
-	"slices"
 )
 
 type KubectlRunner struct {
@@ -70,6 +70,25 @@ func normalizeKubectlArgs(args ...string) []string {
 		return strings.Fields(args[0])
 	}
 	return args
+}
+
+// StripKubectlWarnings removes warning lines from kubectl output.
+// This is useful because some kubectl warnings are written to stderr,
+// and our runner returns combined stdout/stderr output.
+func StripKubectlWarnings(out string) string {
+	lines := strings.Split(out, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "Warning: ") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.Join(filtered, "\n")
 }
 
 // CreateNamespace creates a namespace and treats AlreadyExists as success.
