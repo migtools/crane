@@ -65,7 +65,7 @@ var _ = Describe("Empty PVC migration", func() {
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (best effort)")
 			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
-				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=false"); err != nil {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
 					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
 				}
 			}
