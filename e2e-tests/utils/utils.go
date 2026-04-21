@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -182,53 +183,157 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 	return nil
 }
 
-// compareYAMLFileBytesExport compares two YAML files after normalizing unstable
-// cluster-generated fields used by export-stage validation.
-func compareYAMLFileBytesExport(relPath string, golden, got []byte) error {
-	goldenDocs, err := parseYAMLDocuments(golden)
+// CompareDirectoryYAMLSemanticsExport compares YAML semantics for matching files
+// in two directories using export-field normalization and resource-identity matching.
+// This avoids false diffs caused by unstable export filenames (for example, Pod or
+// EndpointSlice names with generated suffixes encoded in file paths).
+func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
+	goldenIndex, err := buildNormalizedExportIndex(goldenDir)
 	if err != nil {
-		return fmt.Errorf("parse golden file %q: %w", relPath, err)
+		return fmt.Errorf("index golden export directory %q: %w", goldenDir, err)
 	}
-	gotDocs, err := parseYAMLDocuments(got)
+	gotIndex, err := buildNormalizedExportIndex(gotDir)
 	if err != nil {
-		return fmt.Errorf("parse got file %q: %w", relPath, err)
+		return fmt.Errorf("index got export directory %q: %w", gotDir, err)
 	}
 
-	normalizedGoldenDocs := normalizeUnstableFields(goldenDocs)
-	normalizedGotDocs := normalizeUnstableFields(gotDocs)
-	if !cmp.Equal(normalizedGoldenDocs, normalizedGotDocs) {
-		return fmt.Errorf("YAML differs in %q:\n%s", relPath, cmp.Diff(normalizedGoldenDocs, normalizedGotDocs))
+	goldenIDs := make([]string, 0, len(goldenIndex))
+	for identity := range goldenIndex {
+		goldenIDs = append(goldenIDs, identity)
+	}
+	sort.Strings(goldenIDs)
+
+	gotIDs := make([]string, 0, len(gotIndex))
+	for identity := range gotIndex {
+		gotIDs = append(gotIDs, identity)
+	}
+	sort.Strings(gotIDs)
+
+	if !slices.Equal(goldenIDs, gotIDs) {
+		return fmt.Errorf("resource identity sets differ between golden and got directories: %v vs %v", goldenIDs, gotIDs)
+	}
+
+	for _, identity := range goldenIDs {
+		goldenEntry := goldenIndex[identity]
+		gotEntry := gotIndex[identity]
+		if !cmp.Equal(goldenEntry.doc, gotEntry.doc) {
+			return fmt.Errorf("YAML differs for identity %q (golden: %q, got: %q):\n%s", identity, goldenEntry.source, gotEntry.source, cmp.Diff(goldenEntry.doc, gotEntry.doc))
+		}
 	}
 	return nil
 }
 
-// CompareDirectoryYAMLSemanticsExport compares YAML semantics for matching files
-// in two directories using export-field normalization.
-func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
-	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
-		return err
-	}
-	relativeFilePaths, err := ListFilesRecursivelyAsList(goldenDir)
-	if err != nil {
-		return fmt.Errorf("list files in golden directory %q: %w", goldenDir, err)
-	}
-	for _, relativeFilePath := range relativeFilePaths {
-		goldenPath := filepath.Join(goldenDir, relativeFilePath)
-		gotPath := filepath.Join(gotDir, relativeFilePath)
+type exportIndexedDoc struct {
+	doc    any
+	source string
+}
 
-		goldenBytes, err := os.ReadFile(goldenPath)
-		if err != nil {
-			return fmt.Errorf("read golden file %q: %w", goldenPath, err)
+// buildNormalizedExportIndex reads YAML files under dir and indexes normalized
+// documents by stable resource identity.
+func buildNormalizedExportIndex(dir string) (map[string]exportIndexedDoc, error) {
+	relativeFilePaths, err := ListFilesRecursivelyAsList(dir)
+	if err != nil {
+		return nil, fmt.Errorf("list files in directory %q: %w", dir, err)
+	}
+
+	index := make(map[string]exportIndexedDoc)
+	for _, relativeFilePath := range relativeFilePaths {
+		if !LooksLikeYAMLFile(relativeFilePath) {
+			continue
 		}
-		gotBytes, err := os.ReadFile(gotPath)
+
+		fullPath := filepath.Join(dir, relativeFilePath)
+		fileBytes, err := os.ReadFile(fullPath)
 		if err != nil {
-			return fmt.Errorf("read got file %q: %w", gotPath, err)
+			return nil, fmt.Errorf("read file %q: %w", fullPath, err)
 		}
-		if err := compareYAMLFileBytesExport(relativeFilePath, goldenBytes, gotBytes); err != nil {
-			return fmt.Errorf("compare YAML file %q: %w", relativeFilePath, err)
+
+		docs, err := parseYAMLDocuments(fileBytes)
+		if err != nil {
+			return nil, fmt.Errorf("parse file %q: %w", relativeFilePath, err)
+		}
+
+		for i, doc := range docs {
+			identity, err := extractResourceIdentity(doc)
+			if err != nil {
+				return nil, fmt.Errorf("extract identity for %q doc #%d: %w", relativeFilePath, i+1, err)
+			}
+			normalized := normalizeUnstableFields(doc)
+			if len(docs) > 1 {
+				identity = identity + "#doc=" + strconv.Itoa(i+1)
+			}
+			if previous, exists := index[identity]; exists {
+				return nil, fmt.Errorf("duplicate resource identity %q in %q and %q", identity, previous.source, relativeFilePath)
+			}
+			index[identity] = exportIndexedDoc{
+				doc:    normalized,
+				source: relativeFilePath,
+			}
 		}
 	}
-	return nil
+	return index, nil
+}
+
+// extractResourceIdentity returns a stable resource key from a decoded YAML document.
+func extractResourceIdentity(doc any) (string, error) {
+	root, ok := doc.(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("expected map[string]any root but got %T", doc)
+	}
+
+	apiVersion, _ := root["apiVersion"].(string)
+	kind, _ := root["kind"].(string)
+	if apiVersion == "" || kind == "" {
+		return "", fmt.Errorf("missing apiVersion or kind")
+	}
+
+	metadata, ok := root["metadata"].(map[string]any)
+	if !ok {
+		return "", fmt.Errorf("missing metadata object")
+	}
+	namespace, _ := metadata["namespace"].(string)
+
+	// Pod names have generated suffixes; use stable owning controller name when present.
+	if kind == "Pod" {
+		ownerReferences, _ := metadata["ownerReferences"].([]any)
+		var firstOwnerName string
+		for _, ref := range ownerReferences {
+			owner, ok := ref.(map[string]any)
+			if !ok {
+				continue
+			}
+			ownerName, _ := owner["name"].(string)
+			if ownerName == "" {
+				continue
+			}
+			if firstOwnerName == "" {
+				firstOwnerName = ownerName
+			}
+			if controller, _ := owner["controller"].(bool); controller {
+				return fmt.Sprintf("%s|%s|%s|owner:%s", apiVersion, kind, namespace, ownerName), nil
+			}
+		}
+		if firstOwnerName != "" {
+			return fmt.Sprintf("%s|%s|%s|owner:%s", apiVersion, kind, namespace, firstOwnerName), nil
+		}
+	}
+
+	// EndpointSlice names are generated; service label is stable.
+	if kind == "EndpointSlice" {
+		labels, _ := metadata["labels"].(map[string]any)
+		if labels != nil {
+			if serviceName, _ := labels["kubernetes.io/service-name"].(string); serviceName != "" {
+				return fmt.Sprintf("%s|%s|%s|service:%s", apiVersion, kind, namespace, serviceName), nil
+			}
+		}
+	}
+
+	name, _ := metadata["name"].(string)
+	if name == "" {
+		return "", fmt.Errorf("missing metadata.name")
+	}
+
+	return fmt.Sprintf("%s|%s|%s|%s", apiVersion, kind, namespace, name), nil
 }
 
 // parseYAMLDocuments decodes every YAML document in data (including multi-document streams
@@ -282,8 +387,85 @@ func LooksLikeYAMLFile(path string) bool {
 
 // normalizeUnstableFields removes selected unstable fields from a decoded YAML
 // document tree (maps/slices/scalars) for stable export comparisons.
+// It also drops metadata.name for Pod and EndpointSlice because those names
+// commonly include generated suffixes in export output.
 func normalizeUnstableFields(doc any) any {
-	return normalizeWithPath(doc, nil)
+	normalized := normalizeWithPath(doc, nil)
+	root, ok := normalized.(map[string]any)
+	if !ok {
+		return normalized
+	}
+
+	kind, _ := root["kind"].(string)
+	if kind != "Pod" && kind != "EndpointSlice" {
+		return normalized
+	}
+
+	metadata, ok := root["metadata"].(map[string]any)
+	if !ok {
+		return normalized
+	}
+	// Pod and EndpointSlice names include generated suffixes in export output.
+	delete(metadata, "name")
+	if kind == "Pod" {
+		normalizePodServiceAccountVolumeNames(root)
+	}
+	return normalized
+}
+
+// normalizePodServiceAccountVolumeNames canonicalizes generated
+// kube-api-access-<suffix> volume names in Pod specs and mounts.
+func normalizePodServiceAccountVolumeNames(root map[string]any) {
+	spec, ok := root["spec"].(map[string]any)
+	if !ok {
+		return
+	}
+	const (
+		generatedPrefix = "kube-api-access-"
+		canonicalName   = "kube-api-access"
+	)
+
+	volumes, _ := spec["volumes"].([]any)
+	for _, volumeValue := range volumes {
+		volume, ok := volumeValue.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := volume["name"].(string)
+		if !strings.HasPrefix(name, generatedPrefix) {
+			continue
+		}
+		if _, projected := volume["projected"].(map[string]any); projected {
+			volume["name"] = canonicalName
+		}
+	}
+
+	normalizeMountNames := func(containers []any) {
+		for _, containerValue := range containers {
+			container, ok := containerValue.(map[string]any)
+			if !ok {
+				continue
+			}
+			mounts, _ := container["volumeMounts"].([]any)
+			for _, mountValue := range mounts {
+				mount, ok := mountValue.(map[string]any)
+				if !ok {
+					continue
+				}
+				name, _ := mount["name"].(string)
+				if strings.HasPrefix(name, generatedPrefix) {
+					mount["name"] = canonicalName
+				}
+			}
+		}
+	}
+
+	if containers, _ := spec["containers"].([]any); containers != nil {
+		normalizeMountNames(containers)
+	}
+	if initContainers, _ := spec["initContainers"].([]any); initContainers != nil {
+		normalizeMountNames(initContainers)
+	}
 }
 
 // normalizeWithPath recursively normalizes a decoded YAML value while tracking
@@ -323,6 +505,11 @@ func shouldDropField(path []string, key string) bool {
 		case "uid", "resourceVersion", "creationTimestamp", "managedFields":
 			return true
 		}
+	} else if len(path) == 2 && path[0] == "metadata" && path[1] == "annotations" {
+		switch key {
+		case "endpoints.kubernetes.io/last-change-trigger-time":
+			return true
+		}
 	} else if len(path) == 2 && path[0] == "metadata" && path[1] == "ownerReferences" {
 		switch key {
 		case "uid":
@@ -331,6 +518,26 @@ func shouldDropField(path []string, key string) bool {
 	} else if len(path) == 1 && path[0] == "spec" {
 		switch key {
 		case "clusterIP", "clusterIPs":
+			return true
+		}
+	} else if len(path) == 1 && path[0] == "endpoints" {
+		switch key {
+		case "addresses":
+			return true
+		}
+	} else if len(path) == 2 && path[0] == "endpoints" && path[1] == "targetRef" {
+		switch key {
+		case "name", "uid":
+			return true
+		}
+	} else if len(path) == 2 && path[0] == "subsets" && path[1] == "addresses" {
+		switch key {
+		case "ip":
+			return true
+		}
+	} else if len(path) == 3 && path[0] == "subsets" && path[1] == "addresses" && path[2] == "targetRef" {
+		switch key {
+		case "name", "uid":
 			return true
 		}
 	}

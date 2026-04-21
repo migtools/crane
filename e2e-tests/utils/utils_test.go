@@ -136,70 +136,6 @@ func TestCompareYAMLFileBytes(t *testing.T) {
 	}
 }
 
-func TestCompareYAMLFileBytesExport(t *testing.T) {
-	// Export compare should ignore configured unstable fields but still catch real semantic drift.
-	cases := []struct {
-		name        string
-		relPath     string
-		golden      []byte
-		got         []byte
-		wantErr     bool
-		errContains []string
-	}{
-		{
-			name:    "equivalent_after_export_normalization",
-			relPath: "svc.yaml",
-			golden:  []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\n  uid: old\n  resourceVersion: \"1\"\nspec:\n  clusterIP: 10.0.0.1\n  clusterIPs: [10.0.0.1]\n  type: ClusterIP\nstatus:\n  loadBalancer: {}\n"),
-			got:     []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\n  uid: new\n  resourceVersion: \"2\"\nspec:\n  clusterIP: 10.0.0.2\n  clusterIPs: [10.0.0.2]\n  type: ClusterIP\nstatus:\n  loadBalancer: {}\n"),
-		},
-		{
-			name:        "detects_real_semantic_difference",
-			relPath:     "svc.yaml",
-			golden:      []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\nspec:\n  type: ClusterIP\n"),
-			got:         []byte("apiVersion: v1\nkind: Service\nmetadata:\n  name: s\nspec:\n  type: NodePort\n"),
-			wantErr:     true,
-			errContains: []string{"YAML differs in", "svc.yaml"},
-		},
-		{
-			name:        "invalid_golden_yaml",
-			relPath:     "bad.yaml",
-			golden:      []byte("{\n"),
-			got:         []byte("a: 1\n"),
-			wantErr:     true,
-			errContains: []string{"parse golden file"},
-		},
-		{
-			name:        "invalid_got_yaml",
-			relPath:     "bad.yaml",
-			golden:      []byte("a: 1\n"),
-			got:         []byte("{\n"),
-			wantErr:     true,
-			errContains: []string{"parse got file"},
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			err := compareYAMLFileBytesExport(tc.relPath, tc.golden, tc.got)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				for _, s := range tc.errContains {
-					if !strings.Contains(err.Error(), s) {
-						t.Fatalf("error %q does not contain %q", err.Error(), s)
-					}
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("compareYAMLFileBytesExport: %v", err)
-			}
-		})
-	}
-}
-
 func TestListFilesRecursivelyAsList(t *testing.T) {
 	// Verify recursive listing returns sorted, relative paths.
 	root := t.TempDir()
@@ -579,36 +515,6 @@ func TestCompareDirectoryYAMLSemantics(t *testing.T) {
 			wantErr:     true,
 			errContains: []string{"file sets differ"},
 		},
-		{
-			name: "invalid_yaml_bubbles_with_compare_context",
-			build: func(t *testing.T) (string, string) {
-				golden := t.TempDir()
-				got := t.TempDir()
-				write(t, golden, "resources/cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n")
-				write(t, got, "resources/cm.yaml", "{\n")
-				return golden, got
-			},
-			wantErr:     true,
-			errContains: []string{"compare YAML file", "parse got file"},
-		},
-		{
-			name: "read_error_from_unreadable_got_file",
-			build: func(t *testing.T) (string, string) {
-				golden := t.TempDir()
-				got := t.TempDir()
-				rel := filepath.Join("resources", "cm.yaml")
-				write(t, golden, rel, "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n")
-				write(t, got, rel, "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n")
-				gotPath := filepath.Join(got, rel)
-				if err := os.Chmod(gotPath, 0o000); err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = os.Chmod(gotPath, 0o644) })
-				return golden, got
-			},
-			wantErr:     true,
-			errContains: []string{"read got file"},
-		},
 	}
 
 	for _, tc := range cases {
@@ -635,7 +541,7 @@ func TestCompareDirectoryYAMLSemantics(t *testing.T) {
 }
 
 func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
-	// Export directory compare should normalize unstable fields and still enforce file-set equality.
+	// Export directory compare should normalize unstable fields and match resources by identity.
 	write := func(t *testing.T, dir, rel, content string) {
 		t.Helper()
 		path := filepath.Join(dir, rel)
@@ -673,19 +579,74 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 				return golden, got
 			},
 			wantErr:     true,
-			errContains: []string{"compare YAML file", "YAML differs"},
+			errContains: []string{"YAML differs for identity"},
 		},
 		{
-			name: "file_set_mismatch_detected",
+			name: "different_filenames_same_identity_still_match",
 			build: func(t *testing.T) (string, string) {
 				golden := t.TempDir()
 				got := t.TempDir()
-				write(t, golden, "only-golden.yaml", "a: 1\n")
-				write(t, got, "only-got.yaml", "a: 1\n")
+				write(t, golden, "resources/EndpointSlice_discovery.k8s.io_v1_ns_generated-a.yaml", "apiVersion: discovery.k8s.io/v1\nkind: EndpointSlice\nmetadata:\n  namespace: ns\n  name: stable-name\n")
+				write(t, got, "resources/EndpointSlice_discovery.k8s.io_v1_ns_generated-b.yaml", "apiVersion: discovery.k8s.io/v1\nkind: EndpointSlice\nmetadata:\n  namespace: ns\n  name: stable-name\n")
+				return golden, got
+			},
+		},
+		{
+			name: "endpointslice_generated_names_match_by_service_label",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/es-a.yaml", "apiVersion: discovery.k8s.io/v1\nkind: EndpointSlice\nmetadata:\n  namespace: ns\n  name: my-svc-abc12\n  labels:\n    kubernetes.io/service-name: my-svc\naddressType: IPv4\n")
+				write(t, got, "resources/es-b.yaml", "apiVersion: discovery.k8s.io/v1\nkind: EndpointSlice\nmetadata:\n  namespace: ns\n  name: my-svc-xyz89\n  labels:\n    kubernetes.io/service-name: my-svc\naddressType: IPv4\n")
+				return golden, got
+			},
+		},
+		{
+			name: "pod_generated_names_match_by_owner_reference",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/pod-a.yaml", "apiVersion: v1\nkind: Pod\nmetadata:\n  namespace: ns\n  name: web-7f6d9bcf6d-abc12\n  ownerReferences:\n    - apiVersion: apps/v1\n      kind: ReplicaSet\n      name: web-7f6d9bcf6d\n      controller: true\nspec:\n  containers:\n    - name: web\n      image: nginx\n")
+				write(t, got, "resources/pod-b.yaml", "apiVersion: v1\nkind: Pod\nmetadata:\n  namespace: ns\n  name: web-7f6d9bcf6d-xyz89\n  ownerReferences:\n    - apiVersion: apps/v1\n      kind: ReplicaSet\n      name: web-7f6d9bcf6d\n      controller: true\nspec:\n  containers:\n    - name: web\n      image: nginx\n")
+				return golden, got
+			},
+		},
+		{
+			name: "resource_identity_set_mismatch_detected",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "a.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: a\n")
+				write(t, got, "b.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: b\n")
 				return golden, got
 			},
 			wantErr:     true,
-			errContains: []string{"file sets differ"},
+			errContains: []string{"resource identity sets differ"},
+		},
+		{
+			name: "invalid_yaml_bubbles_with_index_context",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ok\n")
+				write(t, got, "resources/cm.yaml", "{\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"index got export directory", "parse file"},
+		},
+		{
+			name: "duplicate_identity_in_single_directory_fails",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/one.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\n")
+				write(t, golden, "resources/two.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\n")
+				write(t, got, "resources/one.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: same\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"duplicate resource identity"},
 		},
 	}
 
@@ -937,6 +898,254 @@ func TestNormalizeUnstableFields(t *testing.T) {
 				}
 				if ref["kind"] != "Deployment" || ref["name"] != "demo" {
 					t.Fatalf("expected stable ownerReference fields to remain, got: %#v", ref)
+				}
+			},
+		},
+		{
+			name: "drops_pod_metadata_name_only_for_pod_kind",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"metadata": map[string]any{
+					"name":      "web-abc12",
+					"namespace": "ns",
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				meta := m["metadata"].(map[string]any)
+				if _, exists := meta["name"]; exists {
+					t.Fatal("expected pod metadata.name to be removed")
+				}
+				if meta["namespace"] != "ns" {
+					t.Fatalf("expected namespace to stay, got: %v", meta["namespace"])
+				}
+			},
+		},
+		{
+			name: "drops_endpointslice_metadata_name_only_for_endpointslice_kind",
+			in: map[string]any{
+				"apiVersion": "discovery.k8s.io/v1",
+				"kind":       "EndpointSlice",
+				"metadata": map[string]any{
+					"name":      "svc-xyz89",
+					"namespace": "ns",
+					"labels": map[string]any{
+						"kubernetes.io/service-name": "svc",
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				meta := m["metadata"].(map[string]any)
+				if _, exists := meta["name"]; exists {
+					t.Fatal("expected endpointslice metadata.name to be removed")
+				}
+				labels := meta["labels"].(map[string]any)
+				if labels["kubernetes.io/service-name"] != "svc" {
+					t.Fatalf("expected service label to stay, got: %#v", labels)
+				}
+			},
+		},
+		{
+			name: "keeps_metadata_name_for_non_generated_kinds",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Service",
+				"metadata": map[string]any{
+					"name":      "my-svc",
+					"namespace": "ns",
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				meta := m["metadata"].(map[string]any)
+				if meta["name"] != "my-svc" {
+					t.Fatalf("expected service metadata.name to stay, got: %v", meta["name"])
+				}
+			},
+		},
+		{
+			name: "drops_endpointslice_runtime_endpoint_fields",
+			in: map[string]any{
+				"apiVersion": "discovery.k8s.io/v1",
+				"kind":       "EndpointSlice",
+				"metadata": map[string]any{
+					"namespace": "ns",
+					"name":      "svc-abc12",
+					"annotations": map[string]any{
+						"endpoints.kubernetes.io/last-change-trigger-time": "2026-04-20T08:58:37Z",
+						"keep": "yes",
+					},
+				},
+				"endpoints": []any{
+					map[string]any{
+						"addresses": []any{"10.244.3.191"},
+						"targetRef": map[string]any{
+							"kind":      "Pod",
+							"name":      "web-abc12",
+							"namespace": "ns",
+							"uid":       "uid-1",
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				meta := m["metadata"].(map[string]any)
+				annotations := meta["annotations"].(map[string]any)
+				if _, exists := annotations["endpoints.kubernetes.io/last-change-trigger-time"]; exists {
+					t.Fatal("expected endpointslice last-change-trigger annotation to be removed")
+				}
+				if annotations["keep"] != "yes" {
+					t.Fatalf("expected unrelated annotation to stay, got: %#v", annotations)
+				}
+
+				endpoints := m["endpoints"].([]any)
+				first := endpoints[0].(map[string]any)
+				if _, exists := first["addresses"]; exists {
+					t.Fatal("expected endpoints[].addresses to be removed")
+				}
+				targetRef := first["targetRef"].(map[string]any)
+				if _, exists := targetRef["name"]; exists {
+					t.Fatal("expected endpoints[].targetRef.name to be removed")
+				}
+				if _, exists := targetRef["uid"]; exists {
+					t.Fatal("expected endpoints[].targetRef.uid to be removed")
+				}
+				if targetRef["namespace"] != "ns" {
+					t.Fatalf("expected stable targetRef fields to remain, got: %#v", targetRef)
+				}
+			},
+		},
+		{
+			name: "drops_endpoints_runtime_subset_address_fields",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Endpoints",
+				"metadata": map[string]any{
+					"name":      "my-svc",
+					"namespace": "ns",
+				},
+				"subsets": []any{
+					map[string]any{
+						"addresses": []any{
+							map[string]any{
+								"ip":       "10.244.3.191",
+								"nodeName": "src",
+								"targetRef": map[string]any{
+									"kind":      "Pod",
+									"name":      "web-abc12",
+									"namespace": "ns",
+									"uid":       "uid-1",
+								},
+							},
+						},
+						"ports": []any{
+							map[string]any{
+								"port": 8080,
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				subsets := m["subsets"].([]any)
+				firstSubset := subsets[0].(map[string]any)
+				addresses := firstSubset["addresses"].([]any)
+				firstAddress := addresses[0].(map[string]any)
+				if _, exists := firstAddress["ip"]; exists {
+					t.Fatal("expected subsets[].addresses[].ip to be removed")
+				}
+				if firstAddress["nodeName"] != "src" {
+					t.Fatalf("expected stable field nodeName to stay, got: %v", firstAddress["nodeName"])
+				}
+				targetRef := firstAddress["targetRef"].(map[string]any)
+				if _, exists := targetRef["name"]; exists {
+					t.Fatal("expected subsets[].addresses[].targetRef.name to be removed")
+				}
+				if _, exists := targetRef["uid"]; exists {
+					t.Fatal("expected subsets[].addresses[].targetRef.uid to be removed")
+				}
+				if targetRef["namespace"] != "ns" {
+					t.Fatalf("expected stable targetRef field namespace to stay, got: %v", targetRef["namespace"])
+				}
+			},
+		},
+		{
+			name: "normalizes_pod_generated_kube_api_access_volume_names",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "Pod",
+				"metadata": map[string]any{
+					"name":      "web-abc12",
+					"namespace": "ns",
+				},
+				"spec": map[string]any{
+					"volumes": []any{
+						map[string]any{
+							"name": "kube-api-access-82kxw",
+							"projected": map[string]any{
+								"defaultMode": 420,
+							},
+						},
+						map[string]any{
+							"name":     "data",
+							"emptyDir": map[string]any{},
+						},
+					},
+					"containers": []any{
+						map[string]any{
+							"name": "app",
+							"volumeMounts": []any{
+								map[string]any{
+									"name":      "kube-api-access-82kxw",
+									"mountPath": "/var/run/secrets/kubernetes.io/serviceaccount",
+								},
+								map[string]any{
+									"name":      "data",
+									"mountPath": "/data",
+								},
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				meta := m["metadata"].(map[string]any)
+				if _, exists := meta["name"]; exists {
+					t.Fatal("expected pod metadata.name to be removed")
+				}
+
+				spec := m["spec"].(map[string]any)
+				volumes := spec["volumes"].([]any)
+				firstVolume := volumes[0].(map[string]any)
+				if firstVolume["name"] != "kube-api-access" {
+					t.Fatalf("expected projected kube-api volume normalized, got: %v", firstVolume["name"])
+				}
+				secondVolume := volumes[1].(map[string]any)
+				if secondVolume["name"] != "data" {
+					t.Fatalf("expected non-generated volume name unchanged, got: %v", secondVolume["name"])
+				}
+
+				containers := spec["containers"].([]any)
+				firstContainer := containers[0].(map[string]any)
+				mounts := firstContainer["volumeMounts"].([]any)
+				firstMount := mounts[0].(map[string]any)
+				if firstMount["name"] != "kube-api-access" {
+					t.Fatalf("expected generated volumeMount name normalized, got: %v", firstMount["name"])
+				}
+				secondMount := mounts[1].(map[string]any)
+				if secondMount["name"] != "data" {
+					t.Fatalf("expected non-generated volumeMount name unchanged, got: %v", secondMount["name"])
 				}
 			},
 		},
