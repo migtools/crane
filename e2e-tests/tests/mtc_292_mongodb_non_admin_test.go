@@ -118,10 +118,10 @@ var _ = Describe("MongoDB Migration", func() {
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
 
-		srcApp.ExtraVars = map[string]string{
+		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
-		tgtApp.ExtraVars = map[string]string{
+		tgtApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
 
@@ -130,9 +130,9 @@ var _ = Describe("MongoDB Migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		DeferCleanup(func() {
-			By("Delete test namespace on source and target (best effort)")
+			By("Delete test namespace on source and target (wait for completion)")
 			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
-				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=false"); err != nil {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
 					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
 				}
 			}
