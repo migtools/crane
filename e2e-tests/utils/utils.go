@@ -417,8 +417,8 @@ func LooksLikeYAMLFile(path string) bool {
 
 // normalizeUnstableFields removes selected unstable fields from a decoded YAML
 // document tree (maps/slices/scalars) for stable export comparisons.
-// It also drops metadata.name for Pod and EndpointSlice because those names
-// commonly include generated suffixes in export output.
+// It also performs small kind/name-specific normalization for known
+// cluster-generated values.
 func normalizeUnstableFields(doc any) any {
 	normalized := normalizeWithPath(doc, nil)
 	root, ok := normalized.(map[string]any)
@@ -427,14 +427,25 @@ func normalizeUnstableFields(doc any) any {
 	}
 
 	kind, _ := root["kind"].(string)
-	if kind != "Pod" && kind != "EndpointSlice" {
-		return normalized
-	}
-
 	metadata, ok := root["metadata"].(map[string]any)
 	if !ok {
 		return normalized
 	}
+
+	if kind == "ConfigMap" {
+		name, _ := metadata["name"].(string)
+		if name == "kube-root-ca.crt" {
+			if data, ok := root["data"].(map[string]any); ok {
+				delete(data, "ca.crt")
+			}
+			return normalized
+		}
+	}
+
+	if kind != "Pod" && kind != "EndpointSlice" {
+		return normalized
+	}
+
 	// Pod and EndpointSlice names include generated suffixes in export output.
 	delete(metadata, "name")
 	if kind == "Pod" {

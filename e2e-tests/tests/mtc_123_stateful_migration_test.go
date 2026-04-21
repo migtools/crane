@@ -68,7 +68,7 @@ var _ = Describe("Stateful app migration", func() {
 			out, err := kubectlSrc.Run(
 				"get", "endpointslice",
 				"--namespace", namespace,
-				"-l", "kubernetes.io/service-name=redis",
+				"-l", "kubernetes.io/service-name="+appName,
 				"-o", "jsonpath={range .items[*].endpoints[*]}x{end}",
 			)
 			if err != nil {
@@ -78,7 +78,7 @@ var _ = Describe("Stateful app migration", func() {
 		}, "90s", "3s").Should(BeEmpty())
 		Eventually(func() (string, error) {
 			out, err := kubectlSrc.Run(
-				"get", "endpoints", "redis",
+				"get", "endpoints", appName,
 				"--namespace", namespace,
 				"-o", "jsonpath={range .subsets[*].addresses[*]}x{end}",
 			)

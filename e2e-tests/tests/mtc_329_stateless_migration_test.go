@@ -15,6 +15,7 @@ var _ = Describe("Stateless migration", func() {
 	It("[MTC-329] nginx app quiesce pod and apply to target cluster", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
+		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -61,7 +62,7 @@ var _ = Describe("Stateless migration", func() {
 			out, err := kubectlSrc.Run(
 				"get", "endpointslice",
 				"--namespace", namespace,
-				"-l", "kubernetes.io/service-name=my-simple-nginx-nopv",
+				"-l", "kubernetes.io/service-name="+serviceName,
 				"-o", "jsonpath={range .items[*].endpoints[*]}x{end}",
 			)
 			if err != nil {
@@ -71,7 +72,7 @@ var _ = Describe("Stateless migration", func() {
 		}, "90s", "3s").Should(BeEmpty())
 		Eventually(func() (string, error) {
 			out, err := kubectlSrc.Run(
-				"get", "endpoints", "my-simple-nginx-nopv",
+				"get", "endpoints", serviceName,
 				"--namespace", namespace,
 				"-o", "jsonpath={range .subsets[*].addresses[*]}x{end}",
 			)

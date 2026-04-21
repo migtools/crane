@@ -1012,6 +1012,36 @@ func TestNormalizeUnstableFields(t *testing.T) {
 			},
 		},
 		{
+			name: "drops_kube_root_ca_configmap_certificate_data",
+			in: map[string]any{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata": map[string]any{
+					"name":      "kube-root-ca.crt",
+					"namespace": "ns",
+				},
+				"data": map[string]any{
+					"ca.crt": "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----\n",
+					"keep":   "value",
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				data := m["data"].(map[string]any)
+				if _, exists := data["ca.crt"]; exists {
+					t.Fatal("expected kube-root-ca.crt data.ca.crt to be removed")
+				}
+				if data["keep"] != "value" {
+					t.Fatalf("expected unrelated data key to remain, got: %#v", data)
+				}
+				meta := m["metadata"].(map[string]any)
+				if meta["name"] != "kube-root-ca.crt" {
+					t.Fatalf("expected metadata.name to stay for ConfigMap, got: %v", meta["name"])
+				}
+			},
+		},
+		{
 			name: "drops_endpointslice_runtime_endpoint_fields",
 			in: map[string]any{
 				"apiVersion": "discovery.k8s.io/v1",
