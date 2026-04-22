@@ -154,15 +154,38 @@ func (o *Options) run() error {
 
 	if o.Stage != "" {
 		// User specified a specific stage to run
-		// Ensure directory exists before running
-		if err := o.ensureStageDirectoryExists(orchestrator, o.Stage, transformDir, log); err != nil {
-			return fmt.Errorf("failed to ensure stage directory exists: %w", err)
+		stageDir := filepath.Join(transformDir, o.Stage)
+		_, err := os.Stat(stageDir)
+		stageExists := err == nil
+
+		if !stageExists {
+			log.Infof("Stage %s does not exist, will create after successful execution", o.Stage)
+
+			// Ensure all previous stages have been run
+			if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
+				return fmt.Errorf("failed to ensure previous stages are run: %w", err)
+			}
+
+			// Create the stage directory
+			if err := os.MkdirAll(stageDir, 0700); err != nil {
+				return fmt.Errorf("failed to create stage directory: %w", err)
+			}
+			log.Infof("Created stage directory: %s", stageDir)
+
+			// Mark for cleanup on error
+			orchestrator.NewlyCreatedStages[o.Stage] = true
 		}
 
 		selector = internalTransform.StageSelector{
 			Stage: o.Stage,
 		}
 		log.Infof("Running stage: %s", o.Stage)
+
+		// Run the stage with cleanup on error
+		if err := o.runStageWithCleanup(orchestrator, selector, stageDir, !stageExists, log); err != nil {
+			return err
+		}
+		return nil
 	} else {
 		// No stage parameters given - discover existing stages or create default
 		existingStages, err := internalTransform.DiscoverStages(transformDir)
@@ -212,21 +235,22 @@ func optionalFlagsToLower(inFlags map[string]string) map[string]string {
 	return lowerMap
 }
 
-// ensureStageDirectoryExists creates a stage directory if it doesn't exist
-// and marks it as newly created so RunMultiStage can populate it
-func (o *Options) ensureStageDirectoryExists(orchestrator *internalTransform.Orchestrator, stageName, transformDir string, log *logrus.Logger) error {
-	// Check if stage already exists
-	stageDir := filepath.Join(transformDir, stageName)
-	if _, err := os.Stat(stageDir); err == nil {
-		// Stage directory exists, nothing to do
-		log.Debugf("Stage %s already exists", stageName)
-		return nil
+// runStageWithCleanup runs a stage and cleans up the directory on error if it was newly created
+func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrator, selector internalTransform.StageSelector, stageDir string, cleanupOnError bool, log *logrus.Logger) error {
+	err := orchestrator.RunMultiStage(selector)
+	if err != nil && cleanupOnError {
+		log.Warnf("Stage execution failed, cleaning up stage directory: %s", stageDir)
+		if removeErr := os.RemoveAll(stageDir); removeErr != nil {
+			log.Errorf("Failed to clean up stage directory %s: %v", stageDir, removeErr)
+		}
 	}
+	return err
+}
 
-	log.Infof("Stage %s does not exist, creating directory...", stageName)
-
-	// Before creating this stage, ensure all previous stages have been run
-	// (so we have input data available)
+// ensurePreviousStagesRun ensures all existing stages have been run
+// and have output directories. This prepares the environment for creating a new stage.
+func (o *Options) ensurePreviousStagesRun(orchestrator *internalTransform.Orchestrator, transformDir string, log *logrus.Logger) error {
+	// Discover all existing stages
 	existingStages, err := internalTransform.DiscoverStages(transformDir)
 	if err != nil {
 		return fmt.Errorf("failed to discover existing stages: %w", err)
@@ -237,16 +261,6 @@ func (o *Options) ensureStageDirectoryExists(orchestrator *internalTransform.Orc
 		return err
 	}
 
-	// Create empty stage directory
-	if err := os.MkdirAll(stageDir, 0700); err != nil {
-		return fmt.Errorf("failed to create stage directory: %w", err)
-	}
-
-	// Mark this stage as newly created
-	// This allows RunMultiStage to populate it without --force
-	orchestrator.NewlyCreatedStages[stageName] = true
-
-	log.Infof("Created empty stage directory: %s (will be populated by multi-stage pipeline)", stageName)
 	return nil
 }
 
