@@ -155,7 +155,7 @@ func (o *Options) run() error {
 	if o.Stage != "" {
 		// User specified a specific stage to run
 		// Ensure directory exists before running
-		if err := o.ensureStageDirectoryExists(orchestrator, o.Stage, transformDir, exportDir, log); err != nil {
+		if err := o.ensureStageDirectoryExists(orchestrator, o.Stage, transformDir, log); err != nil {
 			return fmt.Errorf("failed to ensure stage directory exists: %w", err)
 		}
 
@@ -214,7 +214,7 @@ func optionalFlagsToLower(inFlags map[string]string) map[string]string {
 
 // ensureStageDirectoryExists creates a stage directory if it doesn't exist
 // and marks it as newly created so RunMultiStage can populate it
-func (o *Options) ensureStageDirectoryExists(orchestrator *internalTransform.Orchestrator, stageName, transformDir, exportDir string, log *logrus.Logger) error {
+func (o *Options) ensureStageDirectoryExists(orchestrator *internalTransform.Orchestrator, stageName, transformDir string, log *logrus.Logger) error {
 	// Check if stage already exists
 	stageDir := filepath.Join(transformDir, stageName)
 	if _, err := os.Stat(stageDir); err == nil {
@@ -225,33 +225,16 @@ func (o *Options) ensureStageDirectoryExists(orchestrator *internalTransform.Orc
 
 	log.Infof("Stage %s does not exist, creating directory...", stageName)
 
-	// Before creating this stage, ensure previous stages have been run
+	// Before creating this stage, ensure all previous stages have been run
 	// (so we have input data available)
 	existingStages, err := internalTransform.DiscoverStages(transformDir)
 	if err != nil {
 		return fmt.Errorf("failed to discover existing stages: %w", err)
 	}
 
-	// If there are existing stages, make sure the last one has been run
-	if len(existingStages) > 0 {
-		lastStage := internalTransform.GetLastStage(existingStages)
-		opts := file.PathOpts{
-			TransformDir: transformDir,
-		}
-
-		lastStageOutputDir := opts.GetStageOutputDir(lastStage.DirName)
-		if _, err := os.Stat(lastStageOutputDir); os.IsNotExist(err) {
-			// Previous stage hasn't been run yet, run it first
-			log.Infof("Previous stage %s hasn't been run yet, running it first...", lastStage.DirName)
-
-			// Run the stage - it will regenerate based on its type:
-			// - Plugin stages: auto-regenerate (no --force needed)
-			// - Custom stages: fail if directory not empty (require --force)
-			selector := internalTransform.StageSelector{Stage: lastStage.DirName}
-			if err := orchestrator.RunMultiStage(selector); err != nil {
-				return fmt.Errorf("failed to run previous stage %s: %w", lastStage.DirName, err)
-			}
-		}
+	// Recursively ensure all existing stages have output
+	if err := o.ensureStagesHaveOutput(orchestrator, existingStages, transformDir, log); err != nil {
+		return err
 	}
 
 	// Create empty stage directory
@@ -264,5 +247,37 @@ func (o *Options) ensureStageDirectoryExists(orchestrator *internalTransform.Orc
 	orchestrator.NewlyCreatedStages[stageName] = true
 
 	log.Infof("Created empty stage directory: %s (will be populated by multi-stage pipeline)", stageName)
+	return nil
+}
+
+// ensureStagesHaveOutput recursively ensures all stages in the list have been executed
+// and have output directories. Stages are processed in order from first to last.
+func (o *Options) ensureStagesHaveOutput(orchestrator *internalTransform.Orchestrator, stages []internalTransform.Stage, transformDir string, log *logrus.Logger) error {
+	opts := file.PathOpts{
+		TransformDir: transformDir,
+	}
+
+	for _, stage := range stages {
+		stageOutputDir := opts.GetStageOutputDir(stage.DirName)
+
+		// Check if this stage has output
+		if _, err := os.Stat(stageOutputDir); os.IsNotExist(err) {
+			// Stage hasn't been run yet, run it
+			log.Infof("Stage %s hasn't been run yet, running it...", stage.DirName)
+
+			// Run the stage - it will regenerate based on its type:
+			// - Plugin stages: auto-regenerate (no --force needed)
+			// - Custom stages: fail if directory not empty (require --force)
+			selector := internalTransform.StageSelector{Stage: stage.DirName}
+			if err := orchestrator.RunMultiStage(selector); err != nil {
+				return fmt.Errorf("failed to run stage %s: %w", stage.DirName, err)
+			}
+
+			log.Infof("Stage %s completed successfully", stage.DirName)
+		} else {
+			log.Debugf("Stage %s already has output, skipping", stage.DirName)
+		}
+	}
+
 	return nil
 }
