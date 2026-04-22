@@ -38,7 +38,12 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// No validation needed - only --stage flag exists
+	// Validate stage format if specified
+	if o.Flags.Stage != "" {
+		if err := internalTransform.ValidateStageName(o.Flags.Stage); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -25,6 +25,27 @@ func TestValidate(t *testing.T) {
 			},
 			wantError: false,
 		},
+		{
+			name: "stage with invalid format - no number prefix",
+			flags: Flags{
+				Stage: "KubernetesPlugin",
+			},
+			wantError: true,
+		},
+		{
+			name: "stage with invalid format - arbitrary value",
+			flags: Flags{
+				Stage: "foobar123",
+			},
+			wantError: true,
+		},
+		{
+			name: "stage with invalid format - missing plugin name",
+			flags: Flags{
+				Stage: "10_",
+			},
+			wantError: true,
+		},
 	}
 
 	for _, tt := range tests {
