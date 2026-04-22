@@ -879,7 +879,7 @@ data:
 	}
 
 	// Write stage using the writer
-	writer := NewKustomizeWriter(opts, "10_test_stage")
+	writer := NewKustomizeWriter(opts, "10_test_stage", logger)
 	if err := writer.WriteStage(artifacts, true); err != nil {
 		t.Fatalf("Failed to write stage: %v", err)
 	}
@@ -1076,7 +1076,7 @@ data:
 	}
 
 	// Write stage
-	writer := NewKustomizeWriter(opts, "10_test_stage")
+	writer := NewKustomizeWriter(opts, "10_test_stage", logger)
 	if err := writer.WriteStage(artifacts, true); err != nil {
 		t.Fatalf("Failed to write stage: %v", err)
 	}
@@ -1193,7 +1193,7 @@ data:
 	}
 
 	// Write stage 1
-	writer1 := NewKustomizeWriter(opts, "10_stage1")
+	writer1 := NewKustomizeWriter(opts, "10_stage1", logger)
 	if err := writer1.WriteStage(stage1Artifacts, true); err != nil {
 		t.Fatalf("Failed to write stage 1: %v", err)
 	}
@@ -1232,7 +1232,7 @@ data:
 	}
 
 	// Write stage 2
-	writer2 := NewKustomizeWriter(opts, "20_stage2")
+	writer2 := NewKustomizeWriter(opts, "20_stage2", logger)
 	if err := writer2.WriteStage(stage2Artifacts, true); err != nil {
 		t.Fatalf("Failed to write stage 2: %v", err)
 	}
@@ -1357,7 +1357,7 @@ data:
 	}
 
 	// Write stage
-	writer := NewKustomizeWriter(opts, "10_mixed_stage")
+	writer := NewKustomizeWriter(opts, "10_mixed_stage", logger)
 	if err := writer.WriteStage(artifacts, true); err != nil {
 		t.Fatalf("Failed to write stage: %v", err)
 	}

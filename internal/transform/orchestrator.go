@@ -185,7 +185,7 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 		}
 	}
 
-	writer := NewKustomizeWriter(opts, stage.DirName)
+	writer := NewKustomizeWriter(opts, stage.DirName, o.Log)
 	if err := writer.WriteStage(artifacts, forceWrite); err != nil {
 		return err
 	}

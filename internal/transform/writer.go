@@ -21,13 +21,15 @@ import (
 type KustomizeWriter struct {
 	opts      file.PathOpts
 	stageName string
+	log       *logrus.Logger
 }
 
 // NewKustomizeWriter creates a new KustomizeWriter for a specific stage
-func NewKustomizeWriter(opts file.PathOpts, stageName string) *KustomizeWriter {
+func NewKustomizeWriter(opts file.PathOpts, stageName string, log *logrus.Logger) *KustomizeWriter {
 	return &KustomizeWriter{
 		opts:      opts,
 		stageName: stageName,
+		log:       log,
 	}
 }
 
@@ -77,7 +79,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 
 			if existingIsWhiteout && !artifact.HaveWhiteOut {
 				// Replace whiteout with non-whiteout
-				logrus.Warnf("Duplicate resource %s: replacing whiteout with active resource", resourceID)
+				w.log.Warnf("Duplicate resource %s: replacing whiteout with active resource", resourceID)
 				allResourcesMap[resourceID] = artifact.Resource
 				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
 				// Update active resources map
@@ -85,11 +87,11 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 				activeResourcesMap[resourceID] = artifact.Resource
 			} else if !existingIsWhiteout && artifact.HaveWhiteOut {
 				// Keep non-whiteout, skip whiteout duplicate
-				logrus.Warnf("Duplicate resource %s: keeping active resource, ignoring whiteout duplicate", resourceID)
+				w.log.Warnf("Duplicate resource %s: keeping active resource, ignoring whiteout duplicate", resourceID)
 				continue
 			} else {
 				// Both same type - last one wins, but log warning
-				logrus.Warnf("Duplicate resource %s (both %s): last occurrence will be used",
+				w.log.Warnf("Duplicate resource %s (both %s): last occurrence will be used",
 					resourceID, map[bool]string{true: "whiteout", false: "active"}[artifact.HaveWhiteOut])
 				allResourcesMap[resourceID] = artifact.Resource
 				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
