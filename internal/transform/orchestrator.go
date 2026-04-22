@@ -38,6 +38,13 @@ type Orchestrator struct {
 // RunMultiStage executes transform with multi-stage pipeline
 // Each stage runs on the fully applied output of the previous stage
 func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
+	// Load all plugins once at the start
+	allPlugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
+	if err != nil {
+		return fmt.Errorf("failed to load plugins: %w", err)
+	}
+	o.Log.Debugf("Loaded %d plugin(s)", len(allPlugins))
+
 	// Discover all stages
 	stages, err := DiscoverStages(o.TransformDir)
 	if err != nil {
@@ -109,7 +116,7 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 		}
 
 		// Step 4: Execute transform for this stage (generates transform artifacts)
-		if err := o.executeStage(stage, inputResources); err != nil {
+		if err := o.executeStage(stage, inputResources, allPlugins); err != nil {
 			return fmt.Errorf("stage %s: transform execution failed: %w", stage.DirName, err)
 		}
 
@@ -136,9 +143,9 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 }
 
 // executeStage runs transform for a single stage
-func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.Unstructured) error {
+func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.Unstructured, allPlugins []cranelib.Plugin) error {
 	// Get the plugin for this stage (if any)
-	stagePlugin, err := o.getPluginForStage(stage)
+	stagePlugin, err := o.getPluginForStage(stage, allPlugins)
 	if err != nil {
 		return err
 	}
@@ -243,16 +250,10 @@ func (o *Orchestrator) formatResourceID(resource unstructured.Unstructured) stri
 	return fmt.Sprintf("%s/%s/%s", resource.GetKind(), resource.GetNamespace(), resource.GetName())
 }
 
-// getPluginForStage loads plugins and returns the one matching this stage
+// getPluginForStage returns the plugin matching this stage from the provided plugin list
 // Returns nil for pass-through stages (no plugin)
 // Returns error if stage requires a plugin but it's not found
-func (o *Orchestrator) getPluginForStage(stage Stage) (cranelib.Plugin, error) {
-	// Load all available plugins
-	allPlugins, err := plugin.GetFilteredPlugins(o.PluginDir, o.SkipPlugins, o.Log)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load plugins: %w", err)
-	}
-
+func (o *Orchestrator) getPluginForStage(stage Stage, allPlugins []cranelib.Plugin) (cranelib.Plugin, error) {
 	// Find the plugin matching this stage's name
 	var stagePlugin cranelib.Plugin
 	for _, p := range allPlugins {
