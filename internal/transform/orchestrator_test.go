@@ -738,39 +738,43 @@ resources: []
 	}
 
 	// Assert stage 1 input contains original export data
-	stage1InputFile := filepath.Join(stage1InputDir, "default", "ConfigMap_default_config-one.yaml")
-	if _, err := os.Stat(stage1InputFile); os.IsNotExist(err) {
-		t.Errorf("Stage 1 input should contain config-one from export: %s", stage1InputFile)
+	stage1InputFiles, _ := filepath.Glob(filepath.Join(stage1InputDir, "default", "ConfigMap_*_config-one.yaml"))
+	if len(stage1InputFiles) == 0 {
+		t.Errorf("Stage 1 input should contain config-one from export in: %s/default/", stage1InputDir)
 	}
 
 	// Assert stage 1 output exists
-	stage1OutputFile := filepath.Join(stage1OutputDir, "default", "ConfigMap_default_config-one.yaml")
-	if _, err := os.Stat(stage1OutputFile); os.IsNotExist(err) {
-		t.Errorf("Stage 1 output should exist: %s", stage1OutputFile)
+	stage1OutputFiles, _ := filepath.Glob(filepath.Join(stage1OutputDir, "default", "ConfigMap_*_config-one.yaml"))
+	if len(stage1OutputFiles) == 0 {
+		t.Errorf("Stage 1 output should exist in: %s/default/", stage1OutputDir)
 	}
 
 	// Assert stage 2 input contains stage 1 output (both resources)
-	stage2InputFile1 := filepath.Join(stage2InputDir, "default", "ConfigMap_default_config-one.yaml")
-	stage2InputFile2 := filepath.Join(stage2InputDir, "default", "ConfigMap_default_config-two.yaml")
+	stage2InputFiles1, _ := filepath.Glob(filepath.Join(stage2InputDir, "default", "ConfigMap_*_config-one.yaml"))
+	stage2InputFiles2, _ := filepath.Glob(filepath.Join(stage2InputDir, "default", "ConfigMap_*_config-two.yaml"))
 
-	stage2Input1, err := os.ReadFile(stage2InputFile1)
-	if err != nil {
-		t.Errorf("Stage 2 input should contain config-one from stage 1 output: %v", err)
-	} else {
-		// Verify it's from stage 1 (contains original data)
-		if !contains(string(stage2Input1), "original: value1") {
-			t.Errorf("Stage 2 input config-one missing original data")
+	if len(stage2InputFiles1) > 0 {
+		stage2Input1, err := os.ReadFile(stage2InputFiles1[0])
+		if err != nil {
+			t.Errorf("Stage 2 input should contain config-one from stage 1 output: %v", err)
+		} else {
+			// Verify it's from stage 1 (contains original data)
+			if !contains(string(stage2Input1), "original: value1") {
+				t.Errorf("Stage 2 input config-one missing original data")
+			}
 		}
+	} else {
+		t.Errorf("Stage 2 input should contain config-one from stage 1 output in: %s/default/", stage2InputDir)
 	}
 
-	if _, err := os.Stat(stage2InputFile2); os.IsNotExist(err) {
-		t.Errorf("Stage 2 input should contain config-two from stage 1 output: %s", stage2InputFile2)
+	if len(stage2InputFiles2) == 0 {
+		t.Errorf("Stage 2 input should contain config-two from stage 1 output in: %s/default/", stage2InputDir)
 	}
 
 	// Assert stage 2 output exists
-	stage2OutputFile1 := filepath.Join(stage2OutputDir, "default", "ConfigMap_default_config-one.yaml")
-	if _, err := os.Stat(stage2OutputFile1); os.IsNotExist(err) {
-		t.Errorf("Stage 2 output should exist: %s", stage2OutputFile1)
+	stage2OutputFiles1, _ := filepath.Glob(filepath.Join(stage2OutputDir, "default", "ConfigMap_*_config-one.yaml"))
+	if len(stage2OutputFiles1) == 0 {
+		t.Errorf("Stage 2 output should exist in: %s/default/", stage2OutputDir)
 	}
 
 	// Verify the key property: stage 2's input directory is stage 1's output directory content

@@ -211,11 +211,8 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 			return fmt.Errorf("failed to create resource directory %s: %w", resourceDir, err)
 		}
 
-		// Write individual file
-		filename := fmt.Sprintf("%s_%s_%s.yaml", kind, namespace, name)
-		if namespace == "" {
-			filename = fmt.Sprintf("%s_%s.yaml", kind, name)
-		}
+		// Write individual file using shared helper for consistency
+		filename := file.GetResourceFilename(u)
 		filePath := filepath.Join(resourceDir, filename)
 
 		if err := os.WriteFile(filePath, docBytes, 0644); err != nil {

@@ -402,14 +402,8 @@ func (o *Orchestrator) writeResourcesToDirectory(resources []unstructured.Unstru
 			return fmt.Errorf("failed to create resource directory: %w", err)
 		}
 
-		// Generate filename
-		var filename string
-		if namespace != "" {
-			filename = fmt.Sprintf("%s_%s_%s.yaml", kind, namespace, name)
-		} else {
-			filename = fmt.Sprintf("%s_%s.yaml", kind, name)
-		}
-
+		// Generate filename using shared helper for consistency
+		filename := file.GetResourceFilename(resource)
 		filePath := filepath.Join(resourceDir, filename)
 
 		// Marshal resource to YAML
