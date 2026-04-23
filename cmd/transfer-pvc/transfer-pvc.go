@@ -474,7 +474,7 @@ func (t *TransferPVCCommand) run() error {
 	err = followClientLogs(
 		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, labels, t.ProgressOutput)
 	if err != nil {
-		log.Fatal(err, "error following rsync client logs")
+		log.Fatalf("error following rsync client logs: %v", err)
 	}
 
 	return garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace)

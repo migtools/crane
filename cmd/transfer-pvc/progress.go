@@ -79,20 +79,9 @@ func (r *rsyncLogStream) Init() error {
 	go func() {
 		defer podLogStream.Close()
 		logString := ""
-		zeroBytes := 0
 		for {
 			buf := make([]byte, 32*1024)
 			n, readErr := podLogStream.Read(buf)
-			if n > 0 {
-				zeroBytes = 0
-			} else {
-				zeroBytes += 1
-			}
-			// sometimes, a stream would end without returning an EOF gracefully
-			// we force exit the loop when we see null bytes on stream consecutively
-			if zeroBytes > 4 {
-				err = io.EOF
-			}
 			logString = fmt.Sprintf("%s%s", logString, string(buf[:n]))
 			if readErr == io.EOF {
 				err = readErr
@@ -103,6 +92,8 @@ func (r *rsyncLogStream) Init() error {
 				}
 				r.progress.ExitCode = code
 				logString = finalLogs
+			} else if readErr != nil {
+				err = readErr
 			}
 			parsedProgress, unparsed := parseRsyncLogs(logString)
 			r.progress.Merge(parsedProgress)
