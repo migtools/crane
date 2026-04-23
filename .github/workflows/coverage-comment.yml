@@ -37,7 +37,7 @@ jobs:
           PR_NUMBER=$(cat pr-number.txt)
           TOTAL=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}')
 
-          PKG_COVERAGE=$(go tool cover -func=coverage.out | grep -v '^total:' | \
+          PKG_COVERAGE=$(go tool cover -func=coverage.out | grep -v '^total:' | grep -v '/e2e-tests/' | \
             awk -F'\t+' '{
               split($1, parts, "/")
               file = parts[length(parts)]

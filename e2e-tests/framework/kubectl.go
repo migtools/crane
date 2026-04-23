@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"slices"
 )
 
 type KubectlRunner struct {
@@ -30,7 +31,11 @@ func (k KubectlRunner) RunWithStdin(stdin string, args ...string) (string, error
 func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, error) {
 	finalArgs := append([]string{}, normalizeKubectlArgs(args...)...)
 	if k.Context != "" {
-		finalArgs = append(finalArgs, "--context", k.Context)
+		if idx := slices.Index(finalArgs, "--"); idx != -1 {
+			finalArgs = slices.Insert(finalArgs, idx, "--context", k.Context)
+		} else {
+			finalArgs = append(finalArgs, "--context", k.Context)
+		}
 	}
 	logVerboseCommand(k.Bin, finalArgs)
 	cmd := exec.Command(k.Bin, finalArgs...)
@@ -43,6 +48,18 @@ func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, e
 		return "", fmt.Errorf("kubectl %s failed: %v, output: %s", strings.Join(finalArgs, " "), err, string(out))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// OLMAPIAvailable reports whether the Subscription CRD is registered on the cluster.
+func (k KubectlRunner) OLMAPIAvailable() (bool, error) {
+	_, err := k.Run("get", "crd", "subscriptions.operators.coreos.com")
+	if err == nil {
+		return true, nil
+	}
+	if strings.Contains(err.Error(), "Error from server (NotFound)") {
+		return false, nil
+	}
+	return false, fmt.Errorf("check OLM CRD subscriptions.operators.coreos.com: %w", err)
 }
 
 // normalizeKubectlArgs accepts either tokenized args

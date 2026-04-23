@@ -39,7 +39,8 @@ jobs:
           GOPROXY: "https://proxy.golang.org"
         run: |
           cd main
-          go test -v -coverprofile=coverage.out -covermode=atomic $(go list ./... | grep -v '/e2e-tests/tests')
+          PKGS="$(go list ./... | grep -Ev '/e2e-tests/'; go list ./e2e-tests/utils)"
+          go test -v -coverprofile=coverage.out -covermode=atomic $PKGS
           echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
