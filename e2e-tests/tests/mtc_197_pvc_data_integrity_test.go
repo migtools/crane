@@ -14,6 +14,7 @@ import (
 
 var _ = Describe("PVC data integrity migration", func() {
 	It("[MTC-197] Migrate a PVC with data and verify checksum integrity", Label("tier0"), func() {
+		const testFileName = "testfile.txt"
 		appName := "app-with-empty-pvc"
 		namespace := appName
 		scenario := NewMigrationScenario(
@@ -37,13 +38,13 @@ var _ = Describe("PVC data integrity migration", func() {
 			"non_admin_user": "true",
 			"app_name":       appName,
 			"add_data":       "true",
-			"file_name":      "testfile.txt",
+			"file_name":      testFileName,
 			"file_size":      10,
 		}
 		tgtApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 			"app_name":       appName,
-			"add_data":       "false",
+			"add_data":       "true",
 		}
 
 		By("Grant ns admin permissions to nonadmin user on source and target")
@@ -51,11 +52,11 @@ var _ = Describe("PVC data integrity migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(cleanup)
 
-		By("Deploy and validate source app")
+		By("SOURCE: Deploy and validate app")
 		log.Printf("Deploying source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
 		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
 		Expect(srcApp.Validate()).NotTo(HaveOccurred())
-		log.Printf("Source app %s deployed and validated successfully\n", srcApp.Name)
+		log.Printf("SOURCE: app %s deployed and validated successfully\n", srcApp.Name)
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
@@ -77,29 +78,29 @@ var _ = Describe("PVC data integrity migration", func() {
 			}
 		})
 
-		By("List PVCs in the source namespace")
+		By("SOURCE: List PVCs in the namespace")
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", srcApp.Namespace)
-		log.Printf("Found %d PVCs in source namespace %q", len(pvcs), srcApp.Namespace)
+		Expect(pvcs).NotTo(BeEmpty(), "SOURCE: expected at least one PVC in namespace %q", srcApp.Namespace)
+		log.Printf("SOURCE: Found %d PVCs in namespace %q", len(pvcs), srcApp.Namespace)
 		for _, pvc := range pvcs {
-			log.Printf("Found PVC %s in source namespace %q\n", pvc.Name, pvc.Namespace)
+			log.Printf("SOURCE: Found PVC %s in namespace %q\n", pvc.Name, pvc.Namespace)
 		}
 
-		By("Verify data file exists on source cluster")
-		fileName := srcApp.ExtraVars["file_name"].(string)
+		By("SOURCE: Verify data file exists on PVC")
+		fileName := testFileName
 		output, err := kubectlSrcNonAdmin.Run("exec", appName, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", fmt.Sprintf("ls -lh /data/%s", fileName))
 		Expect(err).NotTo(HaveOccurred())
-		log.Printf("File info on source: %s\n", output)
+		log.Printf("SOURCE: File info: %s\n", output)
 
-		By("Get file MD5 checksum on source cluster")
+		By("SOURCE: Get file MD5 checksum")
 		srcMD5Output, err := kubectlSrcNonAdmin.Run("exec", appName, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", fmt.Sprintf("cat /data/%s.md5", fileName))
 		Expect(err).NotTo(HaveOccurred())
 		srcMD5 := strings.TrimSpace(srcMD5Output)
 		Expect(srcMD5).NotTo(BeEmpty(), "expected MD5 checksum file to exist on source")
-		log.Printf("Source MD5 checksum: %s\n", srcMD5)
+		log.Printf("Source: MD5 checksum: %s\n", srcMD5)
 
-		By("Quiesce source app")
+		By("SOURCE: Quiesce app")
 		Expect(kubectlSrcNonAdmin.ScaleDeploymentIfPresent(srcApp.Namespace, srcApp.Name, 0)).NotTo(HaveOccurred())
 
 		By("Run crane export/transform/apply pipeline")
@@ -129,31 +130,37 @@ var _ = Describe("PVC data integrity migration", func() {
 			log.Printf("PVC transfer complete : %s -> namespace %s", pvcName, tgtApp.Namespace)
 		}
 
-		By("List PVCs on target cluster")
+		By("TARGET: List PVCs")
 		tgtpvcs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tgtpvcs).NotTo(BeEmpty(), "expected at least one PVC in target namespace %q", tgtApp.Namespace)
-		log.Printf("Found %d PVCs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
+		log.Printf("TARGET: Found %d PVCs in namespace %q", len(tgtpvcs), tgtApp.Namespace)
 
-		By("Apply rendered manifests to target")
+		// Verify each source PVC was transferred to target
+		Expect(VerifyPVCsExistByName(pvcs, tgtpvcs)).NotTo(HaveOccurred())
+		for _, pvc := range pvcs {
+			log.Printf("TARGET: Verified PVC %s exists on target\n", pvc.Name)
+		}
+
+		By("TARGET: Apply rendered manifests")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", tgtApp.Namespace, paths.OutputDir)
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
-		By("Validate target application")
-		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
+		By("TARGET: Validate application")
+		log.Printf("TARGET: Validating app %s\n", tgtApp.Name)
 		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
-		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
+		log.Printf("TARGET: Validation completed for app %s\n", tgtApp.Name)
 
-		By("Verify data file exists on target cluster after migration")
+		By("TARGET: Verify data file exists after migration")
 		tgtOutput, err := kubectlTgtNonAdmin.Run("exec", appName, "-n", tgtApp.Namespace, "--", "/bin/sh", "-c", fmt.Sprintf("ls -lh /data/%s", fileName))
 		Expect(err).NotTo(HaveOccurred())
-		log.Printf("File info on target: %s\n", tgtOutput)
+		log.Printf("TARGET: File info: %s\n", tgtOutput)
 
-		By("Verify MD5 checksum on target cluster")
+		By("TARGET: Verify MD5 checksum")
 		tgtMD5Verify, err := kubectlTgtNonAdmin.Run("exec", appName, "-n", tgtApp.Namespace, "--", "/bin/sh", "-c", fmt.Sprintf("cd /data && md5sum -c %s.md5", fileName))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tgtMD5Verify).To(ContainSubstring("OK"), "MD5 checksum verification should pass on target")
-		log.Printf("MD5 verification on target: %s\n", tgtMD5Verify)
+		log.Printf("TARGET: MD5 verification: %s\n", tgtMD5Verify)
 
 		By("Compare source and target MD5 checksums")
 		tgtMD5Output, err := kubectlTgtNonAdmin.Run("exec", appName, "-n", tgtApp.Namespace, "--", "/bin/sh", "-c", fmt.Sprintf("cat /data/%s.md5", fileName))
