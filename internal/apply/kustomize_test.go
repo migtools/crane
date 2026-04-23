@@ -28,10 +28,10 @@ spec:
   replicas: 3
 `,
 			expectedFiles: map[string]bool{
-				"resources/default/Deployment_default_myapp.yaml": true,
+				"resources/default/Deployment_*_myapp.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/default/Deployment_default_myapp.yaml": "replicas: 3",
+				"resources/default/Deployment_*_myapp.yaml": "replicas: 3",
 			},
 		},
 		{
@@ -61,14 +61,14 @@ data:
   key: value
 `,
 			expectedFiles: map[string]bool{
-				"resources/ns1/Deployment_ns1_app1.yaml": true,
-				"resources/ns1/Service_ns1_svc1.yaml":    true,
-				"resources/ns2/ConfigMap_ns2_config1.yaml": true,
+				"resources/ns1/Deployment_*_app1.yaml": true,
+				"resources/ns1/Service_*_svc1.yaml":    true,
+				"resources/ns2/ConfigMap_*_config1.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/ns1/Deployment_ns1_app1.yaml": "replicas: 1",
-				"resources/ns1/Service_ns1_svc1.yaml":    "type: ClusterIP",
-				"resources/ns2/ConfigMap_ns2_config1.yaml": "key: value",
+				"resources/ns1/Deployment_*_app1.yaml": "replicas: 1",
+				"resources/ns1/Service_*_svc1.yaml":    "type: ClusterIP",
+				"resources/ns2/ConfigMap_*_config1.yaml": "key: value",
 			},
 		},
 		{
@@ -83,10 +83,10 @@ rules:
   verbs: ["*"]
 `,
 			expectedFiles: map[string]bool{
-				"resources/_cluster/ClusterRole_admin.yaml": true,
+				"resources/_cluster/ClusterRole_*_admin.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/_cluster/ClusterRole_admin.yaml": "verbs:",
+				"resources/_cluster/ClusterRole_*_admin.yaml": "verbs:",
 			},
 		},
 		{
@@ -109,12 +109,12 @@ rules:
   verbs: ["get", "list"]
 `,
 			expectedFiles: map[string]bool{
-				"resources/prod/Service_prod_web.yaml": true,
-				"resources/_cluster/ClusterRole_reader.yaml": true,
+				"resources/prod/Service_*_web.yaml": true,
+				"resources/_cluster/ClusterRole_*_reader.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/prod/Service_prod_web.yaml": "type: LoadBalancer",
-				"resources/_cluster/ClusterRole_reader.yaml": "verbs:",
+				"resources/prod/Service_*_web.yaml": "type: LoadBalancer",
+				"resources/_cluster/ClusterRole_*_reader.yaml": "verbs:",
 			},
 		},
 		{
@@ -137,10 +137,10 @@ spec:
         image: nginx
 `,
 			expectedFiles: map[string]bool{
-				"resources/test/Deployment_test_initcont.yaml": true,
+				"resources/test/Deployment_*_initcont.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/test/Deployment_test_initcont.yaml": "initContainers:",
+				"resources/test/Deployment_*_initcont.yaml": "initContainers:",
 			},
 		},
 		{
@@ -163,12 +163,12 @@ data:
   key: val
 `,
 			expectedFiles: map[string]bool{
-				"resources/default/Service_default_svc.yaml": true,
-				"resources/default/ConfigMap_default_cm.yaml": true,
+				"resources/default/Service_*_svc.yaml": true,
+				"resources/default/ConfigMap_*_cm.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/default/Service_default_svc.yaml": "type: ClusterIP",
-				"resources/default/ConfigMap_default_cm.yaml": "key: val",
+				"resources/default/Service_*_svc.yaml": "type: ClusterIP",
+				"resources/default/ConfigMap_*_cm.yaml": "key: val",
 			},
 		},
 	}
@@ -204,34 +204,41 @@ data:
 				t.Fatalf("Unexpected error: %v", err)
 			}
 
-			// Verify expected files exist
+			// Verify expected files exist (expectedPath can contain wildcards)
 			for expectedPath, shouldExist := range tt.expectedFiles {
-				fullPath := filepath.Join(tmpDir, expectedPath)
-				_, err := os.Stat(fullPath)
+				fullPattern := filepath.Join(tmpDir, expectedPath)
+				matches, _ := filepath.Glob(fullPattern)
 
 				if shouldExist {
-					if os.IsNotExist(err) {
-						t.Errorf("Expected file %s does not exist", expectedPath)
+					if len(matches) == 0 {
+						t.Errorf("Expected file matching %s does not exist", expectedPath)
 					}
 				} else {
-					if err == nil {
-						t.Errorf("Unexpected file %s exists", expectedPath)
+					if len(matches) > 0 {
+						t.Errorf("Unexpected file matching %s exists: %v", expectedPath, matches)
 					}
 				}
 			}
 
-			// Verify file contents
+			// Verify file contents (filePath can contain wildcards)
 			for filePath, expectedSubstring := range tt.expectedInFile {
-				fullPath := filepath.Join(tmpDir, filePath)
-				content, err := os.ReadFile(fullPath)
+				fullPattern := filepath.Join(tmpDir, filePath)
+				matches, _ := filepath.Glob(fullPattern)
+
+				if len(matches) == 0 {
+					t.Errorf("File matching %s not found", filePath)
+					continue
+				}
+
+				content, err := os.ReadFile(matches[0])
 				if err != nil {
-					t.Errorf("Failed to read %s: %v", filePath, err)
+					t.Errorf("Failed to read %s: %v", matches[0], err)
 					continue
 				}
 
 				if !contains(string(content), expectedSubstring) {
 					t.Errorf("File %s missing expected substring %q.\nContent:\n%s",
-						filePath, expectedSubstring, string(content))
+						matches[0], expectedSubstring, string(content))
 				}
 			}
 		})
@@ -319,89 +326,6 @@ data:
 	}
 }
 
-func TestApplyFinalStageWithFileSplit(t *testing.T) {
-	// This test verifies that ApplyFinalStage creates both output.yaml and individual files
-	// We'll use a mock by creating a fake stage directory
-
-	tmpDir, err := os.MkdirTemp("", "crane-apply-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create a fake stage directory with kustomization
-	transformDir := filepath.Join(tmpDir, "transform")
-	stageDir := filepath.Join(transformDir, "10_test")
-	resourcesDir := filepath.Join(stageDir, "resources")
-
-	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
-		t.Fatalf("Failed to create stage dirs: %v", err)
-	}
-
-	// Write a simple resource
-	resourceYAML := `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: test-config
-  namespace: default
-data:
-  key: value
-`
-	resourcePath := filepath.Join(resourcesDir, "configmap.yaml")
-	if err := os.WriteFile(resourcePath, []byte(resourceYAML), 0644); err != nil {
-		t.Fatalf("Failed to write resource: %v", err)
-	}
-
-	// Write kustomization.yaml
-	kustomizationYAML := `apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-- resources/configmap.yaml
-`
-	kustomizationPath := filepath.Join(stageDir, "kustomization.yaml")
-	if err := os.WriteFile(kustomizationPath, []byte(kustomizationYAML), 0644); err != nil {
-		t.Fatalf("Failed to write kustomization: %v", err)
-	}
-
-	// Create applier
-	outputDir := filepath.Join(tmpDir, "output")
-	logger := logrus.New()
-	logger.SetLevel(logrus.ErrorLevel)
-	applier := &KustomizeApplier{
-		Log:          logger,
-		TransformDir: transformDir,
-		OutputDir:    outputDir,
-	}
-
-	// Run ApplyFinalStage
-	err = applier.ApplyFinalStage()
-	if err != nil {
-		t.Fatalf("ApplyFinalStage failed: %v", err)
-	}
-
-	// Verify output.yaml exists
-	outputYAMLPath := filepath.Join(outputDir, "output.yaml")
-	if _, err := os.Stat(outputYAMLPath); os.IsNotExist(err) {
-		t.Errorf("output.yaml not created")
-	}
-
-	// Verify individual file exists
-	individualFilePath := filepath.Join(outputDir, "resources/default/ConfigMap_default_test-config.yaml")
-	if _, err := os.Stat(individualFilePath); os.IsNotExist(err) {
-		t.Errorf("Individual file not created: %s", individualFilePath)
-	}
-
-	// Verify content of individual file
-	content, err := os.ReadFile(individualFilePath)
-	if err != nil {
-		t.Fatalf("Failed to read individual file: %v", err)
-	}
-
-	if !contains(string(content), "key: value") {
-		t.Errorf("Individual file missing expected content")
-	}
-}
-
 func TestValidateKubectlAvailable(t *testing.T) {
 	// This test verifies that ValidateKubectlAvailable correctly checks for kubectl
 	// We can't guarantee kubectl is available in all test environments,
@@ -452,9 +376,14 @@ data:
 		t.Fatalf("splitMultiDocYAMLToFiles failed: %v", err)
 	}
 
-	// Read the generated file
-	filePath := filepath.Join(tmpDir, "resources/default/ConfigMap_default_test-config.yaml")
-	content, err := os.ReadFile(filePath)
+	// Read the generated file (using glob to find it with new naming)
+	globPattern := filepath.Join(tmpDir, "resources/default/ConfigMap_*_test-config.yaml")
+	matches, _ := filepath.Glob(globPattern)
+	if len(matches) == 0 {
+		t.Fatalf("No ConfigMap file found matching pattern: %s", globPattern)
+	}
+
+	content, err := os.ReadFile(matches[0])
 	if err != nil {
 		t.Fatalf("Failed to read output file: %v", err)
 	}

@@ -5,26 +5,31 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 // KustomizeWriter handles writing transform artifacts to Kustomize layout
 type KustomizeWriter struct {
 	opts      file.PathOpts
 	stageName string
+	log       *logrus.Logger
 }
 
 // NewKustomizeWriter creates a new KustomizeWriter for a specific stage
-func NewKustomizeWriter(opts file.PathOpts, stageName string) *KustomizeWriter {
+func NewKustomizeWriter(opts file.PathOpts, stageName string, log *logrus.Logger) *KustomizeWriter {
 	return &KustomizeWriter{
 		opts:      opts,
 		stageName: stageName,
+		log:       log,
 	}
 }
 
@@ -32,15 +37,16 @@ func NewKustomizeWriter(opts file.PathOpts, stageName string) *KustomizeWriter {
 func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, force bool) error {
 	stageDir := w.opts.GetStageDir(w.stageName)
 
-	// Check if stage directory exists and is non-empty
-	if !force {
-		if err := w.checkStageDirectory(stageDir); err != nil {
-			return err
-		}
-	} else {
-		// Force is set, remove existing stage directory
+	// Handle directory preparation based on force flag
+	if force {
+		// Force mode - remove existing stage directory completely and recreate
 		if err := os.RemoveAll(stageDir); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove existing stage directory: %w", err)
+		}
+	} else {
+		// Safe mode - fail if stage directory is not empty
+		if err := w.checkStageDirectory(stageDir); err != nil {
+			return err
 		}
 	}
 
@@ -55,18 +61,54 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		return fmt.Errorf("failed to create patches directory: %w", err)
 	}
 
-	// Group resources and patches
-	var resources []unstructured.Unstructured
+	// Separate artifacts into whiteout and non-whiteout
+	// ALL artifacts will be written to resources/, but only non-whiteout will be in kustomization.yaml
+	// Use maps to deduplicate resources by canonical ID
+	allResourcesMap := make(map[string]unstructured.Unstructured)
+	whiteoutStatusMap := make(map[string]bool) // tracks whether resource is whiteout
+	activeResourcesMap := make(map[string]unstructured.Unstructured)
 	var patches []kustomize.Patch
 
 	for _, artifact := range artifacts {
-		// Skip whiteout resources
+		resourceID := getResourceID(artifact.Resource)
+
+		// Check for duplicates
+		if _, exists := allResourcesMap[resourceID]; exists {
+			// Duplicate detected - determine which to keep
+			existingIsWhiteout := whiteoutStatusMap[resourceID]
+
+			if existingIsWhiteout && !artifact.HaveWhiteOut {
+				// Replace whiteout with non-whiteout
+				w.log.Warnf("Duplicate resource %s: replacing whiteout with active resource", resourceID)
+				allResourcesMap[resourceID] = artifact.Resource
+				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+				// Update active resources map
+				delete(activeResourcesMap, resourceID) // remove old entry if any
+				activeResourcesMap[resourceID] = artifact.Resource
+			} else if !existingIsWhiteout && artifact.HaveWhiteOut {
+				// Keep non-whiteout, skip whiteout duplicate
+				w.log.Warnf("Duplicate resource %s: keeping active resource, ignoring whiteout duplicate", resourceID)
+				continue
+			} else {
+				// Both same type - last one wins, but log warning
+				w.log.Warnf("Duplicate resource %s (both %s): last occurrence will be used",
+					resourceID, map[bool]string{true: "whiteout", false: "active"}[artifact.HaveWhiteOut])
+				allResourcesMap[resourceID] = artifact.Resource
+				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+			}
+		} else {
+			// First occurrence - store it
+			allResourcesMap[resourceID] = artifact.Resource
+			whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+		}
+
+		// Track whiteout status - whiteout resources don't get active references or patches
 		if artifact.HaveWhiteOut {
 			continue
 		}
 
-		// Store original resource - patches will be applied by kubectl kustomize
-		resources = append(resources, artifact.Resource)
+		// Non-whiteout resources are active
+		activeResourcesMap[resourceID] = artifact.Resource
 
 		// Write patch if there are operations
 		if len(artifact.Patches) > 0 {
@@ -115,25 +157,50 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		}
 	}
 
-	// Group resources by type and write resource files
-	groups := cranelib.GroupResourcesByType(resources)
-	var resourcePaths []string
+	// Convert maps to slices for writing
+	var allResources []unstructured.Unstructured
+	for _, res := range allResourcesMap {
+		allResources = append(allResources, res)
+	}
 
-	for _, resourceGroup := range groups {
-		// Parse TypeKey to extract kind and group
-		kind, group := parseTypeKey(resourceGroup.TypeKey)
-		filename := kustomize.GetResourceTypeFilename(kind, group)
+	// Build a set of active (non-whiteout) resources for quick lookup
+	activeResourceIDs := make(map[string]bool)
+	for id := range activeResourcesMap {
+		activeResourceIDs[id] = true
+	}
+
+	var resourcePaths []string
+	var whiteoutComments []string
+
+	// Write each resource to its own file (similar to export structure)
+	for _, resource := range allResources {
+		filename := file.GetResourceFilename(resource)
 		fullPath := filepath.Join(resourcesDir, filename)
 
-		if err := cranelib.WriteResourceTypeFile(fullPath, resourceGroup.Resources); err != nil {
+		// Write individual resource file
+		yamlBytes, err := yaml.Marshal(resource.Object)
+		if err != nil {
+			return fmt.Errorf("failed to marshal resource %s to YAML: %w", filename, err)
+		}
+		if err := os.WriteFile(fullPath, yamlBytes, 0644); err != nil {
 			return fmt.Errorf("failed to write resource file %s: %w", filename, err)
 		}
 
-		resourcePaths = append(resourcePaths, filepath.Join("resources", filename))
+		// Check if this resource is active or whiteout
+		resourceID := getResourceID(resource)
+		if activeResourceIDs[resourceID] {
+			resourcePaths = append(resourcePaths, filepath.Join("resources", filename))
+		} else {
+			// This resource is whiteout - add comment
+			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - resources/%s", filename))
+		}
 	}
 
-	// Generate and write kustomization.yaml
-	kustomizationYAML, err := kustomize.GenerateKustomization(resourcePaths, patches)
+	// Sort resourcePaths for deterministic kustomization.yaml generation
+	sort.Strings(resourcePaths)
+
+	// Generate and write kustomization.yaml with whiteout comments
+	kustomizationYAML, err := w.generateKustomizationWithComments(resourcePaths, patches, whiteoutComments)
 	if err != nil {
 		return fmt.Errorf("failed to generate kustomization.yaml: %w", err)
 	}
@@ -146,41 +213,17 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	return nil
 }
 
-// parseTypeKey extracts kind and group from ResourceGroup's TypeKey
-// Format: "<kind>" for core resources, "<kind>.<group>" for others
-// Examples: "deployment" -> ("Deployment", ""), "route.route.openshift.io" -> ("Route", "route.openshift.io")
-func parseTypeKey(typeKey string) (kind, group string) {
-	// Check if typeKey contains a dot (indicating non-core resource)
-	dotIndex := -1
-	for i, ch := range typeKey {
-		if ch == '.' {
-			dotIndex = i
-			break
-		}
-	}
+// getResourceID returns a unique identifier for a resource
+// Format: kind/namespace/name or kind/name for cluster-scoped
+func getResourceID(resource unstructured.Unstructured) string {
+	kind := resource.GetKind()
+	namespace := resource.GetNamespace()
+	name := resource.GetName()
 
-	if dotIndex == -1 {
-		// Core resource - capitalize first letter
-		return capitalizeFirst(typeKey), ""
+	if namespace != "" {
+		return fmt.Sprintf("%s/%s/%s", kind, namespace, name)
 	}
-
-	// Non-core resource - split on first dot
-	kindPart := typeKey[:dotIndex]
-	groupPart := typeKey[dotIndex+1:]
-	return capitalizeFirst(kindPart), groupPart
-}
-
-// capitalizeFirst capitalizes the first letter of a string
-func capitalizeFirst(s string) string {
-	if s == "" {
-		return ""
-	}
-	// Simple capitalization - assumes ASCII
-	first := s[0]
-	if first >= 'a' && first <= 'z' {
-		return string(first-32) + s[1:]
-	}
-	return s
+	return fmt.Sprintf("%s/%s", kind, name)
 }
 
 // filterValidRemoveOps filters out JSONPatch remove operations for paths that don't exist in the resource.
@@ -303,6 +346,36 @@ func pathExists(data map[string]interface{}, path string) bool {
 	}
 
 	return true
+}
+
+// generateKustomizationWithComments creates a kustomization.yaml with human-readable whiteout comments
+func (w *KustomizeWriter) generateKustomizationWithComments(resources []string, patches []kustomize.Patch, whiteoutComments []string) ([]byte, error) {
+	// Generate base kustomization YAML
+	baseYAML, err := kustomize.GenerateKustomization(resources, patches)
+	if err != nil {
+		return nil, err
+	}
+
+	// If no whiteout comments, return as-is
+	if len(whiteoutComments) == 0 {
+		return baseYAML, nil
+	}
+
+	// Append whiteout comments at the end (sorted for determinism)
+	sortedComments := make([]string, len(whiteoutComments))
+	copy(sortedComments, whiteoutComments)
+	sort.Strings(sortedComments)
+
+	var result strings.Builder
+	result.Write(baseYAML)
+	result.WriteString("\n# Whiteout resources are written to resources/ for complete snapshot\n")
+	result.WriteString("# but excluded from active resources list above:\n")
+	for _, comment := range sortedComments {
+		result.WriteString(comment)
+		result.WriteString("\n")
+	}
+
+	return []byte(result.String()), nil
 }
 
 // checkStageDirectory checks if a stage directory exists and is non-empty

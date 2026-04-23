@@ -29,11 +29,8 @@ type Flags struct {
 	ExportDir    string `mapstructure:"export-dir"`
 	TransformDir string `mapstructure:"transform-dir"`
 	OutputDir    string `mapstructure:"output-dir"`
-	// Multi-stage flags
-	Stage     string   `mapstructure:"stage"`
-	FromStage string   `mapstructure:"from-stage"`
-	ToStage   string   `mapstructure:"to-stage"`
-	Stages    []string `mapstructure:"stages"`
+	// Multi-stage flag
+	Stage string `mapstructure:"stage"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -41,22 +38,12 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// Validate mutually exclusive flags
-	flagCount := 0
+	// Validate stage format if specified
 	if o.Flags.Stage != "" {
-		flagCount++
+		if err := internalTransform.ValidateStageName(o.Flags.Stage); err != nil {
+			return err
+		}
 	}
-	if o.Flags.FromStage != "" || o.Flags.ToStage != "" {
-		flagCount++
-	}
-	if len(o.Flags.Stages) > 0 {
-		flagCount++
-	}
-
-	if flagCount > 1 {
-		return fmt.Errorf("--stage, --from-stage/--to-stage, and --stages are mutually exclusive")
-	}
-
 	return nil
 }
 
@@ -103,11 +90,8 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
 
-	// Multi-stage flags
-	cmd.Flags().StringVar(&o.Stage, "stage", "", "Apply a specific stage only (e.g., '10_KubernetesPlugin')")
-	cmd.Flags().StringVar(&o.FromStage, "from-stage", "", "Apply from this stage onwards (e.g., '20_OpenshiftPlugin')")
-	cmd.Flags().StringVar(&o.ToStage, "to-stage", "", "Apply up to and including this stage (e.g., '30_ImagestreamPlugin')")
-	cmd.Flags().StringSliceVar(&o.Stages, "stages", nil, "Apply specific stages (comma-separated, e.g., '10_KubernetesPlugin,30_ImagestreamPlugin')")
+	// Multi-stage flag
+	cmd.Flags().StringVar(&o.Stage, "stage", "", "Apply a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are applied.")
 }
 
 func (o *Options) run() error {
@@ -142,22 +126,20 @@ func (o *Options) run() error {
 	}
 
 	// Determine which stages to apply
-	// If user specified which stages to run (via CLI or config), use those
-	if o.Flags.Stage != "" || o.Flags.FromStage != "" ||
-		o.Flags.ToStage != "" || len(o.Flags.Stages) > 0 {
-		// Multi-stage apply with selector
-		selector := internalTransform.StageSelector{
-			Stage:     o.Flags.Stage,
-			FromStage: o.Flags.FromStage,
-			ToStage:   o.Flags.ToStage,
-			Stages:    o.Flags.Stages,
-		}
+	var selector internalTransform.StageSelector
 
-		log.Info("Applying selected stages...")
-		return applier.ApplyMultiStage(selector)
+	if o.Flags.Stage != "" {
+		// User specified a specific stage to apply
+		selector = internalTransform.StageSelector{
+			Stage: o.Flags.Stage,
+		}
+		log.Infof("Applying stage: %s", o.Flags.Stage)
+	} else {
+		// Default: apply all stages
+		// This ensures sequential consistency - each stage output is materialized
+		log.Info("Applying all stages...")
+		// Empty selector means apply all discovered stages
 	}
 
-	// Default: apply final stage only
-	log.Info("Applying final stage...")
-	return applier.ApplyFinalStage()
+	return applier.ApplyMultiStage(selector)
 }

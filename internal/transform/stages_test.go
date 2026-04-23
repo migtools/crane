@@ -79,37 +79,9 @@ func TestFilterStages(t *testing.T) {
 		assert.Equal(t, "OpenshiftPlugin", filtered[0].PluginName)
 	})
 
-	t.Run("from-stage", func(t *testing.T) {
-		filtered := FilterStages(stages, StageSelector{FromStage: "20_OpenshiftPlugin"})
-		require.Len(t, filtered, 2)
-		assert.Equal(t, "OpenshiftPlugin", filtered[0].PluginName)
-		assert.Equal(t, "ImagestreamPlugin", filtered[1].PluginName)
-	})
-
-	t.Run("to-stage", func(t *testing.T) {
-		filtered := FilterStages(stages, StageSelector{ToStage: "20_OpenshiftPlugin"})
-		require.Len(t, filtered, 2)
-		assert.Equal(t, "KubernetesPlugin", filtered[0].PluginName)
-		assert.Equal(t, "OpenshiftPlugin", filtered[1].PluginName)
-	})
-
-	t.Run("from-stage to to-stage", func(t *testing.T) {
-		filtered := FilterStages(stages, StageSelector{
-			FromStage: "10_KubernetesPlugin",
-			ToStage:   "20_OpenshiftPlugin",
-		})
-		require.Len(t, filtered, 2)
-		assert.Equal(t, "KubernetesPlugin", filtered[0].PluginName)
-		assert.Equal(t, "OpenshiftPlugin", filtered[1].PluginName)
-	})
-
-	t.Run("specific stages list", func(t *testing.T) {
-		filtered := FilterStages(stages, StageSelector{
-			Stages: []string{"10_KubernetesPlugin", "30_ImagestreamPlugin"},
-		})
-		require.Len(t, filtered, 2)
-		assert.Equal(t, "KubernetesPlugin", filtered[0].PluginName)
-		assert.Equal(t, "ImagestreamPlugin", filtered[1].PluginName)
+	t.Run("non-existent stage", func(t *testing.T) {
+		filtered := FilterStages(stages, StageSelector{Stage: "99_NonExistent"})
+		require.Len(t, filtered, 0)
 	})
 }
 
@@ -242,12 +214,10 @@ func TestFilterPluginsByStage_NonExistentPlugin(t *testing.T) {
 		assert.Equal(t, "NonExistentPlugin", filtered[0].PluginName)
 	})
 
-	t.Run("manual stages in range", func(t *testing.T) {
-		// FromStage/ToStage should include non-plugin stages
-		filtered := FilterStages(stages, StageSelector{
-			FromStage: "10_KubernetesPlugin",
-			ToStage:   "90_ManualStage",
-		})
-		assert.Len(t, filtered, 3)
+	t.Run("manual stage can be selected", func(t *testing.T) {
+		// Manual stages (non-plugin names) can still be selected
+		filtered := FilterStages(stages, StageSelector{Stage: "90_ManualStage"})
+		require.Len(t, filtered, 1)
+		assert.Equal(t, "ManualStage", filtered[0].PluginName)
 	})
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -182,4 +183,64 @@ func (opts *PathOpts) GetWhiteoutReportPath(stageName string) string {
 // Format: <transformDir>/<stageName>/reports/ignored-patches.json
 func (opts *PathOpts) GetIgnoredPatchReportPath(stageName string) string {
 	return filepath.Join(opts.GetReportsDir(stageName), "ignored-patches.json")
+}
+
+// GetStageWorkDir returns the path to the working directory for a stage
+// Format: <transformDir>/.work/<stageName>
+func (opts *PathOpts) GetStageWorkDir(stageName string) string {
+	return filepath.Join(opts.TransformDir, ".work", stageName)
+}
+
+// GetStageInputDir returns the path to the input directory for a stage
+// Format: <transformDir>/.work/<stageName>/input
+func (opts *PathOpts) GetStageInputDir(stageName string) string {
+	return filepath.Join(opts.GetStageWorkDir(stageName), "input")
+}
+
+// GetStageTransformDir returns the path to the transform directory for a stage
+// This is the actual stage directory containing kustomization.yaml
+// Format: <transformDir>/<stageName>
+func (opts *PathOpts) GetStageTransformDir(stageName string) string {
+	return opts.GetStageDir(stageName)
+}
+
+// GetStageOutputDir returns the path to the output directory for a stage
+// Format: <transformDir>/.work/<stageName>/output
+func (opts *PathOpts) GetStageOutputDir(stageName string) string {
+	return filepath.Join(opts.GetStageWorkDir(stageName), "output")
+}
+
+// GetKustomizeCommand returns the appropriate command (kubectl or oc) for kustomize
+func GetKustomizeCommand() string {
+	// Try kubectl first
+	cmd := exec.Command("kubectl", "version", "--client")
+	if err := cmd.Run(); err == nil {
+		return "kubectl"
+	}
+
+	// Fallback to oc
+	cmd = exec.Command("oc", "version", "--client")
+	if err := cmd.Run(); err == nil {
+		return "oc"
+	}
+
+	// Default to kubectl (will fail later with appropriate error)
+	return "kubectl"
+}
+
+// GetResourceFilename returns a stable filename from kind, group, version, namespace, and name.
+// Format matches export: Kind_group_version_namespace_name.yaml
+// Examples: "ConfigMap__v1_default_my-config.yaml", "Deployment_apps_v1_default_my-app.yaml"
+func GetResourceFilename(obj unstructured.Unstructured) string {
+	namespace := obj.GetNamespace()
+	if namespace == "" {
+		namespace = "clusterscoped"
+	}
+	return strings.Join([]string{
+		obj.GetKind(),
+		obj.GetObjectKind().GroupVersionKind().GroupKind().Group,
+		obj.GetObjectKind().GroupVersionKind().Version,
+		namespace,
+		obj.GetName(),
+	}, "_") + ".yaml"
 }

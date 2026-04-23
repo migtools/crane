@@ -8,6 +8,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/internal/file"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -72,10 +73,13 @@ func TestWriteStageWithNonExistentRemovePath(t *testing.T) {
 	}
 
 	// Create writer
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
 	opts := file.PathOpts{
 		TransformDir: transformDir,
 	}
-	writer := NewKustomizeWriter(opts, stageName)
+	writer := NewKustomizeWriter(opts, stageName, logger)
 
 	// Write stage - this should NOT fail even though /spec/externalIPs doesn't exist
 	err = writer.WriteStage([]cranelib.TransformArtifact{artifact}, false)
@@ -112,21 +116,4 @@ func TestWriteStageWithNonExistentRemovePath(t *testing.T) {
 	if _, err := os.Stat(kustomizationPath); os.IsNotExist(err) {
 		t.Errorf("kustomization.yaml not created")
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 &&
-		(s == substr || len(s) >= len(substr) &&
-		(s[:len(substr)] == substr ||
-		s[len(s)-len(substr):] == substr ||
-		findInString(s, substr)))
-}
-
-func findInString(s, substr string) bool {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

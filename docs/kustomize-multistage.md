@@ -137,15 +137,6 @@ Execute specific stages:
 ```bash
 # Run a specific stage
 crane transform --stage 20_OpenshiftPlugin
-
-# Run from a stage onwards
-crane transform --from-stage 20_OpenshiftPlugin
-
-# Run up to a specific stage
-crane transform --to-stage 30_ImagestreamPlugin
-
-# Run specific stages
-crane transform --stages 10_KubernetesPlugin,30_ImagestreamPlugin
 ```
 
 #### Force Overwrite
@@ -172,19 +163,7 @@ This builds the final stage using `kubectl kustomize` and writes the result to `
 
 #### Apply Specific Stages
 
-```bash
-# Apply a specific stage
-crane apply --stage 20_OpenshiftPlugin
-
-# Apply from a stage onwards
-crane apply --from-stage 20_OpenshiftPlugin
-
-# Apply up to a specific stage
-crane apply --to-stage 30_ImagestreamPlugin
-
-# Apply specific stages
-crane apply --stages 10_KubernetesPlugin,30_ImagestreamPlugin
-```
+Apply applies all stages sequentially by default. The apply command does not support stage-specific flags as it always processes the complete pipeline to ensure sequential consistency.
 
 ## Priority Assignment
 

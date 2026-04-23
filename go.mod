@@ -10,7 +10,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/google/gnostic-models v0.7.0
 	github.com/jarcoal/httpmock v1.2.0
-	github.com/konveyor/crane-lib v0.1.6-0.20260408090949-b53540d2b5d6
+	github.com/konveyor/crane-lib v0.1.6-0.20260414113823-a9f07d55042b
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.0
