@@ -231,6 +231,8 @@ var _ = Describe("Data validation", func() {
 			return strings.TrimSpace(out), nil
 		}, "90s", "3s").Should(BeEmpty())
 
+		// Temporary workaround for BUG #213: remove once issue is fixed.
+		// See: https://github.com/migtools/crane/issues/213
 		By("[BUG #213] Relax source PVC permissions before transfer")
 		sourceFixCommands := make([]string, 0, len(pvcNames)*2)
 		for i := range pvcNames {
@@ -272,6 +274,8 @@ var _ = Describe("Data validation", func() {
 			log.Printf("PVC transfer complete : %s -> namespace %s", pvcName, tgtApp.Namespace)
 		}
 
+		// Temporary workaround for BUG #213: remove once issue is fixed.
+		// See: https://github.com/migtools/crane/issues/213
 		By("[BUG #213] Restore destination PVC ownership for mysql runtime user")
 		targetFixCommands := make([]string, 0, len(pvcNames)*2)
 		for i := range pvcNames {
