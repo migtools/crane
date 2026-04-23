@@ -79,59 +79,18 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 		return fmt.Errorf("no stages found matching selector")
 	}
 
-	// Apply each stage
-	for _, stage := range selectedStages {
-		k.Log.Infof("Applying stage: %s", stage.DirName)
-
-		// Run kubectl kustomize build
-		output, err := k.runKustomizeBuild(stage.Path)
-		if err != nil {
-			return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stage.DirName, err)
-		}
-
-		// Write output
-		outputPath := filepath.Join(k.OutputDir, stage.DirName+".yaml")
-		if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
-		}
-
-		if err := os.WriteFile(outputPath, output, 0644); err != nil {
-			return fmt.Errorf("failed to write output file: %w", err)
-		}
-
-		k.Log.Infof("Successfully applied stage %s to %s", stage.DirName, outputPath)
-	}
-
-	return nil
-}
-
-// ApplyFinalStage applies the last stage in the pipeline (typical use case)
-func (k *KustomizeApplier) ApplyFinalStage() error {
-	// Discover all stages
-	stages, err := internalTransform.DiscoverStages(k.TransformDir)
-	if err != nil {
-		return fmt.Errorf("failed to discover stages: %w", err)
-	}
-
-	if len(stages) == 0 {
-		return fmt.Errorf("no stages found in transform directory")
-	}
-
-	// Get last stage
-	lastStage := internalTransform.GetLastStage(stages)
-	if lastStage == nil {
-		return fmt.Errorf("failed to get last stage")
-	}
+	// Get the last (final) stage
+	lastStage := selectedStages[len(selectedStages)-1]
 
 	k.Log.Infof("Applying final stage: %s", lastStage.DirName)
 
-	// Run kubectl kustomize build
+	// Run kubectl kustomize build on the last stage
 	output, err := k.runKustomizeBuild(lastStage.Path)
 	if err != nil {
-		return fmt.Errorf("kubectl kustomize build failed: %w", err)
+		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", lastStage.DirName, err)
 	}
 
-	// Write to output.yaml (single file for final output)
+	// Write to output.yaml (single file with all resources)
 	outputPath := filepath.Join(k.OutputDir, "output.yaml")
 	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
@@ -143,7 +102,8 @@ func (k *KustomizeApplier) ApplyFinalStage() error {
 
 	k.Log.Infof("Successfully applied final stage to %s", outputPath)
 
-	// Also split into individual resource files for backward compatibility
+	// Split into individual resource files organized by namespace
+	// This creates output/resources/<namespace>/<Kind>_<namespace>_<name>.yaml
 	if err := k.splitMultiDocYAMLToFiles(output); err != nil {
 		return fmt.Errorf("failed to split output into individual files: %w", err)
 	}
@@ -151,15 +111,16 @@ func (k *KustomizeApplier) ApplyFinalStage() error {
 	return nil
 }
 
-// runKustomizeBuild executes kubectl kustomize on a directory
+// runKustomizeBuild executes kubectl kustomize or oc kustomize on a directory
 func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
-	cmd := exec.Command("kubectl", "kustomize", dir)
+	kustomizeCmd := file.GetKustomizeCommand()
+	cmd := exec.Command(kustomizeCmd, "kustomize", dir)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	k.Log.Debugf("Running: kubectl kustomize %s", dir)
+	k.Log.Debugf("Running: %s kustomize %s", kustomizeCmd, dir)
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())
@@ -168,13 +129,21 @@ func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-// ValidateKubectlAvailable checks if kubectl command is available
+// ValidateKubectlAvailable checks if kubectl or oc command is available
 func ValidateKubectlAvailable() error {
+	// Try kubectl first
 	cmd := exec.Command("kubectl", "version", "--client")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kubectl not found or not executable: %w", err)
+	if err := cmd.Run(); err == nil {
+		return nil
 	}
-	return nil
+
+	// Fallback to oc
+	cmd = exec.Command("oc", "version", "--client")
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("neither kubectl nor oc found or executable")
 }
 
 // splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files
@@ -242,11 +211,8 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 			return fmt.Errorf("failed to create resource directory %s: %w", resourceDir, err)
 		}
 
-		// Write individual file
-		filename := fmt.Sprintf("%s_%s_%s.yaml", kind, namespace, name)
-		if namespace == "" {
-			filename = fmt.Sprintf("%s_%s.yaml", kind, name)
-		}
+		// Write individual file using shared helper for consistency
+		filename := file.GetResourceFilename(u)
 		filePath := filepath.Join(resourceDir, filename)
 
 		if err := os.WriteFile(filePath, docBytes, 0644); err != nil {
