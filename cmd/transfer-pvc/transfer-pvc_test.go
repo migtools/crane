@@ -4,6 +4,67 @@ import (
 	"testing"
 )
 
+func Test_validateTransferCompletion(t *testing.T) {
+	int100 := int64(100)
+	exit0 := int32(0)
+	exit23 := int32(23)
+
+	tests := []struct {
+		name    string
+		p       *Progress
+		wantErr bool
+	}{
+		{
+			name: "succeeded",
+			p: &Progress{
+				ExitCode:           &exit0,
+				TransferPercentage: &int100,
+				TransferredData:    &dataSize{val: 10, unit: "M"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "failed",
+			p: &Progress{
+				ExitCode:         &exit23,
+				TransferredFiles: 0,
+				FailedFiles: []FailedFile{
+					{Name: "/data/a", Err: "Permission denied (13)"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "partially failed",
+			p: &Progress{
+				ExitCode:         &exit23,
+				TransferredFiles: 1,
+				TransferredData:  &dataSize{val: 1, unit: "M"},
+				FailedFiles: []FailedFile{
+					{Name: "/data/journal", Err: "Permission denied (13)"},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:    "nil progress",
+			p:       nil,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateTransferCompletion(tt.p)
+			if tt.wantErr && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+		})
+	}
+}
 func Test_parseSourceDestinationMapping(t *testing.T) {
 	tests := []struct {
 		name            string

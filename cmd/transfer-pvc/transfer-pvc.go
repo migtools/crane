@@ -671,7 +671,14 @@ func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels m
 			break
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	rsyncReader, ok := logReader.(*rsyncLogStream)
+	if !ok {
+		return fmt.Errorf("unexpected log reader type %T", logReader)
+	}
+	return validateTransferCompletion(rsyncReader.progress)
 }
 
 // waitForEndpoint waits for endpoint to become ready
