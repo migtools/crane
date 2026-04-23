@@ -137,28 +137,13 @@ crane transform --stage 35_OpenshiftPlugin
 # Create a new pass-through stage for manual editing
 # Stage name NOT ending with "Plugin" creates empty pass-through
 crane transform --stage 40_CustomManualEdits
-
-# Run from a specific stage onwards
-crane transform --from-stage 10_KubernetesPlugin
-
-# Run specific stage range
-crane transform --from-stage 10_KubernetesPlugin --to-stage 20_OpenshiftPlugin
-
-# Run specific stages only
-crane transform --stages 10_KubernetesPlugin,30_ImagestreamPlugin
 ```
 
 ### Applying Transforms
 
 ```bash
-# Default: apply all stages sequentially
+# Apply all stages sequentially
 crane apply --transform-dir transform --output-dir output
-
-# Apply specific stage only
-crane apply --stage 10_KubernetesPlugin
-
-# Apply specific stage range
-crane apply --from-stage 10_KubernetesPlugin --to-stage 20_OpenshiftPlugin
 ```
 
 **Note**: The default behavior applies **all stages** sequentially to ensure each stage output is properly materialized. This maintains sequential consistency across the entire pipeline.
@@ -172,11 +157,11 @@ output/
 ├── output.yaml                      # Single file with all resources
 └── resources/                       # Individual resource files
     ├── default/                     # Organized by namespace
-    │   ├── Deployment_default_myapp.yaml
-    │   ├── Service_default_myapp.yaml
-    │   └── ConfigMap_default_config.yaml
+    │   ├── Deployment_apps_v1_default_myapp.yaml
+    │   ├── Service__v1_default_myapp.yaml
+    │   └── ConfigMap__v1_default_config.yaml
     └── kube-system/
-        └── Service_kube-system_metrics.yaml
+        └── Service__v1_kube-system_metrics.yaml
 ```
 
 - **`output.yaml`**: All resources in a single multi-document YAML file (ready for `kubectl apply -f`)
