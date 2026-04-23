@@ -34,6 +34,7 @@ type rsyncLogStream struct {
 	outputFile *string
 }
 
+// NewRsyncLogStream creates a log stream reader for the rsync client pod.
 func NewRsyncLogStream(restCfg *rest.Config, pvc types.NamespacedName, labels map[string]string, output string) LogStreams {
 	var outputFile string
 	if output != "" {
@@ -47,6 +48,7 @@ func NewRsyncLogStream(restCfg *rest.Config, pvc types.NamespacedName, labels ma
 	}
 }
 
+// Init starts streaming logs from the rsync container and parsing progress.
 func (r *rsyncLogStream) Init() error {
 	r.stdout = make(chan string)
 	r.stderr = make(chan string)
@@ -126,6 +128,7 @@ func (r *rsyncLogStream) Init() error {
 	return nil
 }
 
+// writeProgressToFile serializes final transfer progress to a file.
 func writeProgressToFile(o string, p *Progress) error {
 	file, err := os.OpenFile(o, os.O_CREATE, os.ModePerm)
 	if err != nil {
@@ -136,12 +139,14 @@ func writeProgressToFile(o string, p *Progress) error {
 	return ioutil.WriteFile(o, d, os.ModePerm)
 }
 
+// Close closes all rsync log stream channels.
 func (r *rsyncLogStream) Close() {
 	close(r.stdout)
 	close(r.stderr)
 	close(r.err)
 }
 
+// Streams returns channels for stdout, stderr, and terminal stream errors.
 func (r *rsyncLogStream) Streams() (stdout chan string, stderr chan string, err chan error) {
 	return r.stdout, r.stderr, r.err
 }
@@ -178,6 +183,7 @@ type dataSize struct {
 	unit string
 }
 
+// addDataSize adds two sizes by normalizing units when needed.
 func addDataSize(a, b *dataSize) *dataSize {
 	if b == nil {
 		return nil
@@ -203,10 +209,12 @@ func addDataSize(a, b *dataSize) *dataSize {
 	return newDs
 }
 
+// String formats a data size as "<value> <unit>".
 func (d *dataSize) String() string {
 	return fmt.Sprintf("%.2f %s", d.val, d.unit)
 }
 
+// MarshalJSON marshals dataSize as its human-readable string value.
 func (d *dataSize) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
@@ -467,6 +475,7 @@ func parseRsyncLogs(rawLogs string) (p *Progress, unprocessedData string) {
 	return p, ""
 }
 
+// waitForPodRunning waits until the labeled rsync client pod is ready.
 func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[string]string) (string, error) {
 	var podName string
 	err := wait.PollUntil(time.Second, func() (done bool, err error) {
@@ -501,11 +510,10 @@ func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[str
 	return podName, err
 }
 
+// getFinalPodStatus returns rsync exit code and tail logs after stream completion.
 func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (*int32, string, error) {
 	var exitCode *int32
-	count := 0
-	for {
-		count += 1
+	for attempt := 0; attempt < 15; attempt++ {
 		pod, err := c.CoreV1().Pods(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
 			return nil, "", err
@@ -518,9 +526,10 @@ func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (
 				}
 			}
 		}
-		if count > 5 || exitCode != nil {
+		if exitCode != nil {
 			break
 		}
+		time.Sleep(time.Second)
 	}
 
 	lastLines := int64(35)
@@ -545,6 +554,7 @@ func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (
 	return exitCode, buf.String(), nil
 }
 
+// validateTransferCompletion returns an error when transfer did not complete successfully.
 func validateTransferCompletion(p *Progress) error {
 	if p == nil {
 		return fmt.Errorf("transfer progress unavailable")
@@ -575,6 +585,7 @@ func validateTransferCompletion(p *Progress) error {
 	return fmt.Errorf("rsync transfer failed: %s", strings.Join(details, ", "))
 }
 
+// formatFailedFilesSample returns a concise sample of failed files for error messages.
 func formatFailedFilesSample(files []FailedFile, max int) string {
 	if len(files) == 0 {
 		return ""
@@ -587,6 +598,7 @@ func formatFailedFilesSample(files []FailedFile, max int) string {
 	return strings.Join(items, "; ")
 }
 
+// minInt returns the smaller of two integers.
 func minInt(a, b int) int {
 	if a < b {
 		return a

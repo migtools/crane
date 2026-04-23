@@ -646,6 +646,7 @@ type LogStreams interface {
 	Close()
 }
 
+// followClientLogs streams rsync client logs and validates final transfer status.
 func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string) error {
 	logReader := NewRsyncLogStream(srcConfig, pvc, labels, outputFile)
 	err := logReader.Init()
