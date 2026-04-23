@@ -19,7 +19,7 @@ type ValidateOptions struct {
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
 
-	exportDir    string
+	inputDir     string
 	validateDir  string
 	outputFormat string
 
@@ -37,12 +37,12 @@ func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks that flags have valid values.
 func (o *ValidateOptions) Validate() error {
-	info, err := os.Stat(o.exportDir)
+	info, err := os.Stat(o.inputDir)
 	if err != nil {
-		return fmt.Errorf("export-dir %q: %w", o.exportDir, err)
+		return fmt.Errorf("input-dir %q: %w", o.inputDir, err)
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("export-dir %q is not a directory", o.exportDir)
+		return fmt.Errorf("input-dir %q is not a directory", o.inputDir)
 	}
 
 	if o.outputFormat != "yaml" && o.outputFormat != "json" {
@@ -56,7 +56,7 @@ func (o *ValidateOptions) Validate() error {
 func (o *ValidateOptions) Run() error {
 	log := o.globalFlags.GetLogger()
 
-	entries, err := internalValidate.ScanManifests(internalValidate.ScanOptions{Dirs: []string{o.exportDir}}, log)
+	entries, err := internalValidate.ScanManifests(internalValidate.ScanOptions{Dirs: []string{o.inputDir}}, log)
 	if err != nil {
 		return fmt.Errorf("scanning manifests: %w", err)
 	}
@@ -121,10 +121,13 @@ func NewValidateCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlag
 	}
 	cmd := &cobra.Command{
 		Use:   "validate",
-		Short: "Validate exported manifests against a target cluster",
-		Long: `Validate checks exported Kubernetes manifests for compatibility with a
-target cluster. Currently it verifies that every apiVersion+kind in the
-export is served by the target cluster's API surface (strict GVK matching).
+		Short: "Validate final manifests against a target cluster",
+		Long: `Validate checks the final rendered manifests (from crane apply's output)
+for compatibility with a target cluster. It verifies that every
+apiVersion+kind is served by the target cluster's API surface (strict
+GVK matching).
+
+Pipeline: export → transform → apply → validate
 
 Incompatible resources are written to a failures/ directory under
 the validate-dir for auditability.
@@ -154,8 +157,8 @@ failed (or another error occurred).`,
 			if err := viper.Unmarshal(&o.configFlags); err != nil {
 				return fmt.Errorf("loading kube config flags: %w", err)
 			}
-			if err := viper.UnmarshalKey("export-dir", &o.exportDir); err != nil {
-				return fmt.Errorf("loading export-dir: %w", err)
+			if err := viper.UnmarshalKey("input-dir", &o.inputDir); err != nil {
+				return fmt.Errorf("loading input-dir: %w", err)
 			}
 			if err := viper.UnmarshalKey("validate-dir", &o.validateDir); err != nil {
 				return fmt.Errorf("loading validate-dir: %w", err)
@@ -167,7 +170,7 @@ failed (or another error occurred).`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&o.exportDir, "export-dir", "e", "export", "The path to the exported resources directory")
+	cmd.Flags().StringVarP(&o.inputDir, "input-dir", "i", "output", "The path to the apply output directory containing final manifests")
 	cmd.Flags().StringVar(&o.validateDir, "validate-dir", "validate", "The path where validation results and failures are saved")
 	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "json", "Report file format: json or yaml")
 	o.configFlags.AddFlags(cmd.Flags())

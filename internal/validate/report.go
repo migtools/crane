@@ -43,6 +43,11 @@ func FormatTable(w io.Writer, report *ValidationReport) {
 	table.Render()
 	fmt.Fprintf(w, "\nSummary: %d scanned, %d compatible, %d incompatible\n",
 		report.TotalScanned, report.Compatible, report.Incompatible)
+	if report.HasIncompatible() {
+		fmt.Fprintf(w, "Result: FAILED — %d resource(s) incompatible with target cluster\n", report.Incompatible)
+	} else {
+		fmt.Fprintf(w, "Result: PASSED — all resources compatible with target cluster\n")
+	}
 }
 
 // FormatJSON writes the report as indented JSON to w.

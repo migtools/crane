@@ -17,15 +17,15 @@ func TestNewValidateCommand(t *testing.T) {
 		t.Fatalf("Use = %q, want %q", cmd.Use, "validate")
 	}
 
-	expectedFlags := []string{"export-dir", "validate-dir", "output"}
+	expectedFlags := []string{"input-dir", "validate-dir", "output"}
 	for _, name := range expectedFlags {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("flag %q not registered on validate command", name)
 		}
 	}
 
-	if d := cmd.Flags().Lookup("export-dir").DefValue; d != "export" {
-		t.Errorf("export-dir default = %q, want %q", d, "export")
+	if d := cmd.Flags().Lookup("input-dir").DefValue; d != "output" {
+		t.Errorf("input-dir default = %q, want %q", d, "output")
 	}
 	if d := cmd.Flags().Lookup("output").DefValue; d != "json" {
 		t.Errorf("output default = %q, want %q", d, "json")
@@ -43,18 +43,18 @@ func TestValidate_Flags(t *testing.T) {
 		errMatch string
 	}{
 		{
-			name: "missing export-dir",
+			name: "missing input-dir",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-					exportDir:    "/nonexistent/path/validate-test",
+					inputDir:    "/nonexistent/path/validate-test",
 					outputFormat: "yaml",
 				}
 			},
 			wantErr:  true,
-			errMatch: "export-dir",
+			errMatch: "input-dir",
 		},
 		{
-			name: "export-dir is a file",
+			name: "input-dir is a file",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()
 				f := filepath.Join(dir, "afile")
@@ -62,7 +62,7 @@ func TestValidate_Flags(t *testing.T) {
 					t.Fatal(err)
 				}
 				return &ValidateOptions{
-					exportDir:    f,
+					inputDir:    f,
 					outputFormat: "yaml",
 				}
 			},
@@ -73,7 +73,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "invalid output format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-					exportDir:    t.TempDir(),
+					inputDir:    t.TempDir(),
 					outputFormat: "xml",
 				}
 			},
@@ -84,7 +84,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "valid yaml format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-					exportDir:    t.TempDir(),
+					inputDir:    t.TempDir(),
 					outputFormat: "yaml",
 				}
 			},
@@ -94,7 +94,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "valid json format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-					exportDir:    t.TempDir(),
+					inputDir:    t.TempDir(),
 					outputFormat: "json",
 				}
 			},

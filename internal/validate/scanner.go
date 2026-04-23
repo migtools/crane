@@ -55,16 +55,29 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 				return fmt.Errorf("read %s: %w", path, err)
 			}
 
-			documents := splitDocuments(data)
-			for docIdx, doc := range documents {
+			docDecoder := yaml.NewDocumentDecoder(io.NopCloser(bytes.NewReader(data)))
+			docIdx := 0
+			for {
+				buf := make([]byte, len(data)+256)
+				n, err := docDecoder.Read(buf)
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					log.Warnf("skipping unparseable document #%d in %s: %v", docIdx+1, path, err)
+					docIdx++
+					continue
+				}
+				doc := buf[:n]
+				docIdx++
 				if len(bytes.TrimSpace(doc)) == 0 {
 					continue
 				}
-				decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), len(doc)+256)
+				decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), n+256)
 				var meta manifestMeta
 				if err := decoder.Decode(&meta); err != nil {
 					if err != io.EOF {
-						log.Warnf("skipping unparseable document #%d in %s: %v", docIdx+1, path, err)
+						log.Warnf("skipping unparseable document #%d in %s: %v", docIdx, path, err)
 					}
 					continue
 				}
@@ -119,11 +132,3 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 	return entries, nil
 }
 
-var yamlDocSeparator = []byte("\n---")
-
-func splitDocuments(data []byte) [][]byte {
-	if bytes.HasPrefix(bytes.TrimLeftFunc(data, func(r rune) bool { return r == ' ' || r == '\t' || r == '\n' || r == '\r' }), []byte("{")) {
-		return [][]byte{data}
-	}
-	return bytes.Split(data, yamlDocSeparator)
-}
