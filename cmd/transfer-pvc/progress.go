@@ -301,7 +301,7 @@ func (p *Progress) Status() status {
 			return succeeded
 		}
 		if p.TransferredFiles == 0 &&
-			p.TransferredData.val == 0 &&
+			(p.TransferredData == nil || p.TransferredData.val == 0) &&
 			p.TotalFiles == nil {
 			return failed
 		}
@@ -552,4 +552,53 @@ func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (
 	}
 
 	return exitCode, buf.String(), nil
+}
+
+func validateTransferCompletion(p *Progress) error {
+	if p == nil {
+		return fmt.Errorf("transfer progress unavailable")
+	}
+
+	st := p.Status()
+	if st == succeeded {
+		return nil
+	}
+
+	if !st.Completed() {
+		return fmt.Errorf("transfer did not complete, final status: %s", st)
+	}
+
+	details := []string{fmt.Sprintf("status=%s", st)}
+	if p.ExitCode != nil {
+		details = append(details, fmt.Sprintf("exitCode=%d", *p.ExitCode))
+	}
+	if len(p.FailedFiles) > 0 {
+		details = append(details, fmt.Sprintf("failedFiles=%d", len(p.FailedFiles)))
+		details = append(details, fmt.Sprintf("failedFilesSample=%s", formatFailedFilesSample(p.FailedFiles, 3)))
+	}
+	if len(p.Errors) > 0 {
+		details = append(details, fmt.Sprintf("errors=%d", len(p.Errors)))
+		details = append(details, fmt.Sprintf("errorsSample=%s", strings.Join(p.Errors[:minInt(len(p.Errors), 3)], "; ")))
+	}
+
+	return fmt.Errorf("rsync transfer failed: %s", strings.Join(details, ", "))
+}
+
+func formatFailedFilesSample(files []FailedFile, max int) string {
+	if len(files) == 0 {
+		return ""
+	}
+	limit := minInt(len(files), max)
+	items := make([]string, 0, limit)
+	for i := 0; i < limit; i++ {
+		items = append(items, fmt.Sprintf("%s (%s)", files[i].Name, files[i].Err))
+	}
+	return strings.Join(items, "; ")
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
