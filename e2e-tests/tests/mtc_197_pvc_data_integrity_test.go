@@ -51,10 +51,11 @@ var _ = Describe("PVC data integrity migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(cleanup)
 
-		By("Prepare source app")
-		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
-		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
+		By("Deploy and validate source app")
+		log.Printf("Deploying source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
+		Expect(srcApp.Validate()).NotTo(HaveOccurred())
+		log.Printf("Source app %s deployed and validated successfully\n", srcApp.Name)
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
@@ -91,12 +92,15 @@ var _ = Describe("PVC data integrity migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("File info on source: %s\n", output)
 
-		By("Get MD5 checksum from source cluster")
+		By("Get file MD5 checksum on source cluster")
 		srcMD5Output, err := kubectlSrcNonAdmin.Run("exec", appName, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", fmt.Sprintf("cat /data/%s.md5", fileName))
 		Expect(err).NotTo(HaveOccurred())
 		srcMD5 := strings.TrimSpace(srcMD5Output)
 		Expect(srcMD5).NotTo(BeEmpty(), "expected MD5 checksum file to exist on source")
 		log.Printf("Source MD5 checksum: %s\n", srcMD5)
+
+		By("Quiesce source app")
+		Expect(kubectlSrcNonAdmin.ScaleDeploymentIfPresent(srcApp.Namespace, srcApp.Name, 0)).NotTo(HaveOccurred())
 
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
