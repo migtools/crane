@@ -147,26 +147,10 @@ failed (or another error occurred).`,
 			}
 			return nil
 		},
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			if err := viper.BindPFlags(cmd.Flags()); err != nil {
-				return fmt.Errorf("binding validate flags: %w", err)
-			}
-			if err := viper.Unmarshal(&o.globalFlags); err != nil {
-				return fmt.Errorf("loading global flags: %w", err)
-			}
-			if err := viper.Unmarshal(&o.configFlags); err != nil {
-				return fmt.Errorf("loading kube config flags: %w", err)
-			}
-			if err := viper.UnmarshalKey("input-dir", &o.inputDir); err != nil {
-				return fmt.Errorf("loading input-dir: %w", err)
-			}
-			if err := viper.UnmarshalKey("validate-dir", &o.validateDir); err != nil {
-				return fmt.Errorf("loading validate-dir: %w", err)
-			}
-			if err := viper.UnmarshalKey("output", &o.outputFormat); err != nil {
-				return fmt.Errorf("loading output: %w", err)
-			}
-			return nil
+		PreRun: func(cmd *cobra.Command, args []string) {
+			viper.BindPFlags(cmd.Flags())
+			viper.Unmarshal(&o.globalFlags)
+			viper.Unmarshal(&o.configFlags)
 		},
 	}
 
