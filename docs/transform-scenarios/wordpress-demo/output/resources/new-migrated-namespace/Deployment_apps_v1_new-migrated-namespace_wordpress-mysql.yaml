@@ -42,7 +42,7 @@ spec:
                 secretKeyRef:
                   key: MYSQL_WORDPRESS_PASSWORD
                   name: wordpress-secrets-hg692g82th
-          image: mysql:8.0
+          image: registry.redhat.io/rhel8/mysql-80:latest
           imagePullPolicy: IfNotPresent
           name: mysql
           ports:

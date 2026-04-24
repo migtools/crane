@@ -10,7 +10,11 @@ resources:
 - resources/Service__v1_default_wordpress-mysql.yaml
 - resources/Service__v1_default_wordpress.yaml
 
-# Custom modifications
+# Custom modifications (namespace, labels, image)
 namespace: new-migrated-namespace
 commonLabels:
   migrated-with: crane
+images:
+- name: mysql:8.0
+  newName: registry.redhat.io/rhel8/mysql-80
+  newTag: latest

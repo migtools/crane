@@ -116,17 +116,26 @@ transform/50_CustomLabels/
 
 **Important:** The `resources/` in stage 50 contains the **cleaned output** from previous stage (stage 10 in this example), not the raw export!
 
-### Step 4: Add Custom Labels and Namespace
+### Step 4: Add Custom Labels, Namespace, and Images
 
-Edit `kustomization.yaml` to add common labels and set target namespace:
+Edit `kustomization.yaml` to add common labels, set target namespace, and update container images:
 
 ```bash
 cat >> transform/50_CustomLabels/kustomization.yaml <<EOF
 namespace: migrated-app
 commonLabels:
   migrated-with: crane
+images:
+- name: mysql:8.0
+  newName: registry.redhat.io/rhel8/mysql-80
+  newTag: latest
 EOF
 ```
+
+This demonstrates:
+- **namespace**: Changes all resources to `migrated-app` namespace
+- **commonLabels**: Adds `migrated-with: crane` label to all resources
+- **images**: Updates MySQL container image to use [Red Hat MySQL 8.0](https://catalog.redhat.com/software/containers/rhel8/mysql-80/5ba0ad4cdd19c70b45cbf48c)
 
 ### Step 5: Apply All Stages
 
