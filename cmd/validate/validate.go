@@ -30,7 +30,7 @@ type ValidateOptions struct {
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 	_, err := o.configFlags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("loading kubeconfig for target cluster: %w", err)
 	}
 	return nil
 }
@@ -134,6 +134,7 @@ the validate-dir for auditability.
 
 Exit code 0 means all checks pass; exit code 1 means one or more checks
 failed (or another error occurred).`,
+		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {

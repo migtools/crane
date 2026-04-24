@@ -112,7 +112,27 @@ func failureFileName(r ValidationResult) string {
 	if ns == "" {
 		ns = "clusterscoped"
 	}
-	return strings.Join([]string{r.Kind, group, version, ns}, "_") + ".yaml"
+	return strings.Join([]string{
+		safeFilePart(r.Kind),
+		safeFilePart(group),
+		safeFilePart(version),
+		safeFilePart(ns),
+	}, "_") + ".yaml"
+}
+
+func safeFilePart(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "unknown"
+	}
+	return b.String()
 }
 
 // parseAPIVersion splits "apps/v1" into ("apps","v1") and "v1" into ("","v1").

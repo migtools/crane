@@ -45,8 +45,9 @@ func TestValidate_Flags(t *testing.T) {
 		{
 			name: "missing input-dir",
 			setup: func(t *testing.T) *ValidateOptions {
+				missingDir := filepath.Join(t.TempDir(), "missing")
 				return &ValidateOptions{
-					inputDir:    "/nonexistent/path/validate-test",
+					inputDir:     missingDir,
 					outputFormat: "yaml",
 				}
 			},
@@ -121,6 +122,19 @@ func TestValidate_Flags(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestValidateCommand_RejectsArgs(t *testing.T) {
+	streams := genericclioptions.NewTestIOStreamsDiscard()
+	cmd := NewValidateCommand(streams, nil)
+	cmd.SetArgs([]string{"./manifests"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for positional args, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Fatalf("expected 'unknown command' error, got: %v", err)
 	}
 }
 
