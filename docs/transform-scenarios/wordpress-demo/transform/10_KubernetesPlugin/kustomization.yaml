@@ -1,0 +1,81 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+patches:
+- path: patches/default--apps-v1--Deployment--wordpress-mysql.patch.yaml
+  target:
+    group: apps
+    kind: Deployment
+    name: wordpress-mysql
+    namespace: default
+    version: v1
+- path: patches/default--apps-v1--Deployment--wordpress.patch.yaml
+  target:
+    group: apps
+    kind: Deployment
+    name: wordpress
+    namespace: default
+    version: v1
+- path: patches/default--batch-v1--Job--wordpress-install.patch.yaml
+  target:
+    group: batch
+    kind: Job
+    name: wordpress-install
+    namespace: default
+    version: v1
+- path: patches/default--v1--ConfigMap--nginx-config.patch.yaml
+  target:
+    kind: ConfigMap
+    name: nginx-config
+    namespace: default
+    version: v1
+- path: patches/default--v1--Secret--wordpress-secrets-hg692g82th.patch.yaml
+  target:
+    kind: Secret
+    name: wordpress-secrets-hg692g82th
+    namespace: default
+    version: v1
+- path: patches/default--v1--Service--kubernetes.patch.yaml
+  target:
+    kind: Service
+    name: kubernetes
+    namespace: default
+    version: v1
+- path: patches/default--v1--Service--wordpress-mysql.patch.yaml
+  target:
+    kind: Service
+    name: wordpress-mysql
+    namespace: default
+    version: v1
+- path: patches/default--v1--Service--wordpress.patch.yaml
+  target:
+    kind: Service
+    name: wordpress
+    namespace: default
+    version: v1
+resources:
+- resources/ConfigMap__v1_default_nginx-config.yaml
+- resources/Deployment_apps_v1_default_wordpress-mysql.yaml
+- resources/Deployment_apps_v1_default_wordpress.yaml
+- resources/Job_batch_v1_default_wordpress-install.yaml
+- resources/Secret__v1_default_wordpress-secrets-hg692g82th.yaml
+- resources/Service__v1_default_kubernetes.yaml
+- resources/Service__v1_default_wordpress-mysql.yaml
+- resources/Service__v1_default_wordpress.yaml
+
+# Whiteout resources are written to resources/ for complete snapshot
+# but excluded from active resources list above:
+# - resources/ConfigMap__v1_default_kube-root-ca.crt.yaml
+# - resources/EndpointSlice_discovery.k8s.io_v1_default_kubernetes.yaml
+# - resources/EndpointSlice_discovery.k8s.io_v1_default_wordpress-mysql-jlwnp.yaml
+# - resources/EndpointSlice_discovery.k8s.io_v1_default_wordpress-wpfqk.yaml
+# - resources/Endpoints__v1_default_kubernetes.yaml
+# - resources/Endpoints__v1_default_wordpress-mysql.yaml
+# - resources/Endpoints__v1_default_wordpress.yaml
+# - resources/PersistentVolumeClaim__v1_default_mysql-pv-claim.yaml
+# - resources/PersistentVolumeClaim__v1_default_wordpress-pv-claim.yaml
+# - resources/Pod__v1_default_wordpress-74b89cc84c-nm9f8.yaml
+# - resources/Pod__v1_default_wordpress-install-xrqtc.yaml
+# - resources/Pod__v1_default_wordpress-mysql-9474c86b-fr65w.yaml
+# - resources/ReplicaSet_apps_v1_default_wordpress-74b89cc84c.yaml
+# - resources/ReplicaSet_apps_v1_default_wordpress-mysql-9474c86b.yaml
+# - resources/ServiceAccount__v1_default_default.yaml

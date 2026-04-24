@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  annotations:
+    endpoints.kubernetes.io/last-change-trigger-time: "2026-04-10T12:16:04Z"
+  creationTimestamp: "2026-04-10T12:15:07Z"
+  labels:
+    app: wordpress
+    endpoints.kubernetes.io/managed-by: endpoint-controller
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:endpoints.kubernetes.io/last-change-trigger-time: {}
+        f:labels:
+          .: {}
+          f:app: {}
+          f:endpoints.kubernetes.io/managed-by: {}
+      f:subsets: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-04-10T12:16:04Z"
+  name: wordpress
+  namespace: default
+  resourceVersion: "809"
+  uid: 7a7a7061-0064-42f9-ad24-f4dbbd13b8b4
+subsets:
+- addresses:
+  - ip: 10.244.0.5
+    nodeName: minikube
+    targetRef:
+      kind: Pod
+      name: wordpress-74b89cc84c-nm9f8
+      namespace: default
+      uid: 608501ac-fd76-48a1-b9ef-058b7a6ade67
+  ports:
+  - port: 80
+    protocol: TCP

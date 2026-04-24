@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: wordpress
+    migrated-with: crane
+  name: wordpress
+  namespace: new-migrated-namespace
+spec:
+  allocateLoadBalancerNodePorts: true
+  externalTrafficPolicy: Cluster
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 80
+  selector:
+    app: wordpress
+    migrated-with: crane
+    tier: frontend
+  sessionAffinity: None
+  type: LoadBalancer

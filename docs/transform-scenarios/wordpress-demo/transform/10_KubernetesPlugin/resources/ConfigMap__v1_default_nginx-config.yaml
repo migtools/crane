@@ -1,0 +1,58 @@
+apiVersion: v1
+data:
+  nginx.conf: |
+    events {
+        worker_connections 64;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        server {
+            listen 80;
+            root /var/www/html;
+            index index.php;
+            client_max_body_size 32m;
+
+            location / {
+                try_files $uri $uri/ /index.php?$args;
+            }
+
+            location ~ \.php$ {
+                fastcgi_pass localhost:9000;
+                fastcgi_index index.php;
+                include fastcgi_params;
+                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            }
+        }
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"nginx.conf":"events {\n    worker_connections 64;\n}\n\nhttp {\n    include /etc/nginx/mime.types;\n    default_type application/octet-stream;\n\n    server {\n        listen 80;\n        root /var/www/html;\n        index index.php;\n        client_max_body_size 32m;\n\n        location / {\n            try_files $uri $uri/ /index.php?$args;\n        }\n\n        location ~ \\.php$ {\n            fastcgi_pass localhost:9000;\n            fastcgi_index index.php;\n            include fastcgi_params;\n            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;\n        }\n    }\n}\n"},"kind":"ConfigMap","metadata":{"annotations":{},"labels":{"app":"wordpress"},"name":"nginx-config","namespace":"default"}}
+  creationTimestamp: "2026-04-10T12:15:07Z"
+  labels:
+    app: wordpress
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:nginx.conf: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+        f:labels:
+          .: {}
+          f:app: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+    time: "2026-04-10T12:15:07Z"
+  name: nginx-config
+  namespace: default
+  resourceVersion: "675"
+  uid: ced3a8c2-2b9d-47e9-90e6-0a780c2416bd
