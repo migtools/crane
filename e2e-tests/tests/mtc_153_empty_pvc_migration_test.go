@@ -119,6 +119,19 @@ var _ = Describe("Empty PVC migration", func() {
 		Expect(tgtpvcs).NotTo(BeEmpty(), "expected at least one PVC in target namespace %q", tgtApp.Namespace)
 		log.Printf("Found %d PVCs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
 
+		// Verify each source PVC was transferred to target
+		for _, srcPVC := range pvcs {
+			found := false
+			for _, tgtPVC := range tgtpvcs {
+				if tgtPVC.Name == srcPVC.Name {
+					found = true
+					log.Printf("Verified PVC %s exists on target\n", srcPVC.Name)
+					break
+				}
+			}
+			Expect(found).To(BeTrue(), "expected source PVC %q to exist on target", srcPVC.Name)
+		}
+
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", tgtApp.Namespace, paths.OutputDir)
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
