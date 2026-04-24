@@ -12,6 +12,7 @@ import (
 	transfer_pvc "github.com/konveyor/crane/cmd/transfer-pvc"
 	"github.com/konveyor/crane/cmd/transform"
 	tunnel_api "github.com/konveyor/crane/cmd/tunnel-api"
+	"github.com/konveyor/crane/cmd/validate"
 	"github.com/konveyor/crane/cmd/version"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
@@ -34,6 +35,7 @@ func main() {
 	root.AddCommand(plugin_manager.NewPluginManagerCommand(f))
 	root.AddCommand(version.NewVersionCommand(f))
 	root.AddCommand(runfn.NewFnRunCommand(f))
+	root.AddCommand(validate.NewValidateCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
