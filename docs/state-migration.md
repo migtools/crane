@@ -8,7 +8,7 @@ Persistent volume data cannot be migrated through YAML manifests alone. Crane us
 
 ## How It Works
 
-```
+```text
 Source Cluster                              Destination Cluster
 ┌─────────────────┐                        ┌─────────────────┐
 │ rsync client Pod │──── stunnel ──────────▶│ rsync daemon Pod│

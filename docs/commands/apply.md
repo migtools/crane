@@ -23,7 +23,7 @@ crane apply [flags]
 
 ## Output Structure
 
-```
+```text
 output/
 ├── output.yaml                      # All resources in a single multi-document YAML
 └── resources/                       # Individual resource files

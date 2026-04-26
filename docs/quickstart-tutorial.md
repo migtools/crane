@@ -34,7 +34,7 @@ crane export -n guestbook
 
 This creates an `export/` directory containing the raw YAML manifests:
 
-```
+```text
 export/
 └── resources/
     └── guestbook/
@@ -62,7 +62,7 @@ crane transform
 
 This creates a `transform/` directory with a Kustomize layout:
 
-```
+```text
 transform/
 └── 10_KubernetesPlugin/
     ├── resources/          # Original exported resources
@@ -88,7 +88,7 @@ crane apply
 
 This produces the `output/` directory:
 
-```
+```text
 output/
 ├── output.yaml       # All resources in a single file
 └── resources/        # Individual resource files by namespace
@@ -118,7 +118,7 @@ kubectl apply -f output/output.yaml
 
 ## Step 6: Validate (Optional)
 
-If you have access to the target cluster, validate compatibility before deploying:
+If you have access to the target cluster, validate compatibility of the generated manifests:
 
 ```bash
 crane validate --context target-cluster

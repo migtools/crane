@@ -24,7 +24,7 @@ gofmt -l .
 
 ## Project Structure
 
-```
+```text
 crane/
 ├── cmd/                    # CLI command implementations
 │   ├── apply/              # crane apply

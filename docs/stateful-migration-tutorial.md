@@ -18,7 +18,7 @@ You have a database or other stateful application with PersistentVolumeClaims th
 
 Stateful migration adds a data transfer step to the standard pipeline:
 
-```
+```text
 1. crane export      — Export resource manifests
 2. crane transform   — Clean and transform manifests
 3. crane transfer-pvc — Transfer PVC data between clusters
