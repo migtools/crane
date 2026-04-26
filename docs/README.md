@@ -30,7 +30,8 @@ Welcome to the Crane documentation. Crane is a Kubernetes migration tool that he
 ## Reference
 
 - [Pre-Apply Validation Guide](./pre-apply-validation-guide.md) — Checklist for validating manifests before applying
-- [Compatibility Matrix](./CRANE_COMPATIBILITY_MATRIX.md) — Supported resource types and migration boundaries
+- [Resource Compatibility](./resource-compatibility.md) — Supported resource types and migration boundaries
+- [Migration Paths](./migration-paths.md) — Supported platform-to-platform migration paths
 
 ## Development
 
