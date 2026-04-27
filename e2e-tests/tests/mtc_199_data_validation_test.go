@@ -279,14 +279,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		tgtpvcs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tgtpvcs).NotTo(BeEmpty(), "expected at least one PVC in target namespace %q", tgtApp.Namespace)
-		tgtPVCSet := make(map[string]struct{}, len(tgtpvcs))
-		for _, pvc := range tgtpvcs {
-			tgtPVCSet[pvc.Name] = struct{}{}
-		}
-		for _, pvcName := range pvcNames {
-			_, exists := tgtPVCSet[pvcName]
-			Expect(exists).To(BeTrue(), "expected transferred PVC %q to exist in target namespace %q", pvcName, tgtApp.Namespace)
-		}
+		Expect(VerifyPVCsExistByName(pvcs, tgtpvcs)).NotTo(HaveOccurred())
 		log.Printf("Found %d PVCs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
 
 		By("Apply rendered manifests to target")
