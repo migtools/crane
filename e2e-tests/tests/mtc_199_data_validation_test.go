@@ -71,23 +71,6 @@ func runPVCFixCommands(k KubectlRunner, namespace, podName string, pvcNames []st
 	return nil
 }
 
-func getPodNameByLabel(k KubectlRunner, namespace, selector string) (string, error) {
-	out, err := k.Run(
-		"get", "pod",
-		"-n", namespace,
-		"-l", selector,
-		"-o", "jsonpath={.items[0].metadata.name}",
-	)
-	if err != nil {
-		return "", err
-	}
-	podName := strings.TrimSpace(out)
-	if podName == "" {
-		return "", fmt.Errorf("no pod found for selector %q in namespace %q", selector, namespace)
-	}
-	return podName, nil
-}
-
 func mysqlAuthorsCount(k KubectlRunner, namespace, podName string) (int, error) {
 	out, err := k.Run(
 		"exec", podName, "-n", namespace, "--",
@@ -181,7 +164,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
 		log.Printf("Source app deployed successfully")
 		By("Capture source data fingerprints for comparison")
-		srcPodName, err := getPodNameByLabel(kubectlSrcNonAdmin, srcApp.Namespace, "app="+appName)
+		srcPodName, err := GetPodNameByLabel(kubectlSrcNonAdmin, srcApp.Namespace, "app="+appName)
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func() error {
 			return waitForMySQLSocket(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName)
@@ -319,7 +302,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
 		var tgtPodName string
 		Eventually(func() error {
-			podName, err := getPodNameByLabel(kubectlTgtNonAdmin, tgtApp.Namespace, "app="+appName)
+			podName, err := GetPodNameByLabel(kubectlTgtNonAdmin, tgtApp.Namespace, "app="+appName)
 			if err != nil {
 				return err
 			}
