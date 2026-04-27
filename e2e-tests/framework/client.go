@@ -36,6 +36,29 @@ func ListPVCs(namespace string, labelSelector string, contextName string) ([]cor
 
 }
 
+// VerifyPVCsExistByName checks that all source PVCs exist by name in the target PVC list.
+// Returns an error listing all missing PVCs if any are not found in the target list.
+func VerifyPVCsExistByName(sourcePVCs, targetPVCs []corev1.PersistentVolumeClaim) error {
+	// Build a set of target PVC names for O(1) lookup
+	targetNames := make(map[string]bool, len(targetPVCs))
+	for _, tgtPVC := range targetPVCs {
+		targetNames[tgtPVC.Name] = true
+	}
+
+	// Collect all missing PVC names
+	var missing []string
+	for _, srcPVC := range sourcePVCs {
+		if !targetNames[srcPVC.Name] {
+			missing = append(missing, srcPVC.Name)
+		}
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("source PVCs not found in target: %v", missing)
+	}
+	return nil
+}
+
 // NewClientSetForContext builds a client-go clientset scoped to the provided
 // kubeconfig context name.
 func NewClientSetForContext(contextName string) (*kubernetes.Clientset, error) {
@@ -82,7 +105,7 @@ func GetClusterNodeIP(contextName string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("No node IP found")
+	return "", fmt.Errorf("no schedulable node with InternalIP found for context %q", contextName)
 }
 
 // ResolveUsernameForContext resolves the Kubernetes username represented by a
