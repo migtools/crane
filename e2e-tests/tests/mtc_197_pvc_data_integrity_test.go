@@ -52,11 +52,10 @@ var _ = Describe("PVC data integrity migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(cleanup)
 
-		By("SOURCE: Deploy and validate app")
-		log.Printf("Deploying source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
-		Expect(srcApp.Validate()).NotTo(HaveOccurred())
-		log.Printf("SOURCE: app %s deployed and validated successfully\n", srcApp.Name)
+		By("Prepare source app")
+		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
+		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
@@ -70,7 +69,7 @@ var _ = Describe("PVC data integrity migration", func() {
 			}
 		})
 		DeferCleanup(func() {
-			By("Delete test namespace on source and target (best effort)")
+			By("Delete test namespace on source and target (wait for completion)")
 			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
 				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
 					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
@@ -99,9 +98,6 @@ var _ = Describe("PVC data integrity migration", func() {
 		srcMD5 := strings.TrimSpace(srcMD5Output)
 		Expect(srcMD5).NotTo(BeEmpty(), "expected MD5 checksum file to exist on source")
 		log.Printf("Source: MD5 checksum: %s\n", srcMD5)
-
-		By("SOURCE: Quiesce app")
-		Expect(kubectlSrcNonAdmin.ScaleDeploymentIfPresent(srcApp.Namespace, srcApp.Name, 0)).NotTo(HaveOccurred())
 
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
