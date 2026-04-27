@@ -133,7 +133,7 @@ func mysqlTestDataMD5(k KubectlRunner, namespace, podName string) (actual string
 	return strings.TrimSpace(actualOut), strings.TrimSpace(expectedOut), nil
 }
 
-var _ = Describe("Data validation", func() {
+var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 
 	It("[BUG #213][MTC-199] Should validate data", Label("BUG #213", "tier0"), func() {
 		appName := "mysql"
