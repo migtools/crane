@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
-	"slices"
 )
 
 type KubectlRunner struct {
@@ -114,6 +114,25 @@ func (k KubectlRunner) ApplyYAMLSpec(spec string, namespace string) error {
 		return fmt.Errorf("kubectl apply inline spec failed: %w", err)
 	}
 	return nil
+}
+
+// GetPodNameByLabel returns the first pod name matching a label selector in a namespace.
+// It returns an error when no pod is found or the kubectl query fails.
+func GetPodNameByLabel(k KubectlRunner, namespace, selector string) (string, error) {
+	out, err := k.Run(
+		"get", "pod",
+		"-n", namespace,
+		"-l", selector,
+		"-o", "jsonpath={.items[0].metadata.name}",
+	)
+	if err != nil {
+		return "", err
+	}
+	podName := strings.TrimSpace(out)
+	if podName == "" {
+		return "", fmt.Errorf("no pod found for selector %q in namespace %q", selector, namespace)
+	}
+	return podName, nil
 }
 
 // ValidateApplyDir performs a server-side dry-run apply for a directory.
