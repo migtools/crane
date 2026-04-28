@@ -45,42 +45,7 @@ var _ = Describe("Stateless migration", func() {
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline")
 		By("Wait for source quiesce to stabilize before export")
-		log.Printf("Waiting for source pods and EndpointSlice endpoints to drain for app %s", appName)
-		Eventually(func() (string, error) {
-			out, err := kubectlSrc.Run(
-				"get", "pods",
-				"--namespace", namespace,
-				"-l", "app="+appName,
-				"-o", "name",
-			)
-			if err != nil {
-				return "", err
-			}
-			return StripKubectlWarnings(out), nil
-		}, "90s", "3s").Should(BeEmpty())
-		Eventually(func() (string, error) {
-			out, err := kubectlSrc.Run(
-				"get", "endpointslice",
-				"--namespace", namespace,
-				"-l", "kubernetes.io/service-name="+serviceName,
-				"-o", "jsonpath={range .items[*].endpoints[*]}x{end}",
-			)
-			if err != nil {
-				return "", err
-			}
-			return StripKubectlWarnings(out), nil
-		}, "90s", "3s").Should(BeEmpty())
-		Eventually(func() (string, error) {
-			out, err := kubectlSrc.Run(
-				"get", "endpoints", serviceName,
-				"--namespace", namespace,
-				"-o", "jsonpath={range .subsets[*].addresses[*]}x{end}",
-			)
-			if err != nil {
-				return "", err
-			}
-			return StripKubectlWarnings(out), nil
-		}, "90s", "3s").Should(BeEmpty())
+		WaitForSourceQuiesce(kubectlSrc, namespace, "app="+appName, serviceName)
 
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())

@@ -51,42 +51,7 @@ var _ = Describe("Stateful app migration", func() {
 		}
 		By("Run crane export/transform/apply pipeline")
 		By("Wait for source quiesce to stabilize before export")
-		log.Printf("Waiting for source pods and endpoint resources to drain for app %s", appName)
-		Eventually(func() (string, error) {
-			out, err := kubectlSrc.Run(
-				"get", "pods",
-				"--namespace", namespace,
-				"-l", "name="+appName,
-				"-o", "name",
-			)
-			if err != nil {
-				return "", err
-			}
-			return StripKubectlWarnings(out), nil
-		}, "90s", "3s").Should(BeEmpty())
-		Eventually(func() (string, error) {
-			out, err := kubectlSrc.Run(
-				"get", "endpointslice",
-				"--namespace", namespace,
-				"-l", "kubernetes.io/service-name="+appName,
-				"-o", "jsonpath={range .items[*].endpoints[*]}x{end}",
-			)
-			if err != nil {
-				return "", err
-			}
-			return StripKubectlWarnings(out), nil
-		}, "90s", "3s").Should(BeEmpty())
-		Eventually(func() (string, error) {
-			out, err := kubectlSrc.Run(
-				"get", "endpoints", appName,
-				"--namespace", namespace,
-				"-o", "jsonpath={range .subsets[*].addresses[*]}x{end}",
-			)
-			if err != nil {
-				return "", err
-			}
-			return StripKubectlWarnings(out), nil
-		}, "90s", "3s").Should(BeEmpty())
+		WaitForSourceQuiesce(kubectlSrc, namespace, "name="+appName, appName)
 
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		runner := scenario.Crane
