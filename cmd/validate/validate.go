@@ -19,15 +19,20 @@ type ValidateOptions struct {
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
 
-	inputDir     string
-	validateDir  string
-	outputFormat string
+	inputDir         string
+	validateDir      string
+	outputFormat     string
+	apiResourcesFile string
 
 	genericclioptions.IOStreams
 }
 
 // Complete loads the kubeconfig to ensure the target cluster is reachable.
+// Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
+	if o.apiResourcesFile != "" {
+		return nil
+	}
 	_, err := o.configFlags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {
 		return fmt.Errorf("loading kubeconfig for target cluster: %w", err)
@@ -49,6 +54,18 @@ func (o *ValidateOptions) Validate() error {
 		return fmt.Errorf("--output must be \"yaml\" or \"json\", got %q", o.outputFormat)
 	}
 
+	if o.apiResourcesFile != "" {
+		if o.configFlags.Context != nil && *o.configFlags.Context != "" {
+			return fmt.Errorf("--api-resources and --context are mutually exclusive; use --api-resources for offline validation or --context for live validation")
+		}
+		if o.configFlags.KubeConfig != nil && *o.configFlags.KubeConfig != "" {
+			return fmt.Errorf("--api-resources and --kubeconfig are mutually exclusive; use --api-resources for offline validation or --kubeconfig for live validation")
+		}
+		if _, err := os.Stat(o.apiResourcesFile); err != nil {
+			return fmt.Errorf("api-resources file %q: %w", o.apiResourcesFile, err)
+		}
+	}
+
 	return nil
 }
 
@@ -63,15 +80,31 @@ func (o *ValidateOptions) Run() error {
 
 	log.Infof("Scanned %d distinct GVK+namespace tuples", len(entries))
 
-	discoveryClient, err := o.configFlags.ToDiscoveryClient()
-	if err != nil {
-		return fmt.Errorf("creating discovery client: %w", err)
-	}
-	discoveryClient.Invalidate()
+	var report *internalValidate.ValidationReport
 
-	report, err := internalValidate.MatchResults(entries, internalValidate.MatchOptions{DiscoveryClient: discoveryClient}, log)
-	if err != nil {
-		return fmt.Errorf("matching against target cluster: %w", err)
+	if o.apiResourcesFile != "" {
+		index, err := internalValidate.ParseAPIResourcesJSON(o.apiResourcesFile)
+		if err != nil {
+			return fmt.Errorf("loading api-resources: %w", err)
+		}
+		report = internalValidate.MatchResultsFromIndex(entries, index)
+		report.Mode = "offline"
+		report.APIResourcesSource = o.apiResourcesFile
+	} else {
+		discoveryClient, err := o.configFlags.ToDiscoveryClient()
+		if err != nil {
+			return fmt.Errorf("creating discovery client: %w", err)
+		}
+		discoveryClient.Invalidate()
+
+		report, err = internalValidate.MatchResults(entries, internalValidate.MatchOptions{DiscoveryClient: discoveryClient}, log)
+		if err != nil {
+			return fmt.Errorf("matching against target cluster: %w", err)
+		}
+		report.Mode = "live"
+		if o.configFlags.Context != nil && *o.configFlags.Context != "" {
+			report.ClusterContext = *o.configFlags.Context
+		}
 	}
 
 	internalValidate.FormatTable(o.Out, report)
@@ -129,6 +162,10 @@ GVK matching).
 
 Pipeline: export → transform → apply → validate
 
+Use --api-resources to validate offline against the JSON output of
+'kubectl api-resources -o json' when the target cluster is not directly
+reachable. Otherwise, supply kubeconfig/context flags for live validation.
+
 Incompatible resources are written to a failures/ directory under
 the validate-dir for auditability.
 
@@ -158,6 +195,7 @@ failed (or another error occurred).`,
 	cmd.Flags().StringVarP(&o.inputDir, "input-dir", "i", "output", "The path to the apply output directory containing final manifests")
 	cmd.Flags().StringVar(&o.validateDir, "validate-dir", "validate", "The path where validation results and failures are saved")
 	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "json", "Report file format: json or yaml")
+	cmd.Flags().StringVar(&o.apiResourcesFile, "api-resources", "", "Path to kubectl api-resources -o json output for offline validation (mutually exclusive with --context/--kubeconfig)")
 	o.configFlags.AddFlags(cmd.Flags())
 
 	return cmd

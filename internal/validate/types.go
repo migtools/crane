@@ -33,10 +33,13 @@ type ValidationResult struct {
 
 // ValidationReport is the complete output.
 type ValidationReport struct {
-	Results      []ValidationResult `json:"results"`
-	TotalScanned int                `json:"totalScanned"`
-	Compatible   int                `json:"compatible"`
-	Incompatible int                `json:"incompatible"`
+	Mode               string             `json:"mode"`                         // "live" or "offline"
+	APIResourcesSource string             `json:"apiResourcesSource,omitempty"` // file path (offline mode)
+	ClusterContext     string             `json:"clusterContext,omitempty"`     // kubeconfig context (live mode)
+	Results            []ValidationResult `json:"results"`
+	TotalScanned       int                `json:"totalScanned"`
+	Compatible         int                `json:"compatible"`
+	Incompatible       int                `json:"incompatible"`
 }
 
 // HasIncompatible returns true if any resources are incompatible with the target.
