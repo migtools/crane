@@ -207,6 +207,72 @@ func TestMatchResults_EmptyEntries(t *testing.T) {
 	}
 }
 
+func TestMatchResultsFromIndex_AllOK(t *testing.T) {
+	index := DiscoveryIndex{
+		"apps/v1": {
+			"Deployment": discoveryEntry{Resource: metav1.APIResource{Name: "deployments", Kind: "Deployment"}},
+		},
+		"v1": {
+			"Service": discoveryEntry{Resource: metav1.APIResource{Name: "services", Kind: "Service"}},
+		},
+	}
+
+	entries := []ManifestEntry{
+		{APIVersion: "apps/v1", Kind: "Deployment", Group: "apps", Version: "v1", Namespace: "prod"},
+		{APIVersion: "v1", Kind: "Service", Group: "", Version: "v1", Namespace: "prod"},
+	}
+
+	report := MatchResultsFromIndex(entries, index)
+	if report.Incompatible != 0 {
+		t.Fatalf("Incompatible = %d, want 0", report.Incompatible)
+	}
+	if report.Compatible != 2 {
+		t.Fatalf("Compatible = %d, want 2", report.Compatible)
+	}
+}
+
+func TestMatchResultsFromIndex_Incompatible(t *testing.T) {
+	index := DiscoveryIndex{
+		"v1": {
+			"ConfigMap": discoveryEntry{Resource: metav1.APIResource{Name: "configmaps", Kind: "ConfigMap"}},
+		},
+	}
+
+	entries := []ManifestEntry{
+		{APIVersion: "v1", Kind: "ConfigMap", Group: "", Version: "v1", Namespace: "prod"},
+		{APIVersion: "route.openshift.io/v1", Kind: "Route", Group: "route.openshift.io", Version: "v1", Namespace: "prod"},
+	}
+
+	report := MatchResultsFromIndex(entries, index)
+	if report.Compatible != 1 || report.Incompatible != 1 {
+		t.Fatalf("Compatible=%d Incompatible=%d, want 1/1", report.Compatible, report.Incompatible)
+	}
+}
+
+func TestMatchResultsFromIndex_Suggestion(t *testing.T) {
+	index := DiscoveryIndex{
+		"apps/v1": {
+			"Deployment": discoveryEntry{Resource: metav1.APIResource{Name: "deployments", Kind: "Deployment"}},
+		},
+	}
+
+	entries := []ManifestEntry{
+		{APIVersion: "extensions/v1beta1", Kind: "Deployment", Group: "extensions", Version: "v1beta1", Namespace: "prod"},
+	}
+
+	report := MatchResultsFromIndex(entries, index)
+	if report.Incompatible != 1 {
+		t.Fatalf("Incompatible = %d, want 1", report.Incompatible)
+	}
+	r := report.Results[0]
+	if r.Suggestion == "" {
+		t.Fatal("expected suggestion when alternative GV exists")
+	}
+	if !strings.Contains(r.Suggestion, "apps/v1") {
+		t.Fatalf("Suggestion = %q, expected it to mention apps/v1", r.Suggestion)
+	}
+}
+
 func TestMatchResults_ResourcePluralPopulated(t *testing.T) {
 	disc := fakeDiscovery([]*metav1.APIResourceList{
 		{

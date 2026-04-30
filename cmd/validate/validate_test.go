@@ -17,7 +17,7 @@ func TestNewValidateCommand(t *testing.T) {
 		t.Fatalf("Use = %q, want %q", cmd.Use, "validate")
 	}
 
-	expectedFlags := []string{"input-dir", "validate-dir", "output"}
+	expectedFlags := []string{"input-dir", "validate-dir", "output", "api-resources"}
 	for _, name := range expectedFlags {
 		if cmd.Flags().Lookup(name) == nil {
 			t.Errorf("flag %q not registered on validate command", name)
@@ -32,6 +32,9 @@ func TestNewValidateCommand(t *testing.T) {
 	}
 	if d := cmd.Flags().Lookup("validate-dir").DefValue; d != "validate" {
 		t.Errorf("validate-dir default = %q, want %q", d, "validate")
+	}
+	if d := cmd.Flags().Lookup("api-resources").DefValue; d != "" {
+		t.Errorf("api-resources default = %q, want empty", d)
 	}
 }
 
@@ -97,6 +100,78 @@ func TestValidate_Flags(t *testing.T) {
 				return &ValidateOptions{
 					inputDir:    t.TempDir(),
 					outputFormat: "json",
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "api-resources file not found",
+			setup: func(t *testing.T) *ValidateOptions {
+				return &ValidateOptions{
+					configFlags:      genericclioptions.NewConfigFlags(true),
+					inputDir:         t.TempDir(),
+					outputFormat:     "json",
+					apiResourcesFile: "/nonexistent/api-resources.json",
+				}
+			},
+			wantErr:  true,
+			errMatch: "api-resources file",
+		},
+		{
+			name: "api-resources with context is mutually exclusive",
+			setup: func(t *testing.T) *ValidateOptions {
+				dir := t.TempDir()
+				f := filepath.Join(dir, "api-resources.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				ctx := "some-context"
+				cf := genericclioptions.NewConfigFlags(true)
+				cf.Context = &ctx
+				return &ValidateOptions{
+					configFlags:      cf,
+					inputDir:         dir,
+					outputFormat:     "json",
+					apiResourcesFile: f,
+				}
+			},
+			wantErr:  true,
+			errMatch: "mutually exclusive",
+		},
+		{
+			name: "api-resources with kubeconfig is mutually exclusive",
+			setup: func(t *testing.T) *ValidateOptions {
+				dir := t.TempDir()
+				f := filepath.Join(dir, "api-resources.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				kc := "/some/kubeconfig"
+				cf := genericclioptions.NewConfigFlags(true)
+				cf.KubeConfig = &kc
+				return &ValidateOptions{
+					configFlags:      cf,
+					inputDir:         dir,
+					outputFormat:     "json",
+					apiResourcesFile: f,
+				}
+			},
+			wantErr:  true,
+			errMatch: "mutually exclusive",
+		},
+		{
+			name: "api-resources valid file accepted",
+			setup: func(t *testing.T) *ValidateOptions {
+				dir := t.TempDir()
+				f := filepath.Join(dir, "api-resources.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				return &ValidateOptions{
+					configFlags:      genericclioptions.NewConfigFlags(true),
+					inputDir:         dir,
+					outputFormat:     "json",
+					apiResourcesFile: f,
 				}
 			},
 			wantErr: false,
