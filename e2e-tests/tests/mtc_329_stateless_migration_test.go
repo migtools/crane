@@ -15,6 +15,7 @@ var _ = Describe("Stateless migration", func() {
 	It("[MTC-329] nginx app quiesce pod and apply to target cluster", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
+		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -43,10 +44,21 @@ var _ = Describe("Stateless migration", func() {
 		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline")
+		By("Wait for source quiesce to stabilize before export")
+		WaitForSourceQuiesce(kubectlSrc, namespace, "app="+appName, serviceName)
+
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
+		By("Compare YAML semantic diff of golden and actual export files")
+		goldenExportDir, err := utils.GoldenManifestsDir(appName, "export")
+		Expect(err).NotTo(HaveOccurred())
+		if err := utils.CompareDirectoryYAMLSemanticsExport(goldenExportDir, paths.ExportDir); err != nil {
+			Fail(fmt.Sprintf("YAML semantic diff of golden and actual export files: %v", err))
+		} else {
+			log.Printf("YAML semantic diff of golden and actual export files: no differences found")
+		}
 		By("Compare YAML semantic diff of golden and actual output files")
 		goldenOutputDir, err := utils.GoldenManifestsDir(appName, "output")
 		Expect(err).NotTo(HaveOccurred())

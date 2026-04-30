@@ -3,8 +3,15 @@ package framework
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/utils"
+	"github.com/onsi/gomega"
+)
+
+const (
+	defaultQuiesceTimeout      = "90s"
+	defaultQuiescePollInterval = "3s"
 )
 
 // RunCranePipeline executes export, transform, and apply in sequence.
@@ -51,6 +58,56 @@ func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 		return err
 	}
 	return nil
+}
+
+// WaitForSourceQuiesce waits until source pods and service endpoints drain.
+// It is intended to be called before running export in migration E2E tests.
+func WaitForSourceQuiesce(kubectl KubectlRunner, namespace, podSelector, serviceName string) {
+	log.Printf(
+		"Waiting for source quiesce in namespace %s (pod selector=%s, service=%s)",
+		namespace, podSelector, serviceName,
+	)
+
+	gomega.Eventually(func() (string, error) {
+		out, err := kubectl.Run(
+			"get", "pods",
+			"--namespace", namespace,
+			"-l", podSelector,
+			"-o", "name",
+		)
+		if err != nil {
+			return "", err
+		}
+		return StripKubectlWarnings(out), nil
+	}, defaultQuiesceTimeout, defaultQuiescePollInterval).Should(gomega.BeEmpty())
+
+	gomega.Eventually(func() (string, error) {
+		out, err := kubectl.Run(
+			"get", "endpointslice",
+			"--namespace", namespace,
+			"-l", "kubernetes.io/service-name="+serviceName,
+			"-o", "jsonpath={range .items[*].endpoints[*]}x{end}",
+		)
+		if err != nil {
+			return "", err
+		}
+		return StripKubectlWarnings(out), nil
+	}, defaultQuiesceTimeout, defaultQuiescePollInterval).Should(gomega.BeEmpty())
+
+	gomega.Eventually(func() (string, error) {
+		out, err := kubectl.Run(
+			"get", "endpoints", serviceName,
+			"--namespace", namespace,
+			"-o", "jsonpath={range .subsets[*].addresses[*]}x{end}",
+		)
+		if err != nil {
+			if strings.Contains(err.Error(), "NotFound") {
+				return "", nil
+			}
+			return "", err
+		}
+		return StripKubectlWarnings(out), nil
+	}, defaultQuiesceTimeout, defaultQuiescePollInterval).Should(gomega.BeEmpty())
 }
 
 // PrepareSourceAppNoQuiesce deploys and validates the source application without scaling it down.
