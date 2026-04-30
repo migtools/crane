@@ -1,18 +1,6 @@
 addressType: IPv4
 apiVersion: discovery.k8s.io/v1
-endpoints:
-- addresses:
-  - 10.244.3.175
-  conditions:
-    ready: true
-    serving: true
-    terminating: false
-  nodeName: src
-  targetRef:
-    kind: Pod
-    name: redis-fd76f5747-d2qrd
-    namespace: redis
-    uid: aee84c4c-36aa-4d3e-a079-4a5e0dbfe22c
+endpoints: null
 kind: EndpointSlice
 metadata:
   annotations:
@@ -58,7 +46,4 @@ metadata:
     uid: 8721ae4e-0585-404d-8966-3ba0aee75ed8
   resourceVersion: "1083294"
   uid: 4ee78687-35e9-4413-b853-ceeb9e16a320
-ports:
-- name: redis
-  port: 6379
-  protocol: TCP
+ports: null

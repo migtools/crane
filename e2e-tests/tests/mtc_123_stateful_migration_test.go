@@ -50,11 +50,23 @@ var _ = Describe("Stateful app migration", func() {
 			log.Printf("Found pvc %s in namespace %q\n", pvc.Name, pvc.Namespace)
 		}
 		By("Run crane export/transform/apply pipeline")
+		By("Wait for source quiesce to stabilize before export")
+		WaitForSourceQuiesce(kubectlSrc, namespace, "name="+appName, appName)
+
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
+		By("Compare YAML semantic diff of golden and actual export files")
+		goldenExportDir, err := utils.GoldenManifestsDir(appName, "export")
+		Expect(err).NotTo(HaveOccurred())
+		if err := utils.CompareDirectoryYAMLSemanticsExport(goldenExportDir, paths.ExportDir); err != nil {
+			Fail(fmt.Sprintf("YAML semantic diff of golden and actual export files: %v", err))
+		} else {
+			log.Printf("YAML semantic diff of golden and actual export files: no differences found")
+		}
+		log.Printf("Yaml diff comparison completed for export files successfully")
 		By("Compare YAML semantic diff of golden and actual output files")
 		goldenOutputDir, err := utils.GoldenManifestsDir(appName, "output")
 		Expect(err).NotTo(HaveOccurred())

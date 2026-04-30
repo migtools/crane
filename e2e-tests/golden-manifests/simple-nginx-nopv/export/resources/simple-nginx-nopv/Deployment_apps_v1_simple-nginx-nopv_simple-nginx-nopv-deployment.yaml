@@ -97,7 +97,7 @@ metadata:
   uid: 6197e000-4630-4585-8aac-63b914011609
 spec:
   progressDeadlineSeconds: 600
-  replicas: 1
+  replicas: 0
   revisionHistoryLimit: 10
   selector:
     matchLabels:

@@ -2,8 +2,8 @@ apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
   annotations:
-    deployment.kubernetes.io/desired-replicas: "1"
-    deployment.kubernetes.io/max-replicas: "2"
+    deployment.kubernetes.io/desired-replicas: "0"
+    deployment.kubernetes.io/max-replicas: "0"
     deployment.kubernetes.io/revision: "1"
   creationTimestamp: "2026-04-10T05:05:01Z"
   generation: 1
@@ -86,7 +86,7 @@ metadata:
   resourceVersion: "1083691"
   uid: 479f0cc4-96a3-4253-94ce-8a92d7f37145
 spec:
-  replicas: 1
+  replicas: 0
   selector:
     matchLabels:
       app: simple-nginx-nopv
