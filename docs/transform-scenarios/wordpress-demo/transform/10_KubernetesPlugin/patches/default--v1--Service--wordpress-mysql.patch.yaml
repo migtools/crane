@@ -1,0 +1,16 @@
+- op: remove
+  path: /spec/clusterIP
+- op: remove
+  path: /spec/clusterIPs
+- op: remove
+  path: /metadata/uid
+- op: remove
+  path: /metadata/resourceVersion
+- op: remove
+  path: /metadata/creationTimestamp
+- op: remove
+  path: /metadata/managedFields
+- op: remove
+  path: /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+- op: remove
+  path: /status

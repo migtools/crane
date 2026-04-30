@@ -1,0 +1,14 @@
+- op: remove
+  path: /metadata/uid
+- op: remove
+  path: /metadata/resourceVersion
+- op: remove
+  path: /metadata/creationTimestamp
+- op: remove
+  path: /metadata/generation
+- op: remove
+  path: /metadata/managedFields
+- op: remove
+  path: /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+- op: remove
+  path: /status

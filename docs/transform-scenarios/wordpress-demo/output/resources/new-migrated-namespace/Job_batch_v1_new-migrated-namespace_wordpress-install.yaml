@@ -1,0 +1,144 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    batch.kubernetes.io/controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+    batch.kubernetes.io/job-name: wordpress-install
+    controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+    job-name: wordpress-install
+    migrated-with: crane
+  name: wordpress-install
+  namespace: new-migrated-namespace
+spec:
+  backoffLimit: 4
+  completionMode: NonIndexed
+  completions: 1
+  manualSelector: false
+  parallelism: 1
+  podReplacementPolicy: TerminatingOrFailed
+  selector:
+    matchLabels:
+      batch.kubernetes.io/controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+      migrated-with: crane
+  suspend: false
+  template:
+    metadata:
+      labels:
+        batch.kubernetes.io/controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+        batch.kubernetes.io/job-name: wordpress-install
+        controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+        job-name: wordpress-install
+        migrated-with: crane
+    spec:
+      containers:
+        - args:
+            - -lc
+            - |
+              set -e
+              cd /var/www/html
+
+              echo "Waiting for MySQL on ${WORDPRESS_DB_HOST}:3306..."
+              for i in $(seq 1 60); do
+                if mariadb-admin ping -h"${WORDPRESS_DB_HOST}" -u"${WORDPRESS_DB_USER}" -p"${WORDPRESS_DB_PASSWORD}" --ssl=false --silent; then
+                  echo "MySQL is up."
+                  break
+                fi
+                echo "MySQL not ready yet (attempt: $i)..."
+                sleep 5
+              done
+
+              if ! mariadb-admin ping -h"${WORDPRESS_DB_HOST}" -u"${WORDPRESS_DB_USER}" -p"${WORDPRESS_DB_PASSWORD}" --ssl=false --silent; then
+                echo "MySQL did not become ready within the timeout."
+                exit 1
+              fi
+
+              # Make sure WordPress core is present on the volume
+              if [ ! -f wp-load.php ]; then
+                echo "WordPress core not found on the volume. Downloading..."
+                wp core download --allow-root
+              fi
+
+              # Create wp-config.php if missing
+              if [ ! -f wp-config.php ]; then
+                echo "Creating wp-config.php..."
+                wp config create \
+                  --dbname="${WORDPRESS_DB_NAME}" \
+                  --dbuser="${WORDPRESS_DB_USER}" \
+                  --dbpass="${WORDPRESS_DB_PASSWORD}" \
+                  --dbhost="${WORDPRESS_DB_HOST}" \
+                  --allow-root
+              fi
+
+              # Idempotent install
+              if wp core is-installed --allow-root >/dev/null 2>&1; then
+                echo "WordPress is already installed. Nothing to do."
+                exit 0
+              fi
+
+              # Create an installation kind of unique ID
+              WORDPRESS_SEED_ID=$RANDOM
+
+              echo "Running wp core install..."
+              wp core install \
+                --url="${WORDPRESS_SITE_URL}" \
+                --title="${WORDPRESS_SITE_TITLE} #$WORDPRESS_SEED_ID" \
+                --admin_user="${WORDPRESS_ADMIN_USER}" \
+                --admin_password="${WORDPRESS_ADMIN_PASSWORD}" \
+                --admin_email="${WORDPRESS_ADMIN_EMAIL}" \
+                --skip-email \
+                --allow-root
+
+              echo "Creating sample post..."
+              wp post create \
+                --post_type=post \
+                --post_status=publish \
+                --post_title="Sample post #$WORDPRESS_SEED_ID" \
+                --post_content="Hello from k8s, this is a random post content: $(openssl rand -base64 200 | tr -cs 'a-zA-Z' ' ' | xargs)"
+
+              echo "WORDPRESS_SEED_ID=$WORDPRESS_SEED_ID"
+              echo "Done. WordPress has been installed."
+          command:
+            - bash
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: wordpress-mysql
+            - name: WORDPRESS_DB_USER
+              value: wordpress
+            - name: WORDPRESS_DB_NAME
+              value: wordpress
+            - name: WORDPRESS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: MYSQL_WORDPRESS_PASSWORD
+                  name: wordpress-secrets-hg692g82th
+            - name: WORDPRESS_SITE_URL
+              value: http://wordpress-k8s.example.local
+            - name: WORDPRESS_SITE_TITLE
+              value: My WordPress Site on k8s
+            - name: WORDPRESS_ADMIN_USER
+              value: admin
+            - name: WORDPRESS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: WORDPRESS_ADMIN_PASSWORD
+                  name: wordpress-secrets-hg692g82th
+            - name: WORDPRESS_ADMIN_EMAIL
+              value: admin@wordpress-k8s.example.local
+          image: wordpress:cli-2
+          imagePullPolicy: IfNotPresent
+          name: wp-install
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /var/www/html
+              name: wordpress-persistent-storage
+      dnsPolicy: ClusterFirst
+      restartPolicy: OnFailure
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: wordpress-persistent-storage
+          persistentVolumeClaim:
+            claimName: wordpress-pv-claim

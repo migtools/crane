@@ -1,0 +1,35 @@
+apiVersion: v1
+data:
+  nginx.conf: |
+    events {
+        worker_connections 64;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        server {
+            listen 80;
+            root /var/www/html;
+            index index.php;
+            client_max_body_size 32m;
+
+            location / {
+                try_files $uri $uri/ /index.php?$args;
+            }
+
+            location ~ \.php$ {
+                fastcgi_pass localhost:9000;
+                fastcgi_index index.php;
+                include fastcgi_params;
+                fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            }
+        }
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    app: wordpress
+  name: nginx-config
+  namespace: default

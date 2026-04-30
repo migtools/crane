@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- resources/ConfigMap__v1_default_nginx-config.yaml
+- resources/Deployment_apps_v1_default_wordpress-mysql.yaml
+- resources/Deployment_apps_v1_default_wordpress.yaml
+- resources/Job_batch_v1_default_wordpress-install.yaml
+- resources/Secret__v1_default_wordpress-secrets-hg692g82th.yaml
+- resources/Service__v1_default_kubernetes.yaml
+- resources/Service__v1_default_wordpress-mysql.yaml
+- resources/Service__v1_default_wordpress.yaml
+
+# Custom modifications (namespace, labels, image)
+namespace: new-migrated-namespace
+commonLabels:
+  migrated-with: crane
+images:
+- name: mysql:8.0
+  newName: registry.redhat.io/rhel8/mysql-80
+  newTag: latest

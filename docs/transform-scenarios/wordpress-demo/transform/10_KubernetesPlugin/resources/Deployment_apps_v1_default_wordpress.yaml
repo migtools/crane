@@ -1,0 +1,268 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"apps/v1","kind":"Deployment","metadata":{"annotations":{},"labels":{"app":"wordpress"},"name":"wordpress","namespace":"default"},"spec":{"selector":{"matchLabels":{"app":"wordpress","tier":"frontend"}},"strategy":{"type":"Recreate"},"template":{"metadata":{"labels":{"app":"wordpress","tier":"frontend"}},"spec":{"containers":[{"env":[{"name":"WORDPRESS_DB_HOST","value":"wordpress-mysql"},{"name":"WORDPRESS_DB_PASSWORD","valueFrom":{"secretKeyRef":{"key":"MYSQL_WORDPRESS_PASSWORD","name":"wordpress-secrets-hg692g82th"}}},{"name":"WORDPRESS_DB_USER","value":"wordpress"},{"name":"WORDPRESS_CONFIG_EXTRA","value":"// Set SITE URL dynamically from requests to allow reach it on different endpoints\nif (isset($_SERVER['HTTP_HOST'])) {\n    $protocol = (isset($_SERVER['HTTPS']) \u0026\u0026 $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';\n    if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) \u0026\u0026 $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {\n        $protocol = 'https';\n    }\n    define('WP_HOME', $protocol . '://' . $_SERVER['HTTP_HOST']);\n    define('WP_SITEURL', $protocol . '://' . $_SERVER['HTTP_HOST']);\n}\n"}],"image":"wordpress:6-fpm-alpine","name":"wordpress","ports":[{"containerPort":9000,"name":"fastcgi"}],"volumeMounts":[{"mountPath":"/var/www/html","name":"wordpress-persistent-storage"}]},{"image":"nginx:alpine","name":"nginx","ports":[{"containerPort":80,"name":"http"}],"volumeMounts":[{"mountPath":"/var/www/html","name":"wordpress-persistent-storage","readOnly":true},{"mountPath":"/etc/nginx/nginx.conf","name":"nginx-config","subPath":"nginx.conf"}]}],"volumes":[{"name":"wordpress-persistent-storage","persistentVolumeClaim":{"claimName":"wordpress-pv-claim"}},{"configMap":{"name":"nginx-config"},"name":"nginx-config"}]}}}}
+  creationTimestamp: "2026-04-10T12:15:08Z"
+  generation: 1
+  labels:
+    app: wordpress
+  managedFields:
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+        f:labels:
+          .: {}
+          f:app: {}
+      f:spec:
+        f:progressDeadlineSeconds: {}
+        f:replicas: {}
+        f:revisionHistoryLimit: {}
+        f:selector: {}
+        f:strategy:
+          f:type: {}
+        f:template:
+          f:metadata:
+            f:labels:
+              .: {}
+              f:app: {}
+              f:tier: {}
+          f:spec:
+            f:containers:
+              k:{"name":"nginx"}:
+                .: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:name: {}
+                f:ports:
+                  .: {}
+                  k:{"containerPort":80,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:resources: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+                f:volumeMounts:
+                  .: {}
+                  k:{"mountPath":"/etc/nginx/nginx.conf"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+                    f:subPath: {}
+                  k:{"mountPath":"/var/www/html"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+                    f:readOnly: {}
+              k:{"name":"wordpress"}:
+                .: {}
+                f:env:
+                  .: {}
+                  k:{"name":"WORDPRESS_CONFIG_EXTRA"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_DB_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_DB_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"WORDPRESS_DB_USER"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:name: {}
+                f:ports:
+                  .: {}
+                  k:{"containerPort":9000,"protocol":"TCP"}:
+                    .: {}
+                    f:containerPort: {}
+                    f:name: {}
+                    f:protocol: {}
+                f:resources: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+                f:volumeMounts:
+                  .: {}
+                  k:{"mountPath":"/var/www/html"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext: {}
+            f:terminationGracePeriodSeconds: {}
+            f:volumes:
+              .: {}
+              k:{"name":"nginx-config"}:
+                .: {}
+                f:configMap:
+                  .: {}
+                  f:defaultMode: {}
+                  f:name: {}
+                f:name: {}
+              k:{"name":"wordpress-persistent-storage"}:
+                .: {}
+                f:name: {}
+                f:persistentVolumeClaim:
+                  .: {}
+                  f:claimName: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+    time: "2026-04-10T12:15:08Z"
+  - apiVersion: apps/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          f:deployment.kubernetes.io/revision: {}
+      f:status:
+        f:availableReplicas: {}
+        f:conditions:
+          .: {}
+          k:{"type":"Available"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+          k:{"type":"Progressing"}:
+            .: {}
+            f:lastTransitionTime: {}
+            f:lastUpdateTime: {}
+            f:message: {}
+            f:reason: {}
+            f:status: {}
+            f:type: {}
+        f:observedGeneration: {}
+        f:readyReplicas: {}
+        f:replicas: {}
+        f:terminatingReplicas: {}
+        f:updatedReplicas: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-04-10T12:16:04Z"
+  name: wordpress
+  namespace: default
+  resourceVersion: "812"
+  uid: 32f30549-f011-48b1-8398-64fef74b2df1
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: wordpress
+      tier: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: wordpress
+        tier: frontend
+    spec:
+      containers:
+      - env:
+        - name: WORDPRESS_DB_HOST
+          value: wordpress-mysql
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: MYSQL_WORDPRESS_PASSWORD
+              name: wordpress-secrets-hg692g82th
+        - name: WORDPRESS_DB_USER
+          value: wordpress
+        - name: WORDPRESS_CONFIG_EXTRA
+          value: |
+            // Set SITE URL dynamically from requests to allow reach it on different endpoints
+            if (isset($_SERVER['HTTP_HOST'])) {
+                $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+                if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+                    $protocol = 'https';
+                }
+                define('WP_HOME', $protocol . '://' . $_SERVER['HTTP_HOST']);
+                define('WP_SITEURL', $protocol . '://' . $_SERVER['HTTP_HOST']);
+            }
+        image: wordpress:6-fpm-alpine
+        imagePullPolicy: IfNotPresent
+        name: wordpress
+        ports:
+        - containerPort: 9000
+          name: fastcgi
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: wordpress-persistent-storage
+      - image: nginx:alpine
+        imagePullPolicy: IfNotPresent
+        name: nginx
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: wordpress-persistent-storage
+          readOnly: true
+        - mountPath: /etc/nginx/nginx.conf
+          name: nginx-config
+          subPath: nginx.conf
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: wordpress-persistent-storage
+        persistentVolumeClaim:
+          claimName: wordpress-pv-claim
+      - configMap:
+          defaultMode: 420
+          name: nginx-config
+        name: nginx-config
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2026-04-10T12:16:04Z"
+    lastUpdateTime: "2026-04-10T12:16:04Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2026-04-10T12:15:08Z"
+    lastUpdateTime: "2026-04-10T12:16:04Z"
+    message: ReplicaSet "wordpress-74b89cc84c" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  terminatingReplicas: 0
+  updatedReplicas: 1

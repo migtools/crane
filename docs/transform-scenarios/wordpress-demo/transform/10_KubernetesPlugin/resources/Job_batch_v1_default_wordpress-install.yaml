@@ -1,0 +1,276 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"batch/v1","kind":"Job","metadata":{"annotations":{},"name":"wordpress-install","namespace":"default"},"spec":{"backoffLimit":4,"template":{"spec":{"containers":[{"args":["-lc","set -e\ncd /var/www/html\n\necho \"Waiting for MySQL on ${WORDPRESS_DB_HOST}:3306...\"\nfor i in $(seq 1 60); do\n  if mariadb-admin ping -h\"${WORDPRESS_DB_HOST}\" -u\"${WORDPRESS_DB_USER}\" -p\"${WORDPRESS_DB_PASSWORD}\" --ssl=false --silent; then\n    echo \"MySQL is up.\"\n    break\n  fi\n  echo \"MySQL not ready yet (attempt: $i)...\"\n  sleep 5\ndone\n\nif ! mariadb-admin ping -h\"${WORDPRESS_DB_HOST}\" -u\"${WORDPRESS_DB_USER}\" -p\"${WORDPRESS_DB_PASSWORD}\" --ssl=false --silent; then\n  echo \"MySQL did not become ready within the timeout.\"\n  exit 1\nfi\n\n# Make sure WordPress core is present on the volume\nif [ ! -f wp-load.php ]; then\n  echo \"WordPress core not found on the volume. Downloading...\"\n  wp core download --allow-root\nfi\n\n# Create wp-config.php if missing\nif [ ! -f wp-config.php ]; then\n  echo \"Creating wp-config.php...\"\n  wp config create \\\n    --dbname=\"${WORDPRESS_DB_NAME}\" \\\n    --dbuser=\"${WORDPRESS_DB_USER}\" \\\n    --dbpass=\"${WORDPRESS_DB_PASSWORD}\" \\\n    --dbhost=\"${WORDPRESS_DB_HOST}\" \\\n    --allow-root\nfi\n\n# Idempotent install\nif wp core is-installed --allow-root \u003e/dev/null 2\u003e\u00261; then\n  echo \"WordPress is already installed. Nothing to do.\"\n  exit 0\nfi\n\n# Create an installation kind of unique ID\nWORDPRESS_SEED_ID=$RANDOM\n\necho \"Running wp core install...\"\nwp core install \\\n  --url=\"${WORDPRESS_SITE_URL}\" \\\n  --title=\"${WORDPRESS_SITE_TITLE} #$WORDPRESS_SEED_ID\" \\\n  --admin_user=\"${WORDPRESS_ADMIN_USER}\" \\\n  --admin_password=\"${WORDPRESS_ADMIN_PASSWORD}\" \\\n  --admin_email=\"${WORDPRESS_ADMIN_EMAIL}\" \\\n  --skip-email \\\n  --allow-root\n\necho \"Creating sample post...\"\nwp post create \\\n  --post_type=post \\\n  --post_status=publish \\\n  --post_title=\"Sample post #$WORDPRESS_SEED_ID\" \\\n  --post_content=\"Hello from k8s, this is a random post content: $(openssl rand -base64 200 | tr -cs 'a-zA-Z' ' ' | xargs)\"\n\necho \"WORDPRESS_SEED_ID=$WORDPRESS_SEED_ID\"\necho \"Done. WordPress has been installed.\"\n"],"command":["bash"],"env":[{"name":"WORDPRESS_DB_HOST","value":"wordpress-mysql"},{"name":"WORDPRESS_DB_USER","value":"wordpress"},{"name":"WORDPRESS_DB_NAME","value":"wordpress"},{"name":"WORDPRESS_DB_PASSWORD","valueFrom":{"secretKeyRef":{"key":"MYSQL_WORDPRESS_PASSWORD","name":"wordpress-secrets-hg692g82th"}}},{"name":"WORDPRESS_SITE_URL","value":"http://wordpress-k8s.example.local"},{"name":"WORDPRESS_SITE_TITLE","value":"My WordPress Site on k8s"},{"name":"WORDPRESS_ADMIN_USER","value":"admin"},{"name":"WORDPRESS_ADMIN_PASSWORD","valueFrom":{"secretKeyRef":{"key":"WORDPRESS_ADMIN_PASSWORD","name":"wordpress-secrets-hg692g82th"}}},{"name":"WORDPRESS_ADMIN_EMAIL","value":"admin@wordpress-k8s.example.local"}],"image":"wordpress:cli-2","imagePullPolicy":"IfNotPresent","name":"wp-install","volumeMounts":[{"mountPath":"/var/www/html","name":"wordpress-persistent-storage"}]}],"restartPolicy":"OnFailure","volumes":[{"name":"wordpress-persistent-storage","persistentVolumeClaim":{"claimName":"wordpress-pv-claim"}}]}}}}
+  creationTimestamp: "2026-04-10T12:15:08Z"
+  generation: 1
+  labels:
+    batch.kubernetes.io/controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+    batch.kubernetes.io/job-name: wordpress-install
+    controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+    job-name: wordpress-install
+  managedFields:
+  - apiVersion: batch/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+      f:spec:
+        f:backoffLimit: {}
+        f:completionMode: {}
+        f:completions: {}
+        f:manualSelector: {}
+        f:parallelism: {}
+        f:podReplacementPolicy: {}
+        f:suspend: {}
+        f:template:
+          f:spec:
+            f:containers:
+              k:{"name":"wp-install"}:
+                .: {}
+                f:args: {}
+                f:command: {}
+                f:env:
+                  .: {}
+                  k:{"name":"WORDPRESS_ADMIN_EMAIL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_ADMIN_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"WORDPRESS_ADMIN_USER"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_DB_HOST"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_DB_NAME"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_DB_PASSWORD"}:
+                    .: {}
+                    f:name: {}
+                    f:valueFrom:
+                      .: {}
+                      f:secretKeyRef: {}
+                  k:{"name":"WORDPRESS_DB_USER"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_SITE_TITLE"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                  k:{"name":"WORDPRESS_SITE_URL"}:
+                    .: {}
+                    f:name: {}
+                    f:value: {}
+                f:image: {}
+                f:imagePullPolicy: {}
+                f:name: {}
+                f:resources: {}
+                f:terminationMessagePath: {}
+                f:terminationMessagePolicy: {}
+                f:volumeMounts:
+                  .: {}
+                  k:{"mountPath":"/var/www/html"}:
+                    .: {}
+                    f:mountPath: {}
+                    f:name: {}
+            f:dnsPolicy: {}
+            f:restartPolicy: {}
+            f:schedulerName: {}
+            f:securityContext: {}
+            f:terminationGracePeriodSeconds: {}
+            f:volumes:
+              .: {}
+              k:{"name":"wordpress-persistent-storage"}:
+                .: {}
+                f:name: {}
+                f:persistentVolumeClaim:
+                  .: {}
+                  f:claimName: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+    time: "2026-04-10T12:15:08Z"
+  - apiVersion: batch/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:completionTime: {}
+        f:conditions: {}
+        f:ready: {}
+        f:startTime: {}
+        f:succeeded: {}
+        f:terminating: {}
+        f:uncountedTerminatedPods: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-04-10T12:16:48Z"
+  name: wordpress-install
+  namespace: default
+  resourceVersion: "854"
+  uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+spec:
+  backoffLimit: 4
+  completionMode: NonIndexed
+  completions: 1
+  manualSelector: false
+  parallelism: 1
+  podReplacementPolicy: TerminatingOrFailed
+  selector:
+    matchLabels:
+      batch.kubernetes.io/controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+  suspend: false
+  template:
+    metadata:
+      labels:
+        batch.kubernetes.io/controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+        batch.kubernetes.io/job-name: wordpress-install
+        controller-uid: be719474-856d-4d84-80ad-4f4ab9ecdd30
+        job-name: wordpress-install
+    spec:
+      containers:
+      - args:
+        - -lc
+        - |
+          set -e
+          cd /var/www/html
+
+          echo "Waiting for MySQL on ${WORDPRESS_DB_HOST}:3306..."
+          for i in $(seq 1 60); do
+            if mariadb-admin ping -h"${WORDPRESS_DB_HOST}" -u"${WORDPRESS_DB_USER}" -p"${WORDPRESS_DB_PASSWORD}" --ssl=false --silent; then
+              echo "MySQL is up."
+              break
+            fi
+            echo "MySQL not ready yet (attempt: $i)..."
+            sleep 5
+          done
+
+          if ! mariadb-admin ping -h"${WORDPRESS_DB_HOST}" -u"${WORDPRESS_DB_USER}" -p"${WORDPRESS_DB_PASSWORD}" --ssl=false --silent; then
+            echo "MySQL did not become ready within the timeout."
+            exit 1
+          fi
+
+          # Make sure WordPress core is present on the volume
+          if [ ! -f wp-load.php ]; then
+            echo "WordPress core not found on the volume. Downloading..."
+            wp core download --allow-root
+          fi
+
+          # Create wp-config.php if missing
+          if [ ! -f wp-config.php ]; then
+            echo "Creating wp-config.php..."
+            wp config create \
+              --dbname="${WORDPRESS_DB_NAME}" \
+              --dbuser="${WORDPRESS_DB_USER}" \
+              --dbpass="${WORDPRESS_DB_PASSWORD}" \
+              --dbhost="${WORDPRESS_DB_HOST}" \
+              --allow-root
+          fi
+
+          # Idempotent install
+          if wp core is-installed --allow-root >/dev/null 2>&1; then
+            echo "WordPress is already installed. Nothing to do."
+            exit 0
+          fi
+
+          # Create an installation kind of unique ID
+          WORDPRESS_SEED_ID=$RANDOM
+
+          echo "Running wp core install..."
+          wp core install \
+            --url="${WORDPRESS_SITE_URL}" \
+            --title="${WORDPRESS_SITE_TITLE} #$WORDPRESS_SEED_ID" \
+            --admin_user="${WORDPRESS_ADMIN_USER}" \
+            --admin_password="${WORDPRESS_ADMIN_PASSWORD}" \
+            --admin_email="${WORDPRESS_ADMIN_EMAIL}" \
+            --skip-email \
+            --allow-root
+
+          echo "Creating sample post..."
+          wp post create \
+            --post_type=post \
+            --post_status=publish \
+            --post_title="Sample post #$WORDPRESS_SEED_ID" \
+            --post_content="Hello from k8s, this is a random post content: $(openssl rand -base64 200 | tr -cs 'a-zA-Z' ' ' | xargs)"
+
+          echo "WORDPRESS_SEED_ID=$WORDPRESS_SEED_ID"
+          echo "Done. WordPress has been installed."
+        command:
+        - bash
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: wordpress-mysql
+        - name: WORDPRESS_DB_USER
+          value: wordpress
+        - name: WORDPRESS_DB_NAME
+          value: wordpress
+        - name: WORDPRESS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: MYSQL_WORDPRESS_PASSWORD
+              name: wordpress-secrets-hg692g82th
+        - name: WORDPRESS_SITE_URL
+          value: http://wordpress-k8s.example.local
+        - name: WORDPRESS_SITE_TITLE
+          value: My WordPress Site on k8s
+        - name: WORDPRESS_ADMIN_USER
+          value: admin
+        - name: WORDPRESS_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: WORDPRESS_ADMIN_PASSWORD
+              name: wordpress-secrets-hg692g82th
+        - name: WORDPRESS_ADMIN_EMAIL
+          value: admin@wordpress-k8s.example.local
+        image: wordpress:cli-2
+        imagePullPolicy: IfNotPresent
+        name: wp-install
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: wordpress-persistent-storage
+      dnsPolicy: ClusterFirst
+      restartPolicy: OnFailure
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: wordpress-persistent-storage
+        persistentVolumeClaim:
+          claimName: wordpress-pv-claim
+status:
+  completionTime: "2026-04-10T12:16:48Z"
+  conditions:
+  - lastProbeTime: "2026-04-10T12:16:48Z"
+    lastTransitionTime: "2026-04-10T12:16:48Z"
+    message: Reached expected number of succeeded pods
+    reason: CompletionsReached
+    status: "True"
+    type: SuccessCriteriaMet
+  - lastProbeTime: "2026-04-10T12:16:48Z"
+    lastTransitionTime: "2026-04-10T12:16:48Z"
+    message: Reached expected number of succeeded pods
+    reason: CompletionsReached
+    status: "True"
+    type: Complete
+  ready: 0
+  startTime: "2026-04-10T12:15:08Z"
+  succeeded: 1
+  terminating: 0
+  uncountedTerminatedPods: {}
