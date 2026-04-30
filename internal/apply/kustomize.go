@@ -66,6 +66,7 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 }
 
 // ApplyMultiStage applies a multi-stage transform pipeline
+// For each stage, it regenerates the .work/<stage>/output/ directory by running kustomize
 func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.StageSelector) error {
 	// Discover stages
 	stages, err := internalTransform.DiscoverStages(k.TransformDir)
@@ -79,12 +80,46 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 		return fmt.Errorf("no stages found matching selector")
 	}
 
-	// Get the last (final) stage
-	lastStage := selectedStages[len(selectedStages)-1]
+	opts := file.PathOpts{
+		TransformDir: k.TransformDir,
+		OutputDir:    k.OutputDir,
+	}
 
+	// Process each stage sequentially to regenerate .work directories
+	k.Log.Infof("Processing %d stage(s) sequentially to regenerate .work outputs", len(selectedStages))
+
+	for i, stage := range selectedStages {
+		k.Log.Infof("Processing stage %d/%d: %s", i+1, len(selectedStages), stage.DirName)
+
+		// Run kubectl kustomize build on this stage
+		stageDir := opts.GetStageDir(stage.DirName)
+		output, err := k.runKustomizeBuild(stageDir)
+		if err != nil {
+			return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stage.DirName, err)
+		}
+
+		// Parse output into resources
+		resources, err := file.ParseMultiDocYAML(output)
+		if err != nil {
+			return fmt.Errorf("failed to parse kustomize output for stage %s: %w", stage.DirName, err)
+		}
+
+		k.Log.Debugf("Stage %s: produced %d resource(s)", stage.DirName, len(resources))
+
+		// Write resources to .work/<stage>/output/ directory
+		stageOutputDir := opts.GetStageOutputDir(stage.DirName)
+		if err := k.writeResourcesToDirectory(resources, stageOutputDir); err != nil {
+			return fmt.Errorf("failed to write stage %s output to .work: %w", stage.DirName, err)
+		}
+
+		k.Log.Debugf("Stage %s: wrote output to %s", stage.DirName, stageOutputDir)
+	}
+
+	// Get the last (final) stage output
+	lastStage := selectedStages[len(selectedStages)-1]
 	k.Log.Infof("Applying final stage: %s", lastStage.DirName)
 
-	// Run kubectl kustomize build on the last stage
+	// Run kubectl kustomize build on the last stage (again, to get bytes for output.yaml)
 	output, err := k.runKustomizeBuild(lastStage.Path)
 	if err != nil {
 		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", lastStage.DirName, err)
@@ -146,6 +181,35 @@ func ValidateKubectlAvailable() error {
 	return fmt.Errorf("neither kubectl nor oc found or executable")
 }
 
+// writeResourcesToDirectory writes resources as individual YAML files to a directory
+func (k *KustomizeApplier) writeResourcesToDirectory(resources []unstructured.Unstructured, outputDir string) error {
+	// Create output directory
+	if err := os.MkdirAll(outputDir, 0700); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", outputDir, err)
+	}
+
+	// Write each resource to its own file
+	for _, resource := range resources {
+		// Generate filename using shared helper
+		filename := file.GetResourceFilename(resource)
+		filePath := filepath.Join(outputDir, filename)
+
+		// Marshal resource to YAML
+		yamlBytes, err := yaml.Marshal(resource.Object)
+		if err != nil {
+			return fmt.Errorf("failed to marshal resource %s: %w", filename, err)
+		}
+
+		// Write to file
+		if err := os.WriteFile(filePath, yamlBytes, 0644); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", filePath, err)
+		}
+	}
+
+	k.Log.Debugf("Wrote %d resource(s) to %s", len(resources), outputDir)
+	return nil
+}
+
 // splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files
 // This maintains backward compatibility with tests/tools expecting separate files
 func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
@@ -153,7 +217,7 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 	decoder := yamlv3.NewDecoder(strings.NewReader(string(yamlData)))
 
 	for {
-		var doc interface{}
+		var doc any
 		err := decoder.Decode(&doc)
 		if err == io.EOF {
 			break
