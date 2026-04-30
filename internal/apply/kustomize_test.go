@@ -570,3 +570,117 @@ func TestWriteResourcesToDirectory(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteResourcesToDirectory_CleansStaleFiles(t *testing.T) {
+	// Test that writeResourcesToDirectory removes stale files from previous runs
+	tmpDir, err := os.MkdirTemp("", "crane-stale-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	applier := &KustomizeApplier{
+		Log:       logger,
+		OutputDir: tmpDir,
+	}
+
+	// First run: write 3 resources
+	firstRun := []unstructured.Unstructured{
+		{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata": map[string]interface{}{
+					"name":      "config1",
+					"namespace": "default",
+				},
+			},
+		},
+		{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata": map[string]interface{}{
+					"name":      "config2",
+					"namespace": "default",
+				},
+			},
+		},
+		{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Service",
+				"metadata": map[string]interface{}{
+					"name":      "svc1",
+					"namespace": "default",
+				},
+			},
+		},
+	}
+
+	err = applier.writeResourcesToDirectory(firstRun, tmpDir)
+	if err != nil {
+		t.Fatalf("First run failed: %v", err)
+	}
+
+	// Verify 3 files exist
+	files, _ := os.ReadDir(tmpDir)
+	if len(files) != 3 {
+		t.Fatalf("Expected 3 files after first run, got %d", len(files))
+	}
+
+	// Second run: write only 1 resource (different from first run)
+	secondRun := []unstructured.Unstructured{
+		{
+			Object: map[string]interface{}{
+				"apiVersion": "apps/v1",
+				"kind":       "Deployment",
+				"metadata": map[string]interface{}{
+					"name":      "app",
+					"namespace": "default",
+				},
+			},
+		},
+	}
+
+	err = applier.writeResourcesToDirectory(secondRun, tmpDir)
+	if err != nil {
+		t.Fatalf("Second run failed: %v", err)
+	}
+
+	// Verify only 1 file exists (old files should be removed)
+	files, _ = os.ReadDir(tmpDir)
+	if len(files) != 1 {
+		t.Errorf("Expected 1 file after second run (stale files should be removed), got %d", len(files))
+	}
+
+	// Verify the correct file exists
+	expectedFile := "Deployment_apps_v1_default_app.yaml"
+	foundExpected := false
+	for _, f := range files {
+		if f.Name() == expectedFile {
+			foundExpected = true
+			break
+		}
+	}
+
+	if !foundExpected {
+		t.Errorf("Expected file %s not found after second run", expectedFile)
+	}
+
+	// Verify old files don't exist
+	staleFiles := []string{
+		"ConfigMap__v1_default_config1.yaml",
+		"ConfigMap__v1_default_config2.yaml",
+		"Service__v1_default_svc1.yaml",
+	}
+
+	for _, staleFile := range staleFiles {
+		filePath := filepath.Join(tmpDir, staleFile)
+		if _, err := os.Stat(filePath); !os.IsNotExist(err) {
+			t.Errorf("Stale file %s should not exist after second run", staleFile)
+		}
+	}
+}

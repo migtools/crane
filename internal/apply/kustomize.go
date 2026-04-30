@@ -183,6 +183,11 @@ func ValidateKubectlAvailable() error {
 
 // writeResourcesToDirectory writes resources as individual YAML files to a directory
 func (k *KustomizeApplier) writeResourcesToDirectory(resources []unstructured.Unstructured, outputDir string) error {
+	// Clear output directory if it exists to remove stale resources from prior runs
+	if err := os.RemoveAll(outputDir); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove existing output directory: %w", err)
+	}
+
 	// Create output directory
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", outputDir, err)
