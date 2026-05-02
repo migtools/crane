@@ -170,6 +170,9 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Target cluster IP: %s\n", tgtIP)
 
+		// Reset WorkDir so transfer-pvc uses the process working directory
+		// and inherits KUBECONFIG correctly from the environment
+		runner.WorkDir = ""
 		for _, pvc := range pvcs {
 			opts := TransferPVCOptions{
 				SourceContext:   srcApp.Context,
@@ -181,7 +184,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s -> namespace %s on target\n", pvc.Name, tgtApp.Namespace)
-			Expect(scenario.Crane.TransferPVC(opts)).NotTo(HaveOccurred())
+			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 			log.Printf("PVC transfer complete: %s\n", pvc.Name)
 		}
 
