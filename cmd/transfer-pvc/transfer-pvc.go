@@ -474,7 +474,7 @@ func (t *TransferPVCCommand) run() error {
 	err = followClientLogs(
 		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, labels, t.ProgressOutput)
 	if err != nil {
-		log.Fatal(err, "error following rsync client logs")
+		log.Fatalf("error following rsync client logs: %v", err)
 	}
 
 	return garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace)
@@ -646,6 +646,7 @@ type LogStreams interface {
 	Close()
 }
 
+// followClientLogs streams rsync client logs and validates final transfer status.
 func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string) error {
 	logReader := NewRsyncLogStream(srcConfig, pvc, labels, outputFile)
 	err := logReader.Init()
@@ -671,7 +672,14 @@ func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels m
 			break
 		}
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	rsyncReader, ok := logReader.(*rsyncLogStream)
+	if !ok {
+		return fmt.Errorf("unexpected log reader type %T", logReader)
+	}
+	return validateTransferCompletion(rsyncReader.progress)
 }
 
 // waitForEndpoint waits for endpoint to become ready
