@@ -153,7 +153,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Transfer PVC from source to target")
-		tgtIP, err := GetClusterNodeIP(tgtApp.Context)
+		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Target cluster IP: %s\n", tgtIP)
 
@@ -180,7 +180,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 
 		By("Apply rendered manifests to target as non-admin")
 		log.Printf("Applying manifests from %s to namespace %s\n", paths.OutputDir, tgtApp.Namespace)
-		Expect(ApplyOutputToTargetNonAdmin(scenario.KubectlTgtNonAdmin, tgtApp.Namespace, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(scenario.KubectlTgtNonAdmin	, paths.OutputDir)).NotTo(HaveOccurred())
 		log.Printf("Manifests applied to target\n")
 
 		By("Verify CronJob landed on target with correct schedule")
