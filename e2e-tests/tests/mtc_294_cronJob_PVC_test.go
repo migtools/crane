@@ -37,15 +37,17 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
 
-		srcApp.ExtraVars = map[string]string{
-			"ext_app_name":        appName,
-			"non_admin_user":      "true",
-			"with_deploy_with_pvc": "true",
-		}
-		tgtApp.ExtraVars = map[string]string{
+		srcApp.ExtraVars = map[string]any{
 			"ext_app_name":           appName,
 			"non_admin_user":         "true",
+			"with_deploy_with_pvc":   "true",
 			"with_validate_with_pvc": "true",
+		}
+
+		tgtApp.ExtraVars = map[string]any{
+			"ext_app_name":         appName,
+			"non_admin_user":       "true",
+			"with_deploy_with_pvc": "true",
 		}
 
 		By("Grant namespace-admin permissions to non-admin user on source and target")
@@ -96,6 +98,17 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 				podName = pods[len(pods)-1]
 				return podName
 			}, "3m", "10s").ShouldNot(BeEmpty())
+			Eventually(func() string {
+				out, err := k.Run(
+					"get", "pod", podName,
+					"-n", namespace,
+					"-o", "jsonpath={.status.phase}",
+				)
+				if err != nil {
+					return ""
+				}
+				return out
+			}, "3m", "10s").Should(Equal("Succeeded"))
 			return podName
 		}
 
@@ -173,10 +186,19 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		}
 
 		By("Verify PVC exists and is Bound on target")
-		tgtPVCs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(tgtPVCs).NotTo(BeEmpty(), "expected PVC to be present on target after transfer")
-		log.Printf("PVC(s) confirmed on target cluster\n")
+		for _, pvc := range pvcs {
+			Eventually(func() string {
+				out, err := scenario.KubectlTgt.Run(
+					"get", "pvc", pvc.Name,
+					"-n", tgtApp.Namespace,
+					"-o", "jsonpath={.status.phase}",
+				)
+				if err != nil {
+					return ""
+				}
+				return out
+			}, "2m", "5s").Should(Equal("Bound"), "expected PVC %q to be Bound on target", pvc.Name)
+		}
 
 		By("Apply rendered manifests to target as non-admin")
 		log.Printf("Applying manifests from %s to namespace %s\n", paths.OutputDir, tgtApp.Namespace)
