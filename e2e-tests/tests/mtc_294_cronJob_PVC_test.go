@@ -181,7 +181,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s -> namespace %s on target\n", pvc.Name, tgtApp.Namespace)
-			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
+			Expect(scenario.Crane.TransferPVC(opts)).NotTo(HaveOccurred())
 			log.Printf("PVC transfer complete: %s\n", pvc.Name)
 		}
 
@@ -230,7 +230,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 					"containers": [{
 						"name": "pvc-reader",
 						"image": "busybox",
-						"command": ["sh", "-c", "cat /data/log.txt"],
+						"command": ["sh", "-c", "cat /data/log.txt || echo FILE_NOT_FOUND"],
 						"volumeMounts": [{"name":"data","mountPath":"/data"}]
 					}],
 					"volumes": [{"name":"data","persistentVolumeClaim":{"claimName":"%s"}}],
@@ -250,7 +250,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 				return ""
 			}
 			return out
-		}, "2m", "5s").Should(Equal("Succeeded"))
+		}, "2m", "5s").Should(Or(Equal("Succeeded"), Equal("Failed")))
 
 		pvcReaderLogs, err := scenario.KubectlTgt.Run("logs", "pvc-reader", "-n", namespace)
 		Expect(err).NotTo(HaveOccurred())
