@@ -11,8 +11,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin user", func() {
-	It("Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("tier0"), func() {
+var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non-admin user", func() {
+	It("[BUG #330][MTC-294] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "tier0"), func() {
 		appName := "cronjob"
 		namespace := "mtc-294-ns"
 		expectedLogSubstring := fmt.Sprintf("Hello! from namespace %s", namespace)
@@ -166,6 +166,9 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Transfer PVC from source to target")
+		// TODO(https://github.com/migtools/crane/issues/330): switch back to non-admin contexts
+		// (srcApp.Context, tgtApp.Context) once crane transfer-pvc correctly handles
+		// namespace-admin credentials on Linux.
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Target cluster IP: %s\n", tgtIP)
@@ -256,7 +259,7 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcReaderLogs).To(ContainSubstring(expectedLogSubstring),
 			"expected PVC log.txt to contain data written on source cluster")
-		log.Printf("PVC data integrity confirmed — source log entries present on target\n")
+		log.Printf("PVC data integrity confirmed, source log entries present on target\n")
 
 		_, _ = scenario.KubectlTgt.Run("delete", "pod", "pvc-reader", "-n", namespace, "--ignore-not-found=true")
 
@@ -272,6 +275,6 @@ var _ = Describe("[MTC-294] CronJob with attached PVC migration as non-admin use
 		tgtPodName := waitForLatestCronPod(scenario.KubectlTgt)
 		log.Printf("First job pod on target: %s\n", tgtPodName)
 		assertPodLogsContain(scenario.KubectlTgt, tgtPodName, expectedLogSubstring)
-		log.Printf("Target CronJob fired and wrote expected log — migration validated\n")
+		log.Printf("Target CronJob fired and wrote expected log, migration validated successfully\n")
 	})
 })
