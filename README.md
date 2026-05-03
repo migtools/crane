@@ -109,6 +109,15 @@ How does it work? Crane works by:
 6. The content in `output/output.yaml` is now ready to be deployed to the target cluster or checked into Git for GitOps workflows:
     * `$ kubectl apply -f output/output.yaml`
 
+## Documentation
+
+For comprehensive documentation, see the [docs/](docs/README.md) directory:
+
+- [Installation](docs/installation.md) | [Quickstart](docs/quickstart-tutorial.md)
+- [Command Reference](docs/README.md#command-reference) — export, transform, apply, validate, transfer-pvc
+- [Tutorials](docs/README.md#tutorials) — stateless and stateful migration walkthroughs
+- [Contributing](CONTRIBUTING.md) | [Development Guide](docs/development/README.md)
+
 ## Further Examples
 
 Please see [konveyor/crane-runner/main/examples](https://github.com/konveyor/crane-runner/tree/main/examples#readme) for further scenarios to explore what can be done with Crane + Tekton for migrating applications. 

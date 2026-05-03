@@ -555,6 +555,6 @@ resources:
 
 ## Further Help
 
-- [Multi-Stage Kustomize Documentation](./kustomize-multistage.md)
+- [Multi-Stage Kustomize Documentation](../multistage-pipeline.md)
 - [Kustomize Official Docs](https://kubectl.docs.kubernetes.io/references/kustomize/)
 - [Crane GitHub Issues](https://github.com/konveyor/crane/issues)

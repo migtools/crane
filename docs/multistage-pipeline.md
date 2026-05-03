@@ -475,8 +475,8 @@ err = apply.ValidateKubectlAvailable()
 ## Further Reading
 
 - [Kustomize Documentation](https://kubectl.docs.kubernetes.io/references/kustomize/)
-- [Crane Plugin Development](./plugin-development.md)
-- [Transform Architecture](./architecture.md)
+- [Crane Plugin Development](./development/plugin-development.md)
+- [Transform Architecture](./development/architecture.md)
 
 ## Manual/Non-Plugin Stages
 
