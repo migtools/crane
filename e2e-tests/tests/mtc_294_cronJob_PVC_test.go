@@ -54,9 +54,9 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 		kubectlSrcNonAdmin, _, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			By("Delete test namespace on source and target (best effort)")
+			By("Delete test namespace on source and target (wait for completion)")
 			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
-				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=false"); err != nil {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
 					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
 				}
 			}
@@ -122,9 +122,9 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 			}, "2m", "10s").Should(ContainSubstring(substr))
 		}
 
-		srcPodName := waitForLatestCronPod(scenario.KubectlSrc)
+		srcPodName := waitForLatestCronPod(scenario.KubectlSrcNonAdmin)
 		log.Printf("First job pod on source: %s\n", srcPodName)
-		assertPodLogsContain(scenario.KubectlSrc, srcPodName, expectedLogSubstring)
+		assertPodLogsContain(scenario.KubectlSrcNonAdmin, srcPodName, expectedLogSubstring)
 		log.Printf("Source job pod wrote expected log to PVC\n")
 
 		By("Suspend source CronJob before export")
@@ -191,7 +191,7 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 		By("Verify PVC exists and is Bound on target")
 		for _, pvc := range pvcs {
 			Eventually(func() string {
-				out, err := scenario.KubectlTgt.Run(
+				out, err := scenario.KubectlTgtNonAdmin.Run(
 					"get", "pvc", pvc.Name,
 					"-n", tgtApp.Namespace,
 					"-o", "jsonpath={.status.phase}",
@@ -210,7 +210,7 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 
 		By("Verify CronJob landed on target with correct schedule")
 		Eventually(func() string {
-			out, err := scenario.KubectlTgt.Run(
+			out, err := scenario.KubectlTgtNonAdmin.Run(
 				"get", "cronjob", appName,
 				"-n", namespace,
 				"-o", "jsonpath={.spec.schedule}",
@@ -223,7 +223,7 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 		log.Printf("CronJob %s confirmed on target with correct schedule\n", appName)
 
 		By("Verify PVC data was transferred intact by running a reader pod on target")
-		_, err = scenario.KubectlTgt.Run(
+		_, err = scenario.KubectlTgtNonAdmin.Run(
 			"run", "pvc-reader",
 			"-n", namespace,
 			"--image=busybox",
@@ -244,7 +244,7 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(func() string {
-			out, err := scenario.KubectlTgt.Run(
+			out, err := scenario.KubectlTgtNonAdmin.Run(
 				"get", "pod", "pvc-reader",
 				"-n", namespace,
 				"-o", "jsonpath={.status.phase}",
@@ -255,16 +255,16 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 			return out
 		}, "2m", "5s").Should(Or(Equal("Succeeded"), Equal("Failed")))
 
-		pvcReaderLogs, err := scenario.KubectlTgt.Run("logs", "pvc-reader", "-n", namespace)
+		pvcReaderLogs, err := scenario.KubectlTgtNonAdmin.Run("logs", "pvc-reader", "-n", namespace)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcReaderLogs).To(ContainSubstring(expectedLogSubstring),
 			"expected PVC log.txt to contain data written on source cluster")
 		log.Printf("PVC data integrity confirmed, source log entries present on target\n")
 
-		_, _ = scenario.KubectlTgt.Run("delete", "pod", "pvc-reader", "-n", namespace, "--ignore-not-found=true")
+		_, _ = scenario.KubectlTgtNonAdmin.Run("delete", "pod", "pvc-reader", "-n", namespace, "--ignore-not-found=true")
 
 		By("Unsuspend CronJob on target and verify it fires")
-		_, err = scenario.KubectlTgt.Run(
+		_, err = scenario.KubectlTgtNonAdmin.Run(
 			"patch", "cronjob", appName,
 			"-n", namespace,
 			"-p", `{"spec":{"suspend":false}}`,
@@ -272,9 +272,9 @@ var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("CronJob %s unsuspended on target\n", appName)
 
-		tgtPodName := waitForLatestCronPod(scenario.KubectlTgt)
+		tgtPodName := waitForLatestCronPod(scenario.KubectlTgtNonAdmin)
 		log.Printf("First job pod on target: %s\n", tgtPodName)
-		assertPodLogsContain(scenario.KubectlTgt, tgtPodName, expectedLogSubstring)
+		assertPodLogsContain(scenario.KubectlTgtNonAdmin, tgtPodName, expectedLogSubstring)
 		log.Printf("Target CronJob fired and wrote expected log, migration validated successfully\n")
 	})
 })
