@@ -143,7 +143,9 @@ var _ = Describe("OLM whiteout", func() {
 					{"catalogsource", "olm-whiteout-catalog"},
 					{"operatorgroup", "olm-whiteout-og"},
 				} {
-					_, _ = kubectlSrc.Run("delete", res.kind, res.name, "-n", namespace, "--ignore-not-found=true")
+					if _, err := kubectlSrc.Run("delete", res.kind, res.name, "-n", namespace, "--ignore-not-found=true"); err != nil {
+						log.Printf("cleanup: failed to delete %s/%s: %v", res.kind, res.name, err)
+					}
 				}
 				By("Cleanup source and target resources")
 				if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
