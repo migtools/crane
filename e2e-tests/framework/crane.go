@@ -50,6 +50,28 @@ func (c CraneRunner) Transform(exportDir, transformDir string) error {
 	return nil
 }
 
+// TransformStage runs crane transform with a specific stage.
+func (c CraneRunner) TransformStage(exportDir, transformDir, stage string) error {
+	if stage == "" {
+		return fmt.Errorf("crane transform --stage requires a non-empty stage")
+	}
+	args := []string{
+		"transform",
+		"--export-dir", exportDir,
+		"--transform-dir", transformDir,
+		"--stage", stage,
+	}
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane transform --stage", out)
+	if err != nil {
+		return fmt.Errorf("crane transform --stage %q failed: %v, output: %s", stage, err, string(out))
+	}
+	return nil
+}
+
 // Apply runs crane apply to render manifests into the output directory.
 func (c CraneRunner) Apply(exportDir, transformDir string, outputDir string) error {
 	args := []string{"apply", "--export-dir", exportDir, "--transform-dir", transformDir, "--output-dir", outputDir}
