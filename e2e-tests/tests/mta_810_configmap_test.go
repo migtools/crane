@@ -13,7 +13,7 @@ import (
 )
 
 var _ = Describe("ConfigMap Migration", func() {
-	It("[MTC-291] Should migrate a configmap with data intact as nonadmin user", Label("tier0"), func() {
+	It("[MTA-810] Should migrate a configmap with data intact as nonadmin user", Label("tier0"), func() {
 		appName := "configmap"
 		namespace := appName
 		scenario := NewMigrationScenario(
