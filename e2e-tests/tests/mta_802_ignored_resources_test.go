@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Default Ignored resources", func() {
-	It("[MTC-127] should be ignored", Label("tier0"), func() {
+	It("[MTA-802] should be ignored", Label("tier0"), func() {
 		appName := "empty-namespace"
 		namespace := appName
 		scenario := NewMigrationScenario(

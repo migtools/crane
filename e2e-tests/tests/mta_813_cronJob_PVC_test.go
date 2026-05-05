@@ -11,10 +11,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("[BUG #330][MTC-294] CronJob with attached PVC migration as non-admin user", func() {
-	It("[BUG #330][MTC-294] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "tier0"), func() {
+var _ = Describe("CronJob with attached PVC migration as non-admin user", func() {
+	It("[BUG #330][MTA-813] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "tier0"), func() {
 		appName := "cronjob"
-		namespace := "mtc-294-ns"
+		namespace := "mta-813-ns"
 		expectedLogSubstring := fmt.Sprintf("Hello! from namespace %s", namespace)
 
 		scenario := NewMigrationScenario(
