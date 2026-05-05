@@ -11,7 +11,7 @@ import (
 )
 
 var _ = Describe("Sets resources migration", func() {
-	It("[MTC-196] Should migrate ReplicaSet, DaemonSet and StatefulSet as namespace-admin", Label("tier0"), func() {
+	It("[MTA-805] Should migrate ReplicaSet, DaemonSet and StatefulSet as namespace-admin", Label("tier0"), func() {
 		appName := "sets"
 		namespace := "sets"
 		daemonSetAppName := "hello-daemonset"
