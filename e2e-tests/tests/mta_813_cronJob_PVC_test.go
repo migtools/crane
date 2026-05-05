@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("[BUG #330][MTA-813] CronJob with attached PVC migration as non-admin user", func() {
+var _ = Describe("CronJob with attached PVC migration as non-admin user", func() {
 	It("[BUG #330][MTA-813] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "tier0"), func() {
 		appName := "cronjob"
 		namespace := "mta-813-ns"
