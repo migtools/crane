@@ -7,29 +7,25 @@ import (
 
 func TestParseAPIResourcesJSON_Valid(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
+	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": [
+  "apiResourceLists": [
     {
-      "name": "deployments",
-      "namespaced": true,
-      "group": "apps",
-      "version": "v1",
-      "kind": "Deployment"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "apps/v1",
+      "resources": [
+        {"name": "deployments", "namespaced": true, "kind": "Deployment", "verbs": ["get","list"]}
+      ]
     },
     {
-      "name": "services",
-      "namespaced": true,
-      "version": "v1",
-      "kind": "Service"
-    },
-    {
-      "name": "namespaces",
-      "namespaced": false,
-      "version": "v1",
-      "kind": "Namespace"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "v1",
+      "resources": [
+        {"name": "services", "namespaced": true, "kind": "Service", "verbs": ["get","list"]},
+        {"name": "namespaces", "namespaced": false, "kind": "Namespace", "verbs": ["get","list"]}
+      ]
     }
   ]
 }`)
@@ -39,14 +35,12 @@ func TestParseAPIResourcesJSON_Valid(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// apps/v1 should have Deployment
 	if kinds, ok := index["apps/v1"]; !ok {
 		t.Fatal("expected apps/v1 in index")
 	} else if _, ok := kinds["Deployment"]; !ok {
 		t.Fatal("expected Deployment in apps/v1")
 	}
 
-	// v1 should have Service and Namespace
 	if kinds, ok := index["v1"]; !ok {
 		t.Fatal("expected v1 in index")
 	} else {
@@ -61,16 +55,16 @@ func TestParseAPIResourcesJSON_Valid(t *testing.T) {
 
 func TestParseAPIResourcesJSON_CoreResources(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
+	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": [
+  "apiResourceLists": [
     {
-      "name": "pods",
-      "namespaced": true,
-      "version": "v1",
-      "kind": "Pod"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "v1",
+      "resources": [
+        {"name": "pods", "namespaced": true, "kind": "Pod", "verbs": ["get","list"]}
+      ]
     }
   ]
 }`)
@@ -80,7 +74,6 @@ func TestParseAPIResourcesJSON_CoreResources(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Core resources have no group, so groupVersion = "v1"
 	if _, ok := index["v1"]["Pod"]; !ok {
 		t.Fatal("expected Pod under groupVersion v1 (core resource)")
 	}
@@ -88,17 +81,16 @@ func TestParseAPIResourcesJSON_CoreResources(t *testing.T) {
 
 func TestParseAPIResourcesJSON_NonCoreResources(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
+	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": [
+  "apiResourceLists": [
     {
-      "name": "routes",
-      "namespaced": true,
-      "group": "route.openshift.io",
-      "version": "v1",
-      "kind": "Route"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "route.openshift.io/v1",
+      "resources": [
+        {"name": "routes", "namespaced": true, "kind": "Route", "verbs": ["get","list"]}
+      ]
     }
   ]
 }`)
@@ -115,17 +107,16 @@ func TestParseAPIResourcesJSON_NonCoreResources(t *testing.T) {
 
 func TestParseAPIResourcesJSON_ResourcePlural(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
+	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": [
+  "apiResourceLists": [
     {
-      "name": "deployments",
-      "namespaced": true,
-      "group": "apps",
-      "version": "v1",
-      "kind": "Deployment"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "apps/v1",
+      "resources": [
+        {"name": "deployments", "namespaced": true, "kind": "Deployment", "verbs": ["get","list"]}
+      ]
     }
   ]
 }`)
@@ -146,22 +137,18 @@ func TestParseAPIResourcesJSON_ResourcePlural(t *testing.T) {
 
 func TestParseAPIResourcesJSON_EmptyResources(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
-	writeFile(t, path, `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": []
-}`)
+	path := filepath.Join(dir, "api-surface.json")
+	writeFile(t, path, `{"apiResourceLists": []}`)
 
 	_, err := ParseAPIResourcesJSON(path)
 	if err == nil {
-		t.Fatal("expected error for empty resources, got nil")
+		t.Fatal("expected error for empty api resource lists, got nil")
 	}
 }
 
 func TestParseAPIResourcesJSON_MalformedJSON(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
+	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{not valid json`)
 
 	_, err := ParseAPIResourcesJSON(path)
@@ -179,24 +166,24 @@ func TestParseAPIResourcesJSON_FileNotFound(t *testing.T) {
 
 func TestParseAPIResourcesJSON_DuplicateKindAcrossGroups(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
-	// Event exists in both v1 and events.k8s.io/v1
+	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": [
+  "apiResourceLists": [
     {
-      "name": "events",
-      "namespaced": true,
-      "version": "v1",
-      "kind": "Event"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "v1",
+      "resources": [
+        {"name": "events", "namespaced": true, "kind": "Event", "verbs": ["get","list"]}
+      ]
     },
     {
-      "name": "events",
-      "namespaced": true,
-      "group": "events.k8s.io",
-      "version": "v1",
-      "kind": "Event"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "events.k8s.io/v1",
+      "resources": [
+        {"name": "events", "namespaced": true, "kind": "Event", "verbs": ["get","list"]}
+      ]
     }
   ]
 }`)
@@ -216,22 +203,17 @@ func TestParseAPIResourcesJSON_DuplicateKindAcrossGroups(t *testing.T) {
 
 func TestParseAPIResourcesJSON_VerifyNamespaced(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "api-resources.json")
+	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": [
+  "apiResourceLists": [
     {
-      "name": "namespaces",
-      "namespaced": false,
-      "version": "v1",
-      "kind": "Namespace"
-    },
-    {
-      "name": "pods",
-      "namespaced": true,
-      "version": "v1",
-      "kind": "Pod"
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "v1",
+      "resources": [
+        {"name": "namespaces", "namespaced": false, "kind": "Namespace", "verbs": ["get","list"]},
+        {"name": "pods", "namespaced": true, "kind": "Pod", "verbs": ["get","list"]}
+      ]
     }
   ]
 }`)
@@ -249,3 +231,33 @@ func TestParseAPIResourcesJSON_VerifyNamespaced(t *testing.T) {
 	}
 }
 
+func TestParseAPIResourcesJSON_SubresourcesFiltered(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "api-surface.json")
+	writeFile(t, path, `{
+  "apiResourceLists": [
+    {
+      "kind": "APIResourceList",
+      "apiVersion": "v1",
+      "groupVersion": "apps/v1",
+      "resources": [
+        {"name": "deployments", "namespaced": true, "kind": "Deployment", "verbs": ["get","list"]},
+        {"name": "deployments/status", "namespaced": true, "kind": "Deployment", "verbs": ["get","patch"]},
+        {"name": "deployments/scale", "namespaced": true, "kind": "Scale", "verbs": ["get","patch"]}
+      ]
+    }
+  ]
+}`)
+
+	index, err := ParseAPIResourcesJSON(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := index["apps/v1"]["Deployment"]; !ok {
+		t.Fatal("expected Deployment in apps/v1")
+	}
+	if len(index["apps/v1"]) != 1 {
+		t.Fatalf("expected 1 resource in apps/v1 (subresources filtered), got %d", len(index["apps/v1"]))
+	}
+}

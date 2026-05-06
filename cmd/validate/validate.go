@@ -162,9 +162,10 @@ GVK matching).
 
 Pipeline: export → transform → apply → validate
 
-Use --api-resources to validate offline against the JSON output of
-'kubectl api-resources -o json' when the target cluster is not directly
-reachable. Otherwise, supply kubeconfig/context flags for live validation.
+Use --api-resources to validate offline against a captured API surface
+JSON file (produced by scripts/capture-api-surface.sh) when the target
+cluster is not directly reachable. Otherwise, supply kubeconfig/context
+flags for live validation.
 
 Incompatible resources are written to a failures/ directory under
 the validate-dir for auditability.
@@ -195,7 +196,7 @@ failed (or another error occurred).`,
 	cmd.Flags().StringVarP(&o.inputDir, "input-dir", "i", "output", "The path to the apply output directory containing final manifests")
 	cmd.Flags().StringVar(&o.validateDir, "validate-dir", "validate", "The path where validation results and failures are saved")
 	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "json", "Report file format: json or yaml")
-	cmd.Flags().StringVar(&o.apiResourcesFile, "api-resources", "", "Path to kubectl api-resources -o json output for offline validation (mutually exclusive with --context/--kubeconfig)")
+	cmd.Flags().StringVar(&o.apiResourcesFile, "api-resources", "", "Path to API surface JSON file from capture-api-surface.sh for offline validation (mutually exclusive with --context/--kubeconfig)")
 	o.configFlags.AddFlags(cmd.Flags())
 
 	return cmd
