@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -45,6 +46,9 @@ func ParseAPIResourcesJSON(path string) (DiscoveryIndex, error) {
 
 	index := DiscoveryIndex{}
 	for _, res := range resourceList.Resources {
+		if strings.Contains(res.Name, "/") {
+			continue
+		}
 		gv := res.Version
 		if res.Group != "" {
 			gv = res.Group + "/" + res.Version

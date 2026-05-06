@@ -1,7 +1,6 @@
 package validate
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 )
@@ -250,20 +249,3 @@ func TestParseAPIResourcesJSON_VerifyNamespaced(t *testing.T) {
 	}
 }
 
-func writeAPIResourcesFile(t *testing.T, dir string) string {
-	t.Helper()
-	path := filepath.Join(dir, "api-resources.json")
-	content := `{
-  "kind": "APIResourceList",
-  "apiVersion": "v1",
-  "resources": [
-    {"name": "deployments", "namespaced": true, "group": "apps", "version": "v1", "kind": "Deployment"},
-    {"name": "services", "namespaced": true, "version": "v1", "kind": "Service"},
-    {"name": "configmaps", "namespaced": true, "version": "v1", "kind": "ConfigMap"}
-  ]
-}`
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
