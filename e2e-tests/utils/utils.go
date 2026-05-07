@@ -400,6 +400,115 @@ func compareYAMLFileBytes(relPath string, golden, got []byte) error {
 	return nil
 }
 
+// AssertNoKindsInOutput walks root and returns an error if any YAML manifest
+// has a kind in deniedKinds, or if any file path contains a denied kind as a substring.
+func AssertNoKindsInOutput(root string, deniedKinds []string) error {
+	denySet := make(map[string]struct{}, len(deniedKinds))
+	for _, k := range deniedKinds {
+		denySet[k] = struct{}{}
+	}
+
+	files, err := ListFilesRecursivelyAsList(root)
+	if err != nil {
+		return err
+	}
+
+	for _, rel := range files {
+		for _, kind := range deniedKinds {
+			if strings.Contains(rel, kind) {
+				return fmt.Errorf("output path %q contains forbidden kind substring %q", rel, kind)
+			}
+		}
+
+		absPath := filepath.Join(root, rel)
+		if !LooksLikeYAMLFile(absPath) {
+			continue
+		}
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			return err
+		}
+		if len(strings.TrimSpace(string(data))) == 0 {
+			continue
+		}
+		dec := yaml.NewDecoder(strings.NewReader(string(data)))
+		for {
+			var doc map[string]interface{}
+			err := dec.Decode(&doc)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return fmt.Errorf("%s: parse yaml: %w", rel, err)
+			}
+			if doc == nil {
+				continue
+			}
+			kindVal, _ := doc["kind"].(string)
+			if kindVal == "" {
+				continue
+			}
+			if _, bad := denySet[kindVal]; bad {
+				return fmt.Errorf("%s: document kind %q must not appear in output", rel, kindVal)
+			}
+		}
+	}
+	return nil
+}
+
+// AssertKindsInOutput walks root and returns an error if any of requiredKinds
+// is not found as the kind field in at least one YAML manifest.
+func AssertKindsInOutput(root string, requiredKinds []string) error {
+	found := make(map[string]bool)
+
+	files, err := ListFilesRecursivelyAsList(root)
+	if err != nil {
+		return err
+	}
+
+	for _, rel := range files {
+		absPath := filepath.Join(root, rel)
+		if !LooksLikeYAMLFile(absPath) {
+			continue
+		}
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			return err
+		}
+		if len(strings.TrimSpace(string(data))) == 0 {
+			continue
+		}
+		dec := yaml.NewDecoder(strings.NewReader(string(data)))
+		for {
+			var doc map[string]interface{}
+			err := dec.Decode(&doc)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return fmt.Errorf("%s: parse yaml: %w", rel, err)
+			}
+			if doc == nil {
+				continue
+			}
+			if kindVal, _ := doc["kind"].(string); kindVal != "" {
+				found[kindVal] = true
+			}
+		}
+	}
+
+	var missing []string
+	for _, k := range requiredKinds {
+		if !found[k] {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("required kinds missing from output: %v", missing)
+	}
+	return nil
+}
+
 // LooksLikeYAMLFile returns true for paths that look like YAML (by extension or no extension, e.g. output fragments).
 func LooksLikeYAMLFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
