@@ -64,6 +64,16 @@ func TestParseAndValidateArgs(t *testing.T) {
 			expected: []string{"--enable-helm", "--load-restrictor=LoadRestrictionsNone", "--env", "FOO=bar"},
 		},
 		{
+			name:     "load-restrictor space-separated",
+			input:    "--load-restrictor LoadRestrictionsNone",
+			expected: []string{"--load-restrictor", "LoadRestrictionsNone"},
+		},
+		{
+			name:     "helm-command space-separated",
+			input:    "--helm-command /usr/local/bin/helm",
+			expected: []string{"--helm-command", "/usr/local/bin/helm"},
+		},
+		{
 			name:        "disallowed flag",
 			input:       "--some-random-flag",
 			expectError: true,

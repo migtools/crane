@@ -35,6 +35,14 @@ func ParseAndValidateArgs(argsString string) ([]string, error) {
 	// Supports simple quoted strings for values with spaces
 	args := splitArgs(argsString)
 
+	// Flags that can take a value as a separate argument (space-separated)
+	valueTakingFlags := map[string]bool{
+		"--env":             true,
+		"-e":                true,
+		"--helm-command":    true,
+		"--load-restrictor": true,
+	}
+
 	// Validate each argument
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -51,9 +59,9 @@ func ParseAndValidateArgs(argsString string) ([]string, error) {
 			return nil, fmt.Errorf("kustomize argument %q is not allowed (security restriction)", argName)
 		}
 
-		// For --env or -e, value follows as next argument or after =
-		if argName == "--env" || argName == "-e" {
-			// If --env is standalone, next arg is the value
+		// For value-taking flags, skip the next argument if it's space-separated
+		if valueTakingFlags[argName] {
+			// If flag is standalone (no =), next arg is the value
 			if !strings.Contains(arg, "=") && i+1 < len(args) {
 				i++ // skip next argument (it's the value)
 			}
