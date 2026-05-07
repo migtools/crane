@@ -1,0 +1,27 @@
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: olm-whiteout-og
+spec:
+  targetNamespaces: []
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: olm-whiteout-catalog
+spec:
+  sourceType: grpc
+  image: quay.io/operatorhubio/catalog:latest
+  displayName: Community Operators
+  publisher: OperatorHub.io
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: olm-whiteout-subscription
+spec:
+  channel: stable
+  installPlanApproval: Automatic
+  name: cert-manager
+  source: olm-whiteout-catalog
+  sourceNamespace: __NAMESPACE__
