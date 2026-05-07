@@ -7,6 +7,7 @@ import (
 
 	"github.com/konveyor/crane/internal/apply"
 	"github.com/konveyor/crane/internal/flags"
+	"github.com/konveyor/crane/internal/kustomize"
 	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -31,6 +32,8 @@ type Flags struct {
 	OutputDir    string `mapstructure:"output-dir"`
 	// Multi-stage flag
 	Stage string `mapstructure:"stage"`
+	// Kustomize arguments
+	KustomizeArgs string `mapstructure:"kustomize-args"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -92,6 +95,9 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 
 	// Multi-stage flag
 	cmd.Flags().StringVar(&o.Stage, "stage", "", "Apply a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are applied.")
+
+	// Kustomize arguments
+	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments to pass to kubectl kustomize (e.g., '--enable-helm --load-restrictor=LoadRestrictionsNone')")
 }
 
 func (o *Options) run() error {
@@ -118,11 +124,18 @@ func (o *Options) run() error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
+	// Parse and validate kustomize arguments
+	kustomizeArgs, err := kustomize.ParseAndValidateArgs(o.KustomizeArgs)
+	if err != nil {
+		return fmt.Errorf("invalid kustomize-args: %w", err)
+	}
+
 	// Create applier
 	applier := &apply.KustomizeApplier{
-		Log:          log.WithField("command", "apply").Logger,
-		TransformDir: transformDir,
-		OutputDir:    outputDir,
+		Log:           log.WithField("command", "apply").Logger,
+		TransformDir:  transformDir,
+		OutputDir:     outputDir,
+		KustomizeArgs: kustomizeArgs,
 	}
 
 	// Determine which stages to apply

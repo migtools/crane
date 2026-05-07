@@ -11,6 +11,7 @@ import (
 	"github.com/konveyor/crane/cmd/transform/optionals"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/flags"
+	"github.com/konveyor/crane/internal/kustomize"
 	"github.com/konveyor/crane/internal/plugin"
 	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/sirupsen/logrus"
@@ -41,6 +42,8 @@ type Flags struct {
 	// Multi-stage flag
 	Stage string `mapstructure:"stage"`
 	Force bool   `mapstructure:"force"`
+	// Kustomize arguments
+	KustomizeArgs string `mapstructure:"kustomize-args"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -102,6 +105,9 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are run.")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
 
+	// Kustomize arguments
+	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments to pass to kubectl kustomize (e.g., '--enable-helm --load-restrictor=LoadRestrictionsNone')")
+
 	// These flags pass down to subcommands
 	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", defaultPluginDir, "The path where binary plugins are located")
 	cmd.PersistentFlags().StringSliceVarP(&o.SkipPlugins, "skip-plugins", "s", nil, "A comma-separated list of plugins to skip")
@@ -136,6 +142,12 @@ func (o *Options) run() error {
 		optionalFlags = optionalFlagsToLower(optionalFlags)
 	}
 
+	// Parse and validate kustomize arguments
+	kustomizeArgs, err := kustomize.ParseAndValidateArgs(o.KustomizeArgs)
+	if err != nil {
+		return fmt.Errorf("invalid kustomize-args: %w", err)
+	}
+
 	// Create orchestrator
 	orchestrator := &internalTransform.Orchestrator{
 		Log:                log.WithField("command", "transform").Logger,
@@ -147,6 +159,7 @@ func (o *Options) run() error {
 		Force:              o.Force,
 		CraneVersion:       "v1.0.0", // TODO: Get from build version
 		NewlyCreatedStages: make(map[string]bool),
+		KustomizeArgs:      kustomizeArgs,
 	}
 
 	// Determine which stages to run
