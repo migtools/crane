@@ -28,6 +28,12 @@ func FormatTable(w io.Writer, report *ValidationReport) {
 	table.SetTablePadding("  ")
 	table.SetNoWhiteSpace(true)
 
+	if report.Mode == "offline" {
+		fmt.Fprintf(w, "Mode: offline (api-resources: %s)\n\n", report.APIResourcesSource)
+	} else if report.Mode == "live" {
+		fmt.Fprintf(w, "Mode: live (context: %s)\n\n", report.ClusterContext)
+	}
+
 	for _, r := range report.Results {
 		table.Append([]string{
 			r.APIVersion,
