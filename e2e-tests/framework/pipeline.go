@@ -46,28 +46,6 @@ func RunCranePipelineWithChecks(runner CraneRunner, namespace string, paths Scen
 	return nil
 }
 
-func RunCranePipelineWithCustomStage(runner CraneRunner, namespace string, paths ScenarioPaths, stage string) error {
-	if err := runner.Export(namespace, paths.ExportDir); err != nil {
-		return err
-	}
-	if err := runner.TransformStage(paths.ExportDir, paths.TransformDir, stage); err != nil {
-		return err
-	}
-	if err := runner.Apply(paths.ExportDir, paths.TransformDir, paths.OutputDir); err != nil {
-		return err
-	}
-	if err := checkAndLogStageFiles("export", paths.ExportDir); err != nil {
-		return err
-	}
-	if err := checkAndLogStageFiles("transform", paths.TransformDir); err != nil {
-		return err
-	}
-	if err := checkAndLogStageFiles("output", paths.OutputDir); err != nil {
-		return err
-	}
-	return nil
-}
-
 // PrepareSourceApp deploys, validates, and scales down the source application.
 func PrepareSourceApp(srcApp K8sDeployApp, kubectlSrc KubectlRunner) error {
 	if err := srcApp.Deploy(); err != nil {
