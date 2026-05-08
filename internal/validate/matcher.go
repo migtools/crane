@@ -10,6 +10,10 @@ import (
 	"k8s.io/client-go/discovery"
 )
 
+// DiscoveryIndex is a two-level lookup: groupVersion -> kind -> discoveryEntry.
+// Both live-cluster discovery and offline api-resources parsing produce this type.
+type DiscoveryIndex map[string]map[string]discoveryEntry
+
 // MatchOptions configures the target-cluster discovery used by MatchResults.
 type MatchOptions struct {
 	DiscoveryClient discovery.DiscoveryInterface
@@ -23,7 +27,13 @@ func MatchResults(entries []ManifestEntry, opts MatchOptions, log logrus.FieldLo
 	if err != nil {
 		return nil, err
 	}
+	return MatchResultsFromIndex(entries, index), nil
+}
 
+// MatchResultsFromIndex compares each ManifestEntry against a pre-built
+// DiscoveryIndex and returns a validation report. Use this when the index
+// is built from an offline source (e.g. kubectl api-resources JSON output).
+func MatchResultsFromIndex(entries []ManifestEntry, index DiscoveryIndex) *ValidationReport {
 	kindIndex := buildKindIndex(index)
 
 	results := make([]ValidationResult, 0, len(entries))
@@ -49,7 +59,7 @@ func MatchResults(entries []ManifestEntry, opts MatchOptions, log logrus.FieldLo
 		TotalScanned: len(results),
 		Compatible:   compatible,
 		Incompatible: incompatible,
-	}, nil
+	}
 }
 
 // discoveryEntry stores one APIResource with its group/version context.
@@ -59,7 +69,7 @@ type discoveryEntry struct {
 
 // buildDiscoveryIndex fetches all served group-versions from the target cluster
 // and builds a two-level lookup: groupVersion -> kind -> discoveryEntry.
-func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLogger) (map[string]map[string]discoveryEntry, error) {
+func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLogger) (DiscoveryIndex, error) {
 	_, lists, err := client.ServerGroupsAndResources()
 	if err != nil {
 		if discovery.IsGroupDiscoveryFailedError(err) {
@@ -72,7 +82,7 @@ func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLo
 		}
 	}
 
-	index := map[string]map[string]discoveryEntry{}
+	index := DiscoveryIndex{}
 	for _, list := range lists {
 		gv := list.GroupVersion
 		if _, ok := index[gv]; !ok {
@@ -89,7 +99,7 @@ func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLo
 }
 
 // matchEntry checks a single ManifestEntry against the discovery index.
-func matchEntry(entry ManifestEntry, index map[string]map[string]discoveryEntry) ValidationResult {
+func matchEntry(entry ManifestEntry, index DiscoveryIndex) ValidationResult {
 	result := ValidationResult{
 		APIVersion: entry.APIVersion,
 		Kind:       entry.Kind,
@@ -118,7 +128,7 @@ func matchEntry(entry ManifestEntry, index map[string]map[string]discoveryEntry)
 
 // buildKindIndex creates a reverse lookup: kind -> list of groupVersion strings
 // that serve it. Used to suggest alternatives for incompatible resources.
-func buildKindIndex(index map[string]map[string]discoveryEntry) map[string][]string {
+func buildKindIndex(index DiscoveryIndex) map[string][]string {
 	kindIdx := map[string][]string{}
 	for gv, kinds := range index {
 		for kind := range kinds {
