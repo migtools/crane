@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -114,6 +115,21 @@ var _ = Describe("Custom transformation stage", func() {
 namespace: migrated-app
 commonLabels:
   migrated-with: crane
+patches:
+- target:
+    kind: Deployment
+    name: simple-nginx-nopv-deployment
+  patch: |-
+    - op: add
+      path: /metadata/labels/app
+      value: simple-nginx-nopv
+- target:
+    kind: Service
+    name: my-simple-nginx-nopv
+  patch: |-
+    - op: add
+      path: /metadata/labels/name
+      value: simple-nginx-nopv
 images:
 - name: quay.io/migqe/nginx-unprivileged
   newName: quay.io/migqe/nginx-unprivileged-crane
@@ -148,6 +164,75 @@ images:
 		By("Scale target deployment and validate app in migrated namespace")
 		log.Printf("Scaling target deployment(s) with label app=%s to 1 in namespace %s\n", appName, targetNamespace)
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(targetNamespace, appName, 1)).NotTo(HaveOccurred())
+
+		By("Verify deployment and service labels, namespace, and migrated image on target")
+		expectedImage := "quay.io/migqe/nginx-unprivileged-crane:latest"
+		Eventually(func() error {
+			out, err := kubectlTgtNonAdmin.Run(
+				"get", "deployment",
+				"-n", targetNamespace,
+				"-l", "app="+appName,
+				"-o", `jsonpath={range .items[*]}{.metadata.name}{"|"}{.metadata.namespace}{"|"}{.metadata.labels['migrated-with']}{"|"}{.metadata.labels['app']}{"|"}{.spec.template.spec.containers[0].image}{"\n"}{end}`,
+			)
+			if err != nil {
+				return err
+			}
+			out = strings.TrimSpace(StripKubectlWarnings(out))
+			if out == "" {
+				return fmt.Errorf("no deployment found in namespace %q with label app=%s", targetNamespace, appName)
+			}
+			for _, line := range strings.Split(out, "\n") {
+				parts := strings.Split(line, "|")
+				if len(parts) != 5 {
+					return fmt.Errorf("unexpected deployment jsonpath output: %q", line)
+				}
+				if parts[1] != targetNamespace {
+					return fmt.Errorf("deployment %q is in namespace %q, expected %q", parts[0], parts[1], targetNamespace)
+				}
+				if parts[2] != "crane" {
+					return fmt.Errorf("deployment %q label migrated-with=%q, expected crane", parts[0], parts[2])
+				}
+				if parts[3] != appName {
+					return fmt.Errorf("deployment %q label app=%q, expected %q", parts[0], parts[3], appName)
+				}
+				if parts[4] != expectedImage {
+					return fmt.Errorf("deployment %q image=%q, expected %q", parts[0], parts[4], expectedImage)
+				}
+			}
+			return nil
+		}, "2m", "10s").Should(Succeed())
+
+		Eventually(func() error {
+			out, err := kubectlTgtNonAdmin.Run(
+				"get", "service",
+				"-n", targetNamespace,
+				"-l", "app="+appName,
+				"-o", `jsonpath={range .items[*]}{.metadata.name}{"|"}{.metadata.namespace}{"|"}{.metadata.labels['migrated-with']}{"|"}{.metadata.labels['name']}{"\n"}{end}`,
+			)
+			if err != nil {
+				return err
+			}
+			out = strings.TrimSpace(StripKubectlWarnings(out))
+			if out == "" {
+				return fmt.Errorf("no service found in namespace %q with label app=%s", targetNamespace, appName)
+			}
+			for _, line := range strings.Split(out, "\n") {
+				parts := strings.Split(line, "|")
+				if len(parts) != 4 {
+					return fmt.Errorf("unexpected service jsonpath output: %q", line)
+				}
+				if parts[1] != targetNamespace {
+					return fmt.Errorf("service %q is in namespace %q, expected %q", parts[0], parts[1], targetNamespace)
+				}
+				if parts[2] != "crane" {
+					return fmt.Errorf("service %q label migrated-with=%q, expected crane", parts[0], parts[2])
+				}
+				if parts[3] != appName {
+					return fmt.Errorf("service %q label name=%q, expected %q", parts[0], parts[3], appName)
+				}
+			}
+			return nil
+		}, "2m", "10s").Should(Succeed())
 
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
 		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
