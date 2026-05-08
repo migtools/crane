@@ -116,8 +116,8 @@ commonLabels:
   migrated-with: crane
 images:
 - name: quay.io/migqe/nginx-unprivileged
-  newName: quay.io/migqe/nginx-unprivileged
-  newTag: 1.23-amd64
+  newName: quay.io/migqe/nginx-unprivileged-crane
+  newTag: latest
 `
 
 		updatedKustomization := strings.TrimSpace(string(baseKustomizationBytes)) + "\n" + strings.TrimSpace(customPatch) + "\n"
@@ -139,7 +139,7 @@ images:
 		outputStr := string(outputBytes)
 		Expect(outputStr).To(ContainSubstring("namespace: migrated-app"))
 		Expect(outputStr).To(ContainSubstring("migrated-with: crane"))
-		Expect(outputStr).To(ContainSubstring("quay.io/migqe/nginx-unprivileged:1.23-amd64"))
+		Expect(outputStr).To(ContainSubstring("quay.io/migqe/nginx-unprivileged-crane:latest"))
 
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", targetNamespace, paths.OutputDir)
