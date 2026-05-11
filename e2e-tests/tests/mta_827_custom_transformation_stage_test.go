@@ -15,7 +15,7 @@ import (
 )
 
 var _ = Describe("Custom transformation stage", func() {
-	It("[Custom transformation stage] nginx app quiesce pod and apply to target cluster", Label("tier0"), func() {
+	It("[MTA-827] should migrate a simple nginx app with a custom transformation stage", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName
@@ -127,7 +127,10 @@ var _ = Describe("Custom transformation stage", func() {
 				for key, value := range labels {
 					keyStr, keyOk := key.(string)
 					if !keyOk {
-						continue
+						Fail(fmt.Sprintf(
+							"invalid commonLabels key in %s: expected string key, got value=%#v type=%T (field=commonLabels)",
+							kustomizationPath, key, key,
+						))
 					}
 					commonLabels[keyStr] = value
 				}
