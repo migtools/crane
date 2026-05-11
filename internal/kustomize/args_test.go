@@ -2,6 +2,7 @@ package kustomize
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -126,7 +127,7 @@ func TestParseAndValidateArgs(t *testing.T) {
 					t.Errorf("expected error but got none")
 					return
 				}
-				if tt.errorMsg != "" && !contains(err.Error(), tt.errorMsg) {
+				if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
 					t.Errorf("expected error containing %q, got %q", tt.errorMsg, err.Error())
 				}
 				return
@@ -201,18 +202,4 @@ func TestSplitArgs(t *testing.T) {
 			}
 		})
 	}
-}
-
-// helper function to check if string contains substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || (len(s) > 0 && len(substr) > 0 && stringContains(s, substr)))
-}
-
-func stringContains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
