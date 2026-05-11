@@ -46,6 +46,26 @@ func crdUnstructured(name string) *unstructured.Unstructured {
 	return u
 }
 
+func crdWithLabels(name string, labels map[string]string) *unstructured.Unstructured {
+	u := crdUnstructured(name)
+	u.SetLabels(labels)
+	return u
+}
+
+func crdWithAnnotations(name string, annotations map[string]string) *unstructured.Unstructured {
+	u := crdUnstructured(name)
+	u.SetAnnotations(annotations)
+	return u
+}
+
+func crdWithOwnerRef(name, ownerKind, ownerName string) *unstructured.Unstructured {
+	u := crdUnstructured(name)
+	u.SetOwnerReferences([]metav1.OwnerReference{
+		{Kind: ownerKind, Name: ownerName, APIVersion: "v1"},
+	})
+	return u
+}
+
 func widgetGroupResource() *groupResource {
 	return &groupResource{
 		APIGroup:        "example.com",
@@ -231,5 +251,110 @@ func TestCollectRelatedCRDs_IncludeOverridesBuiltinGroup(t *testing.T) {
 	}
 	if got[0].objects.Items[0].GetName() != "routes.route.openshift.io" {
 		t.Fatalf("unexpected CRD object: %s", got[0].objects.Items[0].GetName())
+	}
+}
+
+func TestCollectRelatedCRDs_skipsOLMManagedCRD(t *testing.T) {
+	scheme := runtime.NewScheme()
+	crd := crdWithLabels("widgets.example.com", map[string]string{"olm.managed": "true"})
+	client := fake.NewSimpleDynamicClient(scheme, crd)
+	log := testLogger()
+
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected OLM-managed CRD to be skipped, got %d", len(got))
+	}
+}
+
+func TestCollectRelatedCRDs_skipsManagedByLabel(t *testing.T) {
+	scheme := runtime.NewScheme()
+	crd := crdWithLabels("widgets.example.com", map[string]string{"app.kubernetes.io/managed-by": "Helm"})
+	client := fake.NewSimpleDynamicClient(scheme, crd)
+	log := testLogger()
+
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected managed-by CRD to be skipped, got %d", len(got))
+	}
+}
+
+func TestCollectRelatedCRDs_skipsOperatorFrameworkAnnotation(t *testing.T) {
+	scheme := runtime.NewScheme()
+	crd := crdWithAnnotations("widgets.example.com", map[string]string{
+		"operators.operatorframework.io/builder": "operator-sdk-v1.28.0",
+	})
+	client := fake.NewSimpleDynamicClient(scheme, crd)
+	log := testLogger()
+
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected operator-framework CRD to be skipped, got %d", len(got))
+	}
+}
+
+func TestCollectRelatedCRDs_skipsOwnerReferenceCRD(t *testing.T) {
+	scheme := runtime.NewScheme()
+	crd := crdWithOwnerRef("widgets.example.com", "ClusterServiceVersion", "widget-operator.v1.0.0")
+	client := fake.NewSimpleDynamicClient(scheme, crd)
+	log := testLogger()
+
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected owner-referenced CRD to be skipped, got %d", len(got))
+	}
+}
+
+func TestCollectRelatedCRDs_exportsUnmanagedCRD(t *testing.T) {
+	scheme := runtime.NewScheme()
+	crd := crdUnstructured("widgets.example.com")
+	client := fake.NewSimpleDynamicClient(scheme, crd)
+	log := testLogger()
+
+	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected unmanaged CRD to be exported, got %d", len(got))
+	}
+}
+
+func TestGetOperatorManager(t *testing.T) {
+	tests := []struct {
+		name     string
+		obj      *unstructured.Unstructured
+		wantEmpty bool
+	}{
+		{"no labels or annotations", crdUnstructured("test"), true},
+		{"olm.managed label", crdWithLabels("test", map[string]string{"olm.managed": "true"}), false},
+		{"managed-by label", crdWithLabels("test", map[string]string{"app.kubernetes.io/managed-by": "Helm"}), false},
+		{"operator-framework annotation", crdWithAnnotations("test", map[string]string{"operators.operatorframework.io/builder": "sdk"}), false},
+		{"owner reference", crdWithOwnerRef("test", "CSV", "my-operator"), false},
+		{"olm.managed=false", crdWithLabels("test", map[string]string{"olm.managed": "false"}), true},
+		{"unrelated labels", crdWithLabels("test", map[string]string{"app": "myapp"}), true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getOperatorManager(tt.obj)
+			if tt.wantEmpty && got != "" {
+				t.Fatalf("expected empty manager, got %q", got)
+			}
+			if !tt.wantEmpty && got == "" {
+				t.Fatal("expected non-empty manager, got empty")
+			}
+		})
 	}
 }
