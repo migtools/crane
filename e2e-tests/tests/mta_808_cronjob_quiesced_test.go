@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Cronjob Quiesced", func() {
-	It("[MTC-273] Should suspend a cronjob and apply to target cluster and unsuspend it", Label("tier0"), func() {
+	It("[MTA-808] Should suspend a cronjob and apply to target cluster and unsuspend it", Label("tier0"), func() {
 		appName := "cronjob"
 		namespace := "cronjob"
 		expectedHelloLog := fmt.Sprintf("Hello! from namespace %s", namespace)

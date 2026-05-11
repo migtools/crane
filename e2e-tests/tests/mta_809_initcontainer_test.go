@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("InitContainer Migration", func() {
-	It("[MTC-290] Should migrate an app with an init container working correctly as namespace-admin user", Label("tier0"), func() {
+	It("[MTA-809] Should migrate an app with an init container working correctly as namespace-admin user", Label("tier0"), func() {
 		appName := "initcont"
 		namespace := "initcont"
 		scenario := NewMigrationScenario(
