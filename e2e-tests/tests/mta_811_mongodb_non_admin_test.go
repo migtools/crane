@@ -236,27 +236,29 @@ var _ = Describe("MongoDB Migration", func() {
 		log.Printf("Target deployment scaled up")
 
 		By("Wait for target MongoDB pod to be ready")
-		_, err = scenario.KubectlTgt.Run(
-			"wait", "pod",
-			"-n", namespace,
-			"-l", "name=mongodb",
-			"--for=condition=Ready",
-			"--timeout=2m",
-		)
-		Expect(err).NotTo(HaveOccurred())
-		log.Printf("Target MongoDB pod is ready")
+		var tgtPodName string
+		Eventually(func() error {
+			podName, err := GetPodNameByLabel(kubectlTgtNonAdmin, namespace, "name="+appName)
+			if err != nil {
+				return err
+			}
+			tgtPodName = podName
+			out, err := kubectlTgtNonAdmin.Run(
+				"get", "pod", tgtPodName,
+				"-n", namespace,
+				"-o", "jsonpath={.status.containerStatuses[0].ready}",
+			)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(out) != "true" {
+				return fmt.Errorf("pod %s is not ready yet", tgtPodName)
+			}
+			return nil
+		}, "2m", "10s").Should(Succeed())
+		log.Printf("Target MongoDB pod is ready: %s", tgtPodName)
 
 		By("Verify data integrity on destination")
-		tgtPodName, err := kubectlTgtNonAdmin.Run(
-			"get", "pod",
-			"-n", namespace,
-			"-l", "name=mongodb",
-			"-o", "jsonpath={.items[0].metadata.name}",
-		)
-		Expect(err).NotTo(HaveOccurred())
-		tgtPodName = strings.TrimSpace(tgtPodName)
-		log.Printf("Target pod: %s", tgtPodName)
-
 		Eventually(func() (int, error) {
 			return mongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
 		}, "2m", "10s").Should(BeNumerically("==", srcCount),
