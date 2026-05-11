@@ -697,3 +697,140 @@ func shouldDropField(path []string, key string) bool {
 	}
 	return false
 }
+
+// AssertWhiteoutResourceFilesExist walks all stage resource directories under
+// transformDir and verifies that at least one resource file exists for each kind
+// in kinds. Resource filenames follow the convention Kind_group_version_namespace_name.yaml.
+func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error {
+	found := make(map[string]bool)
+
+	err := filepath.Walk(transformDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(transformDir, path)
+		if !strings.Contains(rel, "resources/") {
+			return nil
+		}
+		name := info.Name()
+		for _, kind := range kinds {
+			if strings.HasPrefix(name, kind+"_") || strings.HasPrefix(name, kind+".") {
+				found[kind] = true
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walking transform dir: %w", err)
+	}
+
+	var missing []string
+	for _, kind := range kinds {
+		if !found[kind] {
+			missing = append(missing, kind)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("whiteout resource files missing from transform resources/ for kinds: %v", missing)
+	}
+	return nil
+}
+
+// AssertWhiteoutCommentsInKustomization finds all kustomization.yaml files under
+// transformDir and verifies that at least one contains a whiteout comment header
+// and commented references for each kind in kinds.
+func AssertWhiteoutCommentsInKustomization(transformDir string, kinds []string) error {
+	found := make(map[string]bool)
+	hasHeader := false
+
+	err := filepath.Walk(transformDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || info.Name() != "kustomization.yaml" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		content := string(data)
+		lines := strings.Split(content, "\n")
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "# Whiteout") {
+				hasHeader = true
+			}
+			if strings.HasPrefix(trimmed, "#") {
+				for _, kind := range kinds {
+					if strings.Contains(trimmed, kind+"_") || strings.Contains(trimmed, kind+".") {
+						found[kind] = true
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walking transform dir: %w", err)
+	}
+
+	if !hasHeader {
+		return fmt.Errorf("no kustomization.yaml contains whiteout comment header (expected '# Whiteout ...')")
+	}
+
+	var missing []string
+	for _, kind := range kinds {
+		if !found[kind] {
+			missing = append(missing, kind)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("whiteout comments missing from kustomization.yaml for kinds: %v", missing)
+	}
+	return nil
+}
+
+// AssertKindsNotInActiveKustomizeResources parses all kustomization.yaml files under
+// transformDir and returns an error if any active (non-comment) resource entry
+// references a denied kind.
+func AssertKindsNotInActiveKustomizeResources(transformDir string, deniedKinds []string) error {
+	return filepath.Walk(transformDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || info.Name() != "kustomization.yaml" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		lines := strings.Split(string(data), "\n")
+		inResources := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "resources:" {
+				inResources = true
+				continue
+			}
+			if inResources && trimmed != "" && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "#") {
+				inResources = false
+				continue
+			}
+			if !inResources || strings.HasPrefix(trimmed, "#") || trimmed == "" {
+				continue
+			}
+			for _, kind := range deniedKinds {
+				if strings.Contains(trimmed, kind+"_") || strings.Contains(trimmed, kind+".") {
+					return fmt.Errorf("kustomization.yaml %s has denied kind %q in active resources: %s", path, kind, trimmed)
+				}
+			}
+		}
+		return nil
+	})
+}
