@@ -51,6 +51,36 @@ func crdFailureAPIResourceName(crdName string) string {
 	return "customresourcedefinition-" + strings.ReplaceAll(crdName, "/", "-")
 }
 
+// getOperatorManager checks if a CRD is managed by an operator.
+// Returns the manager name if detected, empty string otherwise.
+func getOperatorManager(obj *unstructured.Unstructured) string {
+	labels := obj.GetLabels()
+	annotations := obj.GetAnnotations()
+
+	if v, ok := labels["olm.managed"]; ok && v == "true" {
+		if name := labels["operators.coreos.com/managed-by"]; name != "" {
+			return "operator " + name + " (OLM)"
+		}
+		return "OLM"
+	}
+
+	if v, ok := labels["app.kubernetes.io/managed-by"]; ok && v != "" {
+		return v
+	}
+
+	for k := range annotations {
+		if strings.HasPrefix(k, "operators.operatorframework.io/") {
+			return "operator-framework"
+		}
+	}
+
+	if refs := obj.GetOwnerReferences(); len(refs) > 0 {
+		return refs[0].Kind + "/" + refs[0].Name
+	}
+
+	return ""
+}
+
 // collectRelatedCRDs returns synthetic groupResource rows for CRDs backing custom
 // API types that appear in resources (deduplicated by plural.group). Built-in API
 // groups are skipped. Failed GETs are returned as groupResourceError entries for
@@ -104,6 +134,12 @@ func collectRelatedCRDs(resources []*groupResource, dynamicClient dynamic.Interf
 			})
 			continue
 		}
+		
+		if manager := getOperatorManager(obj); manager != "" {
+			log.Warnf("Skipping CRD %q — managed by %s; install the operator on the target cluster instead", crdName, manager)
+			continue
+		}
+
 		log.Infof("exported CustomResourceDefinition %q for referenced custom resources", crdName)
 		out = append(out, &groupResource{
 			APIGroup:        crdGVR.Group,
