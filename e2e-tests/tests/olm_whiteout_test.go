@@ -276,7 +276,7 @@ var _ = Describe("OLM whiteout", func() {
 			Expect(utils.AssertNoKindsInOutput(paths.OutputDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
 
 			By("Verify transform stage has whiteout resource files for both Subscriptions")
-			Expect(utils.AssertWhiteoutResourceFilesExist(paths.TransformDir, []string{"Subscription"})).NotTo(HaveOccurred())
+			Expect(utils.AssertWhiteoutResourceFilesExist(paths.TransformDir, []string{"Subscription", "CatalogSource", "OperatorGroup"})).NotTo(HaveOccurred())
 
 			By("Verify no partial whiteout: all OLM kinds excluded from active kustomize resources")
 			Expect(utils.AssertKindsNotInActiveKustomizeResources(paths.TransformDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
