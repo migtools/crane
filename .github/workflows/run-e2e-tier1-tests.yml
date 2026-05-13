@@ -1,0 +1,34 @@
+name: E2E Tier1
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-e2e:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run crane tier1 e2e tests
+        uses: ./.github/actions/run-crane-e2e-tier
+        with:
+          cpus: max
+          memory: "8192"
+          label_filter: tier1
+          create_users: "true"
+          src_user: "dev"
+          tgt_user: "dev"
+
+      - name: Notify Slack on E2E failure (nightly)
+        if: failure() && github.event_name == 'schedule'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: ./.github/actions/slack-incoming-webhook
+        with:
+          text: |
+            :warning: Crane E2E · TIER-1 Nightly Tests Failed (scheduled run)
+            Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
