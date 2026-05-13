@@ -1,4 +1,4 @@
-name: E2E Tier0
+name: Test Tier0
 
 on:
   push:
@@ -7,6 +7,10 @@ on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   run-e2e:
     runs-on: ubuntu-22.04

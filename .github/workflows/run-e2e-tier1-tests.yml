@@ -1,9 +1,15 @@
-name: E2E Tier1
+name: Test Tier1
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: "0 4 * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   run-e2e:
@@ -31,4 +37,15 @@ jobs:
         with:
           text: |
             :warning: Crane E2E · TIER-1 Nightly Tests Failed (scheduled run)
+            Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Notify Slack on E2E failure (push to main)
+        if: failure() && github.event_name == 'push'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: ./.github/actions/slack-incoming-webhook
+        with:
+          text: |
+            :warning: Crane E2E · TIER-1 Tests Failed (push to main)
+            Commit: ${{ github.sha }}
             Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
