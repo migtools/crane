@@ -116,6 +116,48 @@ func TestParseAndValidateArgs(t *testing.T) {
 			expectError: true,
 			errorMsg:    "forbidden characters",
 		},
+		{
+			name:        "env without value",
+			input:       "--env",
+			expectError: true,
+			errorMsg:    "requires a value",
+		},
+		{
+			name:        "env with empty value",
+			input:       "--env=",
+			expectError: true,
+			errorMsg:    "empty value",
+		},
+		{
+			name:        "env followed by another flag",
+			input:       "--env --enable-helm",
+			expectError: true,
+			errorMsg:    "requires a value, got flag",
+		},
+		{
+			name:        "helm-command followed by another flag",
+			input:       "--helm-command --enable-helm",
+			expectError: true,
+			errorMsg:    "requires a value, got flag",
+		},
+		{
+			name:        "load-restrictor followed by another flag",
+			input:       "--load-restrictor --enable-helm",
+			expectError: true,
+			errorMsg:    "requires a value, got flag",
+		},
+		{
+			name:        "load-restrictor without value",
+			input:       "--load-restrictor",
+			expectError: true,
+			errorMsg:    "requires a value",
+		},
+		{
+			name:        "helm-command with empty value",
+			input:       "--helm-command=",
+			expectError: true,
+			errorMsg:    "empty value",
+		},
 	}
 
 	for _, tt := range tests {

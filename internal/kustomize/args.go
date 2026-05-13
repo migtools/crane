@@ -49,9 +49,14 @@ func ParseAndValidateArgs(argsString string) ([]string, error) {
 
 		// Extract argument name (before = or standalone)
 		argName := arg
-		if strings.Contains(arg, "=") {
+		hasValue := strings.Contains(arg, "=")
+		if hasValue {
 			parts := strings.SplitN(arg, "=", 2)
 			argName = parts[0]
+			// Check for empty value after =
+			if len(parts) < 2 || parts[1] == "" {
+				return nil, fmt.Errorf("kustomize argument %q has empty value", argName)
+			}
 		}
 
 		// Check whitelist
@@ -59,10 +64,18 @@ func ParseAndValidateArgs(argsString string) ([]string, error) {
 			return nil, fmt.Errorf("kustomize argument %q is not allowed (security restriction)", argName)
 		}
 
-		// For value-taking flags, skip the next argument if it's space-separated
+		// For value-taking flags, validate and skip the value
 		if valueTakingFlags[argName] {
-			// If flag is standalone (no =), next arg is the value
-			if !strings.Contains(arg, "=") && i+1 < len(args) {
+			if !hasValue {
+				// Flag doesn't have = syntax, so value must be next argument
+				if i+1 >= len(args) {
+					return nil, fmt.Errorf("kustomize argument %q requires a value", argName)
+				}
+				nextArg := args[i+1]
+				// Validate that next argument is not another flag
+				if strings.HasPrefix(nextArg, "-") {
+					return nil, fmt.Errorf("kustomize argument %q requires a value, got flag %q instead", argName, nextArg)
+				}
 				i++ // skip next argument (it's the value)
 			}
 		}
