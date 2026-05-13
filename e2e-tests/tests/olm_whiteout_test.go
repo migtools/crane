@@ -145,7 +145,9 @@ var _ = Describe("OLM whiteout", func() {
 					log.Printf("cleanup: failed to delete namespace: %v", err)
 				}
 				if paths.TempDir != "" {
-					os.RemoveAll(paths.TempDir)
+					if err := os.RemoveAll(paths.TempDir); err != nil {
+						log.Printf("cleanup: failed to remove temp dir %s: %v", paths.TempDir, err)
+					}
 				}
 			})
 
@@ -237,7 +239,9 @@ var _ = Describe("OLM whiteout", func() {
 					log.Printf("cleanup: failed to delete namespace: %v", err)
 				}
 				if paths.TempDir != "" {
-					os.RemoveAll(paths.TempDir)
+					if err := os.RemoveAll(paths.TempDir); err != nil {
+						log.Printf("cleanup: failed to remove temp dir %s: %v", paths.TempDir, err)
+					}
 				}
 			})
 
@@ -250,19 +254,24 @@ var _ = Describe("OLM whiteout", func() {
 			olmSpec = strings.ReplaceAll(olmSpec, "__NAMESPACE__", namespace)
 			Expect(kubectlSrc.ApplyYAMLSpec(olmSpec, namespace)).NotTo(HaveOccurred())
 
-			By("Wait for both operators to produce CSVs")
-			Eventually(func(g Gomega) {
-				out, err := kubectlSrc.Run("get", "csv", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
-				g.Expect(err).NotTo(HaveOccurred())
-				names := strings.Fields(out)
-				g.Expect(len(names)).To(BeNumerically(">=", 2), "expected at least 2 CSVs, got: %v", names)
-			}, "15m", "20s").Should(Succeed())
+			By("Wait for both subscriptions to have currentCSV populated")
+			for _, subName := range []string{"olm-multi-sub-certmgr", "olm-multi-sub-cockroachdb"} {
+				Eventually(func(g Gomega) {
+					out, err := kubectlSrc.Run("get", "subscription", subName, "-n", namespace, "-o", "jsonpath={.status.currentCSV}")
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty(), "subscription %s has no currentCSV yet", subName)
+				}, "15m", "20s").Should(Succeed())
+			}
 
-			By("Wait for InstallPlan to be created (OLM may bundle multiple operators into one)")
+			By("Wait for all InstallPlans to complete")
 			Eventually(func(g Gomega) {
-				out, err := kubectlSrc.Run("get", "installplan", "-n", namespace)
+				out, err := kubectlSrc.Run("get", "installplan", "-n", namespace, "-o", "jsonpath={.items[*].status.phase}")
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(strings.TrimSpace(out)).NotTo(ContainSubstring("No resources found"))
+				phases := strings.Fields(out)
+				g.Expect(phases).NotTo(BeEmpty(), "no InstallPlans found")
+				for _, p := range phases {
+					g.Expect(p).To(Equal("Complete"), "InstallPlan in phase %q", p)
+				}
 			}, "15m", "20s").Should(Succeed())
 
 			runner := scenario.Crane
@@ -275,8 +284,11 @@ var _ = Describe("OLM whiteout", func() {
 			By("Verify no OLM whiteout kinds in output")
 			Expect(utils.AssertNoKindsInOutput(paths.OutputDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
 
-			By("Verify transform stage has whiteout resource files for both Subscriptions")
+			By("Verify transform stage has whiteout resource files for deployed OLM kinds")
 			Expect(utils.AssertWhiteoutResourceFilesExist(paths.TransformDir, []string{"Subscription", "CatalogSource", "OperatorGroup"})).NotTo(HaveOccurred())
+
+			By("Verify both Subscription whiteout files exist (one per operator)")
+			Expect(utils.AssertWhiteoutResourceFileCount(paths.TransformDir, "Subscription", 2)).NotTo(HaveOccurred())
 
 			By("Verify no partial whiteout: all OLM kinds excluded from active kustomize resources")
 			Expect(utils.AssertKindsNotInActiveKustomizeResources(paths.TransformDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
