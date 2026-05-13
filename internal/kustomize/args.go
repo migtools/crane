@@ -33,7 +33,10 @@ func ParseAndValidateArgs(argsString string) ([]string, error) {
 
 	// Split into individual arguments
 	// Supports simple quoted strings for values with spaces
-	args := splitArgs(argsString)
+	args, err := splitArgs(argsString)
+	if err != nil {
+		return nil, err
+	}
 
 	// Flags that can take a value as a separate argument (space-separated)
 	valueTakingFlags := map[string]bool{
@@ -86,7 +89,8 @@ func ParseAndValidateArgs(argsString string) ([]string, error) {
 
 // splitArgs splits argument string into array
 // Supports simple quoted strings
-func splitArgs(s string) []string {
+// Returns error if quotes are unclosed
+func splitArgs(s string) ([]string, error) {
 	var args []string
 	var current strings.Builder
 	inQuote := false
@@ -110,9 +114,14 @@ func splitArgs(s string) []string {
 		}
 	}
 
+	// Check for unclosed quote
+	if inQuote {
+		return nil, fmt.Errorf("unclosed quote in kustomize arguments")
+	}
+
 	if current.Len() > 0 {
 		args = append(args, current.String())
 	}
 
-	return args
+	return args, nil
 }

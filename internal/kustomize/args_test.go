@@ -158,6 +158,18 @@ func TestParseAndValidateArgs(t *testing.T) {
 			expectError: true,
 			errorMsg:    "empty value",
 		},
+		{
+			name:        "unclosed single quote",
+			input:       "--env 'FOO=bar",
+			expectError: true,
+			errorMsg:    "unclosed quote",
+		},
+		{
+			name:        "unclosed double quote",
+			input:       "--env \"FOO=bar",
+			expectError: true,
+			errorMsg:    "unclosed quote",
+		},
 	}
 
 	for _, tt := range tests {
@@ -189,9 +201,10 @@ func TestParseAndValidateArgs(t *testing.T) {
 
 func TestSplitArgs(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected []string
+		name        string
+		input       string
+		expected    []string
+		expectError bool
 	}{
 		{
 			name:     "empty string",
@@ -233,11 +246,33 @@ func TestSplitArgs(t *testing.T) {
 			input:    "--env 'FOO=bar baz'",
 			expected: []string{"--env", "FOO=bar baz"},
 		},
+		{
+			name:        "unclosed single quote",
+			input:       "--flag 'value",
+			expectError: true,
+		},
+		{
+			name:        "unclosed double quote",
+			input:       `--flag "value`,
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := splitArgs(tt.input)
+			result, err := splitArgs(tt.input)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
 
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("expected %v, got %v", tt.expected, result)
