@@ -1,0 +1,112 @@
+name: run-crane-e2e-tier
+description: Setup environment and run Crane E2E tests for a tier label
+
+inputs:
+  label_filter:
+    description: Ginkgo label filter for selecting E2E tests (for example tier0 or tier1)
+    required: true
+  cpus:
+    description: Minikube CPU count, or max
+    required: false
+    default: max
+  memory:
+    description: Minikube memory in MB
+    required: false
+    default: "8192"
+  create_users:
+    description: Create additional cert-based kubeconfig users
+    required: false
+    default: "true"
+  src_user:
+    description: Additional username for src cluster
+    required: false
+    default: dev
+  tgt_user:
+    description: Additional username for tgt cluster
+    required: false
+    default: dev
+  source_context:
+    description: Source cluster context for test execution
+    required: false
+    default: src
+  target_context:
+    description: Target cluster context for test execution
+    required: false
+    default: tgt
+  source_nonadmin_context:
+    description: Source non-admin cluster context for test execution
+    required: false
+    default: src-dev
+  target_nonadmin_context:
+    description: Target non-admin cluster context for test execution
+    required: false
+    default: tgt-dev
+  verbose_logs:
+    description: Pass verbose logs flag to tests
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup minikube clusters
+      uses: ./.github/actions/setup-minikube-clusters
+      with:
+        cpus: ${{ inputs.cpus }}
+        memory: ${{ inputs.memory }}
+        create_users: ${{ inputs.create_users }}
+        src_user: ${{ inputs.src_user }}
+        tgt_user: ${{ inputs.tgt_user }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Clone k8s-apps-deployer
+      shell: bash
+      run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+
+    - name: Create venv and install package
+      shell: bash
+      run: |
+        cd k8s-apps-deployer
+        python3 -m venv venv
+        echo "$PWD/venv/bin" >> "$GITHUB_PATH"
+        ./venv/bin/pip install --upgrade pip
+        ./venv/bin/pip install -e .
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Install Ginkgo CLI
+      shell: bash
+      run: |
+        GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
+        go install "github.com/onsi/ginkgo/v2/ginkgo@$GINKGO_VERSION"
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        ginkgo version
+
+    - name: Build crane CLI
+      shell: bash
+      run: go build -o crane .
+
+    - name: Run crane e2e tests
+      shell: bash
+      run: |
+        GINKGO_ARGS=(
+          --k8sdeploy-bin="k8sdeploy"
+          --crane-bin="${{ github.workspace }}/crane"
+          --source-context="${{ inputs.source_context }}"
+          --target-context="${{ inputs.target_context }}"
+          --source-nonadmin-context="${{ inputs.source_nonadmin_context }}"
+          --target-nonadmin-context="${{ inputs.target_nonadmin_context }}"
+        )
+
+        if [ "${{ inputs.verbose_logs }}" = "true" ]; then
+          GINKGO_ARGS+=(--verbose-logs)
+        fi
+
+        ginkgo run -v --label-filter="${{ inputs.label_filter }}" e2e-tests/tests -- "${GINKGO_ARGS[@]}"
