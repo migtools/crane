@@ -1,0 +1,106 @@
+name: Build Crane Binaries
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.25
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+
+          ext=""
+          if [ "$GOOS" = "windows" ]; then
+            ext=".exe"
+          fi
+
+          binary="crane_${GOOS}_${GOARCH}${ext}"
+          go build -trimpath -o "dist/${binary}" .
+          (
+            cd dist
+            sha256sum "${binary}" > "${binary}.sha256"
+          )
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crane-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/crane_${{ matrix.goos }}_${{ matrix.goarch }}*
+          retention-days: 30
+
+  release:
+    name: Draft release for tag
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: crane-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Create combined checksums manifest
+        run: |
+          cd release-assets
+          : > checksums.txt
+          for binary in crane_*; do
+            if [ -f "$binary" ] && [[ "$binary" != *.sha256 ]]; then
+              sha256sum "$binary" >> checksums.txt
+            fi
+          done
+
+      - name: Create draft GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            release-assets/crane_*
+            release-assets/checksums.txt
