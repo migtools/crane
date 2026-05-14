@@ -19,9 +19,10 @@ import (
 
 // KustomizeApplier applies transformations using kubectl kustomize
 type KustomizeApplier struct {
-	Log          *logrus.Logger
-	TransformDir string
-	OutputDir    string
+	Log           *logrus.Logger
+	TransformDir  string
+	OutputDir     string
+	KustomizeArgs []string
 }
 
 // ApplySingleStage applies a single transform stage to produce output
@@ -114,13 +115,25 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 // runKustomizeBuild executes kubectl kustomize or oc kustomize on a directory
 func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
 	kustomizeCmd := file.GetKustomizeCommand()
-	cmd := exec.Command(kustomizeCmd, "kustomize", dir)
+
+	// Build command arguments
+	cmdArgs := []string{"kustomize"}
+
+	// Add custom kustomize arguments if provided
+	if len(k.KustomizeArgs) > 0 {
+		cmdArgs = append(cmdArgs, k.KustomizeArgs...)
+	}
+
+	// Add directory as last argument
+	cmdArgs = append(cmdArgs, dir)
+
+	cmd := exec.Command(kustomizeCmd, cmdArgs...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	k.Log.Debugf("Running: %s kustomize %s", kustomizeCmd, dir)
+	k.Log.Debugf("Running: %s %s", kustomizeCmd, strings.Join(cmdArgs, " "))
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())

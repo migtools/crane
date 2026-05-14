@@ -33,6 +33,8 @@ type Orchestrator struct {
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
 	// This prevents double-write errors when creating a stage and then running it
 	NewlyCreatedStages map[string]bool
+	// KustomizeArgs holds additional arguments to pass to kubectl kustomize
+	KustomizeArgs []string
 }
 
 // RunMultiStage executes transform with multi-stage pipeline
@@ -296,13 +298,25 @@ func (o *Orchestrator) getAvailablePluginNames(plugins []cranelib.Plugin) string
 func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Unstructured, error) {
 	// Run kubectl kustomize or oc kustomize to build the stage with patches applied
 	kustomizeCmd := file.GetKustomizeCommand()
-	cmd := exec.Command(kustomizeCmd, "kustomize", stageDir)
+
+	// Build command arguments
+	cmdArgs := []string{"kustomize"}
+
+	// Add custom kustomize arguments if provided
+	if len(o.KustomizeArgs) > 0 {
+		cmdArgs = append(cmdArgs, o.KustomizeArgs...)
+	}
+
+	// Add stage directory as last argument
+	cmdArgs = append(cmdArgs, stageDir)
+
+	cmd := exec.Command(kustomizeCmd, cmdArgs...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	o.Log.Debugf("Running: %s kustomize %s", kustomizeCmd, stageDir)
+	o.Log.Debugf("Running: %s %s", kustomizeCmd, strings.Join(cmdArgs, " "))
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("%s kustomize failed: %w\nstderr: %s", kustomizeCmd, err, stderr.String())
