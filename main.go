@@ -7,7 +7,6 @@ import (
 	"github.com/konveyor/crane/cmd/convert"
 	export "github.com/konveyor/crane/cmd/export"
 	plugin_manager "github.com/konveyor/crane/cmd/plugin-manager"
-	"github.com/konveyor/crane/cmd/runfn"
 	skopeo_sync_gen "github.com/konveyor/crane/cmd/skopeo-sync-gen"
 	transfer_pvc "github.com/konveyor/crane/cmd/transfer-pvc"
 	"github.com/konveyor/crane/cmd/transform"
@@ -34,7 +33,6 @@ func main() {
 	root.AddCommand(apply.NewApplyCommand(f))
 	root.AddCommand(plugin_manager.NewPluginManagerCommand(f))
 	root.AddCommand(version.NewVersionCommand(f))
-	root.AddCommand(runfn.NewFnRunCommand(f))
 	root.AddCommand(validate.NewValidateCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
