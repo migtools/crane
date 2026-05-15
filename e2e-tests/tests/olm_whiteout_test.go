@@ -145,7 +145,9 @@ var _ = Describe("OLM whiteout", func() {
 					log.Printf("cleanup: failed to delete namespace: %v", err)
 				}
 				if paths.TempDir != "" {
-					os.RemoveAll(paths.TempDir)
+					if err := os.RemoveAll(paths.TempDir); err != nil {
+						log.Printf("cleanup: failed to remove temp dir %s: %v", paths.TempDir, err)
+					}
 				}
 			})
 
@@ -191,6 +193,105 @@ var _ = Describe("OLM whiteout", func() {
 
 			By("Verify output contains ConfigMap (non-OLM resource)")
 			Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"ConfigMap"})).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("Multiple OLM operators", func() {
+		It("should whiteout all OLM kinds from multiple operators in the same namespace", Label("olm", "tier1"), func() {
+			kubectlPreflight := KubectlRunner{Bin: "kubectl", Context: config.SourceContext}
+			olmAvailable, err := kubectlPreflight.OLMAPIAvailable()
+			Expect(err).NotTo(HaveOccurred())
+			if !olmAvailable {
+				Skip("OLM APIs not installed (subscriptions.operators.coreos.com CRD missing)")
+			}
+
+			namespace := "olm-multi-op"
+			scenario := NewMigrationScenario(
+				"olm-multi-op",
+				namespace,
+				config.K8sDeployBin,
+				config.CraneBin,
+				config.SourceContext,
+				config.TargetContext,
+			)
+			kubectlSrc := scenario.KubectlSrc
+
+			paths, err := NewScenarioPaths("crane-multi-op-*")
+			Expect(err).NotTo(HaveOccurred())
+
+			DeferCleanup(func() {
+				By("Cleanup OLM resources on source")
+				for _, res := range []struct {
+					kind string
+					name string
+				}{
+					{"subscription", "olm-multi-sub-certmgr"},
+					{"subscription", "olm-multi-sub-cockroachdb"},
+					{"catalogsource", "olm-multi-catalog"},
+					{"operatorgroup", "olm-multi-og"},
+				} {
+					if _, err := kubectlSrc.Run("delete", res.kind, res.name, "-n", namespace, "--ignore-not-found=true"); err != nil {
+						log.Printf("cleanup: failed to delete %s/%s: %v", res.kind, res.name, err)
+					}
+				}
+				By("Cleanup namespace and temp dir")
+				if _, err := kubectlSrc.Run("delete", "namespace", namespace, "--ignore-not-found=true"); err != nil {
+					log.Printf("cleanup: failed to delete namespace: %v", err)
+				}
+				if paths.TempDir != "" {
+					if err := os.RemoveAll(paths.TempDir); err != nil {
+						log.Printf("cleanup: failed to remove temp dir %s: %v", paths.TempDir, err)
+					}
+				}
+			})
+
+			By("Create source namespace")
+			Expect(kubectlSrc.CreateNamespace(namespace)).NotTo(HaveOccurred())
+
+			By("Create OLM resources (OperatorGroup, CatalogSource, 2 Subscriptions)")
+			olmSpec, err := utils.ReadTestdataFile("olm-multi-operator-resources.yaml")
+			Expect(err).NotTo(HaveOccurred())
+			olmSpec = strings.ReplaceAll(olmSpec, "__NAMESPACE__", namespace)
+			Expect(kubectlSrc.ApplyYAMLSpec(olmSpec, namespace)).NotTo(HaveOccurred())
+
+			By("Wait for both subscriptions to have currentCSV populated")
+			for _, subName := range []string{"olm-multi-sub-certmgr", "olm-multi-sub-cockroachdb"} {
+				Eventually(func(g Gomega) {
+					out, err := kubectlSrc.Run("get", "subscription", subName, "-n", namespace, "-o", "jsonpath={.status.currentCSV}")
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty(), "subscription %s has no currentCSV yet", subName)
+				}, "15m", "20s").Should(Succeed())
+			}
+
+			By("Wait for all InstallPlans to complete")
+			Eventually(func(g Gomega) {
+				out, err := kubectlSrc.Run("get", "installplan", "-n", namespace, "-o", "jsonpath={.items[*].status.phase}")
+				g.Expect(err).NotTo(HaveOccurred())
+				phases := strings.Fields(out)
+				g.Expect(phases).NotTo(BeEmpty(), "no InstallPlans found")
+				for _, p := range phases {
+					g.Expect(p).To(Equal("Complete"), "InstallPlan in phase %q", p)
+				}
+			}, "15m", "20s").Should(Succeed())
+
+			runner := scenario.Crane
+			runner.WorkDir = paths.TempDir
+
+			By("Run crane export/transform/apply pipeline")
+			log.Printf("Running crane pipeline for namespace %s\n", namespace)
+			Expect(RunCranePipelineWithChecks(runner, namespace, paths)).NotTo(HaveOccurred())
+
+			By("Verify no OLM whiteout kinds in output")
+			Expect(utils.AssertNoKindsInOutput(paths.OutputDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
+
+			By("Verify transform stage has whiteout resource files for deployed OLM kinds")
+			Expect(utils.AssertWhiteoutResourceFilesExist(paths.TransformDir, []string{"Subscription", "CatalogSource", "OperatorGroup"})).NotTo(HaveOccurred())
+
+			By("Verify both Subscription whiteout files exist (one per operator)")
+			Expect(utils.AssertWhiteoutResourceFileCount(paths.TransformDir, "Subscription", 2)).NotTo(HaveOccurred())
+
+			By("Verify no partial whiteout: all OLM kinds excluded from active kustomize resources")
+			Expect(utils.AssertKindsNotInActiveKustomizeResources(paths.TransformDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
 		})
 	})
 

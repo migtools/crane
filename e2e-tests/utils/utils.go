@@ -739,6 +739,37 @@ func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error
 	return nil
 }
 
+// AssertWhiteoutResourceFileCount verifies that exactly expectedCount files
+// matching the given kind prefix exist in the transform resources/ directory.
+func AssertWhiteoutResourceFileCount(transformDir string, kind string, expectedCount int) error {
+	count := 0
+
+	err := filepath.Walk(transformDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(transformDir, path)
+		if !strings.Contains(rel, "resources/") {
+			return nil
+		}
+		if strings.HasPrefix(info.Name(), kind+"_") || strings.HasPrefix(info.Name(), kind+".") {
+			count++
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walking transform dir: %w", err)
+	}
+
+	if count != expectedCount {
+		return fmt.Errorf("expected %d whiteout resource files for kind %s, found %d", expectedCount, kind, count)
+	}
+	return nil
+}
+
 // AssertWhiteoutCommentsInKustomization finds all kustomization.yaml files under
 // transformDir and verifies that at least one contains a whiteout comment header
 // and commented references for each kind in kinds.
