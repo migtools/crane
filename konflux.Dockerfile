@@ -47,7 +47,7 @@ USER 1001
 ENTRYPOINT ["/usr/local/bin/mta-ops"]
 
 LABEL \
-    description="MTA-OPS CLI for Kubernetes migration workflows" \
+    description="MTA-Ops CLI for Kubernetes migration workflows" \
     io.k8s.description="MTA-Ops CLI for Kubernetes migration workflows" \
     io.k8s.display-name="MTA-Ops CLI" \
     io.openshift.maintainer.project="MTA-Ops" \
