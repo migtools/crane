@@ -270,10 +270,16 @@ func TestWriteStage_MixedNamespacedAndClusterScoped(t *testing.T) {
 	}
 
 	patchJSON := `[{"op": "remove", "path": "/spec/replicas"}]`
-	deployPatches, _ := jsonpatch.DecodePatch([]byte(patchJSON))
+	deployPatches, err := jsonpatch.DecodePatch([]byte(patchJSON))
+	if err != nil {
+		t.Fatalf("Failed to decode deployment patch JSON: %v", err)
+	}
 
 	clusterPatchJSON := `[{"op": "add", "path": "/metadata/labels", "value": {"migrated": "true"}}]`
-	clusterPatches, _ := jsonpatch.DecodePatch([]byte(clusterPatchJSON))
+	clusterPatches, err := jsonpatch.DecodePatch([]byte(clusterPatchJSON))
+	if err != nil {
+		t.Fatalf("Failed to decode ClusterRole patch JSON: %v", err)
+	}
 
 	artifacts := []cranelib.TransformArtifact{
 		{
@@ -479,7 +485,10 @@ func TestWriteStage_ClusterScopedWithPatch(t *testing.T) {
 		{"op": "remove", "path": "/metadata/uid"},
 		{"op": "remove", "path": "/metadata/resourceVersion"}
 	]`
-	patches, _ := jsonpatch.DecodePatch([]byte(patchJSON))
+	patches, err := jsonpatch.DecodePatch([]byte(patchJSON))
+	if err != nil {
+		t.Fatalf("Failed to decode ClusterRole patch JSON: %v", err)
+	}
 
 	artifacts := []cranelib.TransformArtifact{
 		{
