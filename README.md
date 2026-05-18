@@ -49,16 +49,8 @@ How does it work? Crane works by:
 | Channel | Purpose | Link |
 | :-- | :-- | :-- |
 | **✅ Stable** | Tagged releases for production use | [GitHub Releases](https://github.com/migtools/crane/releases) |
-| **🛠️ `main`** | Latest artifacts from pushes to `main` | [Build Crane Binaries (main push)](https://github.com/migtools/crane/actions/workflows/build-crane-binaries.yml?query=branch%3Amain+event%3Apush) |
-| **🌙 Nightly** | Scheduled artifacts for early validation | [Build Crane Binaries (scheduled)](https://github.com/migtools/crane/actions/workflows/build-crane-binaries.yml?query=event%3Aschedule) |
-
-Each build publishes platform binaries and a `checksums.txt` file for SHA-256 validation.
-
-Quick verification from `checksums.txt`:
-- macOS:
-  `grep " <binary>$" checksums.txt > <binary>.sha256 && shasum -a 256 -c <binary>.sha256`
-- Linux:
-  `grep " <binary>$" checksums.txt > <binary>.sha256 && sha256sum -c <binary>.sha256`
+| **🛠️ `main`** | Latest artifacts from pushes to `main` | [Build Crane Binaries (main push)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=branch%3Amain+event%3Apush) |
+| **🌙 Nightly** | Scheduled artifacts for early validation | [Build Crane Binaries (scheduled)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=event%3Aschedule) |
 
 ## Install
 
