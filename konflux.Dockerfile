@@ -21,7 +21,7 @@ RUN set -e && \
         fi && \
         echo "Building standalone binary $output (version=${MTA_OPS_VERSION}, commit=${MTA_OPS_GIT_COMMIT})..." && \
         CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -mod=readonly \
-            -ldflags="-X github.com/konveyor/crane/internal/buildinfo.Version=${MTA_OPS_VERSION}" \
+            -ldflags="-X github.com/konveyor/crane/internal/buildinfo.Version=${MTA_OPS_VERSION} -X github.com/konveyor/crane/internal/buildinfo.BuildCommit=${MTA_OPS_GIT_COMMIT}" \
             -o "/tmp/archives/$output" ./main.go && \
         (cd /tmp/archives && sha256sum "$output" > "$output.sha256"); \
     done && \
