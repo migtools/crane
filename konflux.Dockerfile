@@ -25,14 +25,15 @@ RUN set -e && \
             -o "/tmp/archives/$output" ./main.go && \
         (cd /tmp/archives && sha256sum "$output" > "$output.sha256"); \
     done && \
+    if [ "${TARGETOS}" = "windows" ]; then \
+        runtime_output="mta-ops_${TARGETOS}_${TARGETARCH}.exe"; \
+    else \
+        runtime_output="mta-ops_${TARGETOS}_${TARGETARCH}"; \
+    fi && \
+    cp "/tmp/archives/${runtime_output}" /tmp/bin/mta-ops && \
     cp LICENSE /tmp/archives/LICENSE && \
     go clean -cache -modcache -testcache && \
     rm -rf /opt/app-root/src/.cache /opt/app-root/src/go/pkg /tmp/go /tmp/.cache
-
-RUN MTA_OPS_VERSION="${BUILD_VERSION:-dev}" && \
-    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -mod=readonly \
-    -ldflags="-X github.com/konveyor/crane/internal/buildinfo.Version=${MTA_OPS_VERSION}" \
-    -o /tmp/bin/mta-ops ./main.go
 
 FROM registry.access.redhat.com/ubi9:latest
 
