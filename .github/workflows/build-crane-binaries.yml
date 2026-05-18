@@ -98,9 +98,13 @@ jobs:
             fi
           done
 
+      - name: Keep only binaries and combined checksums file
+        run: rm -f release-assets/*.sha256
+
       - name: Create draft GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           draft: true
           generate_release_notes: true
           files: |
