@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - multiplatform-ci-release #Remove this before merging to main.
     tags:
       - "*"
   schedule:
@@ -87,6 +88,7 @@ jobs:
           path: release-assets
 
       - name: Create combined checksums manifest
+        shell: bash
         run: |
           cd release-assets
           : > checksums.txt
