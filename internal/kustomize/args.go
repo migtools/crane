@@ -16,7 +16,7 @@ var AllowedKustomizeArgs = map[string]bool{
 }
 
 // ParseAndValidateArgs parses and validates kustomize arguments
-// Returns array of arguments ready for exec.Command
+// Returns array of arguments for kustomize configuration
 func ParseAndValidateArgs(argsString string) ([]string, error) {
 	if argsString == "" {
 		return nil, nil

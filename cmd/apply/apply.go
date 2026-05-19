@@ -103,12 +103,6 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 func (o *Options) run() error {
 	log := o.globalFlags.GetLogger()
 
-	// Validate kubectl is available before proceeding
-	// All apply operations require kubectl kustomize
-	if err := apply.ValidateKubectlAvailable(); err != nil {
-		return err
-	}
-
 	transformDir, err := filepath.Abs(o.TransformDir)
 	if err != nil {
 		return err

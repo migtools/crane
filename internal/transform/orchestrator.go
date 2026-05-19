@@ -1,18 +1,17 @@
 package transform
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/internal/file"
+	"github.com/konveyor/crane/internal/kustomize"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -294,39 +293,23 @@ func (o *Orchestrator) getAvailablePluginNames(plugins []cranelib.Plugin) string
 }
 
 // applyStageTransforms applies patches from a stage and returns the transformed resources
-// This materializes the output by running kubectl kustomize or oc kustomize on the stage directory
+// This materializes the output by running embedded kustomize on the stage directory
 func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Unstructured, error) {
-	// Run kubectl kustomize or oc kustomize to build the stage with patches applied
-	kustomizeCmd := file.GetKustomizeCommand()
-
-	// Build command arguments
-	cmdArgs := []string{"kustomize"}
-
-	// Add custom kustomize arguments if provided
-	if len(o.KustomizeArgs) > 0 {
-		cmdArgs = append(cmdArgs, o.KustomizeArgs...)
+	runner := &kustomize.Runner{
+		Log:  o.Log,
+		Args: o.KustomizeArgs,
 	}
 
-	// Add stage directory as last argument
-	cmdArgs = append(cmdArgs, stageDir)
-
-	cmd := exec.Command(kustomizeCmd, cmdArgs...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	o.Log.Debugf("Running: %s %s", kustomizeCmd, strings.Join(cmdArgs, " "))
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("%s kustomize failed: %w\nstderr: %s", kustomizeCmd, err, stderr.String())
+	output, err := runner.Build(stageDir)
+	if err != nil {
+		return nil, fmt.Errorf("kustomize build failed: %w", err)
 	}
 
 	// Parse the multi-document YAML output
 	var resources []unstructured.Unstructured
 
 	// Use yaml.v3 Decoder to properly handle multi-document YAML streams
-	decoder := yamlv3.NewDecoder(strings.NewReader(stdout.String()))
+	decoder := yamlv3.NewDecoder(strings.NewReader(string(output)))
 
 	for {
 		var doc interface{}
