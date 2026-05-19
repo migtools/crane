@@ -8,9 +8,11 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 func TestWriteStageWithNonExistentRemovePath(t *testing.T) {
@@ -350,27 +352,22 @@ func TestWriteStage_MixedNamespacedAndClusterScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read kustomization.yaml: %v", err)
 	}
-	kStr := string(kData)
 
-	if !strings.Contains(kStr, "namespace: my-app") {
-		t.Error("kustomization.yaml missing 'namespace: my-app' for namespaced Deployment")
+	var kustFile kustomize.KustomizationFile
+	if err := yaml.Unmarshal(kData, &kustFile); err != nil {
+		t.Fatalf("Failed to parse kustomization.yaml: %v", err)
 	}
 
-	// Check that ClusterRole target does not have namespace
-	// The ClusterRole section should have kind+name but no namespace
-	lines := strings.Split(kStr, "\n")
-	inClusterRoleTarget := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "kind: ClusterRole" {
-			inClusterRoleTarget = true
+	for _, patch := range kustFile.Patches {
+		if patch.Target.Kind == "Deployment" && patch.Target.Name == "web" {
+			if patch.Target.Namespace != "my-app" {
+				t.Errorf("Deployment patch target should have namespace 'my-app', got %q", patch.Target.Namespace)
+			}
 		}
-		if inClusterRoleTarget && strings.HasPrefix(trimmed, "namespace:") {
-			t.Error("ClusterRole patch target should not have 'namespace:' field")
-			break
-		}
-		if inClusterRoleTarget && trimmed == "" {
-			break
+		if patch.Target.Kind == "ClusterRole" && patch.Target.Name == "web-admin" {
+			if patch.Target.Namespace != "" {
+				t.Errorf("ClusterRole patch target should have empty namespace, got %q", patch.Target.Namespace)
+			}
 		}
 	}
 }
