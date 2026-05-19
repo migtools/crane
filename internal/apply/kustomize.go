@@ -53,6 +53,14 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 		return fmt.Errorf("kustomize build failed for stage %s: %w", stageName, err)
 	}
 
+	// Filter cluster-scoped resources if requested
+	if k.SkipClusterScoped {
+		output, err = k.filterClusterScopedResources(output)
+		if err != nil {
+			return fmt.Errorf("failed to filter cluster-scoped resources: %w", err)
+		}
+	}
+
 	// Write output to output directory
 	outputPath := filepath.Join(k.OutputDir, stageName+".yaml")
 	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
