@@ -51,6 +51,6 @@ LABEL \
     description="MTA-Ops CLI for Kubernetes migration workflows" \
     io.k8s.description="MTA-Ops CLI for Kubernetes migration workflows" \
     io.k8s.display-name="MTA-Ops CLI" \
-    io.openshift.maintainer.project="MTA-Ops" \
+    io.openshift.maintainer.project="MTA" \
     io.openshift.tags="migration,modernization,konveyor,mta-ops" \
     summary="MTA-Ops CLI"
