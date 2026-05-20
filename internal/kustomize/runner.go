@@ -49,6 +49,7 @@ func (r *Runner) Build(dir string) ([]byte, error) {
 // buildOptions maps CLI args to krusty.Options.
 func (r *Runner) buildOptions() (*krusty.Options, []envVar, error) {
 	opts := krusty.MakeDefaultOptions()
+	opts.Reorder = krusty.ReorderOptionLegacy
 	var envVars []envVar
 
 	for i := 0; i < len(r.Args); i++ {
