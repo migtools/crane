@@ -106,7 +106,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
 
 	// Kustomize arguments
-	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments to pass to kubectl kustomize (e.g., '--enable-helm --load-restrictor=LoadRestrictionsNone')")
+	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
 
 	// These flags pass down to subcommands
 	cmd.PersistentFlags().StringVarP(&o.PluginDir, "plugin-dir", "p", defaultPluginDir, "The path where binary plugins are located")

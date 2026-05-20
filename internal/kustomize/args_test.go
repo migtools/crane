@@ -25,16 +25,6 @@ func TestParseAndValidateArgs(t *testing.T) {
 			expected: []string{"--enable-helm"},
 		},
 		{
-			name:     "multiple flags",
-			input:    "--enable-helm --enable-alpha-plugins",
-			expected: []string{"--enable-helm", "--enable-alpha-plugins"},
-		},
-		{
-			name:     "flag with value using equals",
-			input:    "--load-restrictor=LoadRestrictionsNone",
-			expected: []string{"--load-restrictor=LoadRestrictionsNone"},
-		},
-		{
 			name:     "helm command with path",
 			input:    "--helm-command=/usr/local/bin/helm",
 			expected: []string{"--helm-command=/usr/local/bin/helm"},
@@ -61,13 +51,8 @@ func TestParseAndValidateArgs(t *testing.T) {
 		},
 		{
 			name:     "complex combination",
-			input:    "--enable-helm --load-restrictor=LoadRestrictionsNone --env FOO=bar",
-			expected: []string{"--enable-helm", "--load-restrictor=LoadRestrictionsNone", "--env", "FOO=bar"},
-		},
-		{
-			name:     "load-restrictor space-separated",
-			input:    "--load-restrictor LoadRestrictionsNone",
-			expected: []string{"--load-restrictor", "LoadRestrictionsNone"},
+			input:    "--enable-helm --env FOO=bar",
+			expected: []string{"--enable-helm", "--env", "FOO=bar"},
 		},
 		{
 			name:     "helm-command space-separated",
@@ -141,16 +126,16 @@ func TestParseAndValidateArgs(t *testing.T) {
 			errorMsg:    "requires a value, got flag",
 		},
 		{
-			name:        "load-restrictor followed by another flag",
-			input:       "--load-restrictor --enable-helm",
+			name:        "load-restrictor not allowed",
+			input:       "--load-restrictor=LoadRestrictionsNone",
 			expectError: true,
-			errorMsg:    "requires a value, got flag",
+			errorMsg:    "not allowed",
 		},
 		{
-			name:        "load-restrictor without value",
-			input:       "--load-restrictor",
+			name:        "enable-alpha-plugins not allowed",
+			input:       "--enable-alpha-plugins",
 			expectError: true,
-			errorMsg:    "requires a value",
+			errorMsg:    "not allowed",
 		},
 		{
 			name:        "helm-command with empty value",

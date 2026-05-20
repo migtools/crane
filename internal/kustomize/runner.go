@@ -50,9 +50,13 @@ func (r *Runner) Build(dir string) ([]byte, error) {
 }
 
 // buildOptions maps CLI args to krusty.Options.
+// LoadRestrictions and PluginRestrictions are hardcoded to permissive defaults
+// since crane controls the kustomization filesystem and doesn't need CLI-era restrictions.
 func (r *Runner) buildOptions() (*krusty.Options, []envVar, error) {
 	opts := krusty.MakeDefaultOptions()
 	opts.Reorder = krusty.ReorderOptionLegacy
+	opts.LoadRestrictions = types.LoadRestrictionsNone
+	opts.PluginConfig.PluginRestrictions = types.PluginRestrictionsNone
 	var envVars []envVar
 
 	for i := 0; i < len(r.Args); i++ {
@@ -60,10 +64,7 @@ func (r *Runner) buildOptions() (*krusty.Options, []envVar, error) {
 
 		switch {
 		case arg == "--enable-helm":
-			opts.PluginConfig = types.EnabledPluginConfig(types.BploUseStaticallyLinked)
-
-		case arg == "--enable-alpha-plugins":
-			opts.PluginConfig.PluginRestrictions = types.PluginRestrictionsNone
+			opts.PluginConfig.HelmConfig.Enabled = true
 
 		case arg == "--helm-command":
 			if i+1 >= len(r.Args) {
@@ -77,21 +78,6 @@ func (r *Runner) buildOptions() (*krusty.Options, []envVar, error) {
 			val := strings.SplitN(arg, "=", 2)[1]
 			opts.PluginConfig.HelmConfig.Enabled = true
 			opts.PluginConfig.HelmConfig.Command = val
-
-		case arg == "--load-restrictor":
-			if i+1 >= len(r.Args) {
-				return nil, nil, fmt.Errorf("--load-restrictor requires a value")
-			}
-			i++
-			if err := setLoadRestrictions(opts, r.Args[i]); err != nil {
-				return nil, nil, err
-			}
-
-		case strings.HasPrefix(arg, "--load-restrictor="):
-			val := strings.SplitN(arg, "=", 2)[1]
-			if err := setLoadRestrictions(opts, val); err != nil {
-				return nil, nil, err
-			}
 
 		case arg == "--env" || arg == "-e":
 			if i+1 >= len(r.Args) {
@@ -110,18 +96,6 @@ func (r *Runner) buildOptions() (*krusty.Options, []envVar, error) {
 	}
 
 	return opts, envVars, nil
-}
-
-func setLoadRestrictions(opts *krusty.Options, value string) error {
-	switch value {
-	case "LoadRestrictionsNone", "none":
-		opts.LoadRestrictions = types.LoadRestrictionsNone
-	case "LoadRestrictionsRootOnly", "rootOnly":
-		opts.LoadRestrictions = types.LoadRestrictionsRootOnly
-	default:
-		return fmt.Errorf("unknown load-restrictor value: %q", value)
-	}
-	return nil
 }
 
 type envVar struct {

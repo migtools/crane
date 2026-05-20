@@ -123,7 +123,7 @@ patches:
 	}
 }
 
-func TestBuild_WithLoadRestrictionsNone(t *testing.T) {
+func TestBuild_DefaultLoadRestrictionsNone(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "kustomize-runner-loadrestrict-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -153,14 +153,12 @@ resources:
 
 	logger := logrus.New()
 	logger.SetLevel(logrus.ErrorLevel)
-	runner := &Runner{
-		Log:  logger,
-		Args: []string{"--load-restrictor=LoadRestrictionsNone"},
-	}
+	// No args — LoadRestrictionsNone is hardcoded as default
+	runner := &Runner{Log: logger}
 
 	output, err := runner.Build(tmpDir)
 	if err != nil {
-		t.Fatalf("Build with --load-restrictor=LoadRestrictionsNone failed: %v", err)
+		t.Fatalf("Build with default LoadRestrictionsNone failed: %v", err)
 	}
 
 	if !strings.Contains(string(output), "test") {
@@ -264,14 +262,6 @@ func TestBuildOptions_ArgMapping(t *testing.T) {
 			args: []string{"--enable-helm"},
 		},
 		{
-			name: "load-restrictor equals syntax",
-			args: []string{"--load-restrictor=LoadRestrictionsNone"},
-		},
-		{
-			name: "load-restrictor space syntax",
-			args: []string{"--load-restrictor", "LoadRestrictionsNone"},
-		},
-		{
 			name: "helm-command equals",
 			args: []string{"--helm-command=helm3"},
 		},
@@ -288,17 +278,18 @@ func TestBuildOptions_ArgMapping(t *testing.T) {
 			args: []string{"-e", "MY_VAR=hello"},
 		},
 		{
-			name: "enable-alpha-plugins",
-			args: []string{"--enable-alpha-plugins"},
+			name:      "enable-alpha-plugins rejected",
+			args:      []string{"--enable-alpha-plugins"},
+			expectErr: true,
+		},
+		{
+			name:      "load-restrictor rejected",
+			args:      []string{"--load-restrictor=LoadRestrictionsNone"},
+			expectErr: true,
 		},
 		{
 			name:      "unknown arg",
 			args:      []string{"--unknown-flag"},
-			expectErr: true,
-		},
-		{
-			name:      "load-restrictor missing value",
-			args:      []string{"--load-restrictor"},
 			expectErr: true,
 		},
 		{
@@ -314,11 +305,6 @@ func TestBuildOptions_ArgMapping(t *testing.T) {
 		{
 			name:      "env invalid format",
 			args:      []string{"--env", "NOEQUALS"},
-			expectErr: true,
-		},
-		{
-			name:      "invalid load-restrictor value",
-			args:      []string{"--load-restrictor=InvalidValue"},
 			expectErr: true,
 		},
 	}

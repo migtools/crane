@@ -5,14 +5,14 @@ import (
 	"strings"
 )
 
-// AllowedKustomizeArgs contains whitelist of allowed kustomize arguments
+// AllowedKustomizeArgs contains whitelist of allowed kustomize arguments.
+// Only helm-related args are user-configurable — load restrictions and plugin
+// restrictions are hardcoded to permissive defaults in the embedded runner.
 var AllowedKustomizeArgs = map[string]bool{
-	"--enable-alpha-plugins": true,
-	"--enable-helm":          true,
-	"--env":                  true,
-	"-e":                     true,
-	"--helm-command":         true,
-	"--load-restrictor":      true,
+	"--enable-helm":  true,
+	"--env":          true,
+	"-e":             true,
+	"--helm-command": true,
 }
 
 // ParseAndValidateArgs parses and validates kustomize arguments
@@ -40,10 +40,9 @@ func ParseAndValidateArgs(argsString string) ([]string, error) {
 
 	// Flags that can take a value as a separate argument (space-separated)
 	valueTakingFlags := map[string]bool{
-		"--env":             true,
-		"-e":                true,
-		"--helm-command":    true,
-		"--load-restrictor": true,
+		"--env":          true,
+		"-e":             true,
+		"--helm-command": true,
 	}
 
 	// Validate each argument

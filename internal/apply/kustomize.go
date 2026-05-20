@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// KustomizeApplier applies transformations using kubectl kustomize
+// KustomizeApplier applies transformations using embedded kustomize
 type KustomizeApplier struct {
 	Log           *logrus.Logger
 	TransformDir  string
@@ -45,11 +45,11 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 		return fmt.Errorf("kustomization.yaml not found in stage: %s", stageName)
 	}
 
-	// Run kubectl kustomize build
+	// Run kustomize build
 	k.Log.Infof("Building stage: %s", stageName)
 	output, err := k.runKustomizeBuild(stageDir)
 	if err != nil {
-		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stageName, err)
+		return fmt.Errorf("kustomize build failed for stage %s: %w", stageName, err)
 	}
 
 	// Write output to output directory
@@ -85,10 +85,10 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 
 	k.Log.Infof("Applying final stage: %s", lastStage.DirName)
 
-	// Run kubectl kustomize build on the last stage
+	// Run kustomize build on the last stage
 	output, err := k.runKustomizeBuild(lastStage.Path)
 	if err != nil {
-		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", lastStage.DirName, err)
+		return fmt.Errorf("kustomize build failed for stage %s: %w", lastStage.DirName, err)
 	}
 
 	// Write to output.yaml (single file with all resources)

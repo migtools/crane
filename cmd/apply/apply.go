@@ -97,7 +97,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.Stage, "stage", "", "Apply a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are applied.")
 
 	// Kustomize arguments
-	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments to pass to kubectl kustomize (e.g., '--enable-helm --load-restrictor=LoadRestrictionsNone')")
+	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
 }
 
 func (o *Options) run() error {

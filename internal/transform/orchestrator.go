@@ -32,7 +32,7 @@ type Orchestrator struct {
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
 	// This prevents double-write errors when creating a stage and then running it
 	NewlyCreatedStages map[string]bool
-	// KustomizeArgs holds additional arguments to pass to kubectl kustomize
+	// KustomizeArgs holds additional arguments for embedded kustomize (e.g. helm options)
 	KustomizeArgs []string
 }
 
