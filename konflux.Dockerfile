@@ -35,7 +35,7 @@ RUN set -e && \
     go clean -cache -modcache -testcache && \
     rm -rf /opt/app-root/src/.cache /opt/app-root/src/go/pkg /tmp/go /tmp/.cache
 
-FROM registry.access.redhat.com/ubi9:latest
+FROM registry.redhat.io/ubi9/ubi:latest
 
 RUN dnf -y install openssl && dnf -y reinstall tzdata && dnf clean all
 
@@ -51,6 +51,6 @@ LABEL \
     description="MTA-Ops CLI for Kubernetes migration workflows" \
     io.k8s.description="MTA-Ops CLI for Kubernetes migration workflows" \
     io.k8s.display-name="MTA-Ops CLI" \
-    io.openshift.maintainer.project="MTA-Ops" \
+    io.openshift.maintainer.project="MTA" \
     io.openshift.tags="migration,modernization,konveyor,mta-ops" \
     summary="MTA-Ops CLI"
