@@ -219,7 +219,9 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 		if err := encoder.Encode(doc); err != nil {
 			return fmt.Errorf("failed to encode YAML document: %w", err)
 		}
-		encoder.Close() // Flush the encoder
+		if err := encoder.Close(); err != nil {
+			return fmt.Errorf("failed to close YAML encoder: %w", err)
+		}
 		docBytes := buf.Bytes()
 
 		// Convert YAML to JSON to extract metadata
