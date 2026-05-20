@@ -302,7 +302,7 @@ func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Uns
 
 	output, err := runner.Build(stageDir)
 	if err != nil {
-		return nil, fmt.Errorf("kustomize build failed: %w", err)
+		return nil, fmt.Errorf("kustomize build failed for stage directory %s: %w", stageDir, err)
 	}
 
 	// Parse the multi-document YAML output

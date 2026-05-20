@@ -25,7 +25,10 @@ func (r *Runner) Build(dir string) ([]byte, error) {
 	}
 
 	// Set environment variables (used by helm) and restore after build
-	restoreEnv := setEnvVars(envVars)
+	restoreEnv, err := setEnvVars(envVars)
+	if err != nil {
+		return nil, err
+	}
 	defer restoreEnv()
 
 	k := krusty.MakeKustomizer(opts)
@@ -125,7 +128,7 @@ type envVar struct {
 	key, value string
 }
 
-func setEnvVars(vars []envVar) func() {
+func setEnvVars(vars []envVar) (func(), error) {
 	originals := make(map[string]string)
 	unsetKeys := make([]string, 0)
 
@@ -135,15 +138,17 @@ func setEnvVars(vars []envVar) func() {
 		} else {
 			unsetKeys = append(unsetKeys, v.key)
 		}
-		os.Setenv(v.key, v.value)
+		if err := os.Setenv(v.key, v.value); err != nil {
+			return nil, fmt.Errorf("failed to set env %q: %w", v.key, err)
+		}
 	}
 
 	return func() {
 		for k, v := range originals {
-			os.Setenv(k, v)
+			_ = os.Setenv(k, v)
 		}
 		for _, k := range unsetKeys {
-			os.Unsetenv(k)
+			_ = os.Unsetenv(k)
 		}
-	}
+	}, nil
 }
