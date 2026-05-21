@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/konveyor/crane/cmd/transform/listplugins"
@@ -14,9 +15,12 @@ import (
 	"github.com/konveyor/crane/internal/kustomize"
 	"github.com/konveyor/crane/internal/plugin"
 	internalTransform "github.com/konveyor/crane/internal/transform"
+	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type Options struct {
@@ -207,27 +211,29 @@ func (o *Options) run() error {
 		}
 
 		if len(existingStages) == 0 {
-			// No stages exist - will create default stage via multi-stage pipeline
-			// We create an empty directory so DiscoverStages will find it, then
-			// RunMultiStage → executeStage will populate it with artifacts
-			log.Info("No existing stages found, creating default stage: 10_KubernetesPlugin")
-			defaultStageName := "10_KubernetesPlugin"
-
-			// Create empty stage directory
-			stageDir := filepath.Join(transformDir, defaultStageName)
-			if err := os.MkdirAll(stageDir, 0700); err != nil {
-				return fmt.Errorf("failed to create default stage directory: %w", err)
+			// No stages exist - load all available plugins and create stages for each
+			allPlugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
+			if err != nil {
+				return fmt.Errorf("failed to load plugins: %w", err)
 			}
 
-			// Mark this stage as newly created so executeStage can overwrite it
-			orchestrator.NewlyCreatedStages[defaultStageName] = true
-
-			// Run multi-stage on the default stage
-			// executeStage will populate it with artifacts (kustomization, resources, patches)
-			selector = internalTransform.StageSelector{
-				Stage: defaultStageName,
+			if len(allPlugins) == 0 {
+				return fmt.Errorf("no plugins found in plugin directories")
 			}
-			log.Info("Populating and executing default stage")
+
+			log.Infof("No existing stages found, creating default stages for %d plugin(s)", len(allPlugins))
+
+			// Create stages for all plugins
+			stageNames, err := o.createDefaultStagesForAllPlugins(orchestrator, transformDir, allPlugins, log)
+			if err != nil {
+				return fmt.Errorf("failed to create default stages: %w", err)
+			}
+
+			log.Infof("Created %d default stage(s): %v", len(stageNames), stageNames)
+
+			// Empty selector = run all stages
+			selector = internalTransform.StageSelector{}
+			log.Info("Populating and executing all default stages")
 		} else {
 			// Run all discovered stages
 			log.Infof("Discovered %d existing stage(s), running all", len(existingStages))
@@ -307,4 +313,86 @@ func (o *Options) ensureStagesHaveOutput(orchestrator *internalTransform.Orchest
 	}
 
 	return nil
+}
+
+// createDefaultStagesForAllPlugins creates stage directories for all available plugins
+// Returns list of stage names in priority order
+func (o *Options) createDefaultStagesForAllPlugins(
+	orchestrator *internalTransform.Orchestrator,
+	transformDir string,
+	allPlugins []cranelib.Plugin,
+	log *logrus.Logger,
+) ([]string, error) {
+	var stageNames []string
+
+	// Sort plugins by name for deterministic ordering
+	sort.Slice(allPlugins, func(i, j int) bool {
+		return allPlugins[i].Metadata().Name < allPlugins[j].Metadata().Name
+	})
+
+	// Assign priority to each plugin
+	// Start at 10, increment by 5 for each plugin
+	priority := 10
+
+	for _, plugin := range allPlugins {
+		pluginName := plugin.Metadata().Name
+		sanitizedName := sanitizePluginName(pluginName)
+		stageName := fmt.Sprintf("%d_%s", priority, sanitizedName)
+
+		log.Infof("Creating default stage for plugin: %s -> %s", pluginName, stageName)
+
+		// Create stage directory
+		stageDir := filepath.Join(transformDir, stageName)
+		if err := os.MkdirAll(stageDir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
+		}
+
+		// Mark as newly created
+		orchestrator.NewlyCreatedStages[stageName] = true
+
+		stageNames = append(stageNames, stageName)
+		priority += 5
+	}
+
+	return stageNames, nil
+}
+
+// sanitizePluginName converts plugin name to valid stage directory name
+// Example: "namespace-cleanup" -> "NamespaceCleanupPlugin", "KubernetesPlugin" -> "KubernetesPlugin"
+func sanitizePluginName(pluginName string) string {
+	// If name already ends with "Plugin" (case insensitive) and has no separators, return as-is
+	if !strings.ContainsAny(pluginName, "-_") && strings.HasSuffix(strings.ToLower(pluginName), "plugin") {
+		return pluginName
+	}
+
+	var name string
+
+	// Check if name contains hyphens or underscores
+	if strings.ContainsAny(pluginName, "-_") {
+		// Replace hyphens and underscores with spaces
+		name = strings.ReplaceAll(pluginName, "-", " ")
+		name = strings.ReplaceAll(name, "_", " ")
+
+		// Title case each word using cases.Title
+		caser := cases.Title(language.English)
+		name = caser.String(name)
+
+		// Remove spaces
+		name = strings.ReplaceAll(name, " ", "")
+	} else {
+		// No separators - capitalize first letter if needed
+		if len(pluginName) > 0 {
+			caser := cases.Title(language.English)
+			name = caser.String(pluginName)
+		} else {
+			name = pluginName
+		}
+	}
+
+	// Add "Plugin" suffix if not already present (case-insensitive check)
+	if !strings.HasSuffix(strings.ToLower(name), "plugin") {
+		name = name + "Plugin"
+	}
+
+	return name
 }
