@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/konveyor/crane/internal/file"
+	"github.com/konveyor/crane/internal/kustomize"
 	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/sirupsen/logrus"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// KustomizeApplier applies transformations using kubectl kustomize
+// KustomizeApplier applies transformations using embedded kustomize
 type KustomizeApplier struct {
 	Log           *logrus.Logger
 	TransformDir  string
@@ -45,11 +45,11 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 		return fmt.Errorf("kustomization.yaml not found in stage: %s", stageName)
 	}
 
-	// Run kubectl kustomize build
+	// Run kustomize build
 	k.Log.Infof("Building stage: %s", stageName)
 	output, err := k.runKustomizeBuild(stageDir)
 	if err != nil {
-		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stageName, err)
+		return fmt.Errorf("kustomize build failed for stage %s: %w", stageName, err)
 	}
 
 	// Write output to output directory
@@ -85,10 +85,10 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 
 	k.Log.Infof("Applying final stage: %s", lastStage.DirName)
 
-	// Run kubectl kustomize build on the last stage
+	// Run kustomize build on the last stage
 	output, err := k.runKustomizeBuild(lastStage.Path)
 	if err != nil {
-		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", lastStage.DirName, err)
+		return fmt.Errorf("kustomize build failed for stage %s: %w", lastStage.DirName, err)
 	}
 
 	// Write to output.yaml (single file with all resources)
@@ -112,51 +112,13 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 	return nil
 }
 
-// runKustomizeBuild executes kubectl kustomize or oc kustomize on a directory
+// runKustomizeBuild runs embedded kustomize on a directory
 func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
-	kustomizeCmd := file.GetKustomizeCommand()
-
-	// Build command arguments
-	cmdArgs := []string{"kustomize"}
-
-	// Add custom kustomize arguments if provided
-	if len(k.KustomizeArgs) > 0 {
-		cmdArgs = append(cmdArgs, k.KustomizeArgs...)
+	runner := &kustomize.Runner{
+		Log:  k.Log,
+		Args: k.KustomizeArgs,
 	}
-
-	// Add directory as last argument
-	cmdArgs = append(cmdArgs, dir)
-
-	cmd := exec.Command(kustomizeCmd, cmdArgs...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	k.Log.Debugf("Running: %s %s", kustomizeCmd, strings.Join(cmdArgs, " "))
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())
-	}
-
-	return stdout.Bytes(), nil
-}
-
-// ValidateKubectlAvailable checks if kubectl or oc command is available
-func ValidateKubectlAvailable() error {
-	// Try kubectl first
-	cmd := exec.Command("kubectl", "version", "--client")
-	if err := cmd.Run(); err == nil {
-		return nil
-	}
-
-	// Fallback to oc
-	cmd = exec.Command("oc", "version", "--client")
-	if err := cmd.Run(); err == nil {
-		return nil
-	}
-
-	return fmt.Errorf("neither kubectl nor oc found or executable")
+	return runner.Build(dir)
 }
 
 // splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files
