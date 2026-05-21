@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -22,6 +23,8 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
+
+var pluginNameTokenRE = regexp.MustCompile(`[A-Za-z0-9]+`)
 
 type Options struct {
 	// Two GlobalFlags struct fields are needed
@@ -339,10 +342,14 @@ func (o *Options) createDefaultStagesForAllPlugins(
 		sanitizedName := sanitizePluginName(pluginName)
 		stageName := fmt.Sprintf("%d_%s", priority, sanitizedName)
 
+		stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
+		baseDir := filepath.Clean(transformDir) + string(os.PathSeparator)
+		if !strings.HasPrefix(stageDir+string(os.PathSeparator), baseDir) {
+			return nil, fmt.Errorf("invalid stage path generated for plugin %q: %q", pluginName, stageName)
+		}
+
 		log.Infof("Creating default stage for plugin: %s -> %s", pluginName, stageName)
 
-		// Create stage directory
-		stageDir := filepath.Join(transformDir, stageName)
 		if err := os.MkdirAll(stageDir, 0700); err != nil {
 			return nil, fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
 		}
@@ -359,37 +366,34 @@ func (o *Options) createDefaultStagesForAllPlugins(
 
 // sanitizePluginName converts plugin name to valid stage directory name
 // Example: "namespace-cleanup" -> "NamespaceCleanupPlugin", "KubernetesPlugin" -> "KubernetesPlugin"
+// Security: Extracts only alphanumeric tokens to prevent path traversal
 func sanitizePluginName(pluginName string) string {
-	// If name already ends with "Plugin" (case insensitive) and has no separators, return as-is
-	if !strings.ContainsAny(pluginName, "-_") && strings.HasSuffix(strings.ToLower(pluginName), "plugin") {
-		return pluginName
+	// Extract only safe alphanumeric tokens (removes /, \, .., and special chars)
+	tokens := pluginNameTokenRE.FindAllString(pluginName, -1)
+	if len(tokens) == 0 {
+		return "Plugin"
 	}
 
-	var name string
-
-	// Check if name contains hyphens or underscores
-	if strings.ContainsAny(pluginName, "-_") {
-		// Replace hyphens and underscores with spaces
-		name = strings.ReplaceAll(pluginName, "-", " ")
-		name = strings.ReplaceAll(name, "_", " ")
-
-		// Title case each word using cases.Title
-		caser := cases.Title(language.English)
-		name = caser.String(name)
-
-		// Remove spaces
-		name = strings.ReplaceAll(name, " ", "")
-	} else {
-		// No separators - capitalize first letter if needed
-		if len(pluginName) > 0 {
-			caser := cases.Title(language.English)
-			name = caser.String(pluginName)
-		} else {
-			name = pluginName
+	// If we extracted exactly one token and it matches the original name,
+	// the name was already safe (only alphanumeric)
+	if len(tokens) == 1 && tokens[0] == pluginName {
+		// If already ends with Plugin suffix, keep as-is
+		if strings.HasSuffix(strings.ToLower(pluginName), "plugin") {
+			return pluginName
 		}
+		// Otherwise capitalize and add Plugin suffix
+		caser := cases.Title(language.English)
+		return caser.String(strings.ToLower(pluginName)) + "Plugin"
 	}
 
-	// Add "Plugin" suffix if not already present (case-insensitive check)
+	// Multiple tokens or cleaned name differs - needs reformatting
+	caser := cases.Title(language.English)
+	for i, t := range tokens {
+		tokens[i] = caser.String(strings.ToLower(t))
+	}
+	name := strings.Join(tokens, "")
+
+	// Add "Plugin" suffix if not already present
 	if !strings.HasSuffix(strings.ToLower(name), "plugin") {
 		name = name + "Plugin"
 	}

@@ -51,6 +51,36 @@ func TestSanitizePluginName(t *testing.T) {
 			input:    "CustomPlugin",
 			expected: "CustomPlugin",
 		},
+		{
+			name:     "path traversal with slashes",
+			input:    "../../../etc/passwd",
+			expected: "EtcPasswdPlugin",
+		},
+		{
+			name:     "path traversal with backslashes",
+			input:    "..\\..\\windows\\system32",
+			expected: "WindowsSystem32Plugin",
+		},
+		{
+			name:     "mixed path separators",
+			input:    "../path/to/../secret",
+			expected: "PathToSecretPlugin",
+		},
+		{
+			name:     "dots only",
+			input:    "...",
+			expected: "Plugin",
+		},
+		{
+			name:     "special characters filtered",
+			input:    "test@plugin#name!",
+			expected: "TestPluginNamePlugin",
+		},
+		{
+			name:     "empty after sanitization",
+			input:    "@#$%^&*()",
+			expected: "Plugin",
+		},
 	}
 
 	for _, tt := range tests {
