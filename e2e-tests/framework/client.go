@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"os/exec"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -205,4 +206,27 @@ func parseClientCertificate(certBytes []byte) (*x509.Certificate, error) {
 		return nil, fmt.Errorf("failed to parse certificate bytes as PEM or DER: %w", err)
 	}
 	return cert, nil
+}
+
+// RunCraneValidate runs crane validate command in live mode and returns any error.
+// It validates manifests in inputDir against the target cluster specified by context,
+// and writes the validation report to validateDir.
+func RunCraneValidate(craneBin, inputDir, context, validateDir string) error {
+	args := []string{
+		"validate",
+		"--input-dir", inputDir,
+		"--context", context,
+		"--validate-dir", validateDir,
+		"--output", "json",
+	}
+
+	logVerboseCommand(craneBin, args)
+	cmd := exec.Command(craneBin, args...)
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane validate", out)
+
+	if err != nil {
+		return fmt.Errorf("crane validate failed: %v, output: %s", err, string(out))
+	}
+	return nil
 }
