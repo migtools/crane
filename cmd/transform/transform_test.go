@@ -10,84 +10,87 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func TestSanitizePluginName(t *testing.T) {
+func TestValidatePluginNameForStage(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected string
+		name      string
+		input     string
+		expectErr bool
 	}{
 		{
-			name:     "already sanitized",
-			input:    "KubernetesPlugin",
-			expected: "KubernetesPlugin",
+			name:      "valid CamelCase name",
+			input:     "KubernetesPlugin",
+			expectErr: false,
 		},
 		{
-			name:     "hyphenated name",
-			input:    "namespace-cleanup",
-			expected: "NamespaceCleanupPlugin",
+			name:      "valid hyphenated name",
+			input:     "namespace-cleanup",
+			expectErr: false,
 		},
 		{
-			name:     "underscored name",
-			input:    "security_scanner",
-			expected: "SecurityScannerPlugin",
+			name:      "valid underscored name",
+			input:     "security_scanner",
+			expectErr: false,
 		},
 		{
-			name:     "mixed separators",
-			input:    "my-custom_plugin",
-			expected: "MyCustomPlugin",
+			name:      "valid mixed separators",
+			input:     "my-custom_plugin",
+			expectErr: false,
 		},
 		{
-			name:     "single word lowercase",
-			input:    "helm",
-			expected: "HelmPlugin",
+			name:      "valid single word",
+			input:     "helm",
+			expectErr: false,
 		},
 		{
-			name:     "multiple hyphens",
-			input:    "foo-bar-baz",
-			expected: "FooBarBazPlugin",
+			name:      "invalid: forward slash",
+			input:     "../../../etc/passwd",
+			expectErr: true,
 		},
 		{
-			name:     "already has Plugin suffix",
-			input:    "CustomPlugin",
-			expected: "CustomPlugin",
+			name:      "invalid: backslash",
+			input:     "..\\..\\windows",
+			expectErr: true,
 		},
 		{
-			name:     "path traversal with slashes",
-			input:    "../../../etc/passwd",
-			expected: "EtcPasswdPlugin",
+			name:      "invalid: path traversal",
+			input:     "../secret",
+			expectErr: true,
 		},
 		{
-			name:     "path traversal with backslashes",
-			input:    "..\\..\\windows\\system32",
-			expected: "WindowsSystem32Plugin",
+			name:      "invalid: dot traversal",
+			input:     "...",
+			expectErr: true,
 		},
 		{
-			name:     "mixed path separators",
-			input:    "../path/to/../secret",
-			expected: "PathToSecretPlugin",
+			name:      "invalid: single dot",
+			input:     ".",
+			expectErr: true,
 		},
 		{
-			name:     "dots only",
-			input:    "...",
-			expected: "Plugin",
+			name:      "invalid: special characters",
+			input:     "test@plugin#name!",
+			expectErr: true,
 		},
 		{
-			name:     "special characters filtered",
-			input:    "test@plugin#name!",
-			expected: "TestPluginNamePlugin",
+			name:      "invalid: empty",
+			input:     "",
+			expectErr: true,
 		},
 		{
-			name:     "empty after sanitization",
-			input:    "@#$%^&*()",
-			expected: "Plugin",
+			name:      "invalid: only special chars",
+			input:     "@#$%^&*()",
+			expectErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sanitizePluginName(tt.input)
-			if result != tt.expected {
-				t.Errorf("sanitizePluginName(%q) = %q, want %q", tt.input, result, tt.expected)
+			err := validatePluginNameForStage(tt.input)
+			if tt.expectErr && err == nil {
+				t.Errorf("validatePluginNameForStage(%q) expected error but got nil", tt.input)
+			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("validatePluginNameForStage(%q) unexpected error: %v", tt.input, err)
 			}
 		})
 	}
@@ -137,13 +140,25 @@ func TestCreateDefaultStagesForAllPlugins(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			name:        "plugins with hyphens",
-			pluginNames: []string{"namespace-cleanup", "security-scanner"},
+			name:        "plugins with hyphens and Plugin suffix",
+			pluginNames: []string{"namespace-cleanupPlugin", "security-scannerPlugin"},
 			expectedStages: []string{
-				"10_NamespaceCleanupPlugin",
-				"15_SecurityScannerPlugin",
+				"10_namespace-cleanupPlugin",
+				"15_security-scannerPlugin",
 			},
 			expectedError: false,
+		},
+		{
+			name:           "plugins without Plugin suffix are skipped",
+			pluginNames:    []string{"namespace-cleanup", "helm"},
+			expectedStages: []string{}, // All skipped
+			expectedError:  false,
+		},
+		{
+			name:           "unsafe plugin names are skipped",
+			pluginNames:    []string{"../../../etc/passwd", "KubernetesPlugin"},
+			expectedStages: []string{"10_KubernetesPlugin"}, // Only safe one created
+			expectedError:  false,
 		},
 		{
 			name:           "no plugins",
@@ -225,9 +240,9 @@ func TestCreateDefaultStagesForAllPlugins_Priority(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	plugins := []cranelib.Plugin{
-		&mockPlugin{name: "First"},
-		&mockPlugin{name: "Second"},
-		&mockPlugin{name: "Third"},
+		&mockPlugin{name: "FirstPlugin"},
+		&mockPlugin{name: "SecondPlugin"},
+		&mockPlugin{name: "ThirdPlugin"},
 	}
 
 	opts := &Options{}
@@ -248,5 +263,70 @@ func TestCreateDefaultStagesForAllPlugins_Priority(t *testing.T) {
 		if stageNames[i] != exp {
 			t.Errorf("Stage %d: expected %q, got %q", i, exp, stageNames[i])
 		}
+	}
+}
+
+func TestCreateDefaultStagesForAllPlugins_PluginNameResolution(t *testing.T) {
+	// Test that plugin with hyphenated name like "namespace-cleanupPlugin"
+	// creates stage "10_namespace-cleanupPlugin" and can be resolved back correctly
+	tmpDir, err := os.MkdirTemp("", "crane-transform-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create plugins with Plugin suffix
+	plugins := []cranelib.Plugin{
+		&mockPlugin{name: "namespace-cleanupPlugin"},
+		&mockPlugin{name: "KubernetesPlugin"},
+	}
+
+	opts := &Options{}
+	log := logrus.New()
+	log.SetLevel(logrus.FatalLevel)
+
+	orchestrator := &internalTransform.Orchestrator{
+		NewlyCreatedStages: make(map[string]bool),
+	}
+
+	stageNames, err := opts.createDefaultStagesForAllPlugins(orchestrator, tmpDir, plugins, log)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	// Verify exact stage names
+	expectedStages := []string{"10_KubernetesPlugin", "15_namespace-cleanupPlugin"}
+	if len(stageNames) != len(expectedStages) {
+		t.Fatalf("Expected %d stages, got %d", len(expectedStages), len(stageNames))
+	}
+
+	for i, expected := range expectedStages {
+		if stageNames[i] != expected {
+			t.Errorf("Stage %d: expected %q, got %q", i, expected, stageNames[i])
+		}
+
+		// Verify directory exists
+		stageDir := filepath.Join(tmpDir, expected)
+		if _, err := os.Stat(stageDir); os.IsNotExist(err) {
+			t.Errorf("Stage directory %q was not created", stageDir)
+		}
+	}
+
+	// Now test that stage discovery can parse these back correctly
+	discoveredStages, err := internalTransform.DiscoverStages(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to discover stages: %v", err)
+	}
+
+	if len(discoveredStages) != 2 {
+		t.Fatalf("Expected 2 discovered stages, got %d", len(discoveredStages))
+	}
+
+	// Verify plugin names match exactly
+	if discoveredStages[0].PluginName != "KubernetesPlugin" {
+		t.Errorf("Stage 0 plugin name: expected %q, got %q", "KubernetesPlugin", discoveredStages[0].PluginName)
+	}
+	if discoveredStages[1].PluginName != "namespace-cleanupPlugin" {
+		t.Errorf("Stage 1 plugin name: expected %q, got %q", "namespace-cleanupPlugin", discoveredStages[1].PluginName)
 	}
 }

@@ -20,11 +20,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 )
 
-var pluginNameTokenRE = regexp.MustCompile(`[A-Za-z0-9]+`)
+var safePluginNameRE = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 type Options struct {
 	// Two GlobalFlags struct fields are needed
@@ -339,9 +337,23 @@ func (o *Options) createDefaultStagesForAllPlugins(
 
 	for _, plugin := range allPlugins {
 		pluginName := plugin.Metadata().Name
-		sanitizedName := sanitizePluginName(pluginName)
-		stageName := fmt.Sprintf("%d_%s", priority, sanitizedName)
 
+		// Validate plugin name is safe to use as directory name
+		if err := validatePluginNameForStage(pluginName); err != nil {
+			log.Warnf("Skipping plugin %q: %v", pluginName, err)
+			continue
+		}
+
+		// Require "Plugin" suffix
+		if !strings.HasSuffix(pluginName, "Plugin") {
+			log.Warnf("Skipping plugin %q: name must end with 'Plugin'", pluginName)
+			continue
+		}
+
+		// Use exact plugin metadata name in stage directory
+		stageName := fmt.Sprintf("%d_%s", priority, pluginName)
+
+		// Path traversal protection
 		stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
 		baseDir := filepath.Clean(transformDir) + string(os.PathSeparator)
 		if !strings.HasPrefix(stageDir+string(os.PathSeparator), baseDir) {
@@ -364,39 +376,19 @@ func (o *Options) createDefaultStagesForAllPlugins(
 	return stageNames, nil
 }
 
-// sanitizePluginName converts plugin name to valid stage directory name
-// Example: "namespace-cleanup" -> "NamespaceCleanupPlugin", "KubernetesPlugin" -> "KubernetesPlugin"
-// Security: Extracts only alphanumeric tokens to prevent path traversal
-func sanitizePluginName(pluginName string) string {
-	// Extract only safe alphanumeric tokens (removes /, \, .., and special chars)
-	tokens := pluginNameTokenRE.FindAllString(pluginName, -1)
-	if len(tokens) == 0 {
-		return "Plugin"
+// validatePluginNameForStage validates that a plugin name is safe to use as a stage directory name
+// Returns error if the name is empty or contains unsafe characters
+// Safe characters: A-Z, a-z, 0-9, hyphen, underscore
+func validatePluginNameForStage(pluginName string) error {
+	if pluginName == "" {
+		return fmt.Errorf("plugin name is empty")
 	}
 
-	// If we extracted exactly one token and it matches the original name,
-	// the name was already safe (only alphanumeric)
-	if len(tokens) == 1 && tokens[0] == pluginName {
-		// If already ends with Plugin suffix, keep as-is
-		if strings.HasSuffix(strings.ToLower(pluginName), "plugin") {
-			return pluginName
-		}
-		// Otherwise capitalize and add Plugin suffix
-		caser := cases.Title(language.English)
-		return caser.String(strings.ToLower(pluginName)) + "Plugin"
+	// Verify name only contains safe characters: alphanumeric, hyphen, underscore
+	// This automatically rejects: /, \, .., ., and any special characters
+	if !safePluginNameRE.MatchString(pluginName) {
+		return fmt.Errorf("contains unsafe characters (only A-Z, a-z, 0-9, -, _ allowed)")
 	}
 
-	// Multiple tokens or cleaned name differs - needs reformatting
-	caser := cases.Title(language.English)
-	for i, t := range tokens {
-		tokens[i] = caser.String(strings.ToLower(t))
-	}
-	name := strings.Join(tokens, "")
-
-	// Add "Plugin" suffix if not already present
-	if !strings.HasSuffix(strings.ToLower(name), "plugin") {
-		name = name + "Plugin"
-	}
-
-	return name
+	return nil
 }
