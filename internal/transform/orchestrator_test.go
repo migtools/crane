@@ -1597,3 +1597,234 @@ resources:
 	t.Log("✓ Error messages include contextual information")
 	t.Log("✓ Single stage executes successfully")
 }
+
+// TestMultiStage_ClusterScopedResources verifies that cluster-scoped resources
+// flow correctly through a multi-stage pipeline: each stage's input/output
+// preserves _cluster/ separation, and kustomization.yaml handles them correctly.
+func TestMultiStage_ClusterScopedResources(t *testing.T) {
+	if !hasKustomizeCommand(t) {
+		t.Skip("kubectl/oc not available, skipping multi-stage cluster-scoped test")
+	}
+
+	tmpDir, err := os.MkdirTemp("", "multistage-cluster-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	exportDir := filepath.Join(tmpDir, "export")
+	transformDir := filepath.Join(tmpDir, "transform")
+
+	// Create export directory with mixed resources:
+	// - namespaced Deployment in my-app/
+	// - cluster-scoped ClusterRole in _cluster/
+	nsDir := filepath.Join(exportDir, "my-app")
+	clusterDir := filepath.Join(exportDir, "_cluster")
+	if err := os.MkdirAll(nsDir, 0700); err != nil {
+		t.Fatalf("Failed to create ns dir: %v", err)
+	}
+	if err := os.MkdirAll(clusterDir, 0700); err != nil {
+		t.Fatalf("Failed to create cluster dir: %v", err)
+	}
+
+	deploymentYAML := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: my-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+      - name: web
+        image: nginx:1.21
+`
+	clusterRoleYAML := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: web-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
+`
+	clusterRoleBindingYAML := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: web-reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: web-reader
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: my-app
+`
+
+	if err := os.WriteFile(filepath.Join(nsDir, "deployment.yaml"), []byte(deploymentYAML), 0644); err != nil {
+		t.Fatalf("Failed to write deployment: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(clusterDir, "clusterrole.yaml"), []byte(clusterRoleYAML), 0644); err != nil {
+		t.Fatalf("Failed to write clusterrole: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(clusterDir, "clusterrolebinding.yaml"), []byte(clusterRoleBindingYAML), 0644); err != nil {
+		t.Fatalf("Failed to write clusterrolebinding: %v", err)
+	}
+
+	// Create two pass-through stages (no plugins)
+	for _, stageName := range []string{"10_stage1", "20_stage2"} {
+		stageDir := filepath.Join(transformDir, stageName)
+		stageResourcesDir := filepath.Join(stageDir, "resources")
+		if err := os.MkdirAll(stageResourcesDir, 0700); err != nil {
+			t.Fatalf("Failed to create %s resources dir: %v", stageName, err)
+		}
+		// Placeholder kustomization that will be overwritten by the orchestrator
+		kustomization := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []
+`
+		if err := os.WriteFile(filepath.Join(stageDir, "kustomization.yaml"), []byte(kustomization), 0644); err != nil {
+			t.Fatalf("Failed to write %s kustomization: %v", stageName, err)
+		}
+	}
+
+	// Also write the actual resources into stage 1 so kustomize can build them on first pass
+	stage1Dir := filepath.Join(transformDir, "10_stage1")
+	stage1Resources := filepath.Join(stage1Dir, "resources")
+	if err := os.WriteFile(filepath.Join(stage1Resources, "Deployment_apps_v1_my-app_web.yaml"), []byte(deploymentYAML), 0644); err != nil {
+		t.Fatalf("Failed to write stage1 deployment: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stage1Resources, "ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_web-reader.yaml"), []byte(clusterRoleYAML), 0644); err != nil {
+		t.Fatalf("Failed to write stage1 clusterrole: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stage1Resources, "ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_web-reader-binding.yaml"), []byte(clusterRoleBindingYAML), 0644); err != nil {
+		t.Fatalf("Failed to write stage1 clusterrolebinding: %v", err)
+	}
+
+	// Overwrite stage 1 kustomization with actual resource references
+	stage1Kustomization := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- resources/Deployment_apps_v1_my-app_web.yaml
+- resources/ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_web-reader.yaml
+- resources/ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_web-reader-binding.yaml
+`
+	if err := os.WriteFile(filepath.Join(stage1Dir, "kustomization.yaml"), []byte(stage1Kustomization), 0644); err != nil {
+		t.Fatalf("Failed to write stage1 kustomization: %v", err)
+	}
+
+	// Run multi-stage pipeline
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	o := &Orchestrator{
+		Log:          logger,
+		ExportDir:    exportDir,
+		TransformDir: transformDir,
+		PluginDir:    "/nonexistent",
+		Force:        true,
+	}
+
+	selector := StageSelector{} // Run all stages
+	if err := o.RunMultiStage(selector); err != nil {
+		t.Fatalf("RunMultiStage failed: %v", err)
+	}
+
+	opts := file.PathOpts{
+		TransformDir: transformDir,
+		ExportDir:    exportDir,
+	}
+
+	// === Stage 1 output verification ===
+	stage1OutputDir := opts.GetStageOutputDir("10_stage1")
+
+	// Namespaced resource should be under my-app/
+	stage1NsFiles, _ := filepath.Glob(filepath.Join(stage1OutputDir, "my-app", "Deployment_*_web.yaml"))
+	if len(stage1NsFiles) == 0 {
+		t.Errorf("Stage 1 output: Deployment should be under my-app/ in %s", stage1OutputDir)
+	}
+
+	// Cluster-scoped resources should be under _cluster/
+	stage1ClusterRoles, _ := filepath.Glob(filepath.Join(stage1OutputDir, "_cluster", "ClusterRole_*_web-reader.yaml"))
+	if len(stage1ClusterRoles) == 0 {
+		t.Errorf("Stage 1 output: ClusterRole should be under _cluster/ in %s", stage1OutputDir)
+	}
+	stage1ClusterBindings, _ := filepath.Glob(filepath.Join(stage1OutputDir, "_cluster", "ClusterRoleBinding_*_web-reader-binding.yaml"))
+	if len(stage1ClusterBindings) == 0 {
+		t.Errorf("Stage 1 output: ClusterRoleBinding should be under _cluster/ in %s", stage1OutputDir)
+	}
+
+	// === Stage 2 input verification (should match stage 1 output) ===
+	stage2InputDir := opts.GetStageInputDir("20_stage2")
+
+	stage2InputNs, _ := filepath.Glob(filepath.Join(stage2InputDir, "my-app", "Deployment_*_web.yaml"))
+	if len(stage2InputNs) == 0 {
+		t.Errorf("Stage 2 input: should contain Deployment from stage 1 output under my-app/")
+	}
+	stage2InputCluster, _ := filepath.Glob(filepath.Join(stage2InputDir, "_cluster", "ClusterRole_*_web-reader.yaml"))
+	if len(stage2InputCluster) == 0 {
+		t.Errorf("Stage 2 input: should contain ClusterRole from stage 1 output under _cluster/")
+	}
+
+	// === Stage 2 transform artifacts verification ===
+	stage2Dir := filepath.Join(transformDir, "20_stage2")
+
+	// Read kustomization.yaml and verify cluster-scoped resources are listed
+	stage2KustData, err := os.ReadFile(filepath.Join(stage2Dir, "kustomization.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to read stage 2 kustomization.yaml: %v", err)
+	}
+	stage2KustStr := string(stage2KustData)
+
+	if !strings.Contains(stage2KustStr, "ClusterRole") {
+		t.Errorf("Stage 2 kustomization.yaml should reference ClusterRole resources")
+	}
+	if !strings.Contains(stage2KustStr, "Deployment") {
+		t.Errorf("Stage 2 kustomization.yaml should reference Deployment resources")
+	}
+
+	// === Stage 2 output verification ===
+	stage2OutputDir := opts.GetStageOutputDir("20_stage2")
+
+	stage2OutNs, _ := filepath.Glob(filepath.Join(stage2OutputDir, "my-app", "Deployment_*_web.yaml"))
+	if len(stage2OutNs) == 0 {
+		t.Errorf("Stage 2 output: Deployment should be under my-app/")
+	}
+	stage2OutCluster, _ := filepath.Glob(filepath.Join(stage2OutputDir, "_cluster", "ClusterRole_*_web-reader.yaml"))
+	if len(stage2OutCluster) == 0 {
+		t.Errorf("Stage 2 output: ClusterRole should be under _cluster/")
+	}
+	stage2OutBinding, _ := filepath.Glob(filepath.Join(stage2OutputDir, "_cluster", "ClusterRoleBinding_*_web-reader-binding.yaml"))
+	if len(stage2OutBinding) == 0 {
+		t.Errorf("Stage 2 output: ClusterRoleBinding should be under _cluster/")
+	}
+
+	// === Verify resource content survived both stages ===
+	if len(stage2OutCluster) > 0 {
+		data, err := os.ReadFile(stage2OutCluster[0])
+		if err != nil {
+			t.Fatalf("Failed to read stage 2 ClusterRole output: %v", err)
+		}
+		content := string(data)
+		if !strings.Contains(content, "web-reader") {
+			t.Errorf("ClusterRole content should contain 'web-reader' after two stages")
+		}
+		if !strings.Contains(content, "pods") {
+			t.Errorf("ClusterRole rules should still reference 'pods' after two stages")
+		}
+	}
+
+	t.Log("✓ Stage 1 output: namespaced resources under my-app/, cluster-scoped under _cluster/")
+	t.Log("✓ Stage 2 input: correctly loaded from stage 1 output with _cluster/ separation")
+	t.Log("✓ Stage 2 kustomization.yaml: includes both namespaced and cluster-scoped resources")
+	t.Log("✓ Stage 2 output: all resources preserved with correct directory structure")
+	t.Log("✓ Resource content: ClusterRole rules survived two pipeline stages")
+}
