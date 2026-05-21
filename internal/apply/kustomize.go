@@ -163,7 +163,9 @@ func (k *KustomizeApplier) filterClusterScopedResources(yamlData []byte) ([]byte
 		if err := encoder.Encode(doc); err != nil {
 			return nil, fmt.Errorf("failed to encode YAML document: %w", err)
 		}
-		encoder.Close()
+		if err := encoder.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close YAML encoder: %w", err)
+		}
 		docBytes := buf.Bytes()
 
 		jsonData, err := yaml.YAMLToJSON(docBytes)
