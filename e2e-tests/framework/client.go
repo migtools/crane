@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -209,24 +210,35 @@ func parseClientCertificate(certBytes []byte) (*x509.Certificate, error) {
 }
 
 // RunCraneValidate runs crane validate command in live mode and returns any error.
-// It validates manifests in inputDir against the target cluster specified by context,
+// It validates manifests in inputDir against the target cluster specified by contextName,
 // and writes the validation report to validateDir.
-func RunCraneValidate(craneBin, inputDir, context, validateDir string) error {
+func RunCraneValidate(craneBin, inputDir, contextName, validateDir string) error {
 	args := []string{
 		"validate",
 		"--input-dir", inputDir,
-		"--context", context,
+		"--context", contextName,
 		"--validate-dir", validateDir,
 		"--output", "json",
 	}
 
 	logVerboseCommand(craneBin, args)
-	cmd := exec.Command(craneBin, args...)
+
+	// Create context with 2-minute timeout to prevent hanging
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, craneBin, args...)
 	out, err := cmd.CombinedOutput()
 	logVerboseOutput("crane validate", out)
 
 	if err != nil {
-		return fmt.Errorf("crane validate failed: %v, output: %s", err, string(out))
+		// Check if timeout occurred
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("crane validate timed out after 2m (bin=%s, context=%s, inputDir=%s, validateDir=%s): %w",
+				craneBin, contextName, inputDir, validateDir, err)
+		}
+		return fmt.Errorf("crane validate failed (bin=%s, context=%s, inputDir=%s, validateDir=%s): %w, output: %s",
+			craneBin, contextName, inputDir, validateDir, err, string(out))
 	}
 	return nil
 }
