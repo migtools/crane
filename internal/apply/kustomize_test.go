@@ -13,7 +13,7 @@ func TestSplitMultiDocYAMLToFiles(t *testing.T) {
 	tests := []struct {
 		name           string
 		yamlData       string
-		expectedFiles  map[string]bool // path -> should exist
+		expectedFiles  map[string]bool   // path -> should exist
 		expectedInFile map[string]string // file -> substring to check
 		expectError    bool
 	}{
@@ -61,13 +61,13 @@ data:
   key: value
 `,
 			expectedFiles: map[string]bool{
-				"resources/ns1/Deployment_ns1_app1.yaml": true,
-				"resources/ns1/Service_ns1_svc1.yaml":    true,
+				"resources/ns1/Deployment_ns1_app1.yaml":   true,
+				"resources/ns1/Service_ns1_svc1.yaml":      true,
 				"resources/ns2/ConfigMap_ns2_config1.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/ns1/Deployment_ns1_app1.yaml": "replicas: 1",
-				"resources/ns1/Service_ns1_svc1.yaml":    "type: ClusterIP",
+				"resources/ns1/Deployment_ns1_app1.yaml":   "replicas: 1",
+				"resources/ns1/Service_ns1_svc1.yaml":      "type: ClusterIP",
 				"resources/ns2/ConfigMap_ns2_config1.yaml": "key: value",
 			},
 		},
@@ -109,11 +109,11 @@ rules:
   verbs: ["get", "list"]
 `,
 			expectedFiles: map[string]bool{
-				"resources/prod/Service_prod_web.yaml": true,
+				"resources/prod/Service_prod_web.yaml":       true,
 				"resources/_cluster/ClusterRole_reader.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/prod/Service_prod_web.yaml": "type: LoadBalancer",
+				"resources/prod/Service_prod_web.yaml":       "type: LoadBalancer",
 				"resources/_cluster/ClusterRole_reader.yaml": "verbs:",
 			},
 		},
@@ -163,11 +163,11 @@ data:
   key: val
 `,
 			expectedFiles: map[string]bool{
-				"resources/default/Service_default_svc.yaml": true,
+				"resources/default/Service_default_svc.yaml":  true,
 				"resources/default/ConfigMap_default_cm.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/default/Service_default_svc.yaml": "type: ClusterIP",
+				"resources/default/Service_default_svc.yaml":  "type: ClusterIP",
 				"resources/default/ConfigMap_default_cm.yaml": "key: val",
 			},
 		},
@@ -491,6 +491,95 @@ data:
 
 	if !foundIndentedLine {
 		t.Error("Expected to find indented lines in YAML output")
+	}
+}
+
+func newTestApplier(transformDir, outputDir string) *KustomizeApplier {
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	return &KustomizeApplier{
+		Log:          logger,
+		TransformDir: transformDir,
+		OutputDir:    outputDir,
+	}
+}
+
+func TestApplySingleStageValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		stageName   string
+		createStage bool
+		errContains string
+	}{
+		{
+			name:        "returns error when stage directory does not exist",
+			stageName:   "99_NonExistent",
+			createStage: false,
+			errContains: "stage directory does not exist",
+		},
+		{
+			name:        "returns error when kustomization.yaml is missing",
+			stageName:   "10_TestPlugin",
+			createStage: true,
+			errContains: "kustomization.yaml not found in stage: 10_TestPlugin",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := os.MkdirTemp("", "crane-single-validate-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(tmpDir)
+
+			transformDir := filepath.Join(tmpDir, "transform")
+			if err := os.MkdirAll(transformDir, 0700); err != nil {
+				t.Fatalf("Failed to create transform dir: %v", err)
+			}
+
+			if tt.createStage {
+				stageDir := filepath.Join(transformDir, tt.stageName)
+				if err := os.MkdirAll(stageDir, 0700); err != nil {
+					t.Fatalf("Failed to create stage dir: %v", err)
+				}
+			}
+
+			applier := newTestApplier(transformDir, filepath.Join(tmpDir, "output"))
+			err = applier.ApplySingleStage(tt.stageName)
+
+			if err == nil {
+				t.Fatal("Expected error but got nil")
+			}
+			if !strings.Contains(err.Error(), tt.errContains) {
+				t.Errorf("Error %q should contain %q", err.Error(), tt.errContains)
+			}
+		})
+	}
+}
+
+func TestApplyFinalStageNoStages(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "crane-final-validate-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	transformDir := filepath.Join(tmpDir, "transform")
+	if err := os.MkdirAll(transformDir, 0700); err != nil {
+		t.Fatalf("Failed to create transform dir: %v", err)
+	}
+
+	applier := newTestApplier(transformDir, filepath.Join(tmpDir, "output"))
+	err = applier.ApplyFinalStage()
+
+	if err == nil {
+		t.Fatal("Expected error but got nil")
+	}
+
+	expected := "no stages found in transform directory"
+	if !strings.Contains(err.Error(), expected) {
+		t.Errorf("Error %q should contain %q", err.Error(), expected)
 	}
 }
 

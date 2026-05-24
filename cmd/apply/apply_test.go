@@ -1,11 +1,87 @@
 package apply
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+// TestNewApplyCommand_PreRunBindsFlags verifies that PreRun correctly binds cobra flags
+// to viper and unmarshals them into the Options.Flags struct. We can't inspect the
+// internal Options directly, so we observe the effect through Validate's behavior:
+// if mutually exclusive flags are properly unmarshaled, Validate returns the expected error.
+func TestNewApplyCommand_PreRunBindsFlags(t *testing.T) {
+	tests := []struct {
+		name            string
+		flagsToSet      map[string]string
+		expectValError  bool
+		valErrorContain string
+	}{
+		{
+			name: "stage and from-stage are mutually exclusive",
+			flagsToSet: map[string]string{
+				"stage":      "10_kubernetes",
+				"from-stage": "20_openshift",
+			},
+			expectValError:  true,
+			valErrorContain: "mutually exclusive",
+		},
+		{
+			name: "stage and stages are mutually exclusive",
+			flagsToSet: map[string]string{
+				"stage":  "10_kubernetes",
+				"stages": "20_openshift",
+			},
+			expectValError:  true,
+			valErrorContain: "mutually exclusive",
+		},
+		{
+			name: "only stage set passes validation",
+			flagsToSet: map[string]string{
+				"stage": "10_kubernetes",
+			},
+			expectValError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+
+			cmd := NewApplyCommand(&flags.GlobalFlags{})
+			for k, v := range tt.flagsToSet {
+				if err := cmd.Flags().Set(k, v); err != nil {
+					t.Fatalf("failed to set flag %q to %q: %v", k, v, err)
+				}
+			}
+
+			// Execute PreRun to bind flags → viper → Options.Flags
+			cmd.PreRun(cmd, []string{})
+
+			// Execute RunE which calls Complete → Validate → Run
+			err := cmd.RunE(cmd, []string{})
+
+			if tt.expectValError {
+				if err == nil {
+					t.Fatal("expected a validation error but RunE returned nil")
+				}
+				if !strings.Contains(err.Error(), tt.valErrorContain) {
+					t.Errorf("expected error containing %q, got: %v", tt.valErrorContain, err)
+				}
+			} else {
+				// When only "stage" is set, validation passes but run() will fail
+				// (e.g. kubectl not found). We just verify the error is NOT the
+				// validation error, which proves the flags were correctly unmarshaled.
+				if err != nil && strings.Contains(err.Error(), "mutually exclusive") {
+					t.Errorf("unexpected validation error: %v", err)
+				}
+			}
+		})
+	}
+}
 
 func TestValidate(t *testing.T) {
 	tests := []struct {
@@ -189,9 +265,9 @@ func TestStageSelectionRouting(t *testing.T) {
 			flags: Flags{
 				Stages: []string{"10_kubernetes", "30_imagestream"},
 			},
-			expectMulti:      true,
-			expectSelector:   true,
-			selectorStages:   []string{"10_kubernetes", "30_imagestream"},
+			expectMulti:    true,
+			expectSelector: true,
+			selectorStages: []string{"10_kubernetes", "30_imagestream"},
 		},
 	}
 
