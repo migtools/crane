@@ -666,3 +666,139 @@ func TestWriteStage_KustomizeBuildWithMixedResources(t *testing.T) {
 		t.Error("ClusterRole not found in kustomize output")
 	}
 }
+
+// Tests dedup logic for duplicate resourceIDs with different whiteout status — the dedup
+// branches in WriteStage were only exercised with distinct resources, never same-ID duplicates.
+func TestWriteStage_DuplicateResourceDedup(t *testing.T) {
+	makeConfigMap := func(data string, whiteout bool) cranelib.TransformArtifact {
+		resource := unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata":   map[string]interface{}{"name": "test", "namespace": "default"},
+				"data":       map[string]interface{}{"key": data},
+			},
+		}
+		return cranelib.TransformArtifact{
+			Resource:     resource,
+			HaveWhiteOut: whiteout,
+			Target:       cranelib.DeriveTargetFromResource(resource),
+		}
+	}
+
+	t.Run("whiteout replaced by active", func(t *testing.T) {
+		tmpDir, err := os.MkdirTemp("", "dedup-test-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		logger := logrus.New()
+		logger.SetLevel(logrus.ErrorLevel)
+		opts := file.PathOpts{TransformDir: filepath.Join(tmpDir, "transform")}
+		writer := NewKustomizeWriter(opts, "10_test", logger)
+
+		artifacts := []cranelib.TransformArtifact{
+			makeConfigMap("first", true),
+			makeConfigMap("second", false),
+		}
+
+		if err := writer.WriteStage(artifacts, true); err != nil {
+			t.Fatalf("WriteStage failed: %v", err)
+		}
+
+		kData, err := os.ReadFile(opts.GetKustomizationPath("10_test"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var kust kustomize.KustomizationFile
+		if err := yaml.Unmarshal(kData, &kust); err != nil {
+			t.Fatalf("Failed to parse kustomization.yaml: %v", err)
+		}
+
+		if len(kust.Resources) != 1 {
+			t.Fatalf("expected 1 active resource, got %d", len(kust.Resources))
+		}
+		if !strings.Contains(kust.Resources[0], "ConfigMap") {
+			t.Errorf("expected ConfigMap in resources list, got %q", kust.Resources[0])
+		}
+	})
+
+	t.Run("active kept over whiteout", func(t *testing.T) {
+		tmpDir, err := os.MkdirTemp("", "dedup-test-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		logger := logrus.New()
+		logger.SetLevel(logrus.ErrorLevel)
+		opts := file.PathOpts{TransformDir: filepath.Join(tmpDir, "transform")}
+		writer := NewKustomizeWriter(opts, "10_test", logger)
+
+		artifacts := []cranelib.TransformArtifact{
+			makeConfigMap("first", false),
+			makeConfigMap("second", true),
+		}
+
+		if err := writer.WriteStage(artifacts, true); err != nil {
+			t.Fatalf("WriteStage failed: %v", err)
+		}
+
+		kData, err := os.ReadFile(opts.GetKustomizationPath("10_test"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var kust kustomize.KustomizationFile
+		if err := yaml.Unmarshal(kData, &kust); err != nil {
+			t.Fatalf("Failed to parse kustomization.yaml: %v", err)
+		}
+
+		if len(kust.Resources) != 1 {
+			t.Fatalf("expected 1 active resource, got %d", len(kust.Resources))
+		}
+	})
+
+	t.Run("both active last wins", func(t *testing.T) {
+		tmpDir, err := os.MkdirTemp("", "dedup-test-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		logger := logrus.New()
+		logger.SetLevel(logrus.ErrorLevel)
+		opts := file.PathOpts{TransformDir: filepath.Join(tmpDir, "transform")}
+		writer := NewKustomizeWriter(opts, "10_test", logger)
+
+		artifacts := []cranelib.TransformArtifact{
+			makeConfigMap("first-data", false),
+			makeConfigMap("second-data", false),
+		}
+
+		if err := writer.WriteStage(artifacts, true); err != nil {
+			t.Fatalf("WriteStage failed: %v", err)
+		}
+
+		// Verify only one resource file
+		resourcesDir := opts.GetResourcesDir("10_test")
+		entries, err := os.ReadDir(resourcesDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("expected 1 resource file (deduped), got %d", len(entries))
+		}
+
+		// Verify content is from the last artifact
+		content, err := os.ReadFile(filepath.Join(resourcesDir, entries[0].Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(content), "second-data") {
+			t.Errorf("expected resource to contain 'second-data' (last wins), got:\n%s", string(content))
+		}
+	})
+}

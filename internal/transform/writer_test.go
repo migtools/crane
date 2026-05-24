@@ -1,9 +1,12 @@
 package transform
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	jsonpatch "github.com/evanphx/json-patch"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -358,6 +361,87 @@ func TestPathExists(t *testing.T) {
 			result := pathExists(tt.data, tt.path)
 			if result != tt.expected {
 				t.Errorf("pathExists(%v, %q) = %v, want %v", tt.data, tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCheckStageDirectory(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	w := &KustomizeWriter{log: logger}
+
+	tests := []struct {
+		name          string
+		setup         func(t *testing.T, base string) string
+		expectError   bool
+		errorContains string
+	}{
+		{
+			name: "directory does not exist",
+			setup: func(t *testing.T, base string) string {
+				return filepath.Join(base, "nonexistent")
+			},
+		},
+		{
+			name: "directory exists and is empty",
+			setup: func(t *testing.T, base string) string {
+				dir := filepath.Join(base, "empty")
+				if err := os.Mkdir(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				return dir
+			},
+		},
+		{
+			name: "directory exists with files",
+			setup: func(t *testing.T, base string) string {
+				dir := filepath.Join(base, "nonempty")
+				if err := os.Mkdir(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("data"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return dir
+			},
+			expectError:   true,
+			errorContains: "not empty",
+		},
+		{
+			name: "path is a file not directory",
+			setup: func(t *testing.T, base string) string {
+				path := filepath.Join(base, "afile")
+				if err := os.WriteFile(path, []byte("data"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+			expectError:   true,
+			errorContains: "not a directory",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base, err := os.MkdirTemp("", "check-stage-*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(base)
+
+			stageDir := tt.setup(t, base)
+			err = w.checkStageDirectory(stageDir)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if !contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
