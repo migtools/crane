@@ -10,6 +10,7 @@ import (
 	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestFilterPluginsByStage(t *testing.T) {
@@ -414,6 +415,205 @@ func TestFilterPluginsByStage_NonExistentPluginIntegration(t *testing.T) {
 // Mock plugin for testing
 type mockPlugin struct {
 	name string
+}
+
+// testPlugin implements cranelib.Plugin for unit testing getPluginForStage
+type testPlugin struct {
+	pluginName string
+}
+
+func (p testPlugin) Run(request cranelib.PluginRequest) (cranelib.PluginResponse, error) {
+	return cranelib.PluginResponse{}, nil
+}
+
+func (p testPlugin) Metadata() cranelib.PluginMetadata {
+	return cranelib.PluginMetadata{Name: p.pluginName}
+}
+
+// Tests plugin resolution logic that maps stage names to plugins — was only tested
+// indirectly via mock filtering, never through the actual getPluginForStage function.
+func TestGetPluginForStage(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	o := &Orchestrator{Log: logger}
+
+	kubePlugin := testPlugin{pluginName: "KubernetesPlugin"}
+	osPlugin := testPlugin{pluginName: "OpenshiftPlugin"}
+	twoPlugins := []cranelib.Plugin{kubePlugin, osPlugin}
+
+	tests := []struct {
+		name           string
+		stage          Stage
+		allPlugins     []cranelib.Plugin
+		expectNil      bool
+		expectError    bool
+		errorContains  string
+		expectedName   string
+	}{
+		{
+			name:         "plugin found",
+			stage:        Stage{DirName: "10_KubernetesPlugin", PluginName: "KubernetesPlugin"},
+			allPlugins:   twoPlugins,
+			expectNil:    false,
+			expectedName: "KubernetesPlugin",
+		},
+		{
+			name:          "required plugin missing",
+			stage:         Stage{DirName: "10_MissingPlugin", PluginName: "MissingPlugin"},
+			allPlugins:    twoPlugins,
+			expectNil:     true,
+			expectError:   true,
+			errorContains: "not found",
+		},
+		{
+			name:       "pass-through stage",
+			stage:      Stage{DirName: "90_ManualEdits", PluginName: "ManualEdits"},
+			allPlugins: twoPlugins,
+			expectNil:  true,
+		},
+		{
+			name:          "required plugin with empty list",
+			stage:         Stage{DirName: "10_FooPlugin", PluginName: "FooPlugin"},
+			allPlugins:    []cranelib.Plugin{},
+			expectNil:     true,
+			expectError:   true,
+			errorContains: "none",
+		},
+		{
+			name:       "pass-through with empty list",
+			stage:      Stage{DirName: "90_CustomStage", PluginName: "CustomStage"},
+			allPlugins: []cranelib.Plugin{},
+			expectNil:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plugin, err := o.getPluginForStage(tt.stage, tt.allPlugins)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got nil")
+				}
+				if tt.errorContains != "" && !contains(err.Error(), tt.errorContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errorContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tt.expectNil {
+				if plugin != nil {
+					t.Errorf("expected nil plugin, got %s", plugin.Metadata().Name)
+				}
+			} else {
+				if plugin == nil {
+					t.Fatal("expected non-nil plugin, got nil")
+				}
+				if plugin.Metadata().Name != tt.expectedName {
+					t.Errorf("expected plugin %q, got %q", tt.expectedName, plugin.Metadata().Name)
+				}
+			}
+		})
+	}
+}
+
+func TestWriteResourcesToDirectory(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	o := &Orchestrator{Log: logger}
+
+	tests := []struct {
+		name            string
+		resources       []unstructured.Unstructured
+		expectSubdir    string
+		expectFileCount int
+	}{
+		{
+			name: "namespaced resource written to namespace subdir",
+			resources: []unstructured.Unstructured{{
+				Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "ConfigMap",
+					"metadata":   map[string]interface{}{"name": "test-config", "namespace": "default"},
+				},
+			}},
+			expectSubdir:    "default",
+			expectFileCount: 1,
+		},
+		{
+			name: "cluster-scoped resource written to _cluster subdir",
+			resources: []unstructured.Unstructured{{
+				Object: map[string]interface{}{
+					"apiVersion": "rbac.authorization.k8s.io/v1",
+					"kind":       "ClusterRole",
+					"metadata":   map[string]interface{}{"name": "admin"},
+				},
+			}},
+			expectSubdir:    "_cluster",
+			expectFileCount: 1,
+		},
+		{
+			name: "resource missing kind is skipped",
+			resources: []unstructured.Unstructured{{
+				Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"metadata":   map[string]interface{}{"name": "orphan", "namespace": "default"},
+				},
+			}},
+			expectFileCount: 0,
+		},
+		{
+			name: "resource missing name is skipped",
+			resources: []unstructured.Unstructured{{
+				Object: map[string]interface{}{
+					"apiVersion": "v1",
+					"kind":       "ConfigMap",
+					"metadata":   map[string]interface{}{"namespace": "default"},
+				},
+			}},
+			expectFileCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outputDir, err := os.MkdirTemp("", "write-resources-test-*")
+			if err != nil {
+				t.Fatalf("Failed to create temp dir: %v", err)
+			}
+			defer os.RemoveAll(outputDir)
+
+			targetDir := filepath.Join(outputDir, "output")
+			if err := o.writeResourcesToDirectory(tt.resources, targetDir); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			var fileCount int
+			filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
+				if err == nil && !info.IsDir() && filepath.Ext(path) == ".yaml" {
+					fileCount++
+
+					if tt.expectSubdir != "" {
+						rel, _ := filepath.Rel(targetDir, path)
+						dir := filepath.Dir(rel)
+						if dir != tt.expectSubdir {
+							t.Errorf("expected file under %q, got %q", tt.expectSubdir, dir)
+						}
+					}
+				}
+				return nil
+			})
+
+			if fileCount != tt.expectFileCount {
+				t.Errorf("expected %d files, got %d", tt.expectFileCount, fileCount)
+			}
+		})
+	}
 }
 
 func TestExecuteStage_PluginFiltering(t *testing.T) {
