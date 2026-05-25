@@ -44,6 +44,8 @@ type Flags struct {
 	Force bool   `mapstructure:"force"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
+	//Config file
+	ConfigFile string `mapstructure:"config-file"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -100,7 +102,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
-
+	cmd.Flags().StringVar(&o.ConfigFile, "config-file", "", "Path to the transform config file")
 	// Multi-stage flag
 	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are run.")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
