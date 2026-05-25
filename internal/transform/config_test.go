@@ -41,3 +41,25 @@ func TestGenerateStageDirNames(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateConfig_InvalidCharacters(t *testing.T) {
+	cfg := &ConfigFile{
+		Stages: []string{"KubernetesPlugin", "../bad"},
+	}
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected invalid character error, got nil")
+	}
+}
+
+func TestValidateConfig_EmptyStages(t *testing.T) {
+	cfg := &ConfigFile{
+		Stages: []string{},
+	}
+
+	err := ValidateConfig(cfg)
+	if err == nil {
+		t.Fatalf("expected empty stages error, got nil")
+	}
+}
