@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/konveyor/crane/cmd/transform/listplugins"
@@ -183,7 +184,9 @@ func (o *Options) run() error {
 	var selector internalTransform.StageSelector
 	if len(configStages) > 0 {
 		log.Infof("Running stages from config file: %s", o.ConfigFile)
-
+		if err := o.reconcileConfigStages(transformDir, configStages, log); err != nil {
+			return err
+		}
 		for _, stageName := range configStages {
 			stageDir := filepath.Join(transformDir, stageName)
 			_, err := os.Stat(stageDir)
@@ -303,6 +306,47 @@ func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrat
 		}
 	}
 	return err
+}
+
+func (o *Options) reconcileConfigStages(transformDir string, desiredStages []string, log *logrus.Logger) error {
+	existingStages, err := internalTransform.DiscoverStages(transformDir)
+	if err != nil {
+		return fmt.Errorf("failed to discover existing stages for config reconciliation: %w", err)
+	}
+
+	desiredSet := make(map[string]struct{}, len(desiredStages))
+	for _, stage := range desiredStages {
+		desiredSet[stage] = struct{}{}
+	}
+
+	var extras []string
+	for _, stage := range existingStages {
+		if _, exists := desiredSet[stage.DirName]; !exists {
+			extras = append(extras, stage.DirName)
+		}
+	}
+
+	if len(extras) == 0 {
+		return nil
+	}
+
+	sort.Strings(extras)
+
+	if !o.Force {
+		return fmt.Errorf(
+			"stages in transform/ do not match --config-file: extra stage directories: %s. Re-run with --force to reconcile",
+			strings.Join(extras, ", "),
+		)
+	}
+
+	for _, extra := range extras {
+		stagePath := filepath.Join(transformDir, extra)
+		if err := os.RemoveAll(stagePath); err != nil {
+			return fmt.Errorf("failed to delete extra stage directory %q: %w", extra, err)
+		}
+		log.Infof("Deleted stage directory not present in config: %s", extra)
+	}
+	return nil
 }
 
 // ensurePreviousStagesRun ensures all existing stages have been run
