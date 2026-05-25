@@ -134,6 +134,10 @@ func (o *Options) run() error {
 		return err
 	}
 
+	if o.ConfigFile != "" && o.Stage != "" {
+		return fmt.Errorf("use either --config-file or --stage, not both")
+	}
+
 	// Parse optional flags
 	var optionalFlags map[string]string
 	if len(o.OptionalFlags) > 0 {

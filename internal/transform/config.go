@@ -67,3 +67,12 @@ func ValidateConfig(cfg *ConfigFile) error {
 	}
 	return nil
 }
+
+func GenerateStageDirNames(stageTokens []string) []string {
+	stageNames := make([]string, 0, len(stageTokens))
+	for i, token := range stageTokens {
+		priority := 10 + (i * 10)
+		stageNames = append(stageNames, fmt.Sprintf("%d_%s", priority, token))
+	}
+	return stageNames
+}
