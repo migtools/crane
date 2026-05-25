@@ -134,10 +134,21 @@ func (o *Options) run() error {
 		return err
 	}
 
-	if o.ConfigFile != "" && o.Stage != "" {
+	if o.ConfigFile != "" && o.Stage != "" { // config file and stage flag are mutually exclusive
 		return fmt.Errorf("use either --config-file or --stage, not both")
 	}
-
+	var configStages []string
+	if o.ConfigFile != "" {
+		configFilePath, err := filepath.Abs(o.ConfigFile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve config file path %q: %w", o.ConfigFile, err)
+		}
+		cfg, err := internalTransform.LoadConfig(configFilePath)
+		if err != nil {
+			return err
+		}
+		configStages = internalTransform.GenerateStageDirNames(cfg.Stages)
+	}
 	// Parse optional flags
 	var optionalFlags map[string]string
 	if len(o.OptionalFlags) > 0 {
@@ -170,6 +181,34 @@ func (o *Options) run() error {
 
 	// Determine which stages to run
 	var selector internalTransform.StageSelector
+	if len(configStages) > 0 {
+		log.Infof("Running stages from config file: %s", o.ConfigFile)
+
+		for _, stageName := range configStages {
+			stageDir := filepath.Join(transformDir, stageName)
+			_, err := os.Stat(stageDir)
+			stageExists := err == nil
+			if err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to inspect stage directory %s: %w", stageDir, err)
+			}
+
+			if !stageExists {
+				if err := os.MkdirAll(stageDir, 0700); err != nil {
+					return fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
+				}
+				orchestrator.NewlyCreatedStages[stageName] = true
+				log.Infof("Created stage directory: %s", stageDir)
+			}
+			selector := internalTransform.StageSelector{
+				Stage: stageName,
+			}
+			log.Infof("Running stage: %s", stageName)
+			if err := o.runStageWithCleanup(orchestrator, selector, stageDir, !stageExists, log); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 
 	if o.Stage != "" {
 		// User specified a specific stage to run
