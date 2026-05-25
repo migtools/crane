@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("CronJob with attached PVC migration as non-admin user", func() {
-	It("[BUG #330][MTA-813] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "tier0"), func() {
+	It("[BUG #330][BUG #408][MTA-813] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "BUG #408", "tier0"), func() {
 		appName := "cronjob"
 		namespace := "mta-813-ns"
 		expectedLogSubstring := fmt.Sprintf("Hello! from namespace %s", namespace)
@@ -223,20 +223,18 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 		log.Printf("CronJob %s confirmed on target with correct schedule\n", appName)
 
 		By("Skipped - Verify PVC data was transferred intact by running a reader pod on target")
-		// TODO: PVC data integrity assertion is commented out due to flaky behavior on Linux
-		// (locally and on CI). On macOS, migration works correctly as namespace-admin and PVC
-		// content is transferred consistently. On Linux however, even with cluster-admin
-		// contexts, the PVC transfers (Bound on target) but the content is sometimes empty
-		// with no error surfaced.
+		// TODO(https://github.com/migtools/crane/issues/408): PVC data integrity assertion
+		// is commented out due to flaky behavior on Linux (locally and on CI). On macOS,
+		// migration works correctly as namespace-admin and PVC content is transferred
+		// consistently. On Linux however, even with cluster-admin contexts, the PVC transfers
+		// (Bound on target) but the content is sometimes empty with no error surfaced.
 		//
 		// When investigating the crane source, the rsync server health check result was found
 		// to be silently discarded in cmd/transfer-pvc/transfer-pvc.go — if the server never
 		// becomes healthy, the command proceeds anyway with no error, making it harder to
 		// diagnose why the content isn't being transferred on Linux.
 		//
-		// This will be investigated further after the initial release. The assertion will be
-		// re-enabled once the root cause is confirmed and a bug is filed.
-
+		// Re-enable this assertion once crane#408 is resolved.
 		// _, err = scenario.KubectlTgtNonAdmin.Run(
 		// 	"run", "pvc-reader",
 		// 	"-n", namespace,
