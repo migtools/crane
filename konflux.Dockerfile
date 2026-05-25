@@ -37,8 +37,6 @@ RUN set -e && \
 
 FROM registry.redhat.io/ubi9/ubi:latest
 
-RUN dnf -y install openssl && dnf -y reinstall tzdata && dnf clean all
-
 COPY --from=builder /tmp/archives /archives
 COPY --from=builder /tmp/bin/mta-ops /usr/local/bin/mta-ops
 COPY LICENSE /licenses/
