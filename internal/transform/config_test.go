@@ -2,6 +2,7 @@ package transform
 
 import "testing"
 
+// Valid config with known-safe stage tokens should pass validation unchanged.
 func TestValidateConfig_Valid(t *testing.T) {
 	cfg := &ConfigFile{
 		Stages: []string{"KubernetesPlugin", "CustomStage"},
@@ -17,6 +18,7 @@ func TestValidateConfig_Valid(t *testing.T) {
 	}
 }
 
+// Duplicate stage tokens should be rejected to avoid ambiguous stage layouts.
 func TestValidateConfig_DuplicateStages(t *testing.T) {
 	cfg := &ConfigFile{
 		Stages: []string{"KubernetesPlugin", "KubernetesPlugin"},
@@ -28,6 +30,7 @@ func TestValidateConfig_DuplicateStages(t *testing.T) {
 	}
 }
 
+// Stage directory names should be generated deterministically by list order.
 func TestGenerateStageDirNames(t *testing.T) {
 	got := GenerateStageDirNames([]string{"KubernetesPlugin", "OpenshiftPlugin", "CustomStage"})
 	want := []string{"10_KubernetesPlugin", "20_OpenshiftPlugin", "30_CustomStage"}
@@ -42,6 +45,7 @@ func TestGenerateStageDirNames(t *testing.T) {
 	}
 }
 
+// Stage tokens with unsafe characters should fail validation.
 func TestValidateConfig_InvalidCharacters(t *testing.T) {
 	cfg := &ConfigFile{
 		Stages: []string{"KubernetesPlugin", "../bad"},
@@ -53,6 +57,7 @@ func TestValidateConfig_InvalidCharacters(t *testing.T) {
 	}
 }
 
+// Empty stages list should fail validation because at least one stage is required.
 func TestValidateConfig_EmptyStages(t *testing.T) {
 	cfg := &ConfigFile{
 		Stages: []string{},

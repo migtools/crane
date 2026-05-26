@@ -15,6 +15,8 @@ type ConfigFile struct {
 	Stages []string `yaml:"stages"`
 }
 
+// LoadConfig reads a transform config file from disk, parses YAML, and validates
+// the resulting structure before returning it.
 func LoadConfig(path string) (*ConfigFile, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("config file path is required")
@@ -36,6 +38,8 @@ func LoadConfig(path string) (*ConfigFile, error) {
 
 }
 
+// ValidateConfig validates the config schema and stage token rules.
+// It also trims stage entries in place for normalized downstream usage.
 func ValidateConfig(cfg *ConfigFile) error {
 	if cfg == nil {
 		return fmt.Errorf("config file is required")
@@ -68,6 +72,8 @@ func ValidateConfig(cfg *ConfigFile) error {
 	return nil
 }
 
+// GenerateStageDirNames converts ordered stage tokens into deterministic stage
+// directory names using 10-step numeric prefixes (10_, 20_, 30_, ...).
 func GenerateStageDirNames(stageTokens []string) []string {
 	stageNames := make([]string, 0, len(stageTokens))
 	for i, token := range stageTokens {

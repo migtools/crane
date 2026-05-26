@@ -308,6 +308,11 @@ func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrat
 	return err
 }
 
+// reconcileConfigStages compares discovered stage directories in transform/
+// against the desired stage names generated from --config-file.
+// Without --force, it fails if extra stage directories are found.
+// With --force, it deletes those extra stage directories so transform/
+// matches the config-defined stage set.
 func (o *Options) reconcileConfigStages(transformDir string, desiredStages []string, log *logrus.Logger) error {
 	existingStages, err := internalTransform.DiscoverStages(transformDir)
 	if err != nil {
@@ -342,7 +347,7 @@ func (o *Options) reconcileConfigStages(transformDir string, desiredStages []str
 	for _, extra := range extras {
 		stagePath := filepath.Join(transformDir, extra)
 		if err := os.RemoveAll(stagePath); err != nil {
-			return fmt.Errorf("failed to delete extra stage directory %q: %w", extra, err)
+			return fmt.Errorf("failed to delete extra stage directory %q at path %q: %w", extra, stagePath, err)
 		}
 		log.Infof("Deleted stage directory not present in config: %s", extra)
 	}
