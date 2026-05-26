@@ -45,13 +45,13 @@ func TestReadKustomizeVersion_DepFound(t *testing.T) {
 		return &debug.BuildInfo{
 			Deps: []*debug.Module{
 				{Path: "github.com/some/other-dep", Version: "v1.0.0"},
-				{Path: "sigs.k8s.io/kustomize/api", Version: "v0.20.1"},
+				{Path: "sigs.k8s.io/kustomize/kustomize/v5", Version: "v5.8.1"},
 			},
 		}, true
 	}
 
 	result := readKustomizeVersion()
-	if result != "v0.20.1" {
-		t.Errorf("expected \"v0.20.1\", got %q", result)
+	if result != "v5.8.1" {
+		t.Errorf("expected \"v5.8.1\", got %q", result)
 	}
 }
