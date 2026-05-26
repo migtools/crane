@@ -202,7 +202,7 @@ func (o *Options) run() error {
 				orchestrator.NewlyCreatedStages[stageName] = true
 				log.Infof("Created stage directory: %s", stageDir)
 			}
-			selector := internalTransform.StageSelector{
+			selector = internalTransform.StageSelector{
 				Stage: stageName,
 			}
 			log.Infof("Running stage: %s", stageName)
