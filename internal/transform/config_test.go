@@ -7,31 +7,84 @@ import (
 	"testing"
 )
 
-// Valid config with known-safe stage tokens should pass validation unchanged.
-func TestValidateConfig_Valid(t *testing.T) {
-	cfg := &ConfigFile{
-		Stages: []string{"KubernetesPlugin", "CustomStage"},
+func TestValidateConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		cfg        *ConfigFile
+		wantErr    bool
+		wantStages []string
+	}{
+		// Valid config remains unchanged.
+		{
+			name:       "valid config",
+			cfg:        &ConfigFile{Stages: []string{"KubernetesPlugin", "CustomStage"}},
+			wantErr:    false,
+			wantStages: []string{"KubernetesPlugin", "CustomStage"},
+		},
+		// Whitespace around stage names is trimmed.
+		{
+			name:       "valid config trims stage names",
+			cfg:        &ConfigFile{Stages: []string{" KubernetesPlugin ", "  CustomStage\t"}},
+			wantErr:    false,
+			wantStages: []string{"KubernetesPlugin", "CustomStage"},
+		},
+		// Duplicate stage names are rejected.
+		{
+			name:    "duplicate stages",
+			cfg:     &ConfigFile{Stages: []string{"KubernetesPlugin", "KubernetesPlugin"}},
+			wantErr: true,
+		},
+		// Unsafe characters are rejected.
+		{
+			name:    "invalid characters",
+			cfg:     &ConfigFile{Stages: []string{"KubernetesPlugin", "../bad"}},
+			wantErr: true,
+		},
+		// At least one stage is required.
+		{
+			name:    "empty stages list",
+			cfg:     &ConfigFile{Stages: []string{}},
+			wantErr: true,
+		},
+		// Nil config pointer is invalid.
+		{
+			name:    "nil config",
+			cfg:     nil,
+			wantErr: true,
+		},
+		// Blank stage entries are invalid.
+		{
+			name:    "empty stage entry",
+			cfg:     &ConfigFile{Stages: []string{"KubernetesPlugin", "   "}},
+			wantErr: true,
+		},
 	}
 
-	err := ValidateConfig(cfg)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateConfig(tt.cfg)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
 
-	if cfg.Stages[0] != "KubernetesPlugin" || cfg.Stages[1] != "CustomStage" {
-		t.Fatalf("expected trimmed stages to be preserved, got %#v", cfg.Stages)
-	}
-}
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
 
-// Duplicate stage tokens should be rejected to avoid ambiguous stage layouts.
-func TestValidateConfig_DuplicateStages(t *testing.T) {
-	cfg := &ConfigFile{
-		Stages: []string{"KubernetesPlugin", "KubernetesPlugin"},
-	}
-
-	err := ValidateConfig(cfg)
-	if err == nil {
-		t.Fatalf("expected duplicate stage error, got nil")
+			if len(tt.wantStages) > 0 {
+				if len(tt.cfg.Stages) != len(tt.wantStages) {
+					t.Fatalf("stages length mismatch: got %d want %d", len(tt.cfg.Stages), len(tt.wantStages))
+				}
+				for i := range tt.wantStages {
+					if tt.cfg.Stages[i] != tt.wantStages[i] {
+						t.Fatalf("at index %d: got %q want %q", i, tt.cfg.Stages[i], tt.wantStages[i])
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -47,30 +100,6 @@ func TestGenerateStageDirNames(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("at index %d: got %q want %q", i, got[i], want[i])
 		}
-	}
-}
-
-// Stage tokens with unsafe characters should fail validation.
-func TestValidateConfig_InvalidCharacters(t *testing.T) {
-	cfg := &ConfigFile{
-		Stages: []string{"KubernetesPlugin", "../bad"},
-	}
-
-	err := ValidateConfig(cfg)
-	if err == nil {
-		t.Fatalf("expected invalid character error, got nil")
-	}
-}
-
-// Empty stages list should fail validation because at least one stage is required.
-func TestValidateConfig_EmptyStages(t *testing.T) {
-	cfg := &ConfigFile{
-		Stages: []string{},
-	}
-
-	err := ValidateConfig(cfg)
-	if err == nil {
-		t.Fatalf("expected empty stages error, got nil")
 	}
 }
 
