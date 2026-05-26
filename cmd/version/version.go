@@ -62,5 +62,7 @@ func (o *Options) run() error {
 	fmt.Printf("\tVersion: %s\n", buildinfo.Version)
 	fmt.Println("crane-lib:")
 	fmt.Printf("\tVersion: %s\n", buildinfo.CranelibVersion)
+	fmt.Println("kustomize:")
+	fmt.Printf("\tVersion: %s\n", buildinfo.KustomizeVersion)
 	return nil
 }
