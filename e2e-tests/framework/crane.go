@@ -22,6 +22,15 @@ type TransferPVCOptions struct {
 	Subdomain       string
 }
 
+type ValidateOptions struct {
+	Context          string
+	InputDir         string
+	ValidateDir      string
+	OutputFormat     string
+	APIResourcesFile string
+	ExtraArgs        []string
+}
+
 // Export runs crane export for a namespace into the given export directory.
 func (c CraneRunner) Export(namespace, exportDir string) error {
 	args := []string{"export", "--context", c.SourceContext, "--namespace", namespace, "--export-dir", exportDir}
@@ -107,4 +116,37 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
 	}
 	return nil
+}
+
+func (c CraneRunner) Validate(opts ValidateOptions) (stdout string, err error) {
+	args := []string{"validate"}
+
+	if opts.Context != "" {
+		args = append(args, "--context", opts.Context)
+	}
+	if opts.InputDir != "" {
+		args = append(args, "--input-dir", opts.InputDir)
+	}
+	if opts.ValidateDir != "" {
+		args = append(args, "--validate-dir", opts.ValidateDir)
+	}
+	if opts.OutputFormat != "" {
+		args = append(args, "--output", opts.OutputFormat)
+	}
+	if opts.APIResourcesFile != "" {
+		args = append(args, "--api-resources", opts.APIResourcesFile)
+	}
+	if len(opts.ExtraArgs) > 0 {
+		args = append(args, opts.ExtraArgs...)
+	}
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, cmdErr := cmd.CombinedOutput()
+	logVerboseOutput("crane validate", out)
+	stdout = string(out)
+	if cmdErr != nil {
+		return stdout, fmt.Errorf("crane validate failed: %v, output: %s", cmdErr, stdout)
+	}
+	return stdout, nil
 }
