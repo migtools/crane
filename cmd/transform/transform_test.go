@@ -84,7 +84,9 @@ func TestReconcileConfigStages_ExtraStagesWithForceDeletes(t *testing.T) {
 			t.Fatalf("failed to create stage dir %q: %v", dir, err)
 		}
 	}
-
+	if err := os.MkdirAll(filepath.Join(transformDir, ".work", "50_Stage2"), 0o700); err != nil {
+		t.Fatalf("failed to create stage work dir %q: %v", "50_Stage2", err)
+	}
 	o := &Options{
 		Flags: Flags{
 			Force: true,
@@ -109,6 +111,11 @@ func TestReconcileConfigStages_ExtraStagesWithForceDeletes(t *testing.T) {
 	_, err = os.Stat(filepath.Join(transformDir, "50_Stage2"))
 	if !os.IsNotExist(err) {
 		t.Fatalf("expected extra stage dir to be deleted, got err: %v", err)
+	}
+	// Extra stage work dir should be deleted.
+	_, err = os.Stat(filepath.Join(transformDir, ".work", "50_Stage2"))
+	if !os.IsNotExist(err) {
+		t.Fatalf("expected extra stage work dir to be deleted, got err: %v", err)
 	}
 }
 

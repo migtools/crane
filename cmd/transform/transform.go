@@ -345,11 +345,16 @@ func (o *Options) reconcileConfigStages(transformDir string, desiredStages []str
 	}
 
 	for _, extra := range extras {
-		stagePath := filepath.Join(transformDir, extra)
+		stagePath := filepath.Join(transformDir, extra)              // transform/<stageName>
+		stageWorkPath := filepath.Join(transformDir, ".work", extra) // transform/.work/<stageName>
 		if err := os.RemoveAll(stagePath); err != nil {
 			return fmt.Errorf("failed to delete extra stage directory %q at path %q: %w", extra, stagePath, err)
 		}
-		log.Infof("Deleted stage directory not present in config: %s", extra)
+		if err := os.RemoveAll(stageWorkPath); err != nil {
+			return fmt.Errorf("failed to delete extra stage work directory %q at path %q: %w", extra, stageWorkPath, err)
+		}
+		log.Infof("Deleted stage directory not present in config: %s", stagePath)
+		log.Infof("Deleted stage work directory not present in config: %s", stageWorkPath)
 	}
 	return nil
 }
