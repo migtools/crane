@@ -36,7 +36,7 @@ func LoadConfig(path string) (*ConfigFile, error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %q: %s", path, friendlyConfigDecodeError(err))
+		return nil, fmt.Errorf("failed to parse config file %q: %s: %w", path, friendlyConfigDecodeError(err), err)
 	}
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("invalid config file %q: %w", path, err)
