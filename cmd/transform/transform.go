@@ -355,8 +355,11 @@ func (o *Options) createDefaultStagesForAllPlugins(
 
 		// Path traversal protection
 		stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
-		baseDir := filepath.Clean(transformDir) + string(os.PathSeparator)
-		if !strings.HasPrefix(stageDir+string(os.PathSeparator), baseDir) {
+		cleanedTransformDir := filepath.Clean(transformDir)
+
+		// Verify stageDir is within transformDir by computing relative path
+		rel, err := filepath.Rel(cleanedTransformDir, stageDir)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 			return nil, fmt.Errorf("invalid stage path generated for plugin %q: %q", pluginName, stageName)
 		}
 

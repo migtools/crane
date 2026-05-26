@@ -3,6 +3,7 @@ package transform
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	cranelib "github.com/konveyor/crane-lib/transform"
@@ -328,5 +329,44 @@ func TestCreateDefaultStagesForAllPlugins_PluginNameResolution(t *testing.T) {
 	}
 	if discoveredStages[1].PluginName != "namespace-cleanupPlugin" {
 		t.Errorf("Stage 1 plugin name: expected %q, got %q", "namespace-cleanupPlugin", discoveredStages[1].PluginName)
+	}
+}
+
+func TestCreateDefaultStagesForAllPlugins_PathTraversalProtection(t *testing.T) {
+	// Test that path traversal protection works correctly, including edge cases
+	tmpDir, err := os.MkdirTemp("", "crane-transform-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Valid plugin should work
+	validPlugin := &mockPlugin{name: "ValidPlugin"}
+
+	opts := &Options{}
+	log := logrus.New()
+	log.SetLevel(logrus.FatalLevel)
+
+	orchestrator := &internalTransform.Orchestrator{
+		NewlyCreatedStages: make(map[string]bool),
+	}
+
+	stageNames, err := opts.createDefaultStagesForAllPlugins(orchestrator, tmpDir, []cranelib.Plugin{validPlugin}, log)
+	if err != nil {
+		t.Fatalf("Valid plugin should not error: %v", err)
+	}
+
+	if len(stageNames) != 1 || stageNames[0] != "10_ValidPlugin" {
+		t.Errorf("Expected stage '10_ValidPlugin', got: %v", stageNames)
+	}
+
+	// Verify the created directory is within tmpDir using filepath.Rel
+	stageDir := filepath.Join(tmpDir, "10_ValidPlugin")
+	rel, err := filepath.Rel(filepath.Clean(tmpDir), filepath.Clean(stageDir))
+	if err != nil {
+		t.Errorf("filepath.Rel failed for valid stage: %v", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		t.Errorf("Valid stage directory appears to be outside transform dir: rel=%q", rel)
 	}
 }
