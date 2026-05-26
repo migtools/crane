@@ -2,7 +2,9 @@ package transform
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -37,6 +39,13 @@ func LoadConfig(path string) (*ConfigFile, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file %q: %s: %w", path, friendlyConfigDecodeError(err), err)
+	}
+	// Reject multi-document YAML; this config format supports a single document.
+	var extra interface{}
+	if err := decoder.Decode(&extra); err == nil {
+		return nil, fmt.Errorf("invalid config file %q: only a single YAML document is allowed", path)
+	} else if !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("invalid config file %q: only a single YAML document is allowed: %w", path, err)
 	}
 	if err := ValidateConfig(cfg); err != nil {
 		return nil, fmt.Errorf("invalid config file %q: %w", path, err)

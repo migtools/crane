@@ -127,3 +127,27 @@ description: not-supported-yet
 		t.Fatalf("expected supported keys guidance in error, got %v", err)
 	}
 }
+
+// Multiple YAML documents should be rejected for config-file input.
+func TestLoadConfig_MultipleDocumentsFails(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "multi-doc-config.yaml")
+
+	content := []byte(`stages:
+  - KubernetesPlugin
+---
+stages:
+  - CustomStage
+`)
+	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
+		t.Fatalf("failed to write test config: %v", err)
+	}
+
+	_, err := LoadConfig(cfgPath)
+	if err == nil {
+		t.Fatalf("expected error for multi-document config, got nil")
+	}
+	if !strings.Contains(err.Error(), "only a single YAML document is allowed") {
+		t.Fatalf("expected single-document guidance in error, got %v", err)
+	}
+}
