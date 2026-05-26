@@ -14,8 +14,10 @@ var (
 	KustomizeVersion string = readKustomizeVersion()
 )
 
+var readBuildInfo = debug.ReadBuildInfo
+
 func readKustomizeVersion() string {
-	info, ok := debug.ReadBuildInfo()
+	info, ok := readBuildInfo()
 	if !ok {
 		return "unknown"
 	}

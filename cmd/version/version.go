@@ -37,7 +37,7 @@ func NewVersionCommand(f *flags.GlobalFlags) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: "Return the current crane (and crane-lib) version",
+		Short: "Return the current crane, crane-lib, and kustomize versions",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
