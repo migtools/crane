@@ -18,6 +18,10 @@ var stageTokenRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 // YAML decode errors emitted by yaml.v3 KnownFields mode.
 var unknownInstructionsFieldRegex = regexp.MustCompile(`line ([0-9]+): field ([^ ]+) not found in type .*InstructionsFile`)
 
+// rootSequenceInstructionsRegex detects YAML where the root node is a sequence
+// instead of an object containing top-level "stages".
+var rootSequenceInstructionsRegex = regexp.MustCompile(`line ([0-9]+): cannot unmarshal !!seq into .*InstructionsFile`)
+
 type InstructionsFile struct {
 	Stages []string `yaml:"stages"`
 }
@@ -61,6 +65,10 @@ func friendlyInstructionsDecodeError(err error) string {
 	matches := unknownInstructionsFieldRegex.FindStringSubmatch(msg)
 	if len(matches) == 3 {
 		return fmt.Sprintf("line %s: unknown field %q (supported top-level keys: stages)", matches[1], matches[2])
+	}
+	matches = rootSequenceInstructionsRegex.FindStringSubmatch(msg)
+	if len(matches) == 2 {
+		return fmt.Sprintf("line %s: invalid root YAML type: expected a mapping with top-level key \"stages\" (example: stages: [KubernetesPlugin])", matches[1])
 	}
 	return msg
 }

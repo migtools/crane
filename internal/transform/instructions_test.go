@@ -7,62 +7,62 @@ import (
 	"testing"
 )
 
-func TestValidateConfig(t *testing.T) {
+func TestValidateInstructions(t *testing.T) {
 	tests := []struct {
 		name       string
-		cfg        *ConfigFile
+		cfg        *InstructionsFile
 		wantErr    bool
 		wantStages []string
 	}{
-		// Valid config remains unchanged.
+		// Valid instructions remains unchanged.
 		{
-			name:       "valid config",
-			cfg:        &ConfigFile{Stages: []string{"KubernetesPlugin", "CustomStage"}},
+			name:       "valid instructions",
+			cfg:        &InstructionsFile{Stages: []string{"KubernetesPlugin", "CustomStage"}},
 			wantErr:    false,
 			wantStages: []string{"KubernetesPlugin", "CustomStage"},
 		},
 		// Whitespace around stage names is trimmed.
 		{
-			name:       "valid config trims stage names",
-			cfg:        &ConfigFile{Stages: []string{" KubernetesPlugin ", "  CustomStage\t"}},
+			name:       "valid instructions file trims stage names",
+			cfg:        &InstructionsFile{Stages: []string{" KubernetesPlugin ", "  CustomStage\t"}},
 			wantErr:    false,
 			wantStages: []string{"KubernetesPlugin", "CustomStage"},
 		},
 		// Duplicate stage names are rejected.
 		{
-			name:    "duplicate stages",
-			cfg:     &ConfigFile{Stages: []string{"KubernetesPlugin", "KubernetesPlugin"}},
+			name:    "duplicate stages in instructions file",
+			cfg:     &InstructionsFile{Stages: []string{"KubernetesPlugin", "KubernetesPlugin"}},
 			wantErr: true,
 		},
 		// Unsafe characters are rejected.
 		{
-			name:    "invalid characters",
-			cfg:     &ConfigFile{Stages: []string{"KubernetesPlugin", "../bad"}},
+			name:    "invalid characters in instructions file",
+			cfg:     &InstructionsFile{Stages: []string{"KubernetesPlugin", "../bad"}},
 			wantErr: true,
 		},
 		// At least one stage is required.
 		{
-			name:    "empty stages list",
-			cfg:     &ConfigFile{Stages: []string{}},
+			name:    "empty stages list in instructions file",
+			cfg:     &InstructionsFile{Stages: []string{}},
 			wantErr: true,
 		},
 		// Nil config pointer is invalid.
 		{
-			name:    "nil config",
+			name:    "nil instructions file",
 			cfg:     nil,
 			wantErr: true,
 		},
 		// Blank stage entries are invalid.
 		{
-			name:    "empty stage entry",
-			cfg:     &ConfigFile{Stages: []string{"KubernetesPlugin", "   "}},
+			name:    "empty stage entry in instructions file",
+			cfg:     &InstructionsFile{Stages: []string{"KubernetesPlugin", "   "}},
 			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateConfig(tt.cfg)
+			err := ValidateInstructions(tt.cfg)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil")
@@ -104,19 +104,19 @@ func TestGenerateStageDirNames(t *testing.T) {
 }
 
 // Unknown top-level keys should fail decoding in strict mode.
-func TestLoadConfig_UnknownFieldFails(t *testing.T) {
+func TestLoadInstructions_UnknownFieldFails(t *testing.T) {
 	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "bad-config.yaml")
+	instructionsFilePath := filepath.Join(tmpDir, "bad-instructions.yaml")
 
 	content := []byte(`stages:
   - KubernetesPlugin
 description: not-supported-yet
 `)
-	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
+	if err := os.WriteFile(instructionsFilePath, content, 0o600); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
 
-	_, err := LoadConfig(cfgPath)
+	_, err := LoadInstructions(instructionsFilePath)
 	if err == nil {
 		t.Fatalf("expected error for unknown field, got nil")
 	}
@@ -128,10 +128,10 @@ description: not-supported-yet
 	}
 }
 
-// Multiple YAML documents should be rejected for config-file input.
-func TestLoadConfig_MultipleDocumentsFails(t *testing.T) {
+// Multiple YAML documents should be rejected for instructions file input.
+func TestLoadInstructions_MultipleDocumentsFails(t *testing.T) {
 	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "multi-doc-config.yaml")
+	instructionsFilePath := filepath.Join(tmpDir, "multi-doc-instructions.yaml")
 
 	content := []byte(`stages:
   - KubernetesPlugin
@@ -139,15 +139,36 @@ func TestLoadConfig_MultipleDocumentsFails(t *testing.T) {
 stages:
   - CustomStage
 `)
-	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
+	if err := os.WriteFile(instructionsFilePath, content, 0o600); err != nil {
+		t.Fatalf("failed to write test instructions file: %v", err)
 	}
 
-	_, err := LoadConfig(cfgPath)
+	_, err := LoadInstructions(instructionsFilePath)
 	if err == nil {
-		t.Fatalf("expected error for multi-document config, got nil")
+		t.Fatalf("expected error for multi-document instructions file, got nil")
 	}
 	if !strings.Contains(err.Error(), "only a single YAML document is allowed") {
 		t.Fatalf("expected single-document guidance in error, got %v", err)
+	}
+}
+
+// Root YAML must be a mapping with top-level stages key, not a sequence.
+func TestLoadInstructions_RootSequenceFailsWithFriendlyMessage(t *testing.T) {
+	tmpDir := t.TempDir()
+	instructionsFilePath := filepath.Join(tmpDir, "root-seq-instructions.yaml")
+
+	content := []byte(`- KubernetesPlugin
+- CustomStage
+`)
+	if err := os.WriteFile(instructionsFilePath, content, 0o600); err != nil {
+		t.Fatalf("failed to write test instructions file: %v", err)
+	}
+
+	_, err := LoadInstructions(instructionsFilePath)
+	if err == nil {
+		t.Fatalf("expected error for root sequence instructions file, got nil")
+	}
+	if !strings.Contains(err.Error(), `expected a mapping with top-level key "stages"`) {
+		t.Fatalf("expected root mapping guidance in error, got %v", err)
 	}
 }

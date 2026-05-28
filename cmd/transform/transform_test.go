@@ -10,9 +10,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// If existing discovered stage dirs exactly match desired config stages,
+// If existing discovered stage dirs exactly match desired instructions stages,
 // reconciliation should succeed.
-func TestReconcileConfigStages_NoExtras(t *testing.T) {
+func TestReconcileInstructionStages_NoExtras(t *testing.T) {
 	transformDir := t.TempDir()
 
 	// Existing stage dirs
@@ -28,7 +28,7 @@ func TestReconcileConfigStages_NoExtras(t *testing.T) {
 		},
 	}
 
-	err := o.reconcileConfigStages(
+	err := o.reconcileInstructionStages(
 		transformDir,
 		[]string{"10_KubernetesPlugin", "20_CustomStage"},
 		logrus.New(),
@@ -38,9 +38,9 @@ func TestReconcileConfigStages_NoExtras(t *testing.T) {
 	}
 }
 
-// If discovered stage dirs include entries not in desired config stages,
+// If discovered stage dirs include entries not in desired instructions stages,
 // reconciliation should fail in safe mode (without --force).
-func TestReconcileConfigStages_ExtraStagesWithoutForce(t *testing.T) {
+func TestReconcileInstructionStages_ExtraStagesWithoutForce(t *testing.T) {
 	transformDir := t.TempDir()
 
 	// Existing dirs include one extra stage not in desired set.
@@ -56,7 +56,7 @@ func TestReconcileConfigStages_ExtraStagesWithoutForce(t *testing.T) {
 		},
 	}
 
-	err := o.reconcileConfigStages(
+	err := o.reconcileInstructionStages(
 		transformDir,
 		[]string{"10_KubernetesPlugin"},
 		logrus.New(),
@@ -75,7 +75,7 @@ func TestReconcileConfigStages_ExtraStagesWithoutForce(t *testing.T) {
 }
 
 // With --force enabled, extra discovered stage directories should be deleted.
-func TestReconcileConfigStages_ExtraStagesWithForceDeletes(t *testing.T) {
+func TestReconcileInstructionStages_ExtraStagesWithForceDeletes(t *testing.T) {
 	transformDir := t.TempDir()
 
 	// Existing dirs include one desired stage and one extra stage.
@@ -93,7 +93,7 @@ func TestReconcileConfigStages_ExtraStagesWithForceDeletes(t *testing.T) {
 		},
 	}
 
-	err := o.reconcileConfigStages(
+	err := o.reconcileInstructionStages(
 		transformDir,
 		[]string{"10_KubernetesPlugin"},
 		logrus.New(),
@@ -119,13 +119,13 @@ func TestReconcileConfigStages_ExtraStagesWithForceDeletes(t *testing.T) {
 	}
 }
 
-// --stage and --config-file are mutually exclusive and should fail fast.
-func TestRun_ConfigFileAndStageConflict(t *testing.T) {
+// --stage and --instructions-file are mutually exclusive and should fail fast.
+func TestRun_InstructionsFileAndStageConflict(t *testing.T) {
 	o := &Options{
 		globalFlags: &flags.GlobalFlags{},
 		Flags: Flags{
-			ConfigFile: "sample-transform-instructor-file.yaml",
-			Stage:      "10_KubernetesPlugin",
+			InstructionsFile: "sample-transform-instructor-file.yaml",
+			Stage:            "10_KubernetesPlugin",
 		},
 	}
 
@@ -133,7 +133,7 @@ func TestRun_ConfigFileAndStageConflict(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected conflict error, got nil")
 	}
-	if !strings.Contains(err.Error(), "use either --config-file or --stage, not both") {
+	if !strings.Contains(err.Error(), "use either --instructions-file or --stage, not both") {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
