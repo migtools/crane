@@ -14,66 +14,66 @@ import (
 
 var stageTokenRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
-// unknownConfigFieldRegex extracts the line number and field name from strict
+// unknownInstructionsFieldRegex extracts the line number and field name from strict
 // YAML decode errors emitted by yaml.v3 KnownFields mode.
-var unknownConfigFieldRegex = regexp.MustCompile(`line ([0-9]+): field ([^ ]+) not found in type .*ConfigFile`)
+var unknownInstructionsFieldRegex = regexp.MustCompile(`line ([0-9]+): field ([^ ]+) not found in type .*InstructionsFile`)
 
-type ConfigFile struct {
+type InstructionsFile struct {
 	Stages []string `yaml:"stages"`
 }
 
-// LoadConfig reads a transform config file from disk, parses YAML, and validates
+// LoadInstructions reads a transform instructions file from disk, parses YAML, and validates
 // the resulting structure before returning it.
-func LoadConfig(path string) (*ConfigFile, error) {
+func LoadInstructions(path string) (*InstructionsFile, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("config file path is required")
+		return nil, fmt.Errorf("instructions file path is required")
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %q: %w", path, err)
+		return nil, fmt.Errorf("failed to read instructions file %q: %w", path, err)
 	}
 
-	cfg := &ConfigFile{}
+	cfg := &InstructionsFile{}
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %q: %s: %w", path, friendlyConfigDecodeError(err), err)
+		return nil, fmt.Errorf("failed to parse instructions file %q: %s: %w", path, friendlyInstructionsDecodeError(err), err)
 	}
-	// Reject multi-document YAML; this config format supports a single document.
+	// Reject multi-document YAML; this instructions file format supports only a single document.
 	var extra interface{}
 	if err := decoder.Decode(&extra); err == nil {
-		return nil, fmt.Errorf("invalid config file %q: only a single YAML document is allowed", path)
+		return nil, fmt.Errorf("invalid instructions file %q: only a single YAML document is allowed", path)
 	} else if !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("invalid config file %q: only a single YAML document is allowed: %w", path, err)
+		return nil, fmt.Errorf("invalid instructions file %q: only a single YAML document is allowed: %w", path, err)
 	}
-	if err := ValidateConfig(cfg); err != nil {
-		return nil, fmt.Errorf("invalid config file %q: %w", path, err)
+	if err := ValidateInstructions(cfg); err != nil {
+		return nil, fmt.Errorf("invalid instructions file %q: %w", path, err)
 	}
 	return cfg, nil
 
 }
 
-// friendlyConfigDecodeError converts strict YAML decode errors into clearer,
+// friendlyInstructionsDecodeError converts strict YAML decode errors into clearer,
 // user-facing messages for unknown top-level keys.
-func friendlyConfigDecodeError(err error) string {
+func friendlyInstructionsDecodeError(err error) string {
 	msg := strings.TrimSpace(err.Error())
-	matches := unknownConfigFieldRegex.FindStringSubmatch(msg)
+	matches := unknownInstructionsFieldRegex.FindStringSubmatch(msg)
 	if len(matches) == 3 {
 		return fmt.Sprintf("line %s: unknown field %q (supported top-level keys: stages)", matches[1], matches[2])
 	}
 	return msg
 }
 
-// ValidateConfig validates the config schema and stage token rules.
+// ValidateInstructions validates the instructions schema and stage token rules.
 // It also trims stage entries in place for normalized downstream usage.
-func ValidateConfig(cfg *ConfigFile) error {
+func ValidateInstructions(cfg *InstructionsFile) error {
 	if cfg == nil {
-		return fmt.Errorf("config file is required")
+		return fmt.Errorf("instructions file is required")
 	}
 
 	if len(cfg.Stages) == 0 {
-		return fmt.Errorf("config file must contain at least one stage")
+		return fmt.Errorf("instructions file must contain at least one stage")
 	}
 
 	seen := make(map[string]struct{}, len(cfg.Stages))
