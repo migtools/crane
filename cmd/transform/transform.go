@@ -35,6 +35,8 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	// Positional arguments for stage selection
+	RequestedStages []string
 }
 
 type Flags struct {
@@ -44,14 +46,14 @@ type Flags struct {
 	IgnoredPatchesDir string   `mapstructure:"ignored-patches-dir"`
 	SkipPlugins       []string `mapstructure:"skip-plugins"`
 	OptionalFlags     string   `mapstructure:"optional-flags"`
-	// Multi-stage flag
-	Stage string `mapstructure:"stage"`
-	Force bool   `mapstructure:"force"`
+	Force             bool     `mapstructure:"force"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
+	// Store positional arguments as requested stages
+	o.RequestedStages = args
 	return nil
 }
 
@@ -69,8 +71,16 @@ func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
-		Use:   "transform",
+		Use:   "transform [stage...]",
 		Short: "Create the transformations for the exported resources and plugins and save the results in a transform directory",
+		Long: `Transform exported Kubernetes resources through one or more stages.
+
+Stages can be specified by:
+- Stage directory name (e.g., 10_KubernetesPlugin)
+- Plugin name (e.g., KubernetesPlugin)
+
+If no stages specified, all discovered stages are run.`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
@@ -105,9 +115,6 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
-
-	// Multi-stage flag
-	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are run.")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
 
 	// Kustomize arguments
@@ -170,40 +177,19 @@ func (o *Options) run() error {
 	// Determine which stages to run
 	var selector internalTransform.StageSelector
 
-	if o.Stage != "" {
-		// User specified a specific stage to run
-		stageDir := filepath.Join(transformDir, o.Stage)
-		_, err := os.Stat(stageDir)
-		stageExists := err == nil
-
-		if !stageExists {
-			log.Infof("Stage %s does not exist, will create after successful execution", o.Stage)
-
-			// Ensure all previous stages have been run
-			if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
-				return fmt.Errorf("failed to ensure previous stages are run: %w", err)
-			}
-
-			// Create the stage directory
-			if err := os.MkdirAll(stageDir, 0700); err != nil {
-				return fmt.Errorf("failed to create stage directory: %w", err)
-			}
-			log.Infof("Created stage directory: %s", stageDir)
-
-			// Mark for cleanup on error
-			orchestrator.NewlyCreatedStages[o.Stage] = true
+	if len(o.RequestedStages) > 0 {
+		// User specified specific stages to run via positional arguments
+		resolvedStages, err := o.resolveAndValidateStages(o.RequestedStages, orchestrator, transformDir, pluginDir, log)
+		if err != nil {
+			return err
 		}
 
 		selector = internalTransform.StageSelector{
-			Stage: o.Stage,
+			Stages: resolvedStages,
 		}
-		log.Infof("Running stage: %s", o.Stage)
+		log.Infof("Running %d stage(s): %v", len(resolvedStages), resolvedStages)
 
-		// Run the stage with cleanup on error
-		if err := o.runStageWithCleanup(orchestrator, selector, stageDir, !stageExists, log); err != nil {
-			return err
-		}
-		return nil
+		return orchestrator.RunMultiStage(selector)
 	} else {
 		// No stage parameters given - discover existing stages or create default
 		existingStages, err := internalTransform.DiscoverStages(transformDir)
@@ -255,18 +241,6 @@ func optionalFlagsToLower(inFlags map[string]string) map[string]string {
 	return lowerMap
 }
 
-// runStageWithCleanup runs a stage and cleans up the directory on error if it was newly created
-func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrator, selector internalTransform.StageSelector, stageDir string, cleanupOnError bool, log *logrus.Logger) error {
-	err := orchestrator.RunMultiStage(selector)
-	if err != nil && cleanupOnError {
-		log.Warnf("Stage execution failed, cleaning up stage directory: %s", stageDir)
-		if removeErr := os.RemoveAll(stageDir); removeErr != nil {
-			log.Errorf("Failed to clean up stage directory %s: %v", stageDir, removeErr)
-		}
-	}
-	return err
-}
-
 // ensurePreviousStagesRun ensures all existing stages have been run
 // and have output directories. This prepares the environment for creating a new stage.
 func (o *Options) ensurePreviousStagesRun(orchestrator *internalTransform.Orchestrator, transformDir string, log *logrus.Logger) error {
@@ -302,7 +276,7 @@ func (o *Options) ensureStagesHaveOutput(orchestrator *internalTransform.Orchest
 			// Run the stage - it will regenerate based on its type:
 			// - Plugin stages: auto-regenerate (no --force needed)
 			// - Custom stages: fail if directory not empty (require --force)
-			selector := internalTransform.StageSelector{Stage: stage.DirName}
+			selector := internalTransform.StageSelector{Stages: []string{stage.DirName}}
 			if err := orchestrator.RunMultiStage(selector); err != nil {
 				return fmt.Errorf("failed to run stage %s: %w", stage.DirName, err)
 			}
@@ -394,4 +368,154 @@ func validatePluginNameForStage(pluginName string) error {
 	}
 
 	return nil
+}
+
+// resolveAndValidateStages resolves plugin names to stage directory names,
+// validates stages exist or can be created, and handles mixed input
+func (o *Options) resolveAndValidateStages(
+	requestedStages []string,
+	orchestrator *internalTransform.Orchestrator,
+	transformDir string,
+	pluginDir string,
+	log *logrus.Logger,
+) ([]string, error) {
+	// Discover existing stages
+	existingStages, err := internalTransform.DiscoverStages(transformDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover stages: %w", err)
+	}
+
+	var resolved []string
+	seen := make(map[string]bool) // Prevent duplicates
+
+	for _, requested := range requestedStages {
+		// Skip if already resolved
+		if seen[requested] {
+			continue
+		}
+
+		// Check if it's an existing stage directory name
+		found := false
+		for _, stage := range existingStages {
+			if stage.DirName == requested {
+				resolved = append(resolved, requested)
+				seen[requested] = true
+				found = true
+				break
+			}
+		}
+
+		if found {
+			continue
+		}
+
+		// Check if it's a plugin name - find matching stages
+		var matchingStages []internalTransform.Stage
+		for _, stage := range existingStages {
+			if stage.PluginName == requested {
+				matchingStages = append(matchingStages, stage)
+			}
+		}
+
+		if len(matchingStages) > 1 {
+			// ERROR: multiple stages with same plugin
+			stageNames := make([]string, len(matchingStages))
+			for i, s := range matchingStages {
+				stageNames[i] = s.DirName
+			}
+			return nil, fmt.Errorf(
+				"plugin %q found in multiple stages: %v. Please specify exact stage directory name",
+				requested, stageNames)
+		}
+
+		if len(matchingStages) == 1 {
+			// FOUND: use existing stage
+			stageName := matchingStages[0].DirName
+			if !seen[stageName] {
+				log.Infof("Found existing stage for plugin %s: %s", requested, stageName)
+				resolved = append(resolved, stageName)
+				seen[stageName] = true
+			}
+			found = true
+			continue
+		}
+
+		// Not found - try to create new stage for this plugin
+		log.Infof("Stage for %q not found, attempting to create", requested)
+
+		// Load plugins to verify it exists
+		allPlugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load plugins: %w", err)
+		}
+
+		// Find matching plugin
+		var matchedPlugin cranelib.Plugin
+		for _, p := range allPlugins {
+			if p.Metadata().Name == requested {
+				matchedPlugin = p
+				break
+			}
+		}
+
+		if matchedPlugin == nil {
+			return nil, fmt.Errorf("stage or plugin %q not found", requested)
+		}
+
+		// Ensure all previous stages have been run
+		if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
+			return nil, fmt.Errorf("failed to ensure previous stages are run: %w", err)
+		}
+
+		// Find next available priority
+		maxPriority := 0
+		for _, stage := range existingStages {
+			if stage.Priority > maxPriority {
+				maxPriority = stage.Priority
+			}
+		}
+		newPriority := maxPriority + 10
+
+		// Create stage for this plugin
+		pluginName := matchedPlugin.Metadata().Name
+
+		// Validate plugin name
+		if err := validatePluginNameForStage(pluginName); err != nil {
+			return nil, fmt.Errorf("invalid plugin name %q: %w", pluginName, err)
+		}
+
+		// Require Plugin suffix
+		if !strings.HasSuffix(pluginName, "Plugin") {
+			return nil, fmt.Errorf("plugin %q name must end with 'Plugin'", pluginName)
+		}
+
+		stageName := fmt.Sprintf("%d_%s", newPriority, pluginName)
+
+		// Path traversal protection
+		stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
+		cleanedTransformDir := filepath.Clean(transformDir)
+
+		rel, err := filepath.Rel(cleanedTransformDir, stageDir)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return nil, fmt.Errorf("invalid stage path generated for plugin %q: %q", pluginName, stageName)
+		}
+
+		log.Infof("Creating stage for plugin %s -> %s", pluginName, stageName)
+
+		if err := os.MkdirAll(stageDir, 0700); err != nil {
+			return nil, fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
+		}
+
+		// Mark as newly created for cleanup on error
+		orchestrator.NewlyCreatedStages[stageName] = true
+
+		resolved = append(resolved, stageName)
+		seen[stageName] = true
+	}
+
+	if len(resolved) == 0 {
+		return nil, fmt.Errorf("no valid stages found or could be created")
+	}
+
+	return resolved, nil
 }
