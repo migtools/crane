@@ -34,6 +34,8 @@ type Flags struct {
 	OutputDir    string `mapstructure:"output-dir"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
+	// Skip cluster-scoped resources in output
+	SkipClusterScoped bool `mapstructure:"skip-cluster-scoped"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -106,6 +108,8 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 
 	// Kustomize arguments
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
+	// Cluster-scoped filtering
+	cmd.Flags().BoolVar(&o.SkipClusterScoped, "skip-cluster-scoped", false, "Exclude cluster-scoped resources (ClusterRole, ClusterRoleBinding, CRD, etc.) from output. Useful for non-admin migration scenarios.")
 }
 
 func (o *Options) run() error {
@@ -134,10 +138,11 @@ func (o *Options) run() error {
 
 	// Create applier
 	applier := &apply.KustomizeApplier{
-		Log:           log.WithField("command", "apply").Logger,
-		TransformDir:  transformDir,
-		OutputDir:     outputDir,
-		KustomizeArgs: kustomizeArgs,
+		Log:               log.WithField("command", "apply").Logger,
+		TransformDir:      transformDir,
+		OutputDir:         outputDir,
+		KustomizeArgs:     kustomizeArgs,
+		SkipClusterScoped: o.SkipClusterScoped,
 	}
 
 	// Determine which stages to apply

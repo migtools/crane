@@ -404,6 +404,248 @@ data:
 	}
 }
 
+func TestSplitMultiDocYAML_SkipClusterScoped(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "crane-skip-cluster-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	yamlData := `apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: prod
+spec:
+  type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reader-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: reader
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: prod
+`
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	applier := &KustomizeApplier{
+		Log:               logger,
+		OutputDir:         tmpDir,
+		SkipClusterScoped: true,
+	}
+
+	// Filter first, then split (mirrors ApplyMultiStage flow)
+	filtered, err := applier.filterClusterScopedResources([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("filterClusterScopedResources failed: %v", err)
+	}
+
+	err = applier.splitMultiDocYAMLToFiles(filtered)
+	if err != nil {
+		t.Fatalf("splitMultiDocYAMLToFiles failed: %v", err)
+	}
+
+	// Namespaced resource should exist
+	svcMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/prod/Service_*_web.yaml"))
+	if len(svcMatches) == 0 {
+		t.Error("Service should be in output when --skip-cluster-scoped is set")
+	}
+
+	// Cluster-scoped resources should NOT exist
+	clusterDir := filepath.Join(tmpDir, "resources", "_cluster")
+	if _, err := os.Stat(clusterDir); !os.IsNotExist(err) {
+		t.Error("_cluster/ directory should NOT exist when --skip-cluster-scoped is set")
+	}
+
+	// Verify filtered output.yaml does not contain cluster-scoped resources
+	if contains(string(filtered), "ClusterRole") {
+		t.Error("Filtered YAML should not contain ClusterRole")
+	}
+	if !contains(string(filtered), "Service") {
+		t.Error("Filtered YAML should still contain Service")
+	}
+}
+
+func TestSplitMultiDocYAML_ClusterScopedIncluded(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "crane-include-cluster-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	yamlData := `apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: prod
+spec:
+  type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get"]
+`
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	applier := &KustomizeApplier{
+		Log:               logger,
+		OutputDir:         tmpDir,
+		SkipClusterScoped: false,
+	}
+
+	err = applier.splitMultiDocYAMLToFiles([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("splitMultiDocYAMLToFiles failed: %v", err)
+	}
+
+	// Both should exist
+	svcMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/prod/Service_*_web.yaml"))
+	if len(svcMatches) == 0 {
+		t.Error("Service should be in output")
+	}
+
+	crMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/_cluster/ClusterRole_*_reader.yaml"))
+	if len(crMatches) == 0 {
+		t.Error("ClusterRole should be in output when --skip-cluster-scoped is NOT set")
+	}
+}
+
+func TestSplitMultiDocYAML_OnlyClusterScoped(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "crane-only-cluster-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	yamlData := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: admin
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: Group
+  name: admins
+  apiGroup: rbac.authorization.k8s.io
+`
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	applier := &KustomizeApplier{
+		Log:               logger,
+		OutputDir:         tmpDir,
+		SkipClusterScoped: true,
+	}
+
+	filtered, err := applier.filterClusterScopedResources([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("filterClusterScopedResources failed: %v", err)
+	}
+
+	// Filtered output should be empty
+	if len(strings.TrimSpace(string(filtered))) != 0 {
+		t.Errorf("Expected empty output when all resources are cluster-scoped and skip is set, got: %q", string(filtered))
+	}
+
+	// Splitting empty content should not error
+	err = applier.splitMultiDocYAMLToFiles(filtered)
+	if err != nil {
+		t.Fatalf("splitMultiDocYAMLToFiles on empty input should not error: %v", err)
+	}
+
+	// No resources directory should be created
+	resourcesDir := filepath.Join(tmpDir, "resources")
+	if _, err := os.Stat(resourcesDir); !os.IsNotExist(err) {
+		t.Error("resources/ directory should NOT exist when all resources are filtered out")
+	}
+}
+
+func TestFilterClusterScopedResources_PreservesNamespaced(t *testing.T) {
+	yamlData := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: my-app
+spec:
+  replicas: 1
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-sa
+  namespace: my-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: web-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get"]
+`
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	applier := &KustomizeApplier{
+		Log:               logger,
+		SkipClusterScoped: true,
+	}
+
+	filtered, err := applier.filterClusterScopedResources([]byte(yamlData))
+	if err != nil {
+		t.Fatalf("filterClusterScopedResources failed: %v", err)
+	}
+
+	filteredStr := string(filtered)
+
+	// Should keep namespaced resources
+	if !contains(filteredStr, "Deployment") {
+		t.Error("Filtered YAML should contain Deployment")
+	}
+	if !contains(filteredStr, "ServiceAccount") {
+		t.Error("Filtered YAML should contain ServiceAccount")
+	}
+
+	// Should remove cluster-scoped
+	if contains(filteredStr, "ClusterRole") {
+		t.Error("Filtered YAML should NOT contain ClusterRole")
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && findInString(s, substr)
 }

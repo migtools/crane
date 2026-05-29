@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	cranelib "github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane/internal/flags"
 	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/sirupsen/logrus"
 )
@@ -368,5 +369,80 @@ func TestCreateDefaultStagesForAllPlugins_PathTraversalProtection(t *testing.T) 
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		t.Errorf("Valid stage directory appears to be outside transform dir: rel=%q", rel)
+	}
+}
+
+// Tests from upstream for instructions file functionality
+
+func TestReconcileInstructionStages_Force(t *testing.T) {
+	tmpDir := t.TempDir()
+	transformDir := filepath.Join(tmpDir, "transform")
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+
+	// Create two stage dirs
+	if err := os.MkdirAll(filepath.Join(transformDir, "10_KubernetesPlugin"), 0755); err != nil {
+		t.Fatalf("failed to create stage: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(transformDir, "50_Stage2"), 0755); err != nil {
+		t.Fatalf("failed to create stage: %v", err)
+	}
+	// Also create work dirs
+	if err := os.MkdirAll(filepath.Join(transformDir, ".work", "10_KubernetesPlugin"), 0755); err != nil {
+		t.Fatalf("failed to create work: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(transformDir, ".work", "50_Stage2"), 0755); err != nil {
+		t.Fatalf("failed to create work: %v", err)
+	}
+
+	o := &Options{
+		Flags: Flags{
+			Force: true,
+		},
+	}
+
+	err := o.reconcileInstructionStages(
+		transformDir,
+		[]string{"10_KubernetesPlugin"},
+		logrus.New(),
+	)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Desired stage should still exist.
+	if _, err := os.Stat(filepath.Join(transformDir, "10_KubernetesPlugin")); err != nil {
+		t.Fatalf("expected desired stage dir to exist, got err: %v", err)
+	}
+
+	// Extra stage should be deleted.
+	_, err = os.Stat(filepath.Join(transformDir, "50_Stage2"))
+	if !os.IsNotExist(err) {
+		t.Fatalf("expected extra stage dir to be deleted, got err: %v", err)
+	}
+	// Extra stage work dir should be deleted.
+	_, err = os.Stat(filepath.Join(transformDir, ".work", "50_Stage2"))
+	if !os.IsNotExist(err) {
+		t.Fatalf("expected extra stage work dir to be deleted, got err: %v", err)
+	}
+}
+
+// Test that positional args and --instructions-file are mutually exclusive
+func TestRun_InstructionsFileAndPositionalArgsConflict(t *testing.T) {
+	o := &Options{
+		globalFlags: &flags.GlobalFlags{},
+		RequestedStages: []string{"10_KubernetesPlugin"},
+		Flags: Flags{
+			InstructionsFile: "sample-transform-instructor-file.yaml",
+		},
+	}
+
+	err := o.run()
+	if err == nil {
+		t.Fatalf("expected conflict error, got nil")
+	}
+	if !strings.Contains(err.Error(), "use either --instructions-file or positional stage arguments, not both") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
