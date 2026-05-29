@@ -45,13 +45,7 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// Validate stage format if specified
-	for _, stage := range o.RequestedStages {
-		if err := internalTransform.ValidateStageName(stage); err != nil {
-			// Stage name validation not needed for plugin names
-			// Skip validation - will be resolved in run()
-		}
-	}
+	// No validation needed - stages are resolved in run()
 	return nil
 }
 

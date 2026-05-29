@@ -60,7 +60,7 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// No validation needed - only --stage flag exists
+	// No validation needed - stages are resolved in run()
 	return nil
 }
 
@@ -445,26 +445,13 @@ func (o *Options) createDefaultStagesForAllPlugins(
 		}
 
 		// Use exact plugin metadata name in stage directory
-		stageName := fmt.Sprintf("%d_%s", priority, pluginName)
-
-		// Path traversal protection
-		stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
-		cleanedTransformDir := filepath.Clean(transformDir)
-
-		// Verify stageDir is within transformDir by computing relative path
-		rel, err := filepath.Rel(cleanedTransformDir, stageDir)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			return nil, fmt.Errorf("invalid stage path generated for plugin %q: %q", pluginName, stageName)
-		}
+		stageName := internalTransform.GenerateStageName(priority, pluginName)
 
 		log.Infof("Creating default stage for plugin: %s -> %s", pluginName, stageName)
 
-		if err := os.MkdirAll(stageDir, 0700); err != nil {
-			return nil, fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
+		if err := createStageDirectory(transformDir, stageName, orchestrator); err != nil {
+			return nil, err
 		}
-
-		// Mark as newly created
-		orchestrator.NewlyCreatedStages[stageName] = true
 
 		stageNames = append(stageNames, stageName)
 		priority += 5
@@ -486,6 +473,49 @@ func validatePluginNameForStage(pluginName string) error {
 	if !safePluginNameRE.MatchString(pluginName) {
 		return fmt.Errorf("contains unsafe characters (only A-Z, a-z, 0-9, -, _ allowed)")
 	}
+
+	return nil
+}
+
+// findStageByDirName searches for a stage by directory name
+func findStageByDirName(existingStages []internalTransform.Stage, name string) (internalTransform.Stage, bool) {
+	for _, stage := range existingStages {
+		if stage.DirName == name {
+			return stage, true
+		}
+	}
+	return internalTransform.Stage{}, false
+}
+
+// findStagesByPluginName returns all stages matching a plugin name
+func findStagesByPluginName(existingStages []internalTransform.Stage, pluginName string) []internalTransform.Stage {
+	var matches []internalTransform.Stage
+	for _, stage := range existingStages {
+		if stage.PluginName == pluginName {
+			matches = append(matches, stage)
+		}
+	}
+	return matches
+}
+
+// createStageDirectory creates a stage directory with path traversal protection
+// and marks it as newly created in the orchestrator
+func createStageDirectory(transformDir, stageName string, orchestrator *internalTransform.Orchestrator) error {
+	// Path traversal protection
+	stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
+	cleanedTransformDir := filepath.Clean(transformDir)
+
+	rel, err := filepath.Rel(cleanedTransformDir, stageDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("invalid stage path for %q: %q", stageName, stageName)
+	}
+
+	if err := os.MkdirAll(stageDir, 0700); err != nil {
+		return fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
+	}
+
+	// Mark as newly created
+	orchestrator.NewlyCreatedStages[stageName] = true
 
 	return nil
 }
@@ -517,6 +547,7 @@ func (o *Options) resolveAndValidateStages(
 
 	var resolved []string
 	seen := make(map[string]bool) // Prevent duplicates
+	var allPlugins []cranelib.Plugin // Lazy-loaded on first plugin creation
 
 	for _, requested := range requestedStages {
 		// Skip if already resolved
@@ -525,27 +556,14 @@ func (o *Options) resolveAndValidateStages(
 		}
 
 		// Check if it's an existing stage directory name
-		found := false
-		for _, stage := range existingStages {
-			if stage.DirName == requested {
-				resolved = append(resolved, requested)
-				seen[requested] = true
-				found = true
-				break
-			}
-		}
-
-		if found {
+		if stage, found := findStageByDirName(existingStages, requested); found {
+			resolved = append(resolved, stage.DirName)
+			seen[stage.DirName] = true
 			continue
 		}
 
 		// Check if it's a plugin name - find matching stages
-		var matchingStages []internalTransform.Stage
-		for _, stage := range existingStages {
-			if stage.PluginName == requested {
-				matchingStages = append(matchingStages, stage)
-			}
-		}
+		matchingStages := findStagesByPluginName(existingStages, requested)
 
 		if len(matchingStages) > 1 {
 			// ERROR: multiple stages with same plugin
@@ -566,7 +584,6 @@ func (o *Options) resolveAndValidateStages(
 				resolved = append(resolved, stageName)
 				seen[stageName] = true
 			}
-			found = true
 			continue
 		}
 
@@ -585,21 +602,9 @@ func (o *Options) resolveAndValidateStages(
 				return nil, fmt.Errorf("failed to ensure previous stages are run: %w", err)
 			}
 
-			// Path traversal protection
-			stageDir := filepath.Clean(filepath.Join(transformDir, requested))
-			cleanedTransformDir := filepath.Clean(transformDir)
-
-			rel, err := filepath.Rel(cleanedTransformDir, stageDir)
-			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-				return nil, fmt.Errorf("invalid stage path for custom stage %q: %q", requested, requested)
+			if err := createStageDirectory(transformDir, requested, orchestrator); err != nil {
+				return nil, err
 			}
-
-			if err := os.MkdirAll(stageDir, 0700); err != nil {
-				return nil, fmt.Errorf("failed to create custom stage directory %s: %w", requested, err)
-			}
-
-			// Mark as newly created for cleanup on error
-			orchestrator.NewlyCreatedStages[requested] = true
 
 			resolved = append(resolved, requested)
 			seen[requested] = true
@@ -608,10 +613,12 @@ func (o *Options) resolveAndValidateStages(
 
 		// Not a valid stage name - try to find and create stage for a plugin with this name
 
-		// Load plugins to verify it exists
-		allPlugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load plugins: %w", err)
+		// Lazy-load plugins on first use
+		if allPlugins == nil {
+			allPlugins, err = plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load plugins: %w", err)
+			}
 		}
 
 		// Find matching plugin
@@ -645,25 +652,13 @@ func (o *Options) resolveAndValidateStages(
 			return nil, fmt.Errorf("plugin %q name must end with 'Plugin'", pluginName)
 		}
 
-		stageName := fmt.Sprintf("%d_%s", nextPriority, pluginName)
-
-		// Path traversal protection
-		stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
-		cleanedTransformDir := filepath.Clean(transformDir)
-
-		rel, err := filepath.Rel(cleanedTransformDir, stageDir)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			return nil, fmt.Errorf("invalid stage path generated for plugin %q: %q", pluginName, stageName)
-		}
+		stageName := internalTransform.GenerateStageName(nextPriority, pluginName)
 
 		log.Infof("Creating stage for plugin %s -> %s", pluginName, stageName)
 
-		if err := os.MkdirAll(stageDir, 0700); err != nil {
-			return nil, fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
+		if err := createStageDirectory(transformDir, stageName, orchestrator); err != nil {
+			return nil, err
 		}
-
-		// Mark as newly created for cleanup on error
-		orchestrator.NewlyCreatedStages[stageName] = true
 
 		resolved = append(resolved, stageName)
 		seen[stageName] = true
