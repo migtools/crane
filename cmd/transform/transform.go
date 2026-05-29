@@ -498,6 +498,16 @@ func (o *Options) resolveAndValidateStages(
 		return nil, fmt.Errorf("failed to discover stages: %w", err)
 	}
 
+	// Compute next available priority once before the loop
+	// This ensures each newly created stage gets a unique, increasing priority
+	maxPriority := 0
+	for _, stage := range existingStages {
+		if stage.Priority > maxPriority {
+			maxPriority = stage.Priority
+		}
+	}
+	nextPriority := maxPriority + 10
+
 	var resolved []string
 	seen := make(map[string]bool) // Prevent duplicates
 
@@ -580,15 +590,6 @@ func (o *Options) resolveAndValidateStages(
 			return nil, fmt.Errorf("failed to ensure previous stages are run: %w", err)
 		}
 
-		// Find next available priority
-		maxPriority := 0
-		for _, stage := range existingStages {
-			if stage.Priority > maxPriority {
-				maxPriority = stage.Priority
-			}
-		}
-		newPriority := maxPriority + 10
-
 		// Create stage for this plugin
 		pluginName := matchedPlugin.Metadata().Name
 
@@ -602,7 +603,7 @@ func (o *Options) resolveAndValidateStages(
 			return nil, fmt.Errorf("plugin %q name must end with 'Plugin'", pluginName)
 		}
 
-		stageName := fmt.Sprintf("%d_%s", newPriority, pluginName)
+		stageName := fmt.Sprintf("%d_%s", nextPriority, pluginName)
 
 		// Path traversal protection
 		stageDir := filepath.Clean(filepath.Join(transformDir, stageName))
@@ -624,6 +625,9 @@ func (o *Options) resolveAndValidateStages(
 
 		resolved = append(resolved, stageName)
 		seen[stageName] = true
+
+		// Increment priority for next new stage in this invocation
+		nextPriority += 10
 	}
 
 	if len(resolved) == 0 {

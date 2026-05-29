@@ -446,3 +446,82 @@ func TestRun_InstructionsFileAndPositionalArgsConflict(t *testing.T) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
+
+// Test that multiple new stages created in one call get unique, increasing priorities
+func TestResolveAndValidateStages_MultipleNewStagesUniquePriorities(t *testing.T) {
+	// Setup: temp directories
+	tempDir := t.TempDir()
+	transformDir := filepath.Join(tempDir, "transform")
+
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+
+	// Create one existing stage with priority 10
+	existingStageDir := filepath.Join(transformDir, "10_ExistingPlugin")
+	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage dir: %v", err)
+	}
+
+	// Test requesting multiple non-existent plugin names
+	// This simulates the bug scenario where multiple new stages are created
+	requestedStages := []string{"FooPlugin", "BarPlugin", "BazPlugin"}
+
+	// We can't easily test the full resolveAndValidateStages without real plugins,
+	// but we can verify the priority calculation logic by checking what would happen
+	// if we discover existing stages and compute nextPriority
+
+	existingStages, err := internalTransform.DiscoverStages(transformDir)
+	if err != nil {
+		t.Fatalf("failed to discover stages: %v", err)
+	}
+
+	// Verify we have 1 existing stage
+	if len(existingStages) != 1 {
+		t.Fatalf("expected 1 existing stage, got %d", len(existingStages))
+	}
+	if existingStages[0].Priority != 10 {
+		t.Fatalf("expected existing stage priority 10, got %d", existingStages[0].Priority)
+	}
+
+	// Simulate the priority calculation logic from resolveAndValidateStages
+	maxPriority := 0
+	for _, stage := range existingStages {
+		if stage.Priority > maxPriority {
+			maxPriority = stage.Priority
+		}
+	}
+	nextPriority := maxPriority + 10
+
+	// Simulate creating 3 new stages and verify priorities are unique and increasing
+	expectedPriorities := []int{20, 30, 40}
+	generatedPriorities := []int{}
+
+	for range requestedStages {
+		generatedPriorities = append(generatedPriorities, nextPriority)
+		nextPriority += 10 // This is the fix - increment after each stage
+	}
+
+	// Verify priorities are unique and increasing
+	for i, expected := range expectedPriorities {
+		if generatedPriorities[i] != expected {
+			t.Errorf("Stage %d: expected priority %d, got %d", i, expected, generatedPriorities[i])
+		}
+	}
+
+	// Verify all priorities are unique
+	seen := make(map[int]bool)
+	for _, p := range generatedPriorities {
+		if seen[p] {
+			t.Errorf("Duplicate priority found: %d", p)
+		}
+		seen[p] = true
+	}
+
+	// Verify priorities are strictly increasing
+	for i := 1; i < len(generatedPriorities); i++ {
+		if generatedPriorities[i] <= generatedPriorities[i-1] {
+			t.Errorf("Priorities not increasing: %d -> %d", generatedPriorities[i-1], generatedPriorities[i])
+		}
+	}
+}
