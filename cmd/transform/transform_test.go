@@ -482,12 +482,6 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 		},
 	}
 
-	orchestrator := &internalTransform.Orchestrator{
-		Log:                log,
-		TransformDir:       transformDir,
-		NewlyCreatedStages: make(map[string]bool),
-	}
-
 	tests := []struct {
 		name           string
 		requestedStage string
@@ -507,23 +501,48 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			expectError:    false,
 		},
 		{
-			name:           "invalid stage name without plugin errors",
-			requestedStage: "InvalidStageName",
-			shouldCreate:   false,
-			expectError:    true,
+			name:           "base name creates stage with automatic priority",
+			requestedStage: "MyCustomStage",
+			shouldCreate:   true,
+			expectError:    false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset newly created stages
-			orchestrator.NewlyCreatedStages = make(map[string]bool)
+			// Create a fresh temp dir for each sub-test to avoid interference
+			subTempDir := t.TempDir()
+			subTransformDir := filepath.Join(subTempDir, "transform")
+			subPluginDir := filepath.Join(subTempDir, "plugins")
+
+			if err := os.MkdirAll(subTransformDir, 0755); err != nil {
+				t.Fatalf("failed to create transform dir: %v", err)
+			}
+			if err := os.MkdirAll(subPluginDir, 0755); err != nil {
+				t.Fatalf("failed to create plugin dir: %v", err)
+			}
+
+			// Create one existing stage with output directory
+			existingStageDir := filepath.Join(subTransformDir, "10_KubernetesPlugin")
+			if err := os.MkdirAll(existingStageDir, 0755); err != nil {
+				t.Fatalf("failed to create existing stage dir: %v", err)
+			}
+			existingStageOutputDir := filepath.Join(subTransformDir, ".work", "10_KubernetesPlugin", "output")
+			if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
+				t.Fatalf("failed to create existing stage output dir: %v", err)
+			}
+
+			subOrchestrator := &internalTransform.Orchestrator{
+				Log:                log,
+				TransformDir:       subTransformDir,
+				NewlyCreatedStages: make(map[string]bool),
+			}
 
 			resolved, err := o.resolveAndValidateStages(
 				[]string{tt.requestedStage},
-				orchestrator,
-				transformDir,
-				pluginDir,
+				subOrchestrator,
+				subTransformDir,
+				subPluginDir,
 				log,
 			)
 
@@ -542,12 +561,18 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 				t.Fatalf("expected 1 resolved stage, got %d", len(resolved))
 			}
 
-			if resolved[0] != tt.requestedStage {
-				t.Errorf("expected resolved stage %q, got %q", tt.requestedStage, resolved[0])
+			expectedResolved := tt.requestedStage
+			// For base names without priority, we need to calculate expected stage name
+			if tt.requestedStage == "MyCustomStage" {
+				expectedResolved = "20_MyCustomStage" // maxPriority=10, nextPriority=20
+			}
+
+			if resolved[0] != expectedResolved {
+				t.Errorf("expected resolved stage %q, got %q", expectedResolved, resolved[0])
 			}
 
 			// Check if directory was created
-			stageDir := filepath.Join(transformDir, tt.requestedStage)
+			stageDir := filepath.Join(subTransformDir, expectedResolved)
 			_, err = os.Stat(stageDir)
 			dirExists := err == nil
 
@@ -555,12 +580,12 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 				if !dirExists {
 					t.Errorf("expected custom stage directory to be created at %s", stageDir)
 				}
-				if !orchestrator.NewlyCreatedStages[tt.requestedStage] {
-					t.Errorf("expected stage to be marked as newly created")
+				if !subOrchestrator.NewlyCreatedStages[expectedResolved] {
+					t.Errorf("expected stage %q to be marked as newly created", expectedResolved)
 				}
 			} else {
-				if orchestrator.NewlyCreatedStages[tt.requestedStage] {
-					t.Errorf("did not expect stage to be marked as newly created")
+				if subOrchestrator.NewlyCreatedStages[expectedResolved] {
+					t.Errorf("did not expect stage %q to be marked as newly created", expectedResolved)
 				}
 			}
 		})
@@ -780,5 +805,205 @@ func TestResolveAndValidateStages_CustomStageWithPreviousStageOutput(t *testing.
 
 	if !orchestrator.NewlyCreatedStages["50_CustomModifications"] {
 		t.Errorf("custom stage not marked as newly created")
+	}
+}
+
+// Test that base name without priority prefix finds existing stage
+func TestResolveAndValidateStages_BaseNameFindsExistingStage(t *testing.T) {
+	tempDir := t.TempDir()
+	transformDir := filepath.Join(tempDir, "transform")
+	pluginDir := filepath.Join(tempDir, "plugins")
+
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		t.Fatalf("failed to create plugin dir: %v", err)
+	}
+
+	// Create existing stage "50_CustomStage"
+	existingStageDir := filepath.Join(transformDir, "50_CustomStage")
+	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage dir: %v", err)
+	}
+
+	log := logrus.New()
+	log.SetOutput(os.Stderr)
+
+	o := &Options{
+		Flags: Flags{
+			SkipPlugins: []string{},
+		},
+	}
+
+	orchestrator := &internalTransform.Orchestrator{
+		Log:                log,
+		TransformDir:       transformDir,
+		NewlyCreatedStages: make(map[string]bool),
+	}
+
+	// Request stage using base name (without priority prefix)
+	resolved, err := o.resolveAndValidateStages(
+		[]string{"CustomStage"},
+		orchestrator,
+		transformDir,
+		pluginDir,
+		log,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved stage, got %d", len(resolved))
+	}
+
+	// Should resolve to the existing stage with priority prefix
+	if resolved[0] != "50_CustomStage" {
+		t.Errorf("expected resolved stage %q, got %q", "50_CustomStage", resolved[0])
+	}
+
+	// Should NOT be marked as newly created
+	if orchestrator.NewlyCreatedStages["50_CustomStage"] {
+		t.Errorf("existing stage should not be marked as newly created")
+	}
+}
+
+// Test that base name without priority prefix creates new stage if none exists
+func TestResolveAndValidateStages_BaseNameCreatesNewStage(t *testing.T) {
+	tempDir := t.TempDir()
+	transformDir := filepath.Join(tempDir, "transform")
+	pluginDir := filepath.Join(tempDir, "plugins")
+
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		t.Fatalf("failed to create plugin dir: %v", err)
+	}
+
+	// Create one existing stage to establish max priority
+	existingStageDir := filepath.Join(transformDir, "10_KubernetesPlugin")
+	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage dir: %v", err)
+	}
+	// Create output directory to pass previous stage check
+	existingStageOutputDir := filepath.Join(transformDir, ".work", "10_KubernetesPlugin", "output")
+	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage output dir: %v", err)
+	}
+
+	log := logrus.New()
+	log.SetOutput(os.Stderr)
+
+	o := &Options{
+		Flags: Flags{
+			SkipPlugins: []string{},
+		},
+	}
+
+	orchestrator := &internalTransform.Orchestrator{
+		Log:                log,
+		TransformDir:       transformDir,
+		NewlyCreatedStages: make(map[string]bool),
+	}
+
+	// Request stage using base name that doesn't exist yet
+	resolved, err := o.resolveAndValidateStages(
+		[]string{"MyCustomStage"},
+		orchestrator,
+		transformDir,
+		pluginDir,
+		log,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved stage, got %d", len(resolved))
+	}
+
+	// Should create new stage with automatic priority (max=10, so next=20)
+	expectedStageName := "20_MyCustomStage"
+	if resolved[0] != expectedStageName {
+		t.Errorf("expected resolved stage %q, got %q", expectedStageName, resolved[0])
+	}
+
+	// Verify stage directory was created
+	newStageDir := filepath.Join(transformDir, expectedStageName)
+	if _, err := os.Stat(newStageDir); os.IsNotExist(err) {
+		t.Errorf("new stage directory not created: %s", newStageDir)
+	}
+
+	// Should be marked as newly created
+	if !orchestrator.NewlyCreatedStages[expectedStageName] {
+		t.Errorf("new stage not marked as newly created")
+	}
+}
+
+// Test that multiple base names create stages with increasing priorities
+func TestResolveAndValidateStages_MultipleBaseNamesIncrementPriority(t *testing.T) {
+	tempDir := t.TempDir()
+	transformDir := filepath.Join(tempDir, "transform")
+	pluginDir := filepath.Join(tempDir, "plugins")
+
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		t.Fatalf("failed to create plugin dir: %v", err)
+	}
+
+	log := logrus.New()
+	log.SetOutput(os.Stderr)
+
+	o := &Options{
+		Flags: Flags{
+			SkipPlugins: []string{},
+		},
+	}
+
+	orchestrator := &internalTransform.Orchestrator{
+		Log:                log,
+		TransformDir:       transformDir,
+		NewlyCreatedStages: make(map[string]bool),
+	}
+
+	// Request multiple new stages using base names
+	resolved, err := o.resolveAndValidateStages(
+		[]string{"FirstStage", "SecondStage", "ThirdStage"},
+		orchestrator,
+		transformDir,
+		pluginDir,
+		log,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resolved) != 3 {
+		t.Fatalf("expected 3 resolved stages, got %d", len(resolved))
+	}
+
+	// Should create stages with priorities 10, 20, 30
+	expected := []string{"10_FirstStage", "20_SecondStage", "30_ThirdStage"}
+	for i, expectedName := range expected {
+		if resolved[i] != expectedName {
+			t.Errorf("stage %d: expected %q, got %q", i, expectedName, resolved[i])
+		}
+
+		// Verify directory was created
+		stageDir := filepath.Join(transformDir, expectedName)
+		if _, err := os.Stat(stageDir); os.IsNotExist(err) {
+			t.Errorf("stage directory not created: %s", stageDir)
+		}
+
+		if !orchestrator.NewlyCreatedStages[expectedName] {
+			t.Errorf("stage %q not marked as newly created", expectedName)
+		}
 	}
 }

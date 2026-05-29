@@ -498,6 +498,24 @@ func findStagesByPluginName(existingStages []internalTransform.Stage, pluginName
 	return matches
 }
 
+// findStageByBaseName searches for a stage by base name (without numeric prefix)
+// For example, "CustomStage" would match "50_CustomStage"
+// Returns the stage and true if exactly one match is found
+func findStageByBaseName(existingStages []internalTransform.Stage, baseName string) (internalTransform.Stage, bool) {
+	var matches []internalTransform.Stage
+	for _, stage := range existingStages {
+		if stage.PluginName == baseName {
+			matches = append(matches, stage)
+		}
+	}
+
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+
+	return internalTransform.Stage{}, false
+}
+
 // createStageDirectory creates a stage directory with path traversal protection
 // and marks it as newly created in the orchestrator
 func createStageDirectory(transformDir, stageName string, orchestrator *internalTransform.Orchestrator) error {
@@ -562,29 +580,35 @@ func (o *Options) resolveAndValidateStages(
 			continue
 		}
 
-		// Check if it's a plugin name - find matching stages
-		matchingStages := findStagesByPluginName(existingStages, requested)
+		// Determine if this looks like a plugin name (ends with "Plugin")
+		// or a custom stage base name
+		isPluginName := strings.HasSuffix(requested, "Plugin")
 
-		if len(matchingStages) > 1 {
-			// ERROR: multiple stages with same plugin
-			stageNames := make([]string, len(matchingStages))
-			for i, s := range matchingStages {
-				stageNames[i] = s.DirName
-			}
-			return nil, fmt.Errorf(
-				"plugin %q found in multiple stages: %v. Please specify exact stage directory name",
-				requested, stageNames)
-		}
+		if isPluginName {
+			// Check if it's a plugin name - find matching stages
+			matchingStages := findStagesByPluginName(existingStages, requested)
 
-		if len(matchingStages) == 1 {
-			// FOUND: use existing stage
-			stageName := matchingStages[0].DirName
-			if !seen[stageName] {
-				log.Infof("Found existing stage for plugin %s: %s", requested, stageName)
-				resolved = append(resolved, stageName)
-				seen[stageName] = true
+			if len(matchingStages) > 1 {
+				// ERROR: multiple stages with same plugin
+				stageNames := make([]string, len(matchingStages))
+				for i, s := range matchingStages {
+					stageNames[i] = s.DirName
+				}
+				return nil, fmt.Errorf(
+					"plugin %q found in multiple stages: %v. Please specify exact stage directory name",
+					requested, stageNames)
 			}
-			continue
+
+			if len(matchingStages) == 1 {
+				// FOUND: use existing stage
+				stageName := matchingStages[0].DirName
+				if !seen[stageName] {
+					log.Infof("Found existing stage for plugin %s: %s", requested, stageName)
+					resolved = append(resolved, stageName)
+					seen[stageName] = true
+				}
+				continue
+			}
 		}
 
 		// Not found in existing stages - determine if it's a custom stage name or plugin name
@@ -611,7 +635,51 @@ func (o *Options) resolveAndValidateStages(
 			continue
 		}
 
-		// Not a valid stage name - try to find and create stage for a plugin with this name
+		// Not a valid stage name with priority prefix
+		// Now check if it's a plugin name or custom stage base name
+
+		// For plugin names (ending with "Plugin"), we already checked above in isPluginName block
+		// and didn't find a match, so we need to create a new stage for the plugin
+
+		// For custom stage base names (not ending with "Plugin"), check if existing stage exists
+		// or create a new one with automatic priority
+		if !isPluginName {
+			// Not a plugin name - try to find existing stage with this base name
+			if existingStage, found := findStageByBaseName(existingStages, requested); found {
+				// Found exactly one existing stage with this base name
+				log.Infof("Found existing stage for base name %q: %s", requested, existingStage.DirName)
+				resolved = append(resolved, existingStage.DirName)
+				seen[existingStage.DirName] = true
+				continue
+			}
+
+			// No existing stage with this base name - check if it could be a custom stage base name
+			// Custom stage names should only contain safe characters
+			if err := validatePluginNameForStage(requested); err == nil {
+				// Valid base name for custom stage - create with automatic priority
+				stageName := internalTransform.GenerateStageName(nextPriority, requested)
+				log.Infof("Creating custom stage with automatic priority: %s -> %s", requested, stageName)
+
+				// Ensure all previous stages have been run
+				if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
+					return nil, fmt.Errorf("failed to ensure previous stages are run: %w", err)
+				}
+
+				if err := createStageDirectory(transformDir, stageName, orchestrator); err != nil {
+					return nil, err
+				}
+
+				resolved = append(resolved, stageName)
+				seen[stageName] = true
+				nextPriority += 10
+				continue
+			}
+
+			// Invalid custom stage name
+			return nil, fmt.Errorf("invalid custom stage name %q: %v", requested, err)
+		}
+
+		// It's a plugin name - try to find and create stage for a plugin with this name
 
 		// Lazy-load plugins on first use
 		if allPlugins == nil {
@@ -631,7 +699,7 @@ func (o *Options) resolveAndValidateStages(
 		}
 
 		if matchedPlugin == nil {
-			return nil, fmt.Errorf("stage or plugin %q not found", requested)
+			return nil, fmt.Errorf("plugin %q not found", requested)
 		}
 
 		// Ensure all previous stages have been run
