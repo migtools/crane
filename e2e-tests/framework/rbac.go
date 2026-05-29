@@ -140,3 +140,18 @@ func SetupNamespaceAdminUsersForScenario(scenario MigrationScenario, namespace s
 
 	return srcNonAdminKubectl, tgtNonAdminKubectl, cleanup, nil
 }
+
+func NonAdminApps(scenario MigrationScenario) (soruceApp K8sDeployApp, targetApp K8sDeployApp) {
+	srcAppNonAdmin := scenario.SrcAppNonAdmin
+	tgtAppNonAdmin := scenario.TgtAppNonAdmin
+
+	srcAppNonAdmin.ExtraVars = map[string]any{
+		"non_admin_user": "true",
+	}
+	tgtAppNonAdmin.ExtraVars = map[string]any{
+		"non_admin_user": "true",
+	}
+
+	return srcAppNonAdmin, tgtAppNonAdmin
+
+}
