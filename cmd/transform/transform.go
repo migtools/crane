@@ -379,6 +379,13 @@ func (o *Options) ensureStagesHaveOutput(orchestrator *internalTransform.Orchest
 	}
 
 	for _, stage := range stages {
+		// Skip stages that are being created in this same invocation
+		// They don't need to have output yet
+		if orchestrator.NewlyCreatedStages[stage.DirName] {
+			log.Debugf("Stage %s is newly created in this invocation, skipping output check", stage.DirName)
+			continue
+		}
+
 		stageOutputDir := opts.GetStageOutputDir(stage.DirName)
 
 		// Check if this stage has output
@@ -571,6 +578,12 @@ func (o *Options) resolveAndValidateStages(
 		if err := internalTransform.ValidateStageName(requested); err == nil {
 			// Valid stage name - create custom stage directory
 			log.Infof("Creating custom stage directory: %s", requested)
+
+			// Ensure all previous stages have been run
+			// This is required because the custom stage may depend on output from previous stages
+			if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
+				return nil, fmt.Errorf("failed to ensure previous stages are run: %w", err)
+			}
 
 			// Path traversal protection
 			stageDir := filepath.Clean(filepath.Join(transformDir, requested))

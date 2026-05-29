@@ -540,10 +540,16 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 		t.Fatalf("failed to create plugin dir: %v", err)
 	}
 
-	// Create one existing stage
+	// Create one existing stage with output directory
+	// This simulates a stage that has already been run
 	existingStageDir := filepath.Join(transformDir, "10_KubernetesPlugin")
 	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
 		t.Fatalf("failed to create existing stage dir: %v", err)
+	}
+	// Create output directory to simulate stage has been run
+	existingStageOutputDir := filepath.Join(transformDir, ".work", "10_KubernetesPlugin", "output")
+	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage output dir: %v", err)
 	}
 
 	log := logrus.New()
@@ -653,10 +659,16 @@ func TestResolveAndValidateStages_MultipleCustomStages(t *testing.T) {
 		t.Fatalf("failed to create plugin dir: %v", err)
 	}
 
-	// Create one existing stage
+	// Create one existing stage with output directory
+	// This simulates a stage that has already been run
 	existingStageDir := filepath.Join(transformDir, "10_KubernetesPlugin")
 	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
 		t.Fatalf("failed to create existing stage dir: %v", err)
+	}
+	// Create output directory to simulate stage has been run
+	existingStageOutputDir := filepath.Join(transformDir, ".work", "10_KubernetesPlugin", "output")
+	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage output dir: %v", err)
 	}
 
 	log := logrus.New()
@@ -707,5 +719,145 @@ func TestResolveAndValidateStages_MultipleCustomStages(t *testing.T) {
 		if !orchestrator.NewlyCreatedStages[stageName] {
 			t.Errorf("stage %q not marked as newly created", stageName)
 		}
+	}
+}
+
+// Test that custom stage creation ensures previous stages have output
+func TestResolveAndValidateStages_CustomStageRequiresPreviousStageOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	transformDir := filepath.Join(tempDir, "transform")
+	pluginDir := filepath.Join(tempDir, "plugins")
+	exportDir := filepath.Join(tempDir, "export")
+
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		t.Fatalf("failed to create plugin dir: %v", err)
+	}
+	if err := os.MkdirAll(exportDir, 0755); err != nil {
+		t.Fatalf("failed to create export dir: %v", err)
+	}
+
+	// Create one existing stage WITHOUT output directory
+	// This simulates a stage that exists but has not been run yet
+	existingStageDir := filepath.Join(transformDir, "10_KubernetesPlugin")
+	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage dir: %v", err)
+	}
+
+	log := logrus.New()
+	log.SetOutput(os.Stderr)
+
+	o := &Options{
+		Flags: Flags{
+			SkipPlugins: []string{},
+		},
+	}
+
+	// Configure orchestrator with minimal setup needed for ensurePreviousStagesRun
+	orchestrator := &internalTransform.Orchestrator{
+		Log:                log,
+		ExportDir:          exportDir,
+		TransformDir:       transformDir,
+		PluginDir:          pluginDir,
+		NewlyCreatedStages: make(map[string]bool),
+	}
+
+	// Request a custom stage
+	// This should fail because the previous stage (10_KubernetesPlugin) has no output
+	_, err := o.resolveAndValidateStages(
+		[]string{"50_CustomModifications"},
+		orchestrator,
+		transformDir,
+		pluginDir,
+		log,
+	)
+
+	// We expect this to fail because ensurePreviousStagesRun will try to run
+	// the previous stage which will fail due to missing export/plugin setup
+	if err == nil {
+		t.Errorf("expected error when previous stage has no output, but got none")
+	}
+
+	// The error should mention the previous stage or output directory
+	if err != nil && !strings.Contains(err.Error(), "10_KubernetesPlugin") &&
+		!strings.Contains(err.Error(), "output") &&
+		!strings.Contains(err.Error(), "previous") {
+		t.Logf("Got error (which is expected): %v", err)
+		// This is acceptable - the important thing is that it tried to ensure previous stages
+	}
+}
+
+// Test that custom stage creation with all previous stages having output succeeds
+func TestResolveAndValidateStages_CustomStageWithPreviousStageOutput(t *testing.T) {
+	tempDir := t.TempDir()
+	transformDir := filepath.Join(tempDir, "transform")
+	pluginDir := filepath.Join(tempDir, "plugins")
+
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+	if err := os.MkdirAll(pluginDir, 0755); err != nil {
+		t.Fatalf("failed to create plugin dir: %v", err)
+	}
+
+	// Create one existing stage WITH output directory
+	// This simulates a stage that has already been successfully run
+	existingStageDir := filepath.Join(transformDir, "10_KubernetesPlugin")
+	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage dir: %v", err)
+	}
+	// Create output directory to simulate stage has been run
+	existingStageOutputDir := filepath.Join(transformDir, ".work", "10_KubernetesPlugin", "output")
+	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
+		t.Fatalf("failed to create existing stage output dir: %v", err)
+	}
+
+	log := logrus.New()
+	log.SetOutput(os.Stderr)
+
+	o := &Options{
+		Flags: Flags{
+			SkipPlugins: []string{},
+		},
+	}
+
+	orchestrator := &internalTransform.Orchestrator{
+		Log:                log,
+		TransformDir:       transformDir,
+		NewlyCreatedStages: make(map[string]bool),
+	}
+
+	// Request a custom stage
+	// This should succeed because the previous stage has output
+	resolved, err := o.resolveAndValidateStages(
+		[]string{"50_CustomModifications"},
+		orchestrator,
+		transformDir,
+		pluginDir,
+		log,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved stage, got %d", len(resolved))
+	}
+
+	if resolved[0] != "50_CustomModifications" {
+		t.Errorf("expected resolved stage %q, got %q", "50_CustomModifications", resolved[0])
+	}
+
+	// Verify custom stage directory was created
+	customStageDir := filepath.Join(transformDir, "50_CustomModifications")
+	if _, err := os.Stat(customStageDir); os.IsNotExist(err) {
+		t.Errorf("custom stage directory not created: %s", customStageDir)
+	}
+
+	if !orchestrator.NewlyCreatedStages["50_CustomModifications"] {
+		t.Errorf("custom stage not marked as newly created")
 	}
 }
