@@ -3,55 +3,41 @@ package apply
 import (
 	"testing"
 
-	"github.com/konveyor/crane/internal/flags"
 	"github.com/spf13/cobra"
 )
 
 func TestValidate(t *testing.T) {
 	tests := []struct {
-		name      string
-		flags     Flags
-		wantError bool
+		name            string
+		requestedStages []string
+		wantError       bool
 	}{
 		{
-			name:      "no flags set - valid",
-			flags:     Flags{},
-			wantError: false,
+			name:            "no stages - valid",
+			requestedStages: []string{},
+			wantError:       false,
 		},
 		{
-			name: "only stage set - valid",
-			flags: Flags{
-				Stage: "10_KubernetesPlugin",
-			},
-			wantError: false,
+			name:            "valid stage directory name",
+			requestedStages: []string{"10_KubernetesPlugin"},
+			wantError:       false,
 		},
 		{
-			name: "stage with invalid format - no number prefix",
-			flags: Flags{
-				Stage: "KubernetesPlugin",
-			},
-			wantError: true,
+			name:            "multiple valid stages",
+			requestedStages: []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
+			wantError:       false,
 		},
 		{
-			name: "stage with invalid format - arbitrary value",
-			flags: Flags{
-				Stage: "foobar123",
-			},
-			wantError: true,
-		},
-		{
-			name: "stage with invalid format - missing plugin name",
-			flags: Flags{
-				Stage: "10_",
-			},
-			wantError: true,
+			name:            "plugin name without prefix - valid (will be resolved)",
+			requestedStages: []string{"KubernetesPlugin"},
+			wantError:       false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &Options{
-				Flags: tt.flags,
+				RequestedStages: tt.requestedStages,
 			}
 
 			err := o.Validate()
@@ -72,23 +58,27 @@ func TestValidate(t *testing.T) {
 
 func TestStageSelectionRouting(t *testing.T) {
 	tests := []struct {
-		name          string
-		flags         Flags
-		expectCustom  bool   // true if user specified custom selector
-		selectorStage string // expected stage value in selector
+		name             string
+		requestedStages  []string
+		expectCustom     bool     // true if user specified custom selector
+		selectorStages   []string // expected stage values in selector
 	}{
 		{
-			name:         "default - no flags (all stages)",
-			flags:        Flags{},
-			expectCustom: false, // No custom selector = all stages
+			name:            "default - no stages (all stages)",
+			requestedStages: []string{},
+			expectCustom:    false, // No custom selector = all stages
 		},
 		{
-			name: "stage flag set",
-			flags: Flags{
-				Stage: "10_KubernetesPlugin",
-			},
-			expectCustom:  true,
-			selectorStage: "10_KubernetesPlugin",
+			name:            "single stage",
+			requestedStages: []string{"10_KubernetesPlugin"},
+			expectCustom:    true,
+			selectorStages:  []string{"10_KubernetesPlugin"},
+		},
+		{
+			name:            "multiple stages",
+			requestedStages: []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
+			expectCustom:    true,
+			selectorStages:  []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
 		},
 	}
 
@@ -97,7 +87,7 @@ func TestStageSelectionRouting(t *testing.T) {
 			// Test the routing logic from run() method
 			// Now everything uses ApplyMultiStage(), the question is whether
 			// user provided a custom selector or we use default (all stages)
-			hasCustomSelector := tt.flags.Stage != ""
+			hasCustomSelector := len(tt.requestedStages) > 0
 
 			if hasCustomSelector != tt.expectCustom {
 				t.Errorf("Custom selector: got %v, want %v", hasCustomSelector, tt.expectCustom)
@@ -105,8 +95,13 @@ func TestStageSelectionRouting(t *testing.T) {
 
 			if tt.expectCustom {
 				// Verify selector would be constructed correctly
-				if tt.flags.Stage != tt.selectorStage {
-					t.Errorf("Selector Stage: got %v, want %v", tt.flags.Stage, tt.selectorStage)
+				if len(tt.requestedStages) != len(tt.selectorStages) {
+					t.Errorf("Selector Stages length: got %v, want %v", len(tt.requestedStages), len(tt.selectorStages))
+				}
+				for i, stage := range tt.requestedStages {
+					if stage != tt.selectorStages[i] {
+						t.Errorf("Selector Stages[%d]: got %v, want %v", i, stage, tt.selectorStages[i])
+					}
 				}
 			}
 		})
@@ -116,28 +111,44 @@ func TestStageSelectionRouting(t *testing.T) {
 func TestComplete(t *testing.T) {
 	tests := []struct {
 		name      string
-		options   *Options
-		wantError bool
+		args      []string
+		wantStages []string
 	}{
 		{
-			name: "complete succeeds",
-			options: &Options{
-				cobraGlobalFlags: &flags.GlobalFlags{},
-			},
-			wantError: false,
+			name:      "no args",
+			args:      []string{},
+			wantStages: []string{},
+		},
+		{
+			name:      "single stage",
+			args:      []string{"10_KubernetesPlugin"},
+			wantStages: []string{"10_KubernetesPlugin"},
+		},
+		{
+			name:      "multiple stages",
+			args:      []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
+			wantStages: []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			o := &Options{}
 			cmd := &cobra.Command{}
-			err := tt.options.Complete(cmd, []string{})
 
-			if tt.wantError && err == nil {
-				t.Error("Complete() expected error but got none")
-			}
-			if !tt.wantError && err != nil {
+			err := o.Complete(cmd, tt.args)
+			if err != nil {
 				t.Errorf("Complete() unexpected error: %v", err)
+			}
+
+			if len(o.RequestedStages) != len(tt.wantStages) {
+				t.Errorf("RequestedStages length: got %v, want %v", len(o.RequestedStages), len(tt.wantStages))
+			}
+
+			for i, stage := range o.RequestedStages {
+				if stage != tt.wantStages[i] {
+					t.Errorf("RequestedStages[%d]: got %v, want %v", i, stage, tt.wantStages[i])
+				}
 			}
 		})
 	}
