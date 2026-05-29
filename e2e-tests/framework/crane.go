@@ -22,6 +22,7 @@ type TransferPVCOptions struct {
 	Subdomain       string
 }
 
+// ValidateOptions contains arguments for the crane validate command.
 type ValidateOptions struct {
 	Context          string
 	InputDir         string
@@ -118,6 +119,7 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 	return nil
 }
 
+// Validate runs crane validate and returns command output or an error.
 func (c CraneRunner) Validate(opts ValidateOptions) (stdout string, err error) {
 	args := []string{"validate"}
 

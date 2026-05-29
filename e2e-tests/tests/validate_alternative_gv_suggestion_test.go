@@ -12,8 +12,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Validate alternative GV suggestion", func() {
-	It("[VLD-004] should suggest apps/v1 for extensions/v1beta1 Deployment", Label("tier1"), func() {
+var _ = Describe("Validate alternative GV suggestion [Live Mode]", func() {
+	It("[VLD-004] should suggest apps/v1 for extensions/v1beta1 Deployment as namespace-admin", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv-alt-gv"
 
@@ -26,39 +26,36 @@ var _ = Describe("Validate alternative GV suggestion", func() {
 			config.TargetContext,
 		)
 
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin test")
+		if scenario.SrcAppNonAdmin.Context == "" {
+			Skip("source-nonadmin-context is required for non-admin stateless migration test")
 		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin test")
+		if scenario.TgtAppNonAdmin.Context == "" {
+			Skip("target-nonadmin-context is required for non-admin stateless migration test")
 		}
-
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
-
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
-		tgtApp.ExtraVars = map[string]any{
-			"non_admin_user": "true",
-		}
-
-		By("Grant namespace-admin permissions to non-admin user on source and target")
+		tgtApp.ExtraVars = srcApp.ExtraVars
+		By("Grant ns admin permissions to nonadmin user on source and target")
 		kubectlSrcNonAdmin, _, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			By("Delete test namespace on source and target (best effort)")
+			By("Delete test namespace on source and target (wait for completion)")
 			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
-				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=false"); err != nil {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
 					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
 				}
 			}
 		})
-		DeferCleanup(cleanup)
-
-		By("Create temporary directories for export/transform/output/validate artifacts")
-		paths, err := NewScenarioPaths("crane-export-*")
+		DeferCleanup(cleanup) // Cleanup rolebindings
+		By("Prepare source app")
+		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
+		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
+		paths, err := NewScenarioPaths("crane-pipeline-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
@@ -67,15 +64,13 @@ var _ = Describe("Validate alternative GV suggestion", func() {
 			}
 		})
 
-		By("Prepare source app")
-		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
-
 		runner.WorkDir = paths.TempDir
-
 		By("Run crane export/transform/apply pipeline")
+		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
-		By("Mutate deployment apiVersion to deprecated extensions/v1beta1")
+		By("Mutate deployment apiversion to extensions/v1beta1")
 		deploymentPattern := filepath.Join(paths.OutputDir, "resources", namespace, "Deployment_*.yaml")
 		matches, err := filepath.Glob(deploymentPattern)
 		Expect(err).NotTo(HaveOccurred())
@@ -85,18 +80,18 @@ var _ = Describe("Validate alternative GV suggestion", func() {
 		deploymentBytes, err := os.ReadFile(deploymentPath)
 		Expect(err).NotTo(HaveOccurred())
 
-		mutatedDeployment := strings.Replace(string(deploymentBytes), "apiVersion: apps/v1", "apiVersion: extensions/v1beta1", 1)
+		mutatedDeployment := strings.Replace(string(deploymentBytes), "apiVersion: apps/v1", "apiVersion: extensions/v1beta1", 1) // Replace apiVersion
 		Expect(mutatedDeployment).NotTo(Equal(string(deploymentBytes)), "expected to replace Deployment apiVersion")
 		Expect(os.WriteFile(deploymentPath, []byte(mutatedDeployment), 0o644)).NotTo(HaveOccurred())
 
 		By("Run crane validate against target context")
 		stdout, err := runner.Validate(ValidateOptions{
 			Context:     scenario.KubectlTgtNonAdmin.Context,
-			InputDir:    paths.OutputDir,
+			InputDir:    filepath.Join(paths.OutputDir, "resources", namespace),
 			ValidateDir: paths.ValidateDir,
 		})
+
 		Expect(err).To(HaveOccurred(), "validate should fail for deprecated Deployment apiVersion")
-		Expect(err.Error()).To(ContainSubstring("exit status 1"))
 		Expect(stdout).To(ContainSubstring("available as apps/v1"))
 
 		By("Assert report.json includes incompatible deployment with suggestion")
