@@ -563,8 +563,37 @@ func (o *Options) resolveAndValidateStages(
 			continue
 		}
 
-		// Not found - try to create new stage for this plugin
+		// Not found in existing stages - determine if it's a custom stage name or plugin name
 		log.Infof("Stage for %q not found, attempting to create", requested)
+
+		// Check if the requested name is a valid stage directory name (e.g., "50_CustomModifications")
+		// If so, treat it as a custom stage and create the directory
+		if err := internalTransform.ValidateStageName(requested); err == nil {
+			// Valid stage name - create custom stage directory
+			log.Infof("Creating custom stage directory: %s", requested)
+
+			// Path traversal protection
+			stageDir := filepath.Clean(filepath.Join(transformDir, requested))
+			cleanedTransformDir := filepath.Clean(transformDir)
+
+			rel, err := filepath.Rel(cleanedTransformDir, stageDir)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+				return nil, fmt.Errorf("invalid stage path for custom stage %q: %q", requested, requested)
+			}
+
+			if err := os.MkdirAll(stageDir, 0700); err != nil {
+				return nil, fmt.Errorf("failed to create custom stage directory %s: %w", requested, err)
+			}
+
+			// Mark as newly created for cleanup on error
+			orchestrator.NewlyCreatedStages[requested] = true
+
+			resolved = append(resolved, requested)
+			seen[requested] = true
+			continue
+		}
+
+		// Not a valid stage name - try to find and create stage for a plugin with this name
 
 		// Load plugins to verify it exists
 		allPlugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
