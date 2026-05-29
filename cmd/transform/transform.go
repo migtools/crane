@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/konveyor/crane/cmd/transform/listplugins"
@@ -44,6 +45,8 @@ type Flags struct {
 	Force bool   `mapstructure:"force"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
+	// Instructions file
+	InstructionsFile string `mapstructure:"instructions-file"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -100,7 +103,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
-
+	cmd.Flags().StringVar(&o.InstructionsFile, "instructions-file", "", "Path to the transform instructions file")
 	// Multi-stage flag
 	cmd.Flags().StringVar(&o.Stage, "stage", "", "Run transform for a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are run.")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
@@ -132,6 +135,21 @@ func (o *Options) run() error {
 		return err
 	}
 
+	if o.InstructionsFile != "" && o.Stage != "" { // instructions file and stage flag are mutually exclusive
+		return fmt.Errorf("use either --instructions-file or --stage, not both")
+	}
+	var instructionStages []string
+	if o.InstructionsFile != "" {
+		instructionsFilePath, err := filepath.Abs(o.InstructionsFile)
+		if err != nil {
+			return fmt.Errorf("failed to resolve instructions file path %q: %w", o.InstructionsFile, err)
+		}
+		cfg, err := internalTransform.LoadInstructions(instructionsFilePath)
+		if err != nil {
+			return err
+		}
+		instructionStages = internalTransform.GenerateStageDirNames(cfg.Stages)
+	}
 	// Parse optional flags
 	var optionalFlags map[string]string
 	if len(o.OptionalFlags) > 0 {
@@ -164,6 +182,36 @@ func (o *Options) run() error {
 
 	// Determine which stages to run
 	var selector internalTransform.StageSelector
+	if len(instructionStages) > 0 {
+		log.Infof("Running stages from instructions file: %s", o.InstructionsFile)
+		if err := o.reconcileInstructionStages(transformDir, instructionStages, log); err != nil {
+			return err
+		}
+		for _, stageName := range instructionStages {
+			stageDir := filepath.Join(transformDir, stageName)
+			_, err := os.Stat(stageDir)
+			stageExists := err == nil
+			if err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to inspect stage directory %s: %w", stageDir, err)
+			}
+
+			if !stageExists {
+				if err := os.MkdirAll(stageDir, 0700); err != nil {
+					return fmt.Errorf("failed to create stage directory %s: %w", stageName, err)
+				}
+				orchestrator.NewlyCreatedStages[stageName] = true
+				log.Infof("Created stage directory: %s", stageDir)
+			}
+			selector = internalTransform.StageSelector{
+				Stage: stageName,
+			}
+			log.Infof("Running stage: %s", stageName)
+			if err := o.runStageWithCleanup(orchestrator, selector, stageDir, !stageExists, log); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 
 	if o.Stage != "" {
 		// User specified a specific stage to run
@@ -258,6 +306,57 @@ func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrat
 		}
 	}
 	return err
+}
+
+// reconcileInstructionStages compares discovered stage directories in transform/
+// against the desired stage names generated from --instructions-file.
+// Without --force, it fails if extra stage directories are found.
+// With --force, it deletes those extra stage directories so transform/
+// matches the instructions-defined stage set.
+func (o *Options) reconcileInstructionStages(transformDir string, desiredStages []string, log *logrus.Logger) error {
+	existingStages, err := internalTransform.DiscoverStages(transformDir)
+	if err != nil {
+		return fmt.Errorf("failed to discover existing stages for instructions reconciliation: %w", err)
+	}
+
+	desiredSet := make(map[string]struct{}, len(desiredStages))
+	for _, stage := range desiredStages {
+		desiredSet[stage] = struct{}{}
+	}
+
+	var extras []string
+	for _, stage := range existingStages {
+		if _, exists := desiredSet[stage.DirName]; !exists {
+			extras = append(extras, stage.DirName)
+		}
+	}
+
+	if len(extras) == 0 {
+		return nil
+	}
+
+	sort.Strings(extras)
+
+	if !o.Force {
+		return fmt.Errorf(
+			"stages in transform/ do not match --instructions-file: extra stage directories: %s. Re-run with --force to reconcile",
+			strings.Join(extras, ", "),
+		)
+	}
+
+	for _, extra := range extras {
+		stagePath := filepath.Join(transformDir, extra)              // transform/<stageName>
+		stageWorkPath := filepath.Join(transformDir, ".work", extra) // transform/.work/<stageName>
+		if err := os.RemoveAll(stagePath); err != nil {
+			return fmt.Errorf("failed to delete extra stage directory %q at path %q: %w", extra, stagePath, err)
+		}
+		if err := os.RemoveAll(stageWorkPath); err != nil {
+			return fmt.Errorf("failed to delete extra stage work directory %q at path %q: %w", extra, stageWorkPath, err)
+		}
+		log.Infof("Deleted stage directory not present in instructions file: %s", stagePath)
+		log.Infof("Deleted stage work directory not present in instructions file: %s", stageWorkPath)
+	}
+	return nil
 }
 
 // ensurePreviousStagesRun ensures all existing stages have been run
