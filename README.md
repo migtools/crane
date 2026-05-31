@@ -99,7 +99,7 @@ How does it work? Crane works by:
     * `$ cat transform/10_KubernetesPlugin/input/secret.yaml` - Contains the original exported Secret with all metadata
 
 5. `$ crane apply`
-  * Runs `kubectl kustomize` on the transform stage to apply patches
+  * Runs embedded kustomize on the transform stage to apply patches
   * Outputs clean, declarative YAML to `output/output.yaml`
   * Example:
     * `$ cat output/output.yaml`
@@ -116,6 +116,14 @@ How does it work? Crane works by:
     * Note that the fields `metadata.uid`, `metadata.resourceVersion`, and `metadata.creationTimestamp` have been removed.
 6. The content in `output/output.yaml` is now ready to be deployed to the target cluster or checked into Git for GitOps workflows:
     * `$ kubectl apply -f output/output.yaml`
+
+## Documentation
+
+For comprehensive documentation, see the [docs/](docs/README.md) directory:
+
+- [Installation](docs/installation.md)
+- [Command Reference](docs/README.md#command-reference) — export, transform, apply, validate, transfer-pvc
+- [Contributing](CONTRIBUTING.md) | [Development Guide](docs/development/README.md)
 
 ## Further Examples
 
