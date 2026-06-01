@@ -175,7 +175,7 @@ resources: []
 		{
 			name: "stage ordering preserved",
 			selector: StageSelector{
-				Stage: "10_KubernetesPlugin",
+				Stages: []string{"10_KubernetesPlugin"},
 			},
 			expectError: false,
 			description: "Should successfully run existing first stage",
@@ -183,7 +183,7 @@ resources: []
 		{
 			name: "no stages found matching selector",
 			selector: StageSelector{
-				Stage: "99_nonexistent",
+				Stages: []string{"99_nonexistent"},
 			},
 			expectError:   true,
 			errorContains: "no stages found matching selector",
@@ -285,7 +285,7 @@ resources:
 	// But stage 20 doesn't exist, so this should fail with the dependency error
 
 	selector := StageSelector{
-		Stage: "20_OpenshiftPlugin",
+		Stages: []string{"20_OpenshiftPlugin"},
 	}
 
 	err = o.RunMultiStage(selector)

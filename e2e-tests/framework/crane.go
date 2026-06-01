@@ -63,21 +63,21 @@ func (c CraneRunner) Transform(exportDir, transformDir string) error {
 // TransformStage runs crane transform with a specific stage.
 func (c CraneRunner) TransformStage(exportDir, transformDir, stage string) error {
 	if stage == "" {
-		return fmt.Errorf("crane transform --stage requires a non-empty stage")
+		return fmt.Errorf("crane transform requires a non-empty stage")
 	}
 	args := []string{
 		"transform",
 		"--export-dir", exportDir,
 		"--transform-dir", transformDir,
-		"--stage", stage,
+		stage,
 	}
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir
 	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane transform --stage", out)
+	logVerboseOutput("crane transform with stage", out)
 	if err != nil {
-		return fmt.Errorf("crane transform --stage %q failed: %v, output: %s", stage, err, string(out))
+		return fmt.Errorf("crane transform with stage %q failed: %v, output: %s", stage, err, string(out))
 	}
 	return nil
 }
