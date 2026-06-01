@@ -82,6 +82,31 @@ func (c CraneRunner) TransformStage(exportDir, transformDir, stage string) error
 	return nil
 }
 
+// TransformWithInstructionsFile runs crane transform using an instructions file.
+func (c CraneRunner) TransformWithInstructionsFile(exportDir, transformDir, instructionsFile string, force bool) error {
+	if instructionsFile == "" {
+		return fmt.Errorf("crane transform --instructions-file requires a non-empty instructions file path")
+	}
+	args := []string{
+		"transform",
+		"--export-dir", exportDir,
+		"--transform-dir", transformDir,
+		"--instructions-file", instructionsFile,
+	}
+	if force {
+		args = append(args, "--force")
+	}
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane transform --instructions-file", out)
+	if err != nil {
+		return fmt.Errorf("crane transform --instructions-file failed: %w, output: %s", err, string(out))
+	}
+	return nil
+}
+
 // Apply runs crane apply to render manifests into the output directory.
 func (c CraneRunner) Apply(exportDir, transformDir string, outputDir string) error {
 	args := []string{"apply", "--export-dir", exportDir, "--transform-dir", transformDir, "--output-dir", outputDir}
