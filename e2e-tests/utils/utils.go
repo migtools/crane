@@ -99,6 +99,21 @@ func ReadTestdataFile(filename string) (string, error) {
 	return string(b), nil
 }
 
+// TestdataFilePath returns the path to a file under e2e-tests/testdata,
+// resolved relative to this package so it does not depend on process working directory.
+func TestdataFilePath(filename string) (string, error) {
+	if filename == "" {
+		return "", fmt.Errorf("filename is required")
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+	baseDir := filepath.Dir(thisFile)
+	path := filepath.Join(baseDir, "..", "testdata", filename)
+	return path, nil
+}
+
 // GoldenManifestsDir returns the path to the golden fixtures directory for an app and pipeline stage.
 // It resolves e2e-tests/golden-manifests/<appName>/<stage> relative to this file's location, so the
 // result does not depend on the process working directory. Valid stage values are "export", "transform",
