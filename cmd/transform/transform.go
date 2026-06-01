@@ -68,6 +68,32 @@ func (o *Options) Run() error {
 	return o.run()
 }
 
+// getPluginCompletions returns a completion function that suggests available plugin names
+func getPluginCompletions(f *flags.GlobalFlags) func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		// Get plugin-dir from flags
+		pluginDir, err := cmd.Flags().GetString("plugin-dir")
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		// Get skip-plugins from flags
+		skipPlugins, err := cmd.Flags().GetStringSlice("skip-plugins")
+		if err != nil {
+			skipPlugins = []string{}
+		}
+
+		// Get plugin names using shared function
+		log := f.GetLogger()
+		pluginNames, err := listplugins.GetPluginNames(pluginDir, skipPlugins, log)
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		return pluginNames, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
 func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
 		cobraGlobalFlags: f,
@@ -82,7 +108,8 @@ Stages can be specified by:
 - Plugin name (e.g., KubernetesPlugin)
 
 If no stages specified, all discovered stages are run.`,
-		Args: cobra.ArbitraryArgs,
+		Args:              cobra.ArbitraryArgs,
+		ValidArgsFunction: getPluginCompletions(f),
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err

@@ -6,6 +6,8 @@ import (
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
+	cranelib "github.com/konveyor/crane-lib/transform"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -74,15 +76,35 @@ func NewListPluginsCommand(f *flags.GlobalFlags) *cobra.Command {
 	return cmd
 }
 
-func (o *Options) run() error {
-	pluginDir, err := filepath.Abs(o.PluginDir)
+// GetPluginNames returns a list of available plugin names
+func GetPluginNames(pluginDir string, skipPlugins []string, log *logrus.Logger) ([]string, error) {
+	plugins, err := getFilteredPlugins(pluginDir, skipPlugins, log)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	pluginNames := make([]string, len(plugins))
+	for i, p := range plugins {
+		pluginNames[i] = p.Metadata().Name
+	}
+
+	return pluginNames, nil
+}
+
+// getFilteredPlugins is a helper function that gets filtered plugins with absolute path handling
+func getFilteredPlugins(pluginDir string, skipPlugins []string, log *logrus.Logger) ([]cranelib.Plugin, error) {
+	absPluginDir, err := filepath.Abs(pluginDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return plugin.GetFilteredPlugins(absPluginDir, skipPlugins, log)
+}
+
+func (o *Options) run() error {
 	log := o.globalFlags.GetLogger()
 
-	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
+	plugins, err := getFilteredPlugins(o.PluginDir, o.SkipPlugins, log)
 	if err != nil {
 		return err
 	}
