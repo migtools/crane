@@ -93,6 +93,15 @@ If no stages specified, all discovered stages are applied.`,
 	return cmd
 }
 
+// getStageNames returns a list of stage directory names for error messages
+func getStageNames(stages []internalTransform.Stage) []string {
+	names := make([]string, len(stages))
+	for i, stage := range stages {
+		names[i] = stage.DirName
+	}
+	return names
+}
+
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	// Note: export-dir is kept for compatibility and consistency with other commands,
 	// but is not used by apply (apply only reads from transform-dir)
@@ -144,8 +153,42 @@ func (o *Options) run() error {
 
 	if len(o.RequestedStages) > 0 {
 		// User specified specific stages via positional arguments
-		// For apply, we use FilterStages to match by directory or plugin name
-		// (we don't create new stages in apply, only in transform)
+		// Validate that all requested stages can be resolved
+		existingStages, err := internalTransform.DiscoverStages(transformDir)
+		if err != nil {
+			return fmt.Errorf("failed to discover stages: %w", err)
+		}
+
+		// Track which requested stages were found
+		resolvedStages := make(map[string]bool)
+		for _, requested := range o.RequestedStages {
+			found := false
+			for _, stage := range existingStages {
+				// Match by directory name OR plugin name
+				if stage.DirName == requested || stage.PluginName == requested {
+					found = true
+					resolvedStages[requested] = true
+					break
+				}
+			}
+			if !found {
+				resolvedStages[requested] = false
+			}
+		}
+
+		// Check if any requested stages were not found
+		var unresolved []string
+		for _, requested := range o.RequestedStages {
+			if !resolvedStages[requested] {
+				unresolved = append(unresolved, requested)
+			}
+		}
+
+		if len(unresolved) > 0 {
+			return fmt.Errorf("requested stage(s) not found: %v. Available stages: %v",
+				unresolved, getStageNames(existingStages))
+		}
+
 		selector = internalTransform.StageSelector{
 			Stages: o.RequestedStages,
 		}

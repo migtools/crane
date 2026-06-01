@@ -1,8 +1,13 @@
 package apply
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/konveyor/crane/internal/flags"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -148,6 +153,101 @@ func TestComplete(t *testing.T) {
 			for i, stage := range o.RequestedStages {
 				if stage != tt.wantStages[i] {
 					t.Errorf("RequestedStages[%d]: got %v, want %v", i, stage, tt.wantStages[i])
+				}
+			}
+		})
+	}
+}
+
+// TestRun_UnresolvedStagesError tests that apply returns error when requested stages don't exist
+func TestRun_UnresolvedStagesError(t *testing.T) {
+	tempDir := t.TempDir()
+	transformDir := filepath.Join(tempDir, "transform")
+	outputDir := filepath.Join(tempDir, "output")
+
+	// Create transform directory with one existing stage
+	if err := os.MkdirAll(transformDir, 0755); err != nil {
+		t.Fatalf("failed to create transform dir: %v", err)
+	}
+
+	// Create one existing stage
+	existingStageDir := filepath.Join(transformDir, "10_KubernetesPlugin")
+	if err := os.MkdirAll(existingStageDir, 0755); err != nil {
+		t.Fatalf("failed to create stage dir: %v", err)
+	}
+
+	// Create a minimal kustomization.yaml
+	kustomizationPath := filepath.Join(existingStageDir, "kustomization.yaml")
+	if err := os.WriteFile(kustomizationPath, []byte("resources: []\n"), 0644); err != nil {
+		t.Fatalf("failed to create kustomization.yaml: %v", err)
+	}
+
+	log := logrus.New()
+	log.SetOutput(os.Stderr)
+
+	globalFlags := &flags.GlobalFlags{}
+
+	tests := []struct {
+		name             string
+		requestedStages  []string
+		expectError      bool
+		errorContains    string
+	}{
+		{
+			name:            "valid stage - no error",
+			requestedStages: []string{"10_KubernetesPlugin"},
+			expectError:     false,
+		},
+		{
+			name:            "valid plugin name - no error",
+			requestedStages: []string{"KubernetesPlugin"},
+			expectError:     false,
+		},
+		{
+			name:            "typo in stage name - error",
+			requestedStages: []string{"TypoStage"},
+			expectError:     true,
+			errorContains:   "not found",
+		},
+		{
+			name:            "one valid one invalid - error",
+			requestedStages: []string{"KubernetesPlugin", "TypoStage"},
+			expectError:     true,
+			errorContains:   "TypoStage",
+		},
+		{
+			name:            "multiple invalid - error lists all",
+			requestedStages: []string{"InvalidOne", "InvalidTwo"},
+			expectError:     true,
+			errorContains:   "InvalidOne",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &Options{
+				cobraGlobalFlags: globalFlags,
+				globalFlags:      globalFlags,
+				Flags: Flags{
+					TransformDir: transformDir,
+					OutputDir:    outputDir,
+				},
+				RequestedStages: tt.requestedStages,
+			}
+
+			err := o.run()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+					return
+				}
+				if !strings.Contains(err.Error(), tt.errorContains) {
+					t.Errorf("error should contain %q, got: %v", tt.errorContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
 				}
 			}
 		})
