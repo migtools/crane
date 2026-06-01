@@ -487,23 +487,13 @@ func findStageByDirName(existingStages []internalTransform.Stage, name string) (
 	return internalTransform.Stage{}, false
 }
 
-// findStagesByPluginName returns all stages matching a plugin name
-func findStagesByPluginName(existingStages []internalTransform.Stage, pluginName string) []internalTransform.Stage {
-	var matches []internalTransform.Stage
-	for _, stage := range existingStages {
-		if stage.PluginName == pluginName {
-			matches = append(matches, stage)
-		}
-	}
-	return matches
-}
-
-// findStagesByBaseName returns all stages matching a base name (without numeric prefix)
+// findStagesByName returns all stages matching a plugin name or base name (without numeric prefix)
 // For example, "CustomStage" would match both "20_CustomStage" and "50_CustomStage"
-func findStagesByBaseName(existingStages []internalTransform.Stage, baseName string) []internalTransform.Stage {
+// "KubernetesPlugin" would match "10_KubernetesPlugin"
+func findStagesByName(existingStages []internalTransform.Stage, name string) []internalTransform.Stage {
 	var matches []internalTransform.Stage
 	for _, stage := range existingStages {
-		if stage.PluginName == baseName {
+		if stage.PluginName == name {
 			matches = append(matches, stage)
 		}
 	}
@@ -646,7 +636,7 @@ func (o *Options) resolveAndValidateStages(
 		isPluginName := strings.HasSuffix(requested, "Plugin")
 
 		if isPluginName {
-			matchingStages := findStagesByPluginName(existingStages, requested)
+			matchingStages := findStagesByName(existingStages, requested)
 
 			if len(matchingStages) > 1 {
 				stageNames := make([]string, len(matchingStages))
@@ -683,7 +673,7 @@ func (o *Options) resolveAndValidateStages(
 
 		// For custom base names, check existing or create with auto-priority
 		if !isPluginName {
-			matchingBaseStages := findStagesByBaseName(existingStages, requested)
+			matchingBaseStages := findStagesByName(existingStages, requested)
 
 			if len(matchingBaseStages) > 1 {
 				stageNames := make([]string, len(matchingBaseStages))
