@@ -24,14 +24,14 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	// Positional arguments for stage selection
+	RequestedStages []string
 }
 
 type Flags struct {
 	ExportDir    string `mapstructure:"export-dir"`
 	TransformDir string `mapstructure:"transform-dir"`
 	OutputDir    string `mapstructure:"output-dir"`
-	// Multi-stage flag
-	Stage string `mapstructure:"stage"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
 	// Skip cluster-scoped resources in output
@@ -39,16 +39,13 @@ type Flags struct {
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
+	// Store positional arguments as requested stages
+	o.RequestedStages = args
 	return nil
 }
 
 func (o *Options) Validate() error {
-	// Validate stage format if specified
-	if o.Flags.Stage != "" {
-		if err := internalTransform.ValidateStageName(o.Flags.Stage); err != nil {
-			return err
-		}
-	}
+	// No validation needed - stages are resolved in run()
 	return nil
 }
 
@@ -61,8 +58,16 @@ func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
-		Use:   "apply",
+		Use:   "apply [stage...]",
 		Short: "Apply the transformations to the exported resources and save results in an output directory",
+		Long: `Apply transformations from one or more stages to exported Kubernetes resources.
+
+Stages can be specified by:
+- Stage directory name (e.g., 10_KubernetesPlugin)
+- Plugin name (e.g., KubernetesPlugin)
+
+If no stages specified, all discovered stages are applied.`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
@@ -88,15 +93,21 @@ func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 	return cmd
 }
 
+// getStageNames returns a list of stage directory names for error messages
+func getStageNames(stages []internalTransform.Stage) []string {
+	names := make([]string, len(stages))
+	for i, stage := range stages {
+		names[i] = stage.DirName
+	}
+	return names
+}
+
 func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	// Note: export-dir is kept for compatibility and consistency with other commands,
 	// but is not used by apply (apply only reads from transform-dir)
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVarP(&o.OutputDir, "output-dir", "o", "output", "The path where files are to be saved after transformation are applied")
-
-	// Multi-stage flag
-	cmd.Flags().StringVar(&o.Stage, "stage", "", "Apply a specific stage only (e.g., '10_KubernetesPlugin'). If not specified, all stages are applied.")
 
 	// Kustomize arguments
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
@@ -140,12 +151,48 @@ func (o *Options) run() error {
 	// Determine which stages to apply
 	var selector internalTransform.StageSelector
 
-	if o.Flags.Stage != "" {
-		// User specified a specific stage to apply
-		selector = internalTransform.StageSelector{
-			Stage: o.Flags.Stage,
+	if len(o.RequestedStages) > 0 {
+		// User specified specific stages via positional arguments
+		// Validate that all requested stages can be resolved
+		existingStages, err := internalTransform.DiscoverStages(transformDir)
+		if err != nil {
+			return fmt.Errorf("failed to discover stages: %w", err)
 		}
-		log.Infof("Applying stage: %s", o.Flags.Stage)
+
+		// Track which requested stages were found
+		resolvedStages := make(map[string]bool)
+		for _, requested := range o.RequestedStages {
+			found := false
+			for _, stage := range existingStages {
+				// Match by directory name OR plugin name
+				if stage.DirName == requested || stage.PluginName == requested {
+					found = true
+					resolvedStages[requested] = true
+					break
+				}
+			}
+			if !found {
+				resolvedStages[requested] = false
+			}
+		}
+
+		// Check if any requested stages were not found
+		var unresolved []string
+		for _, requested := range o.RequestedStages {
+			if !resolvedStages[requested] {
+				unresolved = append(unresolved, requested)
+			}
+		}
+
+		if len(unresolved) > 0 {
+			return fmt.Errorf("requested stage(s) not found: %v. Available stages: %v",
+				unresolved, getStageNames(existingStages))
+		}
+
+		selector = internalTransform.StageSelector{
+			Stages: o.RequestedStages,
+		}
+		log.Infof("Applying %d stage(s): %v", len(o.RequestedStages), o.RequestedStages)
 	} else {
 		// Default: apply all stages
 		// This ensures sequential consistency - each stage output is materialized

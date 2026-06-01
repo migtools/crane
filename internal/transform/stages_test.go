@@ -74,13 +74,26 @@ func TestFilterStages(t *testing.T) {
 	})
 
 	t.Run("specific stage", func(t *testing.T) {
-		filtered := FilterStages(stages, StageSelector{Stage: "20_OpenshiftPlugin"})
+		filtered := FilterStages(stages, StageSelector{Stages: []string{"20_OpenshiftPlugin"}})
 		require.Len(t, filtered, 1)
 		assert.Equal(t, "OpenshiftPlugin", filtered[0].PluginName)
 	})
 
+	t.Run("multiple stages", func(t *testing.T) {
+		filtered := FilterStages(stages, StageSelector{Stages: []string{"10_KubernetesPlugin", "30_ImagestreamPlugin"}})
+		require.Len(t, filtered, 2)
+		assert.Equal(t, "KubernetesPlugin", filtered[0].PluginName)
+		assert.Equal(t, "ImagestreamPlugin", filtered[1].PluginName)
+	})
+
+	t.Run("match by plugin name", func(t *testing.T) {
+		filtered := FilterStages(stages, StageSelector{Stages: []string{"OpenshiftPlugin"}})
+		require.Len(t, filtered, 1)
+		assert.Equal(t, "20_OpenshiftPlugin", filtered[0].DirName)
+	})
+
 	t.Run("non-existent stage", func(t *testing.T) {
-		filtered := FilterStages(stages, StageSelector{Stage: "99_NonExistent"})
+		filtered := FilterStages(stages, StageSelector{Stages: []string{"99_NonExistent"}})
 		require.Len(t, filtered, 0)
 	})
 }
@@ -209,14 +222,14 @@ func TestFilterPluginsByStage_NonExistentPlugin(t *testing.T) {
 
 	t.Run("filters stages correctly", func(t *testing.T) {
 		// Stage selection should still work with non-existent plugin names
-		filtered := FilterStages(stages, StageSelector{Stage: "50_NonExistentPlugin"})
+		filtered := FilterStages(stages, StageSelector{Stages: []string{"50_NonExistentPlugin"}})
 		require.Len(t, filtered, 1)
 		assert.Equal(t, "NonExistentPlugin", filtered[0].PluginName)
 	})
 
 	t.Run("manual stage can be selected", func(t *testing.T) {
 		// Manual stages (non-plugin names) can still be selected
-		filtered := FilterStages(stages, StageSelector{Stage: "90_ManualStage"})
+		filtered := FilterStages(stages, StageSelector{Stages: []string{"90_ManualStage"}})
 		require.Len(t, filtered, 1)
 		assert.Equal(t, "ManualStage", filtered[0].PluginName)
 	})
