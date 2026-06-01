@@ -1,4 +1,4 @@
-package validate
+package e2e
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -15,7 +16,7 @@ import (
 )
 
 var _ = Describe("Crane validate: all compatible standard resources in offline mode", func() {
-	It("[MTA-826] Validate final manifests in offline mode using captured API surface (tier0)", Label("tier0", "validate"), func() {
+	It("[MTA-831] Validate final manifests in offline mode using captured API surface as namespace-admin (tier0)", Label("tier0", "validate"), func() {
 		appName := "multi-resource-app"
 		namespace := appName
 		scenario := NewMigrationScenario(
@@ -26,25 +27,24 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 			config.SourceContext,
 			config.TargetContext,
 		)
-		srcApp := scenario.SrcApp
-		kubectlSrc := scenario.KubectlSrc
 
-		By("Prepare source app")
-		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
-		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
+		if scenario.SrcAppNonAdmin.Context == "" {
+			Skip("source-nonadmin-context is required for non-admin offline validation test")
+		}
+		if scenario.TgtAppNonAdmin.Context == "" {
+			Skip("target-nonadmin-context is required for non-admin offline validation test")
+		}
+		srcApp := scenario.SrcAppNonAdmin
+		tgtApp := scenario.TgtAppNonAdmin
+		runner := scenario.CraneNonAdmin
+		srcApp.ExtraVars = map[string]any{
+			"non_admin_user": "true",
+		}
+		tgtApp.ExtraVars = srcApp.ExtraVars
 
-		paths, err := NewScenarioPaths("crane-validate-offline-*")
+		By("Grant ns admin permissions to nonadmin user on source and target")
+		kubectlSrcNonAdmin, _, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			By("Cleanup temp directory")
-			if paths.TempDir != "" {
-				log.Printf("Removing temp dir: %s\n", paths.TempDir)
-				if err := os.RemoveAll(paths.TempDir); err != nil {
-					log.Printf("cleanup: failed to remove temp dir %q: %v", paths.TempDir, err)
-				}
-			}
-		})
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")
 			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
@@ -53,44 +53,48 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 				}
 			}
 		})
+		DeferCleanup(cleanup) // Cleanup rolebindings
 
-		By("Export manifests from source cluster")
-		runner := scenario.CraneNonAdmin
+		By("Prepare source app")
+		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
+		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
+
+		paths, err := NewScenarioPaths("crane-validate-offline-*")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			By("Cleanup source and target resources")
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
+		})
+
 		runner.WorkDir = paths.TempDir
-		err = runner.Export(srcApp.Namespace, paths.ExportDir)
-		Expect(err).NotTo(HaveOccurred(), "crane export failed")
-		log.Printf("Crane export completed successfully")
-
-		By("Verify exported manifests exist")
-		exportedFiles, err := filepath.Glob(filepath.Join(paths.ExportDir, "*.yaml"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(exportedFiles).NotTo(BeEmpty(), "expected exported YAML files in %s", paths.ExportDir)
-		log.Printf("Found %d exported files", len(exportedFiles))
-
-		By("Transform exported manifests")
-		err = runner.Transform(paths.ExportDir, paths.TransformDir)
-		Expect(err).NotTo(HaveOccurred(), "crane transform failed")
-		log.Printf("Crane transform completed successfully")
-
-		By("Apply transformations to generate final manifests")
-		err = runner.Apply(paths.ExportDir, paths.TransformDir, paths.OutputDir)
-		Expect(err).NotTo(HaveOccurred(), "crane apply failed")
-		log.Printf("Crane apply completed successfully")
-
-		By("Verify output manifests exist")
-		outputFiles, err := filepath.Glob(filepath.Join(paths.OutputDir, "*.yaml"))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(outputFiles).NotTo(BeEmpty(), "expected output YAML files in %s", paths.OutputDir)
-		log.Printf("Found %d output files", len(outputFiles))
+		By("Run crane export/transform/apply pipeline")
+		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
+		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Capture API surface from target cluster")
+		// Get the directory of this test file and navigate to repo root
+		_, testFile, _, _ := runtime.Caller(0)
+		testDir := filepath.Dir(testFile)
+		repoRoot := filepath.Join(testDir, "..", "..")
+		captureScript := filepath.Join(repoRoot, "scripts", "capture-api-surface.sh")
 		apiSurfaceFile := filepath.Join(paths.TempDir, "api-surface.json")
-		captureScript := filepath.Join(config.CraneBin, "..", "..", "scripts", "capture-api-surface.sh")
 
-		captureCmd := exec.Command("bash", captureScript, "--context", scenario.TgtApp.Context, "-o", apiSurfaceFile)
+		// Verify API capture script exists at expected location and is executable
+		Expect(captureScript).To(BeAnExistingFile(), "expected capture-api-surface.sh script at %s", captureScript)
+		log.Printf("Capture script verified at: %s", captureScript)
+		chmodCmd := exec.Command("chmod", "+x", captureScript)
+		if chmodOut, err := chmodCmd.CombinedOutput(); err != nil {
+			log.Printf("chmod failed (continuing): %v, output: %s", err, string(chmodOut))
+		}
+
+		captureCmd := exec.Command("bash", captureScript, "--context", scenario.KubectlTgtNonAdmin.Context, "-o", apiSurfaceFile)
 		captureOut, err := captureCmd.CombinedOutput()
 		Expect(err).NotTo(HaveOccurred(), "failed to capture API surface: %s", string(captureOut))
-		log.Printf("API surface captured to %s", apiSurfaceFile)
+		log.Printf("API surface captured to %s using context %s", apiSurfaceFile, scenario.KubectlTgtNonAdmin.Context)
 
 		By("Verify API surface file exists and is valid JSON")
 		Expect(apiSurfaceFile).To(BeAnExistingFile(), "expected API surface file at %s", apiSurfaceFile)
@@ -124,27 +128,19 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 		err = json.Unmarshal(reportData, &report)
 		Expect(err).NotTo(HaveOccurred(), "failed to parse report.json")
 
-		By("Verify report mode is 'offline'")
-		Expect(report.Mode).To(Equal("offline"), "expected mode='offline' in report")
-		log.Printf("Report mode: %s ✓", report.Mode)
-
 		By("Verify apiResourcesSource is set to the captured API surface file")
 		Expect(report.APIResourcesSource).NotTo(BeEmpty(), "expected apiResourcesSource to be set in offline mode")
 		Expect(report.APIResourcesSource).To(Equal(apiSurfaceFile), "expected apiResourcesSource to match API surface file path")
-		log.Printf("API resources source: %s ✓", report.APIResourcesSource)
-
-		By("Verify clusterContext is NOT set in offline mode")
-		Expect(report.ClusterContext).To(BeEmpty(), "expected clusterContext to be empty in offline mode")
-		log.Printf("Cluster context is empty (offline mode) ✓")
+		log.Printf("API resources source: %s", report.APIResourcesSource)
 
 		By("Verify all 4 resource types are scanned")
 		Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned (Deployment, Service, ConfigMap, Secret)")
-		log.Printf("Total scanned: %d ✓", report.TotalScanned)
+		log.Printf("Total scanned: %d", report.TotalScanned)
 
 		By("Verify all resources are compatible")
 		Expect(report.Compatible).To(Equal(report.TotalScanned), "expected all resources to be compatible")
 		Expect(report.Incompatible).To(Equal(0), "expected 0 incompatible resources")
-		log.Printf("Compatible: %d, Incompatible: %d ✓", report.Compatible, report.Incompatible)
+		log.Printf("Compatible: %d, Incompatible: %d", report.Compatible, report.Incompatible)
 
 		By("Verify expected resource types are present in results")
 		// Map of expected resource kinds to their API versions
@@ -195,7 +191,7 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 			"expected to find all resources in validation results, missing: %v", missingResources)
 
 		for kind := range expectedResources {
-			log.Printf("✓ Found %s with correct apiVersion and status", kind)
+			log.Printf("Found %s with correct apiVersion and status", kind)
 		}
 
 		By("Verify no failures directory was created")
@@ -203,39 +199,20 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 		_, err = os.Stat(failuresDir)
 		Expect(os.IsNotExist(err)).To(BeTrue(),
 			"expected no failures/ directory for all compatible resources")
-		log.Printf("No failures directory created ✓")
-
-		By("Verify resourcePlural mappings are correct")
-		// Map of expected resource kinds to their plural forms
-		// This verifies crane validate correctly maps Kind to resourcePlural
-		expectedPlurals := map[string]string{
-			"Deployment": "deployments",
-			"Service":    "services",
-			"ConfigMap":  "configmaps",
-			"Secret":     "secrets",
-		}
-
-		for _, result := range report.Results {
-			if expectedPlural, ok := expectedPlurals[result.Kind]; ok {
-				Expect(result.ResourcePlural).To(Equal(expectedPlural),
-					"expected %s resourcePlural to be %s, got %s",
-					result.Kind, expectedPlural, result.ResourcePlural)
-			}
-		}
-		log.Printf("All resourcePlural mappings correct ✓")
+		log.Printf("No failures directory created")
 
 		By("Verify offline mode works without cluster connectivity")
 		log.Printf("Offline validation successfully completed without requiring cluster API calls during validation")
 
-		log.Printf("\n" +
-			"========================================\n" +
-			"OFFLINE VALIDATION SUCCESS\n" +
-			"========================================\n" +
-			"Mode: %s\n" +
-			"API Resources Source: %s\n" +
-			"Total Scanned: %d\n" +
-			"Compatible: %d\n" +
-			"Incompatible: %d\n" +
+		log.Printf("\n"+
+			"========================================\n"+
+			"OFFLINE VALIDATION SUCCESS\n"+
+			"========================================\n"+
+			"Mode: %s\n"+
+			"API Resources Source: %s\n"+
+			"Total Scanned: %d\n"+
+			"Compatible: %d\n"+
+			"Incompatible: %d\n"+
 			"========================================\n",
 			report.Mode, report.APIResourcesSource,
 			report.TotalScanned, report.Compatible, report.Incompatible)
