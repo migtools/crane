@@ -74,6 +74,7 @@ type ScenarioPaths struct {
 	ExportDir    string
 	TransformDir string
 	OutputDir    string
+	ValidateDir  string
 }
 
 // NewScenarioPaths creates a temp workspace and standard export/transform/output dirs.
@@ -88,6 +89,7 @@ func NewScenarioPaths(prefix string) (ScenarioPaths, error) {
 		ExportDir:    tempDir + "/export",
 		TransformDir: tempDir + "/transform",
 		OutputDir:    tempDir + "/output",
+		ValidateDir:  tempDir + "/validate",
 	}, nil
 }
 
