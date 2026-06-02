@@ -95,9 +95,9 @@ RUN yum install -y httpd`,
 			Expect(utils.RemoveGlob(outputResourcesDir, "ImageStreamTag_*.yaml")).NotTo(HaveOccurred())
 
 			By("Resolve source and target OCP registry routes")
-			srcRegistry, err := getOCRegistryURL(config.SourceContext)
+			srcRegistry, err := GetOCRegistryURL(config.SourceContext)
 			Expect(err).NotTo(HaveOccurred())
-			tgtRegistry, err := getOCRegistryURL(config.TargetContext)
+			tgtRegistry, err := GetOCRegistryURL(config.TargetContext)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Generate skopeo sync YAML from export dir (crane skopeo-sync-gen)")
@@ -106,9 +106,9 @@ RUN yum install -y httpd`,
 			log.Printf("skopeo-sync-gen YAML written to %s\n", syncYAMLPath)
 
 			By("Retrieve source and target OCP registry tokens (oc whoami --show-token)")
-			srcToken, err := getOCToken(config.SourceContext)
+			srcToken, err := GetOCToken(config.SourceContext)
 			Expect(err).NotTo(HaveOccurred())
-			tgtToken, err := getOCToken(config.TargetContext)
+			tgtToken, err := GetOCToken(config.TargetContext)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Run skopeo sync: copy images from source to target registry")
