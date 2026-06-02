@@ -80,7 +80,7 @@ func getPluginCompletions(f *flags.GlobalFlags) func(cmd *cobra.Command, args []
 		// Get skip-plugins from flags
 		skipPlugins, err := cmd.Flags().GetStringSlice("skip-plugins")
 		if err != nil {
-			skipPlugins = []string{}
+			return nil, cobra.ShellCompDirectiveError
 		}
 
 		// Get plugin names using shared function
