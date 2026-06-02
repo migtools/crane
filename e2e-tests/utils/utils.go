@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -879,4 +880,19 @@ func AssertKindsNotInActiveKustomizeResources(transformDir string, deniedKinds [
 		}
 		return nil
 	})
+}
+
+// RemoveGlob deletes all files matching pattern inside dir.
+func RemoveGlob(dir, pattern string) error {
+	matches, err := filepath.Glob(filepath.Join(dir, pattern))
+	if err != nil {
+		return fmt.Errorf("glob %q in %q: %w", pattern, dir, err)
+	}
+	for _, f := range matches {
+		log.Printf("removing output file: %s\n", f)
+		if err := os.Remove(f); err != nil {
+			return fmt.Errorf("remove %q: %w", f, err)
+		}
+	}
+	return nil
 }

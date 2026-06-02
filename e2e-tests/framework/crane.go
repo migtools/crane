@@ -11,6 +11,11 @@ type CraneRunner struct {
 	WorkDir       string
 }
 
+// SkopeoRunner wraps skopeo for image sync operations.
+type SkopeoRunner struct {
+	Bin string // defaults to "skopeo" if empty
+}
+
 // TransferPVCOptions contains arguments for the crane transfer-pvc command.
 type TransferPVCOptions struct {
 	SourceContext   string
@@ -30,6 +35,20 @@ type ValidateOptions struct {
 	OutputFormat     string
 	APIResourcesFile string
 	ExtraArgs        []string
+}
+
+// SkopeoSyncOptions holds arguments for `skopeo sync --src yaml --dest docker`.
+type SkopeoSyncOptions struct {
+	// SrcYAMLPath is the path to the YAML file produced by `crane skopeo-sync-gen`.
+	SrcYAMLPath string
+	// DestRegistry is <registry>/<namespace> on the target cluster,
+	// e.g. default-route-openshift-image-registry.apps.tgt.example.com/my-namespace.
+	// Do NOT use --scoped; it produces wrong image paths against OCP.
+	DestRegistry string
+	// SrcCreds / DestCreds are "user:token" for registry auth.
+	// Use `oc whoami --show-token` as the token; username is ignored by OCP ("unused").
+	SrcCreds  string
+	DestCreds string
 }
 
 // Export runs crane export for a namespace into the given export directory.
@@ -176,4 +195,57 @@ func (c CraneRunner) Validate(opts ValidateOptions) (stdout string, err error) {
 		return stdout, fmt.Errorf("crane validate failed: %v, output: %s", cmdErr, stdout)
 	}
 	return stdout, nil
+}
+
+// Sync runs `skopeo sync --src yaml --dest docker`.
+// TLS verify is disabled on both sides — OCP registry routes use self-signed certs.
+func (s SkopeoRunner) Sync(opts SkopeoSyncOptions) error {
+	bin := s.Bin
+	if bin == "" {
+		bin = "skopeo"
+	}
+
+	args := []string{
+		"sync",
+		"--src", "yaml",
+		"--dest", "docker",
+		"--src-tls-verify=false",
+		"--dest-tls-verify=false",
+	}
+	if opts.SrcCreds != "" {
+		args = append(args, "--src-creds", opts.SrcCreds)
+	}
+	if opts.DestCreds != "" {
+		args = append(args, "--dest-creds", opts.DestCreds)
+	}
+	args = append(args, opts.SrcYAMLPath, opts.DestRegistry)
+
+	logVerboseCommand(bin, args)
+	cmd := exec.Command(bin, args...)
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("skopeo sync", out)
+	if err != nil {
+		return fmt.Errorf("skopeo sync failed: %v, output: %s", err, string(out))
+	}
+	return nil
+}
+
+// SkopeoSyncGen runs `crane skopeo-sync-gen` and writes the generated YAML to destPath.
+func (c CraneRunner) SkopeoSyncGen(exportDir, registryURL, destPath string) error {
+	args := []string{
+		"skopeo-sync-gen",
+		"--export-dir", exportDir,
+		"--registry-url", registryURL,
+	}
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	out, err := cmd.Output()
+	logVerboseOutput("crane skopeo-sync-gen", out)
+	if err != nil {
+		return fmt.Errorf("crane skopeo-sync-gen failed: %v, output: %s", err, string(out))
+	}
+	if err := os.WriteFile(destPath, out, 0o644); err != nil {
+		return fmt.Errorf("write skopeo sync YAML to %q: %w", destPath, err)
+	}
+	return nil
 }
