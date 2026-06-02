@@ -14,7 +14,7 @@ import (
 )
 
 var _ = Describe("Instructions-file migration", func() {
-	It("should migrate a simple nginx app using transform --instructions-file", Label("tier0"), func() {
+	It("[MTA-828] should migrate a simple nginx app using transform --instructions-file", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-instructionsfile"
 		scenario := NewMigrationScenario(
