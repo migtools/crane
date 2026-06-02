@@ -13,7 +13,7 @@ import (
 )
 
 var _ = Describe("Validate alternative GV suggestion [Live Mode]", func() {
-	It("[VLD-004] should suggest apps/v1 for extensions/v1beta1 Deployment as namespace-admin", Label("tier1"), func() {
+	It("[MTA-829] should suggest apps/v1 for extensions/v1beta1 Deployment as namespace-admin", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv-alt-gv"
 
