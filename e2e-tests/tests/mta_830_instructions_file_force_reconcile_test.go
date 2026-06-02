@@ -14,7 +14,7 @@ import (
 )
 
 var _ = Describe("Instructions-file force reconcile migration", func() {
-	It("should reconcile pre-existing transform stages with --force and complete end-to-end migration", Label("tier1"), func() {
+	It("[MTA-830] should reconcile pre-existing transform stages with --force and complete end-to-end migration", Label("tier1"), func() {
 
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-force-reconcile"
