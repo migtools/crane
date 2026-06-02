@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -211,7 +212,7 @@ func discoverPreferredResources(
 // resourceToExtract lists objects for each admitted API type in namespace (or cluster-wide
 // for allowed cluster-scoped kinds: ClusterRoleBinding, ClusterRole, SCC). It returns resources
 // with non-empty lists and a parallel slice of per-type list errors.
-func resourceToExtract(namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(requestTimeout time.Duration, namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -248,8 +249,13 @@ func resourceToExtract(namespace string, labelSelector string, dynamicClient dyn
 				APIResource:     resource,
 			}
 
-			objs, err := getObjects(g, namespace, labelSelector, dynamicClient, log)
+			objs, err := getObjects(requestTimeout, g, namespace, labelSelector, dynamicClient, log)
 			if err != nil {
+				// Check if error is due to timeout/deadline exceeded - fail fast
+				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
+					log.Errorf("request timeout exceeded for groupVersion %s, kind: %s: %v\n", g.APIGroupVersion, g.APIResource.Kind, err)
+					return nil, []*groupResourceError{{resource, err}}
+				}
 				switch {
 				case apierrors.IsForbidden(err):
 					log.Errorf("cannot list obj in namespace for groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
@@ -289,17 +295,24 @@ func isAdmittedResource(gv schema.GroupVersion, resource metav1.APIResource) boo
 
 // getObjects lists objects for g using the dynamic client, with paging and optional
 // labelSelector. imagestreamtags and imagetags use per-item Get after List.
-func getObjects(g *groupResource, namespace string, labelSelector string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+func getObjects(requestTimeout time.Duration, g *groupResource, namespace string, labelSelector string, d dynamic.Interface, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	c := d.Resource(schema.GroupVersionResource{
 		Group:    g.APIGroup,
 		Version:  g.APIVersion,
 		Resource: g.APIResource.Name,
 	})
-	p := pager.New(func(ctx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+	p := pager.New(func(pagerCtx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
+		// Create a fresh context with timeout for each page request
+		ctx := context.Background()
+		if requestTimeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
+			defer cancel()
+		}
 		if g.APIResource.Namespaced {
-			return c.Namespace(namespace).List(context.Background(), opts)
+			return c.Namespace(namespace).List(ctx, opts)
 		} else {
-			return c.List(context.Background(), opts)
+			return c.List(ctx, opts)
 		}
 	})
 	listOptions := metav1.ListOptions{}
@@ -307,12 +320,20 @@ func getObjects(g *groupResource, namespace string, labelSelector string, d dyna
 		listOptions.LabelSelector = labelSelector
 	}
 
-	list, _, err := p.List(context.TODO(), listOptions)
+	// Create context for pager.List
+	ctx := context.Background()
+	if requestTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, requestTimeout)
+		defer cancel()
+	}
+
+	list, _, err := p.List(ctx, listOptions)
 	if err != nil {
 		return nil, err
 	}
 	if g.APIResource.Name == "imagestreamtags" || g.APIResource.Name == "imagetags" {
-		unstructuredList, err := iterateItemsByGet(c, g, list, namespace, logger)
+		unstructuredList, err := iterateItemsByGet(requestTimeout, c, g, list, namespace, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -323,7 +344,7 @@ func getObjects(g *groupResource, namespace string, labelSelector string, d dyna
 
 // iterateItemsByGet builds a full UnstructuredList by Get-ing each item name from list
 // in namespace (used where List does not return complete objects).
-func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResource, list runtime.Object, namespace string, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
+func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableResourceInterface, g *groupResource, list runtime.Object, namespace string, logger logrus.FieldLogger) (*unstructured.UnstructuredList, error) {
 	if g == nil {
 		return nil, fmt.Errorf("groupResource cannot be nil")
 	}
@@ -335,7 +356,14 @@ func iterateItemsByGet(c dynamic.NamespaceableResourceInterface, g *groupResourc
 			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
 			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 		}
-		obj, err := c.Namespace(namespace).Get(context.TODO(), u.GetName(), metav1.GetOptions{})
+		// Create fresh context with timeout for each Get request
+		ctx := context.Background()
+		if requestTimeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
+			defer cancel()
+		}
+		obj, err := c.Namespace(namespace).Get(ctx, u.GetName(), metav1.GetOptions{})
 		if err != nil {
 			return err
 		}

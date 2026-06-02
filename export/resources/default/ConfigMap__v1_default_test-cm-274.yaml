@@ -1,0 +1,20 @@
+apiVersion: v1
+data:
+  data: test data 274
+kind: ConfigMap
+metadata:
+  creationTimestamp: "2026-05-28T08:35:14Z"
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:data:
+        .: {}
+        f:data: {}
+    manager: kubectl-create
+    operation: Update
+    time: "2026-05-28T08:35:14Z"
+  name: test-cm-274
+  namespace: default
+  resourceVersion: "685"
+  uid: 6d4524a0-f909-4e94-9634-27b4a30c9901

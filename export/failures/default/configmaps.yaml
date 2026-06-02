@@ -1,0 +1,17 @@
+APIResource:
+  kind: ConfigMap
+  name: configmaps
+  namespaced: true
+  shortNames:
+  - cm
+  singularName: configmap
+  verbs:
+  - create
+  - delete
+  - deletecollection
+  - get
+  - list
+  - patch
+  - update
+  - watch
+error: {}

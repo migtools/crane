@@ -182,13 +182,16 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
+	// Pass restConfig.Timeout to child functions for per-request timeout enforcement
+	requestTimeout := restConfig.Timeout
+
+	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
 
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 
-	crdResources, crdErrs := collectRelatedCRDs(resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
+	crdResources, crdErrs := collectRelatedCRDs(requestTimeout, resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
