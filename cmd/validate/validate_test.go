@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/konveyor/crane/internal/flags"
+	"github.com/sirupsen/logrus"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -240,6 +241,139 @@ func TestValidateCommand_RejectsArgs(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unknown command") {
 		t.Fatalf("expected 'unknown command' error, got: %v", err)
+	}
+}
+
+func TestArchiveWithTimestamp_FileExists(t *testing.T) {
+	dir := t.TempDir()
+	reportPath := filepath.Join(dir, "report.json")
+
+	if err := os.WriteFile(reportPath, []byte(`{"totalScanned":5}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+
+	err := archiveWithTimestamp(reportPath, "20260603-100942", log)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Original should be gone
+	if _, err := os.Stat(reportPath); !os.IsNotExist(err) {
+		t.Error("original report.json should not exist after archiving")
+	}
+
+	// Archived file should have exact name
+	archivedPath := filepath.Join(dir, "report-20260603-100942.json")
+	data, err := os.ReadFile(archivedPath)
+	if err != nil {
+		t.Fatalf("archived file not found: %v", err)
+	}
+	if string(data) != `{"totalScanned":5}` {
+		t.Errorf("archived content mismatch: got %q", string(data))
+	}
+}
+
+func TestArchiveWithTimestamp_DirectoryExists(t *testing.T) {
+	dir := t.TempDir()
+	failuresDir := filepath.Join(dir, "failures")
+
+	if err := os.MkdirAll(failuresDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(failuresDir, "Deployment.yaml"), []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+
+	err := archiveWithTimestamp(failuresDir, "20260603-100942", log)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Original should be gone
+	if _, err := os.Stat(failuresDir); !os.IsNotExist(err) {
+		t.Error("original failures/ should not exist after archiving")
+	}
+
+	// Archived directory should have exact name and contents
+	archivedFile := filepath.Join(dir, "failures-20260603-100942", "Deployment.yaml")
+	if _, err := os.Stat(archivedFile); os.IsNotExist(err) {
+		t.Error("archived directory should contain Deployment.yaml")
+	}
+}
+
+func TestArchiveWithTimestamp_NothingToArchive(t *testing.T) {
+	dir := t.TempDir()
+	nonexistent := filepath.Join(dir, "report.json")
+
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+
+	err := archiveWithTimestamp(nonexistent, "20260603-100942", log)
+	if err != nil {
+		t.Fatalf("should not error when file doesn't exist: %v", err)
+	}
+}
+
+func TestArchiveTimestamp_ReportAndFailuresShareTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	reportPath := filepath.Join(dir, "report.json")
+	failuresDir := filepath.Join(dir, "failures")
+
+	if err := os.WriteFile(reportPath, []byte(`{"totalScanned":1}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(failuresDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(failuresDir, "Deployment.yaml"), []byte("fail"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+
+	// Get timestamp from report
+	ts, err := getArchiveTimestamp(reportPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ts == "" {
+		t.Fatal("expected non-empty timestamp")
+	}
+
+	// Archive both with same timestamp
+	if err := archiveWithTimestamp(reportPath, ts, log); err != nil {
+		t.Fatalf("archive report: %v", err)
+	}
+	if err := archiveWithTimestamp(failuresDir, ts, log); err != nil {
+		t.Fatalf("archive failures: %v", err)
+	}
+
+	// Both should have the same timestamp suffix
+	archivedReport := filepath.Join(dir, "report-"+ts+".json")
+	archivedFailures := filepath.Join(dir, "failures-"+ts)
+
+	if _, err := os.Stat(archivedReport); os.IsNotExist(err) {
+		t.Error("archived report not found")
+	}
+	if _, err := os.Stat(archivedFailures); os.IsNotExist(err) {
+		t.Error("archived failures not found")
+	}
+}
+
+func TestGetArchiveTimestamp_FileNotFound(t *testing.T) {
+	ts, err := getArchiveTimestamp(filepath.Join(t.TempDir(), "nonexistent"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ts != "" {
+		t.Errorf("expected empty timestamp for nonexistent file, got %q", ts)
 	}
 }
 

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/internal/flags"
 	internalValidate "github.com/konveyor/crane/internal/validate"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -116,8 +118,25 @@ func (o *ValidateOptions) Run() error {
 	if err := os.MkdirAll(o.validateDir, 0700); err != nil {
 		return fmt.Errorf("creating validate directory: %w", err)
 	}
+
 	reportExt := o.outputFormat
 	reportPath := filepath.Join(o.validateDir, "report."+reportExt)
+	failuresDir := filepath.Join(o.validateDir, "failures")
+
+	// Archive previous results using report's timestamp so report and failures
+	// are grouped by the same timestamp even if they were written at slightly
+	// different times within the same run.
+	if ts, err := getArchiveTimestamp(reportPath); err != nil {
+		return fmt.Errorf("checking previous report: %w", err)
+	} else if ts != "" {
+		if err := archiveWithTimestamp(reportPath, ts, log); err != nil {
+			return fmt.Errorf("archiving previous report: %w", err)
+		}
+		if err := archiveWithTimestamp(failuresDir, ts, log); err != nil {
+			return fmt.Errorf("archiving previous failures: %w", err)
+		}
+	}
+
 	reportFile, err := os.Create(reportPath)
 	if err != nil {
 		return fmt.Errorf("creating validation report %q: %w", reportPath, err)
@@ -139,13 +158,51 @@ func (o *ValidateOptions) Run() error {
 	log.Infof("Wrote validation report to %s", reportPath)
 
 	if report.HasIncompatible() {
-		failuresDir := filepath.Join(o.validateDir, "failures")
 		if err := internalValidate.WriteFailures(failuresDir, report, log); err != nil {
 			return fmt.Errorf("writing validation failures to %q: %w", failuresDir, err)
 		}
 		return internalValidate.ErrValidationFailed
 	}
 
+	return nil
+}
+
+// getArchiveTimestamp returns the modification time of the given path formatted
+// as a timestamp string. Returns empty string if the path does not exist.
+func getArchiveTimestamp(path string) (string, error) {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("checking %q: %w", path, err)
+	}
+	return info.ModTime().Format("20060102-150405"), nil
+}
+
+// archiveWithTimestamp renames an existing file or directory by appending the
+// given timestamp, preserving previous results across runs.
+// For example, report.json becomes report-20260603-100942.json.
+// Does nothing if the path does not exist.
+func archiveWithTimestamp(path, timestamp string, log logrus.FieldLogger) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("checking %q: %w", path, err)
+	}
+
+	ext := filepath.Ext(path)
+	var archivePath string
+	if ext != "" {
+		archivePath = strings.TrimSuffix(path, ext) + "-" + timestamp + ext
+	} else {
+		archivePath = path + "-" + timestamp
+	}
+
+	if err := os.Rename(path, archivePath); err != nil {
+		return fmt.Errorf("renaming %q to %q: %w", path, archivePath, err)
+	}
+	log.Infof("Archived previous results: %s", filepath.Base(archivePath))
 	return nil
 }
 
