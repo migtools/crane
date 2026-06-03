@@ -831,7 +831,7 @@ func TestResourceToExtract_SkipsEvents(t *testing.T) {
 		},
 	}
 
-	resources, _ := resourceToExtract("default", "", client, lists, testLogger())
+	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
 	for _, r := range resources {
 		if r.APIResource.Kind == "Event" {
 			t.Fatal("Event resources should be skipped")
@@ -852,7 +852,7 @@ func TestResourceToExtract_SkipsClusterScopedNonAdmitted(t *testing.T) {
 		},
 	}
 
-	resources, _ := resourceToExtract("default", "", client, lists, testLogger())
+	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
 	for _, r := range resources {
 		if r.APIResource.Kind == "Namespace" {
 			t.Fatal("Namespace resources should be skipped (not admitted)")
@@ -873,7 +873,7 @@ func TestResourceToExtract_SkipsEmptyVerbs(t *testing.T) {
 		},
 	}
 
-	resources, _ := resourceToExtract("default", "", client, lists, testLogger())
+	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) > 0 {
 		t.Fatal("resources with empty verbs should be skipped")
 	}
@@ -890,7 +890,7 @@ func TestResourceToExtract_SkipsEmptyAPIResources(t *testing.T) {
 		},
 	}
 
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatal("empty APIResources list should produce no resources or errors")
 	}
@@ -1048,7 +1048,7 @@ func TestGetObjects_configMaps(t *testing.T) {
 		APIGroupVersion: "v1",
 		APIResource:     metav1.APIResource{Name: "configmaps", Kind: "ConfigMap", Namespaced: true},
 	}
-	list, err := getObjects(g, "default", "", client, testLogger())
+	list, err := getObjects(0, g, "default", "", client, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1073,7 +1073,7 @@ func TestGetObjects_imageStreamTagsUsesGetPerItem(t *testing.T) {
 		APIGroupVersion: "image.openshift.io/v1",
 		APIResource:     metav1.APIResource{Name: "imagestreamtags", Kind: "ImageStreamTag", Namespaced: true},
 	}
-	list, err := getObjects(g, "openshift", "", client, testLogger())
+	list, err := getObjects(0, g, "openshift", "", client, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1095,7 +1095,7 @@ func TestGetObjects_imagetagResourceName(t *testing.T) {
 		APIGroupVersion: "example.com/v1",
 		APIResource:     metav1.APIResource{Name: "imagetags", Kind: "ImageTag", Namespaced: true},
 	}
-	list, err := getObjects(g, "ns1", "", client, testLogger())
+	list, err := getObjects(0, g, "ns1", "", client, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1125,7 +1125,7 @@ func TestGetObjects_passesLabelSelectorToList(t *testing.T) {
 		APIGroupVersion: "v1",
 		APIResource:     metav1.APIResource{Name: "configmaps", Kind: "ConfigMap", Namespaced: true},
 	}
-	list, err := getObjects(g, "default", "app=test", client, testLogger())
+	list, err := getObjects(0, g, "default", "app=test", client, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1156,7 +1156,7 @@ func TestGetObjects_imageStreamTags_getFailure(t *testing.T) {
 		APIGroupVersion: "image.openshift.io/v1",
 		APIResource:     metav1.APIResource{Name: "imagestreamtags", Kind: "ImageStreamTag", Namespaced: true},
 	}
-	_, err := getObjects(g, "openshift", "", client, testLogger())
+	_, err := getObjects(0, g, "openshift", "", client, testLogger())
 	if err == nil || !strings.Contains(err.Error(), "unable to process the list") {
 		t.Fatalf("got err=%v", err)
 	}
@@ -1180,7 +1180,7 @@ func TestIterateItemsByGet_rejectsNonUnstructured(t *testing.T) {
 	g := &groupResource{APIGroup: "", APIResource: metav1.APIResource{Kind: "Pod"}}
 	client := dynamicfake.NewSimpleDynamicClient(clientgoscheme.Scheme)
 	c := client.Resource(schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"})
-	_, err := iterateItemsByGet(c, g, list, "default", testLogger())
+	_, err := iterateItemsByGet(0, c, g, list, "default", testLogger())
 	if err == nil || !strings.Contains(err.Error(), "unable to process the list") {
 		t.Fatalf("got %v", err)
 	}
@@ -1202,7 +1202,7 @@ func TestResourceToExtract_loadsConfigMaps(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -1225,7 +1225,7 @@ func TestResourceToExtract_loadsClusterRoles(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -1247,7 +1247,7 @@ func TestResourceToExtract_listForbidden(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) != 0 {
 		t.Fatalf("expected no resources, got %d", len(resources))
 	}
@@ -1269,7 +1269,7 @@ func TestResourceToExtract_listNotFound(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || !apierrors.IsNotFound(errs[0].Error) {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1288,7 +1288,7 @@ func TestResourceToExtract_listMethodNotSupported(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || !apierrors.IsMethodNotSupported(errs[0].Error) {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1307,7 +1307,7 @@ func TestResourceToExtract_listGenericError(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || errs[0].Error.Error() != "upstream timeout" {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1323,7 +1323,7 @@ func TestResourceToExtract_zeroObjectsNotAdded(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatalf("empty list should skip resource (no error), got resources=%d errs=%v", len(resources), errs)
 	}
@@ -1340,7 +1340,7 @@ func TestResourceToExtract_skipsUnparseableGroupVersion(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract("default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatalf("got resources %d errs %d", len(resources), len(errs))
 	}
