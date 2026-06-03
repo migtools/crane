@@ -106,6 +106,36 @@ func TestValidate_Flags(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "uppercase JSON accepted",
+			setup: func(t *testing.T) *ValidateOptions {
+				return &ValidateOptions{
+					inputDir:     t.TempDir(),
+					outputFormat: "JSON",
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "uppercase YAML accepted",
+			setup: func(t *testing.T) *ValidateOptions {
+				return &ValidateOptions{
+					inputDir:     t.TempDir(),
+					outputFormat: "YAML",
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "mixed case Json accepted",
+			setup: func(t *testing.T) *ValidateOptions {
+				return &ValidateOptions{
+					inputDir:     t.TempDir(),
+					outputFormat: "Json",
+				}
+			},
+			wantErr: false,
+		},
+		{
 			name: "api-resources file not found",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
