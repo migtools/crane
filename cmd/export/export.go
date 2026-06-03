@@ -195,6 +195,16 @@ func (o *ExportOptions) Run() error {
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
+	// Check if any resource errors are timeout errors and fail fast with exit code 1
+	// Do this before writing any files to avoid partial exports
+	for _, resErr := range resourceErrs {
+		if resErr != nil && resErr.Error != nil {
+			if apierrors.IsTimeout(resErr.Error) || strings.Contains(resErr.Error.Error(), "context deadline exceeded") {
+				return resErr.Error
+			}
+		}
+	}
+
 	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
 	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
 		log.Errorf("error preparing cluster resources directory: %#v", err)
@@ -216,15 +226,6 @@ func (o *ExportOptions) Run() error {
 	writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
 	for _, e := range writeErrorsErrors {
 		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
-	}
-
-	// Check if any resource errors are timeout errors and fail fast with exit code 1
-	for _, resErr := range resourceErrs {
-		if resErr != nil && resErr.Error != nil {
-			if apierrors.IsTimeout(resErr.Error) || strings.Contains(resErr.Error.Error(), "context deadline exceeded") {
-				return resErr.Error
-			}
-		}
 	}
 
 	errs = append(errs, writeResourcesErrors...)
