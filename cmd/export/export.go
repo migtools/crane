@@ -218,6 +218,15 @@ func (o *ExportOptions) Run() error {
 		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
 	}
 
+	// Check if any resource errors are timeout errors and fail fast with exit code 1
+	for _, resErr := range resourceErrs {
+		if resErr != nil && resErr.Error != nil {
+			if apierrors.IsTimeout(resErr.Error) || strings.Contains(resErr.Error.Error(), "context deadline exceeded") {
+				return resErr.Error
+			}
+		}
+	}
+
 	errs = append(errs, writeResourcesErrors...)
 	errs = append(errs, writeErrorsErrors...)
 
@@ -243,6 +252,10 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 				return err
 			}
 			if err := o.Run(); err != nil {
+				// Silence usage on timeout errors (network errors, not user input errors)
+				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
+					c.SilenceUsage = true
+				}
 				return err
 			}
 

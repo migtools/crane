@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic/fake"
+	kubetesting "k8s.io/client-go/testing"
 )
 
 func TestShouldSkipCRDGroup_DefaultsAndOverrides(t *testing.T) {
@@ -328,6 +329,35 @@ func TestCollectRelatedCRDs_exportsUnmanagedCRD(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected unmanaged CRD to be exported, got %d", len(got))
+	}
+}
+
+func TestCollectRelatedCRDs_timeoutError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClient(scheme)
+
+	// Simulate timeout error on CRD Get
+	client.PrependReactor("get", "customresourcedefinitions", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
+		return true, nil, apierrors.NewTimeoutError("CRD get timeout", 1)
+	})
+
+	log := testLogger()
+	gr := widgetGroupResource()
+
+	// Pass non-zero timeout
+	got, errs := collectRelatedCRDs(100, []*groupResource{gr}, client, log, nil, nil)
+
+	if len(got) != 0 {
+		t.Fatalf("expected 0 CRDs on timeout, got %d", len(got))
+	}
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly 1 error, got %d: %v", len(errs), errs)
+	}
+	if !apierrors.IsTimeout(errs[0].Error) {
+		t.Fatalf("expected timeout error, got: %v", errs[0].Error)
+	}
+	if errs[0].APIResource.Kind != "CustomResourceDefinition" {
+		t.Fatalf("expected CRD kind in error, got: %s", errs[0].APIResource.Kind)
 	}
 }
 

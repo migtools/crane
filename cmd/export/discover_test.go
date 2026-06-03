@@ -1275,6 +1275,35 @@ func TestResourceToExtract_listNotFound(t *testing.T) {
 	}
 }
 
+func TestResourceToExtract_timeoutFailsFast(t *testing.T) {
+	client := dynamicfake.NewSimpleDynamicClient(clientgoscheme.Scheme)
+	client.PrependReactor("list", "configmaps", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
+		return true, nil, fmt.Errorf("context deadline exceeded")
+	})
+	lists := []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "configmaps", Kind: "ConfigMap", Namespaced: true, Verbs: stdVerbs()},
+				{Name: "services", Kind: "Service", Namespaced: true, Verbs: stdVerbs()},
+			},
+		},
+	}
+	// Pass non-zero timeout to enable timeout detection
+	resources, errs := resourceToExtract(100, "default", "", client, lists, testLogger())
+	// Expect: nil resources, exactly 1 timeout error, and no processing of services
+	if resources != nil {
+		t.Fatalf("expected nil resources on timeout, got %d resources", len(resources))
+	}
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly 1 error on timeout fail-fast, got %d errors: %v", len(errs), errs)
+	}
+	errMsg := errs[0].Error.Error()
+	if !strings.Contains(errMsg, "context deadline exceeded") {
+		t.Fatalf("expected timeout error containing 'context deadline exceeded', got: %v", errMsg)
+	}
+}
+
 func TestResourceToExtract_listMethodNotSupported(t *testing.T) {
 	client := dynamicfake.NewSimpleDynamicClient(clientgoscheme.Scheme)
 	client.PrependReactor("list", "configmaps", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
