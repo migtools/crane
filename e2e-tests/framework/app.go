@@ -21,6 +21,7 @@ type K8sDeployApp struct {
 	Bin       string
 	Context   string
 	ExtraVars map[string]any
+	InsecureSkipTLSVerify bool
 }
 
 // Deploy runs k8sdeploy deploy for the configured app and namespace.
@@ -91,6 +92,9 @@ func (a K8sDeployApp) Cleanup() error {
 
 // buildCommand constructs an exec command with environment adjustments applied.
 func (a K8sDeployApp) buildCommand(args ...string) *exec.Cmd {
+	if a.InsecureSkipTLSVerify {
+		args = append([]string{"--insecure-skip-tls-verify"}, args...)
+	}
 	cmd := exec.Command(a.Bin, args...)
 	cmd.Env = envWithBinDir(a.Bin)
 	return cmd

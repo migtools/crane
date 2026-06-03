@@ -8,4 +8,5 @@ var (
 	VerboseLogs           bool
 	SourceNonAdminContext string
 	TargetNonAdminContext string
+	InsecureSkipTLSVerify bool
 )
