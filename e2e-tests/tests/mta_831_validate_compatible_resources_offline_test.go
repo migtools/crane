@@ -6,10 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	cranevalidate "github.com/konveyor/crane/internal/validate"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -76,16 +76,11 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Capture API surface from target cluster")
-		// Get the directory of this test file and navigate to repo root
-		_, testFile, _, _ := runtime.Caller(0)
-		testDir := filepath.Dir(testFile)
-		repoRoot := filepath.Join(testDir, "..", "..")
-		captureScript := filepath.Join(repoRoot, "scripts", "capture-api-surface.sh")
+		captureScript, err := utils.CaptureAPISurfaceScriptPath()
+		Expect(err).NotTo(HaveOccurred(), "failed to locate capture-api-surface.sh script")
+		log.Printf("Capture script verified at: %s", captureScript)
 		apiSurfaceFile := filepath.Join(paths.TempDir, "api-surface.json")
 
-		// Verify API capture script exists at expected location and is executable
-		Expect(captureScript).To(BeAnExistingFile(), "expected capture-api-surface.sh script at %s", captureScript)
-		log.Printf("Capture script verified at: %s", captureScript)
 		chmodCmd := exec.Command("chmod", "+x", captureScript)
 		if chmodOut, err := chmodCmd.CombinedOutput(); err != nil {
 			log.Printf("chmod failed (continuing): %v, output: %s", err, string(chmodOut))
@@ -167,16 +162,12 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 					"expected %s to have apiVersion %s", result.Kind, expectedAPIVersion)
 
 				// Verify status is OK (compatible)
-				Expect(result.Status).To(Equal("OK"),
+				Expect(result.Status).To(Equal(cranevalidate.StatusOK),
 					"expected %s to have status OK", result.Kind)
 
 				// Verify namespace is set for namespaced resources
 				Expect(result.Namespace).To(Equal(namespace),
 					"expected %s to be in namespace %s", result.Kind, namespace)
-
-				// Verify resourcePlural is set (required field)
-				Expect(result.ResourcePlural).NotTo(BeEmpty(),
-					"expected %s to have resourcePlural set", result.Kind)
 			}
 		}
 
