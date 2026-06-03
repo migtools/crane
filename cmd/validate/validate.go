@@ -80,6 +80,10 @@ func (o *ValidateOptions) Run() error {
 
 	log.Infof("Scanned %d distinct GVK+namespace tuples", len(entries))
 
+	if len(entries) == 0 {
+		return fmt.Errorf("no manifests found in %s: nothing to validate", o.inputDir)
+	}
+
 	var report *internalValidate.ValidationReport
 
 	if o.apiResourcesFile != "" {
