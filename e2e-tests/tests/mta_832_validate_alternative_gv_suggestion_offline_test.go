@@ -16,7 +16,7 @@ import (
 )
 
 var _ = Describe("Validate alternative GV suggestion [Offline Mode]", func() {
-	It("[MTA-831] should suggest apps/v1 for extensions/v1beta1 Deployment in offline mode using captured API surface as namespace-admin", Label("tier1"), func() {
+	It("[MTA-832] should suggest apps/v1 for extensions/v1beta1 Deployment in offline mode using captured API surface as namespace-admin", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-validate-alt-gv-offline-mode"
 
