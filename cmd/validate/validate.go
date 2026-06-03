@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/internal/flags"
 	internalValidate "github.com/konveyor/crane/internal/validate"
@@ -50,6 +51,7 @@ func (o *ValidateOptions) Validate() error {
 		return fmt.Errorf("input-dir %q is not a directory", o.inputDir)
 	}
 
+	o.outputFormat = strings.ToLower(o.outputFormat)
 	if o.outputFormat != "yaml" && o.outputFormat != "json" {
 		return fmt.Errorf("--output must be \"yaml\" or \"json\", got %q", o.outputFormat)
 	}
