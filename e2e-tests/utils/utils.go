@@ -880,3 +880,25 @@ func AssertKindsNotInActiveKustomizeResources(transformDir string, deniedKinds [
 		return nil
 	})
 }
+
+// CaptureAPISurfaceScriptPath returns the absolute path to scripts/capture-api-surface.sh.
+// The path is resolved relative to this source file so tests do not depend on the
+// process working directory or crane binary location. It also verifies the script
+// exists and returns an error when it cannot be found.
+func CaptureAPISurfaceScriptPath() (string, error) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+
+	// thisFile => <repo>/e2e-tests/utils/utils.go
+	// repo root => <repo>
+	baseDir := filepath.Dir(thisFile)
+	scriptPath := filepath.Join(baseDir, "..", "..", "scripts", "capture-api-surface.sh")
+
+	if _, err := os.Stat(scriptPath); err != nil {
+		return "", fmt.Errorf("capture script not found at %s: %w", scriptPath, err)
+	}
+
+	return scriptPath, nil
+}
