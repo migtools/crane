@@ -29,7 +29,10 @@ type ValidateOptions struct {
 	genericclioptions.IOStreams
 }
 
-// Complete loads the kubeconfig and validates the discovery client is reachable.
+// Complete resolves the kubeconfig/context and constructs a discovery client,
+// failing fast on an invalid or nonexistent context before any manifest scan.
+// Note: this does not contact the API server; cluster unreachability is
+// detected later in Run() when discovery is queried.
 // Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 	if o.apiResourcesFile != "" {

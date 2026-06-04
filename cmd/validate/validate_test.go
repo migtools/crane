@@ -8,6 +8,7 @@ import (
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -606,5 +607,69 @@ func TestValidate_HelpGroupsFlags(t *testing.T) {
 
 	if !strings.Contains(kubeSection, "--as-uid") {
 		t.Fatalf("expected --as-uid in inherited kube/client section, got:\n%s", kubeSection)
+	}
+}
+
+func TestComplete_InvalidContextFailsBeforeRun(t *testing.T) {
+	ctx := "nonexistent-context-that-does-not-exist"
+	cf := genericclioptions.NewConfigFlags(true)
+	cf.Context = &ctx
+
+	// Use a temp kubeconfig so the test is environment-independent
+	kc := filepath.Join(t.TempDir(), "kubeconfig")
+	kubeconfig := `apiVersion: v1
+kind: Config
+clusters:
+- name: local
+  cluster:
+    server: https://127.0.0.1:6443
+users:
+- name: local-user
+  user:
+    token: fake
+contexts:
+- name: existing-context
+  context:
+    cluster: local
+    user: local-user
+current-context: existing-context
+`
+	if err := os.WriteFile(kc, []byte(kubeconfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cf.KubeConfig = &kc
+
+	o := &ValidateOptions{
+		configFlags:  cf,
+		globalFlags:  &flags.GlobalFlags{},
+		inputDir:     t.TempDir(),
+		outputFormat: "json",
+	}
+
+	cmd := &cobra.Command{}
+	err := o.Complete(cmd, nil)
+
+	if err == nil {
+		t.Fatal("Complete() should fail for nonexistent context, but got nil")
+	}
+	if !strings.Contains(err.Error(), "nonexistent-context-that-does-not-exist") {
+		t.Fatalf("error should mention the invalid context name, got: %v", err)
+	}
+}
+
+func TestComplete_SkippedInOfflineMode(t *testing.T) {
+	o := &ValidateOptions{
+		configFlags:      genericclioptions.NewConfigFlags(true),
+		globalFlags:      &flags.GlobalFlags{},
+		inputDir:         t.TempDir(),
+		outputFormat:     "json",
+		apiResourcesFile: "/some/file.json",
+	}
+
+	cmd := &cobra.Command{}
+	err := o.Complete(cmd, nil)
+
+	if err != nil {
+		t.Fatalf("Complete() should skip in offline mode, got: %v", err)
 	}
 }
