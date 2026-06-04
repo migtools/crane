@@ -191,6 +191,90 @@ func TestValidate_Flags(t *testing.T) {
 			errMatch: "mutually exclusive",
 		},
 		{
+			name: "api-resources with server is mutually exclusive",
+			setup: func(t *testing.T) *ValidateOptions {
+				dir := t.TempDir()
+				f := filepath.Join(dir, "api-resources.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				server := "https://127.0.0.1:6443"
+				cf := genericclioptions.NewConfigFlags(true)
+				cf.APIServer = &server
+				return &ValidateOptions{
+					configFlags:      cf,
+					inputDir:         dir,
+					outputFormat:     "json",
+					apiResourcesFile: f,
+				}
+			},
+			wantErr:  true,
+			errMatch: "mutually exclusive",
+		},
+		{
+			name: "api-resources with token is mutually exclusive",
+			setup: func(t *testing.T) *ValidateOptions {
+				dir := t.TempDir()
+				f := filepath.Join(dir, "api-resources.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				token := "some-bearer-token"
+				cf := genericclioptions.NewConfigFlags(true)
+				cf.BearerToken = &token
+				return &ValidateOptions{
+					configFlags:      cf,
+					inputDir:         dir,
+					outputFormat:     "json",
+					apiResourcesFile: f,
+				}
+			},
+			wantErr:  true,
+			errMatch: "mutually exclusive",
+		},
+		{
+			name: "api-resources with cluster is mutually exclusive",
+			setup: func(t *testing.T) *ValidateOptions {
+				dir := t.TempDir()
+				f := filepath.Join(dir, "api-resources.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				cluster := "some-cluster"
+				cf := genericclioptions.NewConfigFlags(true)
+				cf.ClusterName = &cluster
+				return &ValidateOptions{
+					configFlags:      cf,
+					inputDir:         dir,
+					outputFormat:     "json",
+					apiResourcesFile: f,
+				}
+			},
+			wantErr:  true,
+			errMatch: "mutually exclusive",
+		},
+		{
+			name: "api-resources with user is mutually exclusive",
+			setup: func(t *testing.T) *ValidateOptions {
+				dir := t.TempDir()
+				f := filepath.Join(dir, "api-resources.json")
+				if err := os.WriteFile(f, []byte(`{}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+				user := "some-user"
+				cf := genericclioptions.NewConfigFlags(true)
+				cf.AuthInfoName = &user
+				return &ValidateOptions{
+					configFlags:      cf,
+					inputDir:         dir,
+					outputFormat:     "json",
+					apiResourcesFile: f,
+				}
+			},
+			wantErr:  true,
+			errMatch: "mutually exclusive",
+		},
+		{
 			name: "api-resources valid file accepted",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()

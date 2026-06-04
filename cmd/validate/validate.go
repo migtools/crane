@@ -63,6 +63,18 @@ func (o *ValidateOptions) Validate() error {
 		if o.configFlags.KubeConfig != nil && *o.configFlags.KubeConfig != "" {
 			return fmt.Errorf("--api-resources and --kubeconfig are mutually exclusive; use --api-resources for offline validation or --kubeconfig for live validation")
 		}
+		if o.configFlags.APIServer != nil && *o.configFlags.APIServer != "" {
+			return fmt.Errorf("--api-resources and --server are mutually exclusive; use --api-resources for offline validation or --server for live validation")
+		}
+		if o.configFlags.BearerToken != nil && *o.configFlags.BearerToken != "" {
+			return fmt.Errorf("--api-resources and --token are mutually exclusive; use --api-resources for offline validation or --token for live validation")
+		}
+		if o.configFlags.ClusterName != nil && *o.configFlags.ClusterName != "" {
+			return fmt.Errorf("--api-resources and --cluster are mutually exclusive; use --api-resources for offline validation or --cluster for live validation")
+		}
+		if o.configFlags.AuthInfoName != nil && *o.configFlags.AuthInfoName != "" {
+			return fmt.Errorf("--api-resources and --user are mutually exclusive; use --api-resources for offline validation or --user for live validation")
+		}
 		if _, err := os.Stat(o.apiResourcesFile); err != nil {
 			return fmt.Errorf("api-resources file %q: %w", o.apiResourcesFile, err)
 		}
