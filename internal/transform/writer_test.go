@@ -186,6 +186,74 @@ func TestFilterValidRemoveOps(t *testing.T) {
 	}
 }
 
+func TestGetResourceID_ClusterScoped(t *testing.T) {
+	tests := []struct {
+		name       string
+		resource   unstructured.Unstructured
+		expectedID string
+	}{
+		{
+			name: "namespaced resource",
+			resource: unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind": "Deployment",
+					"metadata": map[string]interface{}{
+						"name":      "web",
+						"namespace": "my-app",
+					},
+				},
+			},
+			expectedID: "Deployment/my-app/web",
+		},
+		{
+			name: "cluster-scoped resource",
+			resource: unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind": "ClusterRole",
+					"metadata": map[string]interface{}{
+						"name": "admin",
+					},
+				},
+			},
+			expectedID: "ClusterRole/admin",
+		},
+		{
+			name: "cluster-scoped CRD",
+			resource: unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind": "CustomResourceDefinition",
+					"metadata": map[string]interface{}{
+						"name": "widgets.example.com",
+					},
+				},
+			},
+			expectedID: "CustomResourceDefinition/widgets.example.com",
+		},
+		{
+			name: "cluster-scoped with explicit empty namespace",
+			resource: unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind": "ClusterRoleBinding",
+					"metadata": map[string]interface{}{
+						"name":      "binding",
+						"namespace": "",
+					},
+				},
+			},
+			expectedID: "ClusterRoleBinding/binding",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getResourceID(tt.resource)
+			if result != tt.expectedID {
+				t.Errorf("getResourceID() = %q, want %q", result, tt.expectedID)
+			}
+		})
+	}
+}
+
 func TestPathExists(t *testing.T) {
 	tests := []struct {
 		name     string

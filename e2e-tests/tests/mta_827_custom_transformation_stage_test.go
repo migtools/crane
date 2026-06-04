@@ -97,7 +97,7 @@ var _ = Describe("Custom transformation stage", func() {
 		Expect(runner.Export(srcApp.Namespace, paths.ExportDir)).NotTo(HaveOccurred())
 		log.Printf("Running crane transform default stage for namespace %s\n", srcApp.Namespace)
 		Expect(runner.Transform(paths.ExportDir, paths.TransformDir)).NotTo(HaveOccurred())
-		log.Printf("Running crane transform --stage for namespace %s\n", srcApp.Namespace)
+		log.Printf("Running crane transform with specific stage for namespace %s\n", srcApp.Namespace)
 		Expect(runner.TransformStage(paths.ExportDir, paths.TransformDir, "50_CustomModifications")).NotTo(HaveOccurred())
 
 		By("Update custom stage kustomization with namespace, labels, and image override")

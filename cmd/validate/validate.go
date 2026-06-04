@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/internal/flags"
 	internalValidate "github.com/konveyor/crane/internal/validate"
@@ -50,6 +51,7 @@ func (o *ValidateOptions) Validate() error {
 		return fmt.Errorf("input-dir %q is not a directory", o.inputDir)
 	}
 
+	o.outputFormat = strings.ToLower(o.outputFormat)
 	if o.outputFormat != "yaml" && o.outputFormat != "json" {
 		return fmt.Errorf("--output must be \"yaml\" or \"json\", got %q", o.outputFormat)
 	}
@@ -79,6 +81,10 @@ func (o *ValidateOptions) Run() error {
 	}
 
 	log.Infof("Scanned %d distinct GVK+namespace tuples", len(entries))
+
+	if len(entries) == 0 {
+		return fmt.Errorf("no manifests found in %s: nothing to validate", o.inputDir)
+	}
 
 	var report *internalValidate.ValidationReport
 

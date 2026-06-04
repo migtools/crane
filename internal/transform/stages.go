@@ -73,27 +73,39 @@ func DiscoverStages(transformDir string) ([]Stage, error) {
 
 // FilterStages filters stages based on selectors
 // StageSelector specifies which stage(s) to run
-// If Stage is empty, all stages are run
+// If Stages is empty, all stages are run
 type StageSelector struct {
-	Stage string // Specific stage to run (empty = all stages)
+	Stages []string // Specific stages to run (empty = all stages)
 }
 
 // FilterStages applies selector to stage list
+// Matches stages by directory name OR plugin name
 func FilterStages(allStages []Stage, selector StageSelector) []Stage {
-	// If no stage specified, return all stages
-	if selector.Stage == "" {
+	// If no stages specified, return all stages
+	if len(selector.Stages) == 0 {
 		return allStages
 	}
 
-	// Find the specific stage
-	for _, stage := range allStages {
-		if stage.DirName == selector.Stage {
-			return []Stage{stage}
+	var filtered []Stage
+	seen := make(map[string]bool) // Prevent duplicates
+
+	for _, requested := range selector.Stages {
+		for _, stage := range allStages {
+			// Skip if already added
+			if seen[stage.DirName] {
+				continue
+			}
+
+			// Match by directory name OR plugin name
+			if stage.DirName == requested || stage.PluginName == requested {
+				filtered = append(filtered, stage)
+				seen[stage.DirName] = true
+				break
+			}
 		}
 	}
 
-	// Stage not found, return empty
-	return []Stage{}
+	return filtered
 }
 
 // GetFirstStage returns the stage with the lowest priority

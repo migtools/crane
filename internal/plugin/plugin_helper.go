@@ -19,7 +19,7 @@ const (
 )
 
 func GetPlugins(dir string, logger *logrus.Logger) ([]transform.Plugin, error) {
-	pluginList := []transform.Plugin{&kubernetes.KubernetesTransformPlugin{}}
+	pluginList := []transform.Plugin{}
 	files, err := ioutil.ReadDir(dir)
 	switch {
 	case os.IsNotExist(err):
@@ -70,6 +70,9 @@ func GetFilteredPlugins(pluginDir string, skipPlugins []string, logger *logrus.L
 	if err != nil {
 		return filteredPlugins, err
 	}
+
+	// Start with built-in plugins
+	unfilteredPlugins = append(unfilteredPlugins, &kubernetes.KubernetesTransformPlugin{})
 
 	paths := []string{absPathPluginDir, pluginDir, GlobalPluginDir, PkgPluginDir}
 
