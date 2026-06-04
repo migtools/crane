@@ -123,18 +123,10 @@ func (o *ValidateOptions) Run() error {
 	reportPath := filepath.Join(o.validateDir, "report."+reportExt)
 	failuresDir := filepath.Join(o.validateDir, "failures")
 
-	// Archive previous results using report's timestamp so report and failures
-	// are grouped by the same timestamp even if they were written at slightly
-	// different times within the same run.
-	if ts, err := getArchiveTimestamp(reportPath); err != nil {
-		return fmt.Errorf("checking previous report: %w", err)
-	} else if ts != "" {
-		if err := archiveWithTimestamp(reportPath, ts, log); err != nil {
-			return fmt.Errorf("archiving previous report: %w", err)
-		}
-		if err := archiveWithTimestamp(failuresDir, ts, log); err != nil {
-			return fmt.Errorf("archiving previous failures: %w", err)
-		}
+	// Archive previous results. Check for report in any format (json or yaml)
+	// to handle the case where the user switches --output format between runs.
+	if err := archivePreviousResults(o.validateDir, failuresDir, log); err != nil {
+		return err
 	}
 
 	reportFile, err := os.Create(reportPath)
@@ -203,6 +195,50 @@ func archiveWithTimestamp(path, timestamp string, log logrus.FieldLogger) error 
 		return fmt.Errorf("renaming %q to %q: %w", path, archivePath, err)
 	}
 	log.Infof("Archived previous results: %s", filepath.Base(archivePath))
+	return nil
+}
+
+// archivePreviousResults finds any existing report file (json or yaml) in
+// validateDir and archives it along with the failures directory using a shared
+// timestamp. This handles the case where the user switches --output format
+// between runs (e.g., first run -o json, second run -o yaml).
+func archivePreviousResults(validateDir, failuresDir string, log logrus.FieldLogger) error {
+	// Look for report in any format
+	matches, err := filepath.Glob(filepath.Join(validateDir, "report.json"))
+	if err != nil {
+		return fmt.Errorf("checking for previous json report: %w", err)
+	}
+	yamlMatches, err := filepath.Glob(filepath.Join(validateDir, "report.yaml"))
+	if err != nil {
+		return fmt.Errorf("checking for previous yaml report: %w", err)
+	}
+	matches = append(matches, yamlMatches...)
+
+	if len(matches) == 0 {
+		return nil
+	}
+
+	// Use the first found report's timestamp for both report and failures
+	ts, err := getArchiveTimestamp(matches[0])
+	if err != nil {
+		return fmt.Errorf("checking previous report: %w", err)
+	}
+	if ts == "" {
+		return nil
+	}
+
+	// Archive all found report files (could be both json and yaml from different runs)
+	for _, reportFile := range matches {
+		if err := archiveWithTimestamp(reportFile, ts, log); err != nil {
+			return fmt.Errorf("archiving previous report: %w", err)
+		}
+	}
+
+	// Archive failures directory with the same timestamp
+	if err := archiveWithTimestamp(failuresDir, ts, log); err != nil {
+		return fmt.Errorf("archiving previous failures: %w", err)
+	}
+
 	return nil
 }
 

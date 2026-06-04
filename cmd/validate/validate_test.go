@@ -377,3 +377,76 @@ func TestGetArchiveTimestamp_FileNotFound(t *testing.T) {
 	}
 }
 
+func TestArchivePreviousResults_FormatSwitch(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simulate first run with -o json
+	if err := os.WriteFile(filepath.Join(dir, "report.json"), []byte(`{"mode":"live"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	failuresDir := filepath.Join(dir, "failures")
+	if err := os.MkdirAll(failuresDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(failuresDir, "Deployment.yaml"), []byte("fail"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+
+	// Now archive as if user switched to -o yaml
+	// The function should find report.json even though current format is yaml
+	err := archivePreviousResults(dir, failuresDir, log)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// report.json should be archived
+	if _, err := os.Stat(filepath.Join(dir, "report.json")); !os.IsNotExist(err) {
+		t.Error("report.json should have been archived")
+	}
+
+	// failures/ should be archived
+	if _, err := os.Stat(failuresDir); !os.IsNotExist(err) {
+		t.Error("failures/ should have been archived")
+	}
+
+	// Archived files should exist
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	foundReport := false
+	foundFailures := false
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), "report-") && strings.HasSuffix(entry.Name(), ".json") {
+			foundReport = true
+		}
+		if strings.HasPrefix(entry.Name(), "failures-") && entry.IsDir() {
+			foundFailures = true
+		}
+	}
+
+	if !foundReport {
+		t.Error("expected archived report-<timestamp>.json")
+	}
+	if !foundFailures {
+		t.Error("expected archived failures-<timestamp>/ directory")
+	}
+}
+
+func TestArchivePreviousResults_NoPreviousResults(t *testing.T) {
+	dir := t.TempDir()
+	failuresDir := filepath.Join(dir, "failures")
+
+	log := logrus.New()
+	log.SetLevel(logrus.ErrorLevel)
+
+	err := archivePreviousResults(dir, failuresDir, log)
+	if err != nil {
+		t.Fatalf("should not error when no previous results exist: %v", err)
+	}
+}
+
