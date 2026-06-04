@@ -6,8 +6,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"os/exec"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -207,38 +205,4 @@ func parseClientCertificate(certBytes []byte) (*x509.Certificate, error) {
 		return nil, fmt.Errorf("failed to parse certificate bytes as PEM or DER: %w", err)
 	}
 	return cert, nil
-}
-
-// RunCraneValidate runs crane validate command in live mode and returns any error.
-// It validates manifests in inputDir against the target cluster specified by contextName,
-// and writes the validation report to validateDir.
-func RunCraneValidate(craneBin, inputDir, contextName, validateDir string) error {
-	args := []string{
-		"validate",
-		"--input-dir", inputDir,
-		"--context", contextName,
-		"--validate-dir", validateDir,
-		"--output", "json",
-	}
-
-	logVerboseCommand(craneBin, args)
-
-	// Create context with 2-minute timeout to prevent hanging
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, craneBin, args...)
-	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane validate", out)
-
-	if err != nil {
-		// Check if timeout occurred
-		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("crane validate timed out after 2m (bin=%s, context=%s, inputDir=%s, validateDir=%s): %w",
-				craneBin, contextName, inputDir, validateDir, err)
-		}
-		return fmt.Errorf("crane validate failed (bin=%s, context=%s, inputDir=%s, validateDir=%s): %w, output: %s",
-			craneBin, contextName, inputDir, validateDir, err, string(out))
-	}
-	return nil
 }
