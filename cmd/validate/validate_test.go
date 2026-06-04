@@ -149,7 +149,7 @@ func TestValidate_Flags(t *testing.T) {
 			errMatch: "api-resources file",
 		},
 		{
-			name: "api-resources with context is mutually exclusive",
+			name: "api-resources with --context is mutually exclusive",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()
 				f := filepath.Join(dir, "api-resources.json")
@@ -167,10 +167,10 @@ func TestValidate_Flags(t *testing.T) {
 				}
 			},
 			wantErr:  true,
-			errMatch: "mutually exclusive",
+			errMatch: "--api-resources and --context are mutually exclusive",
 		},
 		{
-			name: "api-resources with kubeconfig is mutually exclusive",
+			name: "api-resources with --kubeconfig is mutually exclusive",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()
 				f := filepath.Join(dir, "api-resources.json")
@@ -188,10 +188,10 @@ func TestValidate_Flags(t *testing.T) {
 				}
 			},
 			wantErr:  true,
-			errMatch: "mutually exclusive",
+			errMatch: "--api-resources and --kubeconfig are mutually exclusive",
 		},
 		{
-			name: "api-resources with server is mutually exclusive",
+			name: "api-resources with --server is mutually exclusive",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()
 				f := filepath.Join(dir, "api-resources.json")
@@ -209,10 +209,10 @@ func TestValidate_Flags(t *testing.T) {
 				}
 			},
 			wantErr:  true,
-			errMatch: "mutually exclusive",
+			errMatch: "--api-resources and --server are mutually exclusive",
 		},
 		{
-			name: "api-resources with token is mutually exclusive",
+			name: "api-resources with --token is mutually exclusive",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()
 				f := filepath.Join(dir, "api-resources.json")
@@ -230,10 +230,10 @@ func TestValidate_Flags(t *testing.T) {
 				}
 			},
 			wantErr:  true,
-			errMatch: "mutually exclusive",
+			errMatch: "--api-resources and --token are mutually exclusive",
 		},
 		{
-			name: "api-resources with cluster is mutually exclusive",
+			name: "api-resources with --cluster is mutually exclusive",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()
 				f := filepath.Join(dir, "api-resources.json")
@@ -251,10 +251,10 @@ func TestValidate_Flags(t *testing.T) {
 				}
 			},
 			wantErr:  true,
-			errMatch: "mutually exclusive",
+			errMatch: "--api-resources and --cluster are mutually exclusive",
 		},
 		{
-			name: "api-resources with user is mutually exclusive",
+			name: "api-resources with --user is mutually exclusive",
 			setup: func(t *testing.T) *ValidateOptions {
 				dir := t.TempDir()
 				f := filepath.Join(dir, "api-resources.json")
@@ -272,7 +272,7 @@ func TestValidate_Flags(t *testing.T) {
 				}
 			},
 			wantErr:  true,
-			errMatch: "mutually exclusive",
+			errMatch: "--api-resources and --user are mutually exclusive",
 		},
 		{
 			name: "api-resources valid file accepted",
