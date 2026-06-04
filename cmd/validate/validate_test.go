@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/konveyor/crane/internal/flags"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
@@ -105,6 +106,36 @@ func TestValidate_Flags(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "uppercase JSON accepted",
+			setup: func(t *testing.T) *ValidateOptions {
+				return &ValidateOptions{
+					inputDir:     t.TempDir(),
+					outputFormat: "JSON",
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "uppercase YAML accepted",
+			setup: func(t *testing.T) *ValidateOptions {
+				return &ValidateOptions{
+					inputDir:     t.TempDir(),
+					outputFormat: "YAML",
+				}
+			},
+			wantErr: false,
+		},
+		{
+			name: "mixed case Json accepted",
+			setup: func(t *testing.T) *ValidateOptions {
+				return &ValidateOptions{
+					inputDir:     t.TempDir(),
+					outputFormat: "Json",
+				}
+			},
+			wantErr: false,
+		},
+		{
 			name: "api-resources file not found",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
@@ -197,6 +228,35 @@ func TestValidate_Flags(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestRun_EmptyInputDirReturnsError(t *testing.T) {
+	emptyDir := t.TempDir()
+	validateDir := filepath.Join(t.TempDir(), "validate")
+
+	// Create a minimal valid API resources file for offline mode
+	apiFile := filepath.Join(t.TempDir(), "api-resources.json")
+	if err := os.WriteFile(apiFile, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	o := &ValidateOptions{
+		configFlags:      genericclioptions.NewConfigFlags(true),
+		IOStreams:         genericclioptions.NewTestIOStreamsDiscard(),
+		inputDir:         emptyDir,
+		validateDir:      validateDir,
+		outputFormat:     "json",
+		apiResourcesFile: apiFile,
+		globalFlags:      &flags.GlobalFlags{},
+	}
+
+	err := o.Run()
+	if err == nil {
+		t.Fatal("expected error when input dir has no manifests, got nil")
+	}
+	if !strings.Contains(err.Error(), "no manifests found") {
+		t.Fatalf("expected 'no manifests found' error, got: %v", err)
 	}
 }
 

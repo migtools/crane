@@ -44,10 +44,18 @@ How does it work? Crane works by:
 3) Applying the transformed manifests into the destination cluster
 4) Optionally orchestrating persistent state migrations
 
+## Downloads
+
+| Channel | Purpose | Link |
+| :-- | :-- | :-- |
+| **✅ Stable** | Tagged releases for production use | [GitHub Releases](https://github.com/migtools/crane/releases) |
+| **🛠️ `main`** | Latest artifacts from pushes to `main` | [Build Crane Binaries (main push)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=branch%3Amain+event%3Apush) |
+| **🌙 Nightly** | Scheduled artifacts for early validation | [Build Crane Binaries (scheduled)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=event%3Aschedule) |
+
 ## Install
 
   * Obtain the `crane` binary from either:
-    * Download a prebuilt release from https://github.com/konveyor/crane/releases
+    * Download a prebuilt binary from the links in the `Downloads` section above.
     * Clone this repo and build the crane binary via: `go build -o crane main.go`
   * Install the `crane` binary in your `$PATH`
 

@@ -99,6 +99,21 @@ func ReadTestdataFile(filename string) (string, error) {
 	return string(b), nil
 }
 
+// TestdataFilePath returns the path to a file under e2e-tests/testdata,
+// resolved relative to this package so it does not depend on process working directory.
+func TestdataFilePath(filename string) (string, error) {
+	if filename == "" {
+		return "", fmt.Errorf("filename is required")
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+	baseDir := filepath.Dir(thisFile)
+	path := filepath.Join(baseDir, "..", "testdata", filename)
+	return path, nil
+}
+
 // GoldenManifestsDir returns the path to the golden fixtures directory for an app and pipeline stage.
 // It resolves e2e-tests/golden-manifests/<appName>/<stage> relative to this file's location, so the
 // result does not depend on the process working directory. Valid stage values are "export", "transform",
@@ -864,4 +879,26 @@ func AssertKindsNotInActiveKustomizeResources(transformDir string, deniedKinds [
 		}
 		return nil
 	})
+}
+
+// CaptureAPISurfaceScriptPath returns the absolute path to scripts/capture-api-surface.sh.
+// The path is resolved relative to this source file so tests do not depend on the
+// process working directory or crane binary location. It also verifies the script
+// exists and returns an error when it cannot be found.
+func CaptureAPISurfaceScriptPath() (string, error) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+
+	// thisFile => <repo>/e2e-tests/utils/utils.go
+	// repo root => <repo>
+	baseDir := filepath.Dir(thisFile)
+	scriptPath := filepath.Join(baseDir, "..", "..", "scripts", "capture-api-surface.sh")
+
+	if _, err := os.Stat(scriptPath); err != nil {
+		return "", fmt.Errorf("capture script not found at %s: %w", scriptPath, err)
+	}
+
+	return scriptPath, nil
 }

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/konveyor/crane/internal/file"
+	"github.com/konveyor/crane/internal/kustomize"
 	internalTransform "github.com/konveyor/crane/internal/transform"
 	"github.com/sirupsen/logrus"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -17,12 +17,13 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// KustomizeApplier applies transformations using kubectl kustomize
+// KustomizeApplier applies transformations using embedded kustomize
 type KustomizeApplier struct {
-	Log           *logrus.Logger
-	TransformDir  string
-	OutputDir     string
-	KustomizeArgs []string
+	Log               *logrus.Logger
+	TransformDir      string
+	OutputDir         string
+	KustomizeArgs     []string
+	SkipClusterScoped bool
 }
 
 // ApplySingleStage applies a single transform stage to produce output
@@ -45,11 +46,19 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 		return fmt.Errorf("kustomization.yaml not found in stage: %s", stageName)
 	}
 
-	// Run kubectl kustomize build
+	// Run kustomize build
 	k.Log.Infof("Building stage: %s", stageName)
 	output, err := k.runKustomizeBuild(stageDir)
 	if err != nil {
-		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", stageName, err)
+		return fmt.Errorf("kustomize build failed for stage %s: %w", stageName, err)
+	}
+
+	// Filter cluster-scoped resources if requested
+	if k.SkipClusterScoped {
+		output, err = k.filterClusterScopedResources(output)
+		if err != nil {
+			return fmt.Errorf("failed to filter cluster-scoped resources: %w", err)
+		}
 	}
 
 	// Write output to output directory
@@ -85,10 +94,18 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 
 	k.Log.Infof("Applying final stage: %s", lastStage.DirName)
 
-	// Run kubectl kustomize build on the last stage
+	// Run kustomize build on the last stage
 	output, err := k.runKustomizeBuild(lastStage.Path)
 	if err != nil {
-		return fmt.Errorf("kubectl kustomize build failed for stage %s: %w", lastStage.DirName, err)
+		return fmt.Errorf("kustomize build failed for stage %s: %w", lastStage.DirName, err)
+	}
+
+	// Filter cluster-scoped resources if requested
+	if k.SkipClusterScoped {
+		output, err = k.filterClusterScopedResources(output)
+		if err != nil {
+			return fmt.Errorf("failed to filter cluster-scoped resources: %w", err)
+		}
 	}
 
 	// Write to output.yaml (single file with all resources)
@@ -112,51 +129,68 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 	return nil
 }
 
-// runKustomizeBuild executes kubectl kustomize or oc kustomize on a directory
+// runKustomizeBuild runs embedded kustomize on a directory
 func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
-	kustomizeCmd := file.GetKustomizeCommand()
-
-	// Build command arguments
-	cmdArgs := []string{"kustomize"}
-
-	// Add custom kustomize arguments if provided
-	if len(k.KustomizeArgs) > 0 {
-		cmdArgs = append(cmdArgs, k.KustomizeArgs...)
+	runner := &kustomize.Runner{
+		Log:  k.Log,
+		Args: k.KustomizeArgs,
 	}
-
-	// Add directory as last argument
-	cmdArgs = append(cmdArgs, dir)
-
-	cmd := exec.Command(kustomizeCmd, cmdArgs...)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	k.Log.Debugf("Running: %s %s", kustomizeCmd, strings.Join(cmdArgs, " "))
-
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("command failed: %w\nstderr: %s", err, stderr.String())
-	}
-
-	return stdout.Bytes(), nil
+	return runner.Build(dir)
 }
 
-// ValidateKubectlAvailable checks if kubectl or oc command is available
-func ValidateKubectlAvailable() error {
-	// Try kubectl first
-	cmd := exec.Command("kubectl", "version", "--client")
-	if err := cmd.Run(); err == nil {
-		return nil
+// filterClusterScopedResources removes cluster-scoped resources from a multi-document YAML stream
+func (k *KustomizeApplier) filterClusterScopedResources(yamlData []byte) ([]byte, error) {
+	decoder := yamlv3.NewDecoder(strings.NewReader(string(yamlData)))
+	var result bytes.Buffer
+	first := true
+
+	for {
+		var doc interface{}
+		err := decoder.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode YAML document: %w", err)
+		}
+		if doc == nil {
+			continue
+		}
+
+		var buf bytes.Buffer
+		encoder := yamlv3.NewEncoder(&buf)
+		encoder.SetIndent(2)
+		if err := encoder.Encode(doc); err != nil {
+			return nil, fmt.Errorf("failed to encode YAML document: %w", err)
+		}
+		if err := encoder.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close YAML encoder: %w", err)
+		}
+		docBytes := buf.Bytes()
+
+		jsonData, err := yaml.YAMLToJSON(docBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert YAML to JSON: %w", err)
+		}
+
+		u := unstructured.Unstructured{}
+		if err := u.UnmarshalJSON(jsonData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal resource: %w", err)
+		}
+
+		if u.GetNamespace() == "" {
+			k.Log.Infof("Skipping cluster-scoped resource %s/%s (--skip-cluster-scoped)", u.GetKind(), u.GetName())
+			continue
+		}
+
+		if !first {
+			result.WriteString("---\n")
+		}
+		result.Write(docBytes)
+		first = false
 	}
 
-	// Fallback to oc
-	cmd = exec.Command("oc", "version", "--client")
-	if err := cmd.Run(); err == nil {
-		return nil
-	}
-
-	return fmt.Errorf("neither kubectl nor oc found or executable")
+	return result.Bytes(), nil
 }
 
 // splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files
@@ -187,7 +221,9 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 		if err := encoder.Encode(doc); err != nil {
 			return fmt.Errorf("failed to encode YAML document: %w", err)
 		}
-		encoder.Close() // Flush the encoder
+		if err := encoder.Close(); err != nil {
+			return fmt.Errorf("failed to close YAML encoder: %w", err)
+		}
 		docBytes := buf.Bytes()
 
 		// Convert YAML to JSON to extract metadata

@@ -1,21 +1,12 @@
 package transform
 
 import (
-	"os/exec"
 	"testing"
-
-	"github.com/konveyor/crane/internal/file"
 )
 
-// hasKustomizeCommand checks if kubectl or oc is available for kustomize
+// hasKustomizeCommand returns true since kustomize is embedded in the crane binary.
 func hasKustomizeCommand(t *testing.T) bool {
 	t.Helper()
-	cmd := file.GetKustomizeCommand()
-	// Try to run "<cmd> version" to verify it's available
-	if err := exec.Command(cmd, "version", "--client").Run(); err != nil {
-		t.Logf("Kustomize command '%s' not available: %v", cmd, err)
-		return false
-	}
 	return true
 }
 

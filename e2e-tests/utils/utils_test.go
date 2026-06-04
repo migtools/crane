@@ -309,6 +309,27 @@ func TestGoldenManifestsDir(t *testing.T) {
 	}
 }
 
+func TestCaptureAPISurfaceScriptPath(t *testing.T) {
+	// Ensure helper returns an absolute, existing path to scripts/capture-api-surface.sh.
+	scriptPath, err := CaptureAPISurfaceScriptPath()
+	if err != nil {
+		t.Fatalf("CaptureAPISurfaceScriptPath: %v", err)
+	}
+
+	if !filepath.IsAbs(scriptPath) {
+		t.Fatalf("script path must be absolute, got %q", scriptPath)
+	}
+
+	wantSuffix := filepath.Join("scripts", "capture-api-surface.sh")
+	if !strings.HasSuffix(filepath.Clean(scriptPath), wantSuffix) {
+		t.Fatalf("script path %q must end with %q", scriptPath, wantSuffix)
+	}
+
+	if _, err := os.Stat(scriptPath); err != nil {
+		t.Fatalf("os.Stat(%q): %v", scriptPath, err)
+	}
+}
+
 func TestCreateTempDir(t *testing.T) {
 	// Ensure temp dir creation succeeds and preserves the requested prefix.
 	dir, err := CreateTempDir("utils-test-")

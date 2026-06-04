@@ -112,7 +112,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 
 		// Write patch if there are operations
 		if len(artifact.Patches) > 0 {
-			// Filter out remove operations for non-existent paths to prevent kubectl kustomize errors
+			// Filter out remove operations for non-existent paths to prevent kustomize errors
 			validPatches, err := filterValidRemoveOps(artifact.Resource, artifact.Patches)
 			if err != nil {
 				return fmt.Errorf("failed to filter patches for %s/%s/%s: %w",
@@ -227,7 +227,7 @@ func getResourceID(resource unstructured.Unstructured) string {
 }
 
 // filterValidRemoveOps filters out JSONPatch remove operations for paths that don't exist in the resource.
-// This prevents kubectl kustomize from failing when trying to remove non-existent fields.
+// This prevents kustomize from failing when trying to remove non-existent fields.
 func filterValidRemoveOps(resource unstructured.Unstructured, patches jsonpatch.Patch) (jsonpatch.Patch, error) {
 	if len(patches) == 0 {
 		return patches, nil
