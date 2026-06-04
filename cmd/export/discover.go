@@ -303,7 +303,7 @@ func getObjects(requestTimeout time.Duration, g *groupResource, namespace string
 	})
 	p := pager.New(func(pagerCtx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
 		// Create a fresh context with timeout for each page request
-		ctx := context.Background()
+		ctx := pagerCtx
 		if requestTimeout > 0 {
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, requestTimeout)

@@ -115,12 +115,14 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 	for crdName := range seen {
 		// Create fresh context with timeout for each CRD Get request
 		ctx := context.Background()
+		var cancel context.CancelFunc
 		if requestTimeout > 0 {
-			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
-			defer cancel()
 		}
 		obj, err := crdClient.Get(ctx, crdName, metav1.GetOptions{})
+		if cancel != nil {
+			cancel()
+		}
 		if err != nil {
 			switch {
 			case apierrors.IsForbidden(err):
