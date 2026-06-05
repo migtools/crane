@@ -47,6 +47,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
           BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('main-{0}', github.sha) }}
+          BUILD_COMMIT: ${{ github.sha }}
         run: |
           mkdir -p dist
 
@@ -57,7 +58,7 @@ jobs:
 
           binary="crane_${GOOS}_${GOARCH}${ext}"
           go build -trimpath \
-            -ldflags "-X github.com/konveyor/crane/internal/buildinfo.Version=${BUILD_VERSION}" \
+            -ldflags "-X github.com/konveyor/crane/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/konveyor/crane/internal/buildinfo.BuildCommit=${BUILD_COMMIT}" \
             -o "dist/${binary}" .
 
           # Validate version injection for each built artifact.
