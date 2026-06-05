@@ -15,7 +15,7 @@ var (
 	Version string = "v0.0.6"
 
 	CranelibVersion string = cranelibversion.Version
-	BuildCommit     string = ""
+	BuildCommit     string = "main"
 
 	KustomizeVersion string = readKustomizeVersion()
 )
