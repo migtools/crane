@@ -46,6 +46,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('main-{0}', github.sha) }}
         run: |
           mkdir -p dist
 
@@ -55,7 +56,13 @@ jobs:
           fi
 
           binary="crane_${GOOS}_${GOARCH}${ext}"
-          go build -trimpath -o "dist/${binary}" .
+          go build -trimpath \
+            -ldflags "-X github.com/konveyor/crane/internal/buildinfo.Version=${BUILD_VERSION}" \
+            -o "dist/${binary}" .
+
+          if [ "$GOOS" = "linux" ] && [ "$GOARCH" = "amd64" ]; then
+            ./dist/${binary} version | rg "Version: ${BUILD_VERSION}" >/dev/null
+          fi
           (
             cd dist
             sha256sum "${binary}" > "${binary}.sha256"
