@@ -10,9 +10,12 @@ import (
 )
 
 var (
-	Version string = "v0.0.6"
+	// Version and BuildCommit can be overridden at build time with:
+	// go build -ldflags="-X github.com/konveyor/crane/internal/buildinfo.Version=<version> -X github.com/konveyor/crane/internal/buildinfo.BuildCommit=$(git rev-parse HEAD)"
+	Version string = "main"
 
 	CranelibVersion string = cranelibversion.Version
+	BuildCommit     string = "main"
 
 	KustomizeVersion string = readKustomizeVersion()
 )
