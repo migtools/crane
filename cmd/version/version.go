@@ -60,6 +60,7 @@ func NewVersionCommand(f *flags.GlobalFlags) *cobra.Command {
 func (o *Options) run() error {
 	fmt.Println("crane:")
 	fmt.Printf("\tVersion: %s\n", buildinfo.Version)
+	fmt.Printf("\tSHA: %s\n", buildinfo.BuildCommit)
 	fmt.Println("crane-lib:")
 	fmt.Printf("\tVersion: %s\n", buildinfo.CranelibVersion)
 	fmt.Println("kustomize:")
