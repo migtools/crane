@@ -60,9 +60,12 @@ jobs:
             -ldflags "-X github.com/konveyor/crane/internal/buildinfo.Version=${BUILD_VERSION}" \
             -o "dist/${binary}" .
 
-          if [ "$GOOS" = "linux" ] && [ "$GOARCH" = "amd64" ]; then
-            ./dist/${binary} version | rg "Version: ${BUILD_VERSION}" >/dev/null
+          # Validate version injection for each built artifact.
+          if ! strings "dist/${binary}" | grep -Fq "${BUILD_VERSION}"; then
+            echo "Injected version ${BUILD_VERSION} not found in ${binary}"
+            exit 1
           fi
+
           (
             cd dist
             sha256sum "${binary}" > "${binary}.sha256"
