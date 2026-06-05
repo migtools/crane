@@ -88,6 +88,15 @@ func (o *ValidateOptions) Validate() error {
 func (o *ValidateOptions) Run() error {
 	log := o.globalFlags.GetLogger()
 
+	log.Debugf("Input directory: %s", o.inputDir)
+	log.Debugf("Validate directory: %s", o.validateDir)
+	log.Debugf("Output format: %s", o.outputFormat)
+	if o.apiResourcesFile != "" {
+		log.Debugf("Mode: offline (api-resources: %s)", o.apiResourcesFile)
+	} else {
+		log.Debugf("Mode: live")
+	}
+
 	entries, err := internalValidate.ScanManifests(internalValidate.ScanOptions{Dirs: []string{o.inputDir}}, log)
 	if err != nil {
 		return fmt.Errorf("scanning manifests: %w", err)
@@ -102,13 +111,14 @@ func (o *ValidateOptions) Run() error {
 	var report *internalValidate.ValidationReport
 
 	if o.apiResourcesFile != "" {
-		index, err := internalValidate.ParseAPIResourcesJSON(o.apiResourcesFile)
+		index, err := internalValidate.ParseAPIResourcesJSON(o.apiResourcesFile, log)
 		if err != nil {
 			return fmt.Errorf("loading api-resources: %w", err)
 		}
-		report = internalValidate.MatchResultsFromIndex(entries, index)
+		report = internalValidate.MatchResultsFromIndex(entries, index, log)
 		report.Mode = "offline"
 		report.APIResourcesSource = o.apiResourcesFile
+		log.Infof("Validating in offline mode using api-resources file %q", o.apiResourcesFile)
 	} else {
 		discoveryClient, err := o.configFlags.ToDiscoveryClient()
 		if err != nil {
@@ -123,6 +133,9 @@ func (o *ValidateOptions) Run() error {
 		report.Mode = "live"
 		if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 			report.ClusterContext = *o.configFlags.Context
+			log.Infof("Validating in live mode against context %q", *o.configFlags.Context)
+		} else {
+			log.Infof("Validating in live mode against current kubeconfig context")
 		}
 	}
 
@@ -228,9 +241,11 @@ func archivePreviousResults(validateDir, failuresDir string, log logrus.FieldLog
 	matches = append(matches, yamlMatches...)
 
 	if len(matches) == 0 {
+		log.Debugf("No previous report files found in %s", validateDir)
 		return nil
 	}
 
+	log.Debugf("Found %d previous report file(s) to archive: %v", len(matches), matches)
 	// Use the first found report's timestamp for both report and failures
 	ts, err := getArchiveTimestamp(matches[0])
 	if err != nil {

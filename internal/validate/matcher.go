@@ -27,13 +27,14 @@ func MatchResults(entries []ManifestEntry, opts MatchOptions, log logrus.FieldLo
 	if err != nil {
 		return nil, err
 	}
-	return MatchResultsFromIndex(entries, index), nil
+	return MatchResultsFromIndex(entries, index, log), nil
 }
 
 // MatchResultsFromIndex compares each ManifestEntry against a pre-built
 // DiscoveryIndex and returns a validation report. Use this when the index
 // is built from an offline source (e.g. kubectl api-resources JSON output).
-func MatchResultsFromIndex(entries []ManifestEntry, index DiscoveryIndex) *ValidationReport {
+func MatchResultsFromIndex(entries []ManifestEntry, index DiscoveryIndex, log logrus.FieldLogger) *ValidationReport {
+	log.Debugf("Matching %d entries against discovery index (%d group-versions)", len(entries), len(index))
 	kindIndex := buildKindIndex(index)
 
 	results := make([]ValidationResult, 0, len(entries))
@@ -41,6 +42,9 @@ func MatchResultsFromIndex(entries []ManifestEntry, index DiscoveryIndex) *Valid
 		result := matchEntry(entry, index)
 		if result.Status == StatusIncompatible {
 			addSuggestion(&result, entry, kindIndex)
+			log.Debugf("  INCOMPATIBLE: %s/%s (namespace: %q) — %s", entry.APIVersion, entry.Kind, entry.Namespace, result.Reason)
+		} else {
+			log.Debugf("  OK: %s/%s (namespace: %q) → %s", entry.APIVersion, entry.Kind, entry.Namespace, result.ResourcePlural)
 		}
 		results = append(results, result)
 	}
@@ -82,7 +86,9 @@ func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLo
 		}
 	}
 
+	log.Debugf("Building discovery index from %d API resource lists", len(lists))
 	index := DiscoveryIndex{}
+	totalKinds := 0
 	for _, list := range lists {
 		gv := list.GroupVersion
 		if _, ok := index[gv]; !ok {
@@ -93,8 +99,10 @@ func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLo
 				continue
 			}
 			index[gv][res.Kind] = discoveryEntry{Resource: res}
+			totalKinds++
 		}
 	}
+	log.Debugf("Built live discovery index: %d group-versions, %d kinds", len(index), totalKinds)
 	return index, nil
 }
 
