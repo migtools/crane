@@ -143,6 +143,12 @@ func (o *ValidateOptions) Run() error {
 			return fmt.Errorf("matching against target cluster: %w", err)
 		}
 		report.Mode = "live"
+		// Get the actual context being used (either from flag or current-context)
+		rawConfig, err := o.configFlags.ToRawKubeConfigLoader().RawConfig()
+		if err == nil {
+			report.ClusterContext = rawConfig.CurrentContext
+		}
+		// Override with explicit --context flag if provided
 		if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 			report.ClusterContext = *o.configFlags.Context
 			log.Infof("Validating in live mode against context %q", *o.configFlags.Context)
