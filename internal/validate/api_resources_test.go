@@ -3,6 +3,8 @@ package validate
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 func TestParseAPIResourcesJSON_Valid(t *testing.T) {
@@ -30,7 +32,7 @@ func TestParseAPIResourcesJSON_Valid(t *testing.T) {
   ]
 }`)
 
-	index, err := ParseAPIResourcesJSON(path)
+	index, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +71,7 @@ func TestParseAPIResourcesJSON_CoreResources(t *testing.T) {
   ]
 }`)
 
-	index, err := ParseAPIResourcesJSON(path)
+	index, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,7 +97,7 @@ func TestParseAPIResourcesJSON_NonCoreResources(t *testing.T) {
   ]
 }`)
 
-	index, err := ParseAPIResourcesJSON(path)
+	index, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,7 +123,7 @@ func TestParseAPIResourcesJSON_ResourcePlural(t *testing.T) {
   ]
 }`)
 
-	index, err := ParseAPIResourcesJSON(path)
+	index, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -140,7 +142,7 @@ func TestParseAPIResourcesJSON_EmptyResources(t *testing.T) {
 	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{"apiResourceLists": []}`)
 
-	_, err := ParseAPIResourcesJSON(path)
+	_, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err == nil {
 		t.Fatal("expected error for empty api resource lists, got nil")
 	}
@@ -151,14 +153,14 @@ func TestParseAPIResourcesJSON_MalformedJSON(t *testing.T) {
 	path := filepath.Join(dir, "api-surface.json")
 	writeFile(t, path, `{not valid json`)
 
-	_, err := ParseAPIResourcesJSON(path)
+	_, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err == nil {
 		t.Fatal("expected error for malformed JSON, got nil")
 	}
 }
 
 func TestParseAPIResourcesJSON_FileNotFound(t *testing.T) {
-	_, err := ParseAPIResourcesJSON("/nonexistent/file.json")
+	_, err := ParseAPIResourcesJSON("/nonexistent/file.json", logrus.New())
 	if err == nil {
 		t.Fatal("expected error for missing file, got nil")
 	}
@@ -188,7 +190,7 @@ func TestParseAPIResourcesJSON_DuplicateKindAcrossGroups(t *testing.T) {
   ]
 }`)
 
-	index, err := ParseAPIResourcesJSON(path)
+	index, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -218,7 +220,7 @@ func TestParseAPIResourcesJSON_VerifyNamespaced(t *testing.T) {
   ]
 }`)
 
-	index, err := ParseAPIResourcesJSON(path)
+	index, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -249,7 +251,7 @@ func TestParseAPIResourcesJSON_SubresourcesFiltered(t *testing.T) {
   ]
 }`)
 
-	index, err := ParseAPIResourcesJSON(path)
+	index, err := ParseAPIResourcesJSON(path, logrus.New())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
