@@ -63,10 +63,10 @@ func TestValidate(t *testing.T) {
 
 func TestStageSelectionRouting(t *testing.T) {
 	tests := []struct {
-		name             string
-		requestedStages  []string
-		expectCustom     bool     // true if user specified custom selector
-		selectorStages   []string // expected stage values in selector
+		name            string
+		requestedStages []string
+		expectCustom    bool     // true if user specified custom selector
+		selectorStages  []string // expected stage values in selector
 	}{
 		{
 			name:            "default - no stages (all stages)",
@@ -115,23 +115,23 @@ func TestStageSelectionRouting(t *testing.T) {
 
 func TestComplete(t *testing.T) {
 	tests := []struct {
-		name      string
-		args      []string
+		name       string
+		args       []string
 		wantStages []string
 	}{
 		{
-			name:      "no args",
-			args:      []string{},
+			name:       "no args",
+			args:       []string{},
 			wantStages: []string{},
 		},
 		{
-			name:      "single stage",
-			args:      []string{"10_KubernetesPlugin"},
+			name:       "single stage",
+			args:       []string{"10_KubernetesPlugin"},
 			wantStages: []string{"10_KubernetesPlugin"},
 		},
 		{
-			name:      "multiple stages",
-			args:      []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
+			name:       "multiple stages",
+			args:       []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
 			wantStages: []string{"10_KubernetesPlugin", "20_OpenshiftPlugin"},
 		},
 	}
@@ -188,10 +188,10 @@ func TestRun_UnresolvedStagesError(t *testing.T) {
 	globalFlags := &flags.GlobalFlags{}
 
 	tests := []struct {
-		name             string
-		requestedStages  []string
-		expectError      bool
-		errorContains    string
+		name            string
+		requestedStages []string
+		expectError     bool
+		errorContains   string
 	}{
 		{
 			name:            "valid stage - no error",
@@ -251,5 +251,92 @@ func TestRun_UnresolvedStagesError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestValidate_TransformDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	validDir := filepath.Join(tmpDir, "transform")
+	if err := os.MkdirAll(validDir, 0o755); err != nil {
+		t.Fatalf("failed to create valid dir: %v", err)
+	}
+
+	filePath := filepath.Join(tmpDir, "not-a-dir")
+	if err := os.WriteFile(filePath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create file fixture: %v", err)
+	}
+
+	tests := []struct {
+		name         string
+		transformDir string
+		wantErrPart  string
+	}{
+		{
+			name:         "missing transform-dir",
+			transformDir: filepath.Join(tmpDir, "missing"),
+			wantErrPart:  "does not exist",
+		},
+		{
+			name:         "transform-dir is file",
+			transformDir: filePath,
+			wantErrPart:  "is not a directory",
+		},
+		{
+			name:         "valid transform-dir",
+			transformDir: validDir,
+			wantErrPart:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &Options{
+				Flags: Flags{
+					TransformDir: tt.transformDir,
+				},
+			}
+
+			err := o.Validate()
+			if tt.wantErrPart == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErrPart)
+			}
+			if !strings.Contains(err.Error(), tt.wantErrPart) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErrPart, err)
+			}
+		})
+	}
+}
+
+func TestValidate_MissingTransformDir_DoesNotCreateOutputDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	missingTransformDir := filepath.Join(tmpDir, "missing-transform")
+	outputDir := filepath.Join(tmpDir, "output")
+
+	o := &Options{
+		Flags: Flags{
+			TransformDir: missingTransformDir,
+			OutputDir:    outputDir,
+		},
+	}
+
+	err := o.Validate()
+	if err == nil {
+		t.Fatalf("expected validate to fail for missing transform-dir")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("expected missing transform-dir error, got %v", err)
+	}
+
+	// Since Validate fails, run should not be called; ensure no output side effects happened.
+	if _, statErr := os.Stat(outputDir); !os.IsNotExist(statErr) {
+		t.Fatalf("expected output dir to not exist after validation failure, got stat err: %v", statErr)
 	}
 }
