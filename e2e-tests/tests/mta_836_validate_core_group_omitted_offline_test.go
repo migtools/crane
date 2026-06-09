@@ -16,7 +16,7 @@ import (
 )
 
 var _ = Describe("Validate core group omission [Offline Mode]", func() {
-	It("should use apiVersion v1 for core resources when API group name is omitted as namespace-admin", Label("tier1", "validate"), func() {
+	It("[MTA-836] should use apiVersion v1 for core resources when API group name is omitted as namespace-admin", Label("tier1", "validate"), func() {
 		appName := "multi-resource-app"
 		namespace := "validate-offline-omission"
 		scenario := NewMigrationScenario(
