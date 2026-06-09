@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/cmd/transform/listplugins"
 	"github.com/konveyor/crane/cmd/transform/optionals"
 	"github.com/konveyor/crane/internal/file"
@@ -16,7 +17,6 @@ import (
 	"github.com/konveyor/crane/internal/kustomize"
 	"github.com/konveyor/crane/internal/plugin"
 	internalTransform "github.com/konveyor/crane/internal/transform"
-	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -60,7 +60,21 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// No validation needed - stages are resolved in run()
+	exportDir, err := filepath.Abs(o.ExportDir)
+	if err != nil {
+		return fmt.Errorf("resolving export-dir %q: %w", o.ExportDir, err)
+	}
+	o.ExportDir = exportDir
+	info, err := os.Stat(o.ExportDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("export-dir %q does not exist", o.ExportDir)
+		}
+		return fmt.Errorf("export-dir %q is not accessible: %v", o.ExportDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("export-dir %q is not a directory", o.ExportDir)
+	}
 	return nil
 }
 
@@ -379,7 +393,6 @@ func (o *Options) reconcileInstructionStages(transformDir string, desiredStages 
 	return nil
 }
 
-
 // ensurePreviousStagesRun ensures all existing stages have been run
 // and have output directories. This prepares the environment for creating a new stage.
 func (o *Options) ensurePreviousStagesRun(orchestrator *internalTransform.Orchestrator, transformDir string, log *logrus.Logger) error {
@@ -645,7 +658,7 @@ func (o *Options) resolveAndValidateStages(
 	nextPriority := maxPriority + 10
 
 	var resolved []string
-	seen := make(map[string]bool) // Prevent duplicates
+	seen := make(map[string]bool)    // Prevent duplicates
 	var allPlugins []cranelib.Plugin // Lazy-loaded on first plugin creation
 
 	for _, requested := range requestedStages {
