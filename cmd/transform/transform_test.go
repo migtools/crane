@@ -487,7 +487,7 @@ func TestReconcileInstructionStages_Force(t *testing.T) {
 // Test that positional args and --instructions-file are mutually exclusive
 func TestRun_InstructionsFileAndPositionalArgsConflict(t *testing.T) {
 	o := &Options{
-		globalFlags: &flags.GlobalFlags{},
+		globalFlags:     &flags.GlobalFlags{},
 		RequestedStages: []string{"10_KubernetesPlugin"},
 		Flags: Flags{
 			InstructionsFile: "sample-transform-instructor-file.yaml",
@@ -1016,5 +1016,100 @@ func TestResolveAndValidateStages_MultipleBaseNamesIncrementPriority(t *testing.
 		if !env.Orchestrator.NewlyCreatedStages[expectedName] {
 			t.Errorf("stage %q not marked as newly created", expectedName)
 		}
+	}
+}
+
+func TestValidate_ExportDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	validExportDir := filepath.Join(tmpDir, "export")
+	if err := os.MkdirAll(validExportDir, 0o755); err != nil {
+		t.Fatalf("failed to create valid export dir: %v", err)
+	}
+
+	notDirPath := filepath.Join(tmpDir, "not-a-dir")
+	if err := os.WriteFile(notDirPath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("failed to create file path test fixture: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		exportDir string
+		wantErr   string
+	}{
+		{
+			name:      "missing export dir",
+			exportDir: filepath.Join(tmpDir, "missing"),
+			wantErr:   "does not exist",
+		},
+		{
+			name:      "export dir is file",
+			exportDir: notDirPath,
+			wantErr:   "is not a directory",
+		},
+		{
+			name:      "valid export dir",
+			exportDir: validExportDir,
+			wantErr:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &Options{
+				Flags: Flags{
+					ExportDir:    tt.exportDir,
+					PluginDir:    filepath.Join(tmpDir, "plugins"),
+					TransformDir: filepath.Join(tmpDir, "transform"),
+				},
+			}
+
+			err := o.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+			if !strings.Contains(err.Error(), "export-dir") {
+				t.Fatalf("expected error to mention export-dir, got %v", err)
+			}
+		})
+	}
+}
+
+func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	transformDir := filepath.Join(tmpDir, "transform")
+
+	o := &Options{
+		Flags: Flags{
+			ExportDir:    filepath.Join(tmpDir, "missing-export"),
+			TransformDir: transformDir,
+			PluginDir:    filepath.Join(tmpDir, "plugins"),
+		},
+	}
+
+	err := o.Validate()
+	if err == nil {
+		t.Fatalf("expected validate to fail for missing export dir")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("expected missing export-dir error, got %v", err)
+	}
+
+	// Validate should not create transform artifacts.
+	if _, statErr := os.Stat(transformDir); !os.IsNotExist(statErr) {
+		t.Fatalf("expected transform dir to not exist after validation failure, got stat err: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(transformDir, ".work")); !os.IsNotExist(statErr) {
+		t.Fatalf("expected .work dir to not exist after validation failure, got stat err: %v", statErr)
 	}
 }
