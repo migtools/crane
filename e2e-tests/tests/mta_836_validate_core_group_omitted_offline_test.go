@@ -125,6 +125,9 @@ var _ = Describe("Validate core group omission [Offline Mode]", func() {
 			"ConfigMap": true,
 			"Secret":    true,
 		}
+		// coreKinds includes ServiceAccount so we validate it when present, but
+		// requiredCoreKinds omits it to avoid failing when ServiceAccount is absent
+		// in offline validation results for this scenario.
 
 		foundCoreKinds := map[string]bool{}
 
@@ -136,7 +139,6 @@ var _ = Describe("Validate core group omission [Offline Mode]", func() {
 			foundCoreKinds[result.Kind] = true
 
 			Expect(result.APIVersion).To(Equal("v1"), "expected core resource %s to use apiVersion v1", result.Kind)
-			Expect(result.APIVersion).NotTo(ContainSubstring("/"), "expected core resource %s apiVersion to omit group", result.Kind)
 			Expect(result.Status).To(Equal(cranevalidate.StatusOK), "expected core resource %s to be compatible", result.Kind)
 		}
 
