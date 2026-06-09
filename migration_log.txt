@@ -1,0 +1,36 @@
+{"ingress":"{\"Namespace\":\"tdinavet-migration\",\"Name\":\"data-pvc\"}","level":"info","logger":"transfer-pvc","msg":"endpoint is unhealthy","time":"2026-05-15T13:14:55+03:00"}
+{"ingress":"{\"Namespace\":\"tdinavet-migration\",\"Name\":\"data-pvc\"}","level":"info","logger":"transfer-pvc","msg":"endpoint is unhealthy","time":"2026-05-15T13:15:00+03:00"}
+{"ingress":"{\"Namespace\":\"tdinavet-migration\",\"Name\":\"data-pvc\"}","level":"info","logger":"transfer-pvc","msg":"endpoint is unhealthy","time":"2026-05-15T13:15:05+03:00"}
+{"level":"info","logger":"transfer-pvc","msg":"generating new certificate bundle","time":"2026-05-15T13:15:10+03:00","transportServer":"{\"Namespace\":\"tdinavet-migration\",\"Name\":\"data-pvc\"}"}
+2026/05/15 13:15:16 container rsync in pod tdinavet-migration/rsync-client-f35782b2bd is not ready
+2026/05/15 13:15:17 container rsync in pod tdinavet-migration/rsync-client-f35782b2bd is not ready
+2026/05/15 13:15:18 container rsync in pod tdinavet-migration/rsync-client-f35782b2bd is not ready
+2026/05/15 13:15:19 container rsync in pod tdinavet-migration/rsync-client-f35782b2bd is not ready
+2026/05/15 13:15:20 container rsync in pod tdinavet-migration/rsync-client-f35782b2bd is not ready
+2026/05/15 13:15:21 container rsync in pod tdinavet-migration/rsync-client-f35782b2bd completed
+Status:	Preparing
+Progress:
+  Percentage:	<unavailable>
+  Transferred:	<unavailable>
+  Rate:		<unavailable>
+Elapsed:	0s
+[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2KStatus:	Preparing
+Progress:
+  Percentage:	<unavailable>
+  Transferred:	<unavailable>
+  Rate:		<unavailable>
+Elapsed:	0s
+[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2KStatus:	Preparing
+Progress:
+  Percentage:	<unavailable>
+  Transferred:	0.00 bytes
+  Rate:		<unavailable>
+Elapsed:	0s
+[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2KStatus:	Succeeded
+Progress:
+  Percentage:	100%
+  Transferred:	0.00 bytes
+  Rate:		<unavailable>
+  Files:
+    Sent:	0
+Elapsed:	0s
