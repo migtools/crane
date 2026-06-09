@@ -122,3 +122,4 @@ Please see [konveyor/crane-runner/main/examples](https://github.com/konveyor/cra
     removed from this plugin in the next release and expanded
     functionality will most likely be added via a separate (optional)
     plugin.
+
