@@ -68,7 +68,7 @@ func TestValidate_Flags(t *testing.T) {
 					t.Fatal(err)
 				}
 				return &ValidateOptions{
-					inputDir:    f,
+					inputDir:     f,
 					outputFormat: "yaml",
 				}
 			},
@@ -79,7 +79,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "invalid output format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-					inputDir:    t.TempDir(),
+					inputDir:     t.TempDir(),
 					outputFormat: "xml",
 				}
 			},
@@ -90,7 +90,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "valid yaml format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-					inputDir:    t.TempDir(),
+					inputDir:     t.TempDir(),
 					outputFormat: "yaml",
 				}
 			},
@@ -100,7 +100,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "valid json format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-					inputDir:    t.TempDir(),
+					inputDir:     t.TempDir(),
 					outputFormat: "json",
 				}
 			},
@@ -328,7 +328,7 @@ func TestRun_EmptyInputDirReturnsError(t *testing.T) {
 
 	o := &ValidateOptions{
 		configFlags:      genericclioptions.NewConfigFlags(true),
-		IOStreams:         genericclioptions.NewTestIOStreamsDiscard(),
+		IOStreams:        genericclioptions.NewTestIOStreamsDiscard(),
 		inputDir:         emptyDir,
 		validateDir:      validateDir,
 		outputFormat:     "json",
@@ -564,3 +564,47 @@ func TestArchivePreviousResults_NoPreviousResults(t *testing.T) {
 	}
 }
 
+func TestValidate_HelpGroupsFlags(t *testing.T) {
+	streams, _, outBuf, _ := genericclioptions.NewTestIOStreams()
+	cmd := NewValidateCommand(streams, nil)
+	cmd.SetOut(outBuf)
+	cmd.SetErr(outBuf)
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error running --help: %v", err)
+	}
+
+	help := outBuf.String()
+
+	commandSpecificHeader := "Command-specific Flags:"
+	kubeHeader := "Inherited Kubernetes Client Flags:"
+
+	commandSpecificIdx := strings.Index(help, commandSpecificHeader)
+	if commandSpecificIdx == -1 {
+		t.Fatalf("missing %q section in help output:\n%s", commandSpecificHeader, help)
+	}
+
+	kubeIdx := strings.Index(help, kubeHeader)
+	if kubeIdx == -1 {
+		t.Fatalf("missing %q section in help output:\n%s", kubeHeader, help)
+	}
+
+	if commandSpecificIdx > kubeIdx {
+		t.Fatalf("expected command-specific section before inherited kube/client section")
+	}
+
+	commandSpecificSection := help[commandSpecificIdx:kubeIdx]
+	kubeSection := help[kubeIdx:]
+
+	if !strings.Contains(commandSpecificSection, "--validate-dir") {
+		t.Fatalf("expected --validate-dir in command-specific section, got:\n%s", commandSpecificSection)
+	}
+
+	if strings.Contains(commandSpecificSection, "--as-uid") {
+		t.Fatalf("did not expect --as-uid in command-specific section, got:\n%s", commandSpecificSection)
+	}
+
+	if !strings.Contains(kubeSection, "--as-uid") {
+		t.Fatalf("expected --as-uid in inherited kube/client section, got:\n%s", kubeSection)
+	}
+}
