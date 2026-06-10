@@ -4,7 +4,9 @@ import (
 	"flag"
 	"log"
 	"testing"
- 
+	"fmt"
+	"regexp"
+	"strings"
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,5 +31,22 @@ func TestE2E(t *testing.T) {
 	reporterConfig.Verbose = true
 	log.SetOutput(GinkgoWriter)
 	log.SetFlags(log.LstdFlags)
+	ReportAfterEach(func(report SpecReport) {
+		id := extractMTAID(report.FullText())
+		if id == "" {
+			return
+		}
+		if report.Failed() {
+			fmt.Printf("\n[CRANE-RESULT] FAILED %s\n", id)
+		} else {
+			fmt.Printf("\n[CRANE-RESULT] PASSED %s\n", id)
+		}
+	})
 	RunSpecs(t, "E2E Suite", suiteConfig, reporterConfig)
+}
+
+func extractMTAID(fullText string) string {
+    re := regexp.MustCompile(`\[MTA-\d+\]`)
+    match := re.FindString(fullText)
+    return strings.Trim(match, "[]")
 }
