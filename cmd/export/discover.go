@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -171,12 +172,50 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 }
 
 // getFilePath returns a stable filename from kind, group, version, namespace, and name.
+// If the resulting filename would exceed 255 characters (filesystem limit), the resource
+// name is truncated and a hash suffix is added to prevent collisions.
 func getFilePath(obj unstructured.Unstructured) string {
+	const maxFilenameLength = 255
+	const hashLength = 8
+	const yamlSuffix = ".yaml"
+
 	namespace := obj.GetNamespace()
 	if namespace == "" {
 		namespace = "clusterscoped"
 	}
-	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
+
+	kind := obj.GetKind()
+	group := obj.GetObjectKind().GroupVersionKind().GroupKind().Group
+	version := obj.GetObjectKind().GroupVersionKind().Version
+	name := obj.GetName()
+
+	// Build prefix without the resource name
+	prefix := strings.Join([]string{kind, group, version, namespace}, "_") + "_"
+	fullPath := prefix + name + yamlSuffix
+
+	// If filename fits within limit, return as-is
+	if len(fullPath) <= maxFilenameLength {
+		return fullPath
+	}
+
+	// Calculate available space for the resource name
+	// Format: prefix + truncatedName + "_" + hash(8 chars) + ".yaml"
+	hashSuffixLen := 1 + hashLength // "_" + 8 chars
+	availableForName := maxFilenameLength - len(prefix) - hashSuffixLen - len(yamlSuffix)
+
+	// Truncate name and add hash to prevent collisions
+	truncatedName := name
+	if availableForName > 0 {
+		truncatedName = name[:availableForName]
+	} else {
+		truncatedName = ""
+	}
+
+	// Generate hash from the full original name
+	hash := sha256.Sum256([]byte(name))
+	hashStr := fmt.Sprintf("%x", hash[:4]) // 4 bytes = 8 hex chars
+
+	return prefix + truncatedName + "_" + hashStr + yamlSuffix
 }
 
 // discoverPreferredResources returns server-preferred API resource lists, filtered to
