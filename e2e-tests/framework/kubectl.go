@@ -342,35 +342,3 @@ func (k KubectlRunner) CanI(verb, resource, namespace string) (bool, error) {
 	}
 	return false, fmt.Errorf("kubectl auth can-i failed: %v, output: %s", err, string(out))
 }
-
-// GrantNamespaceAdminToUser creates a namespace-admin RoleBinding for the given user.
-func (k KubectlRunner) GrantNamespaceAdminToUser(namespace, username string) error {
-	rbName := "crane-e2e-" + username + "-admin"
-	_, err := k.Run(
-		"create", "rolebinding", rbName,
-		"--clusterrole=admin",
-		"--user="+username,
-		"-n", namespace,
-	)
-	if err != nil {
-		if strings.Contains(err.Error(), "AlreadyExists") {
-			return nil
-		}
-		return fmt.Errorf("grant namespace admin to %q in %q: %w", username, namespace, err)
-	}
-	return nil
-}
-
-// RevokeNamespaceAdminFromUser deletes the namespace-admin RoleBinding for the given user.
-func (k KubectlRunner) RevokeNamespaceAdminFromUser(namespace, username string) error {
-	rbName := "crane-e2e-" + username + "-admin"
-	_, err := k.Run(
-		"delete", "rolebinding", rbName,
-		"-n", namespace,
-		"--ignore-not-found",
-	)
-	if err != nil {
-		return fmt.Errorf("revoke namespace admin from %q in %q: %w", username, namespace, err)
-	}
-	return nil
-}
