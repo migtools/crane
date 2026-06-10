@@ -109,4 +109,4 @@ runs:
           GINKGO_ARGS+=(--verbose-logs)
         fi
 
-        ginkgo run -v --label-filter="${{ inputs.label_filter }}" e2e-tests/tests -- "${GINKGO_ARGS[@]}"
+        ginkgo run -v --recurse --label-filter="${{ inputs.label_filter }}" e2e-tests/tests -- "${GINKGO_ARGS[@]}"

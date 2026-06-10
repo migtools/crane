@@ -76,10 +76,10 @@ jobs:
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             case "$file" in
-              e2e-tests/tests/*_test.go)
+              e2e-tests/tests/tier0/*_test.go|e2e-tests/tests/tier1/*_test.go)
                 has_tests=true
                 test_files="${test_files}${file}"$'\n'
-                if [ "$file" = "e2e-tests/tests/e2e_suite_test.go" ]; then
+                if [ "$file" = "e2e-tests/tests/tier0/e2e_suite_test.go" ] || [ "$file" = "e2e-tests/tests/tier1/e2e_suite_test.go" ]; then
                   suite_file_changed=true
                 fi
                 ;;
@@ -202,7 +202,7 @@ jobs:
       - name: Run touched crane e2e tests
         run: |
           if [ "${{ needs.detect-changes.outputs.run_mode }}" = "all" ]; then
-            ginkgo run -v "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
+            ginkgo run -v --recurse "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
           else
-            ginkgo run -v --focus-file="${{ needs.detect-changes.outputs.focus_file_regex }}" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
+            ginkgo run -v --recurse --focus-file="${{ needs.detect-changes.outputs.focus_file_regex }}" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
           fi
