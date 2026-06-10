@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"log"
-	"os"
 	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
