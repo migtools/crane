@@ -102,15 +102,12 @@ func YamlToManifest(URL string) ([]PluginVersion, error) {
 
 // takes manifest as input and filters manifest for current os/arch
 func FilterPluginForOsArch(plugin *Plugin) bool {
-	// filter manifests for current os/arch
 	isPluginAvailable := false
-	for _, version := range plugin.Versions {
-		for _, binary := range version.Binaries {
+	for i := range plugin.Versions {
+		for _, binary := range plugin.Versions[i].Binaries {
 			if binary.OS == runtime.GOOS && binary.Arch == runtime.GOARCH {
 				isPluginAvailable = true
-				version.Binaries = []Binary{
-					binary,
-				}
+				plugin.Versions[i].Binaries = []Binary{binary}
 				break
 			}
 		}
