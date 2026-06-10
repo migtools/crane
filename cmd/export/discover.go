@@ -193,14 +193,14 @@ func getFilePath(obj unstructured.Unstructured) string {
 		return filename
 	}
 
-	maxBaseLen := maxFilenameLength - 14 // "_" + 8 hash chars + ".yaml"
+	maxBaseLen := maxFilenameLength - 22 // "_" + 16 hash chars + ".yaml"
 	truncated := basename
 	if len(basename) > maxBaseLen {
 		truncated = basename[:maxBaseLen]
 	}
 
 	hash := sha256.Sum256([]byte(filename))
-	hashStr := fmt.Sprintf("%x", hash[:4])
+	hashStr := fmt.Sprintf("%x", hash[:8])
 
 	if len(truncated) > 0 {
 		return truncated + "_" + hashStr + ".yaml"

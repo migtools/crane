@@ -157,8 +157,8 @@ func TestGetFilePath_LongPrefixAndName(t *testing.T) {
 		t.Errorf("path does not end with .yaml: %q", path)
 	}
 
-	// Should contain hash (8 hex chars before .yaml)
-	if len(path) < 14 { // at least "_" + 8 chars + ".yaml"
+	// Should contain hash (16 hex chars before .yaml)
+	if len(path) < 22 { // at least "_" + 16 chars + ".yaml"
 		t.Errorf("path too short to contain hash: %q", path)
 	}
 }
