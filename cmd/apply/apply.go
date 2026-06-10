@@ -45,7 +45,16 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// No validation needed - stages are resolved in run()
+	info, err := os.Stat(o.TransformDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("transform-dir %q does not exist", o.TransformDir)
+		}
+		return fmt.Errorf("transform-dir %q is not accessible: %v", o.TransformDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("transform-dir %q is not a directory", o.TransformDir)
+	}
 	return nil
 }
 
