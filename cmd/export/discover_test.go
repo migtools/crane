@@ -32,6 +32,7 @@ func TestGetFilePath(t *testing.T) {
 		name      string
 		obj       unstructured.Unstructured
 		wantParts []string // substrings that must appear
+		maxLen    int      // if > 0, verify length is at most this
 	}{
 		{
 			name: "namespaced object",
@@ -56,6 +57,32 @@ func TestGetFilePath(t *testing.T) {
 			}(),
 			wantParts: []string{"ClusterRole", "rbac.authorization.k8s.io", "v1", "clusterscoped", "admin", ".yaml"},
 		},
+		{
+			name: "resource with max-length name (253 chars) gets truncated",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetKind("ConfigMap")
+				u.SetName(strings.Repeat("a", 253)) // Kubernetes max name length
+				u.SetNamespace("my-namespace")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
+				return u
+			}(),
+			wantParts: []string{"ConfigMap", "_v1_", "my-namespace", ".yaml"},
+			maxLen:    255,
+		},
+		{
+			name: "extremely long name gets truncated with hash",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetKind("Secret")
+				u.SetName(strings.Repeat("b", 300))
+				u.SetNamespace("production")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"})
+				return u
+			}(),
+			wantParts: []string{"Secret", "_v1_", "production", ".yaml"},
+			maxLen:    255,
+		},
 	}
 
 	for _, tt := range tests {
@@ -66,7 +93,73 @@ func TestGetFilePath(t *testing.T) {
 					t.Errorf("getFilePath() = %q, missing %q", got, p)
 				}
 			}
+			if tt.maxLen > 0 && len(got) > tt.maxLen {
+				t.Errorf("getFilePath() = %q (len=%d), exceeds max length %d", got, len(got), tt.maxLen)
+			}
 		})
+	}
+}
+
+func TestGetFilePath_LongNameCollisionPrevention(t *testing.T) {
+	// Two resources with long names that differ only at the end should produce different filenames
+	name1 := strings.Repeat("a", 253)
+	name2 := strings.Repeat("a", 252) + "b"
+
+	obj1 := unstructured.Unstructured{}
+	obj1.SetKind("ConfigMap")
+	obj1.SetName(name1)
+	obj1.SetNamespace("default")
+	obj1.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
+
+	obj2 := unstructured.Unstructured{}
+	obj2.SetKind("ConfigMap")
+	obj2.SetName(name2)
+	obj2.SetNamespace("default")
+	obj2.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
+
+	path1 := getFilePath(obj1)
+	path2 := getFilePath(obj2)
+
+	if path1 == path2 {
+		t.Errorf("getFilePath() produced identical paths for different resources:\npath1=%q\npath2=%q", path1, path2)
+	}
+
+	// Both should be within filesystem limits
+	if len(path1) > 255 {
+		t.Errorf("path1 length %d exceeds 255", len(path1))
+	}
+	if len(path2) > 255 {
+		t.Errorf("path2 length %d exceeds 255", len(path2))
+	}
+}
+
+func TestGetFilePath_LongPrefixAndName(t *testing.T) {
+	// Test with very long namespace + group + long name
+	longNamespace := strings.Repeat("n", 63) // Kubernetes max namespace length
+	longGroup := strings.Repeat("g", 100)
+	longName := strings.Repeat("x", 253)
+
+	obj := unstructured.Unstructured{}
+	obj.SetKind("CustomResource")
+	obj.SetName(longName)
+	obj.SetNamespace(longNamespace)
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: longGroup, Version: "v1beta1", Kind: "CustomResource"})
+
+	path := getFilePath(obj)
+
+	// Should not exceed filesystem limit
+	if len(path) > 255 {
+		t.Errorf("path length %d exceeds 255: %q", len(path), path)
+	}
+
+	// Should end with .yaml
+	if !strings.HasSuffix(path, ".yaml") {
+		t.Errorf("path does not end with .yaml: %q", path)
+	}
+
+	// Should contain hash (16 hex chars before .yaml)
+	if len(path) < 22 { // at least "_" + 16 chars + ".yaml"
+		t.Errorf("path too short to contain hash: %q", path)
 	}
 }
 

@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -171,12 +172,40 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 }
 
 // getFilePath returns a stable filename from kind, group, version, namespace, and name.
+// If the filename exceeds 255 characters, it is truncated and a hash suffix is added.
 func getFilePath(obj unstructured.Unstructured) string {
+	const maxFilenameLength = 255
+
 	namespace := obj.GetNamespace()
 	if namespace == "" {
 		namespace = "clusterscoped"
 	}
-	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
+
+	kind := obj.GetKind()
+	group := obj.GetObjectKind().GroupVersionKind().GroupKind().Group
+	version := obj.GetObjectKind().GroupVersionKind().Version
+	name := obj.GetName()
+
+	basename := strings.Join([]string{kind, group, version, namespace, name}, "_")
+	filename := basename + ".yaml"
+
+	if len(filename) <= maxFilenameLength {
+		return filename
+	}
+
+	maxBaseLen := maxFilenameLength - 22 // "_" + 16 hash chars + ".yaml"
+	truncated := basename
+	if len(basename) > maxBaseLen {
+		truncated = basename[:maxBaseLen]
+	}
+
+	hash := sha256.Sum256([]byte(filename))
+	hashStr := fmt.Sprintf("%x", hash[:8])
+
+	if len(truncated) > 0 {
+		return truncated + "_" + hashStr + ".yaml"
+	}
+	return hashStr + ".yaml"
 }
 
 // discoverPreferredResources returns server-preferred API resource lists, filtered to
