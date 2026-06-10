@@ -41,8 +41,17 @@ func TestValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tempDir := t.TempDir()
+			transformDir := filepath.Join(tempDir, "transform")
+			if err := os.MkdirAll(transformDir, 0755); err != nil {
+				t.Fatalf("failed to create transform dir: %v", err)
+			}
+
 			o := &Options{
 				RequestedStages: tt.requestedStages,
+				Flags: Flags{
+					TransformDir: transformDir,
+				},
 			}
 
 			err := o.Validate()
