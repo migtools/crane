@@ -3,6 +3,7 @@ package framework
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/utils"
@@ -154,5 +155,55 @@ func checkAndLogStageFiles(stage, dir string) error {
 		return fmt.Errorf("expected crane %s to produce files in %s", stage, dir)
 	}
 	log.Printf("%s files:\n%s\n", stage, files)
+	return nil
+}
+
+type ExpectedResource struct {
+	Kind          string
+	Name          string
+	ClusterScoped bool
+}
+
+func checkExpectedResources(dir string, resources []ExpectedResource) error {
+	for _, r := range resources {
+		if err := utils.HasFileWithKindAndNameInDir(dir, r.Kind, r.Name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RunCranePipelineWithDeepChecks runs the pipeline and verifies that specific
+// resources exist in the expected stage directories.
+func RunCranePipelineWithDeepChecks(runner CraneRunner, namespace string, paths ScenarioPaths, expected []ExpectedResource) error {
+	if err := RunCranePipeline(runner, namespace, paths.ExportDir, paths.TransformDir, paths.OutputDir); err != nil {
+		return err
+	}
+
+	var clusterScoped, namespaceScoped []ExpectedResource
+	for _, r := range expected {
+		if r.ClusterScoped {
+			clusterScoped = append(clusterScoped, r)
+		} else {
+			namespaceScoped = append(namespaceScoped, r)
+		}
+	}
+
+	if err := checkExpectedResources(filepath.Join(paths.ExportDir, "resources", namespace, "_cluster"), clusterScoped); err != nil {
+		return err
+	}
+	if err := checkExpectedResources(filepath.Join(paths.ExportDir, "resources", namespace), namespaceScoped); err != nil {
+		return err
+	}
+	if err := checkExpectedResources(paths.TransformDir, expected); err != nil {
+		return err
+	}
+	if err := checkExpectedResources(filepath.Join(paths.OutputDir, "resources", "_cluster"), clusterScoped); err != nil {
+		return err
+	}
+	if err := checkExpectedResources(filepath.Join(paths.OutputDir, "resources", namespace), namespaceScoped); err != nil {
+		return err
+	}
+
 	return nil
 }

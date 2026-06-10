@@ -902,3 +902,21 @@ func CaptureAPISurfaceScriptPath() (string, error) {
 
 	return scriptPath, nil
 }
+
+// HasFileWithKindAndNameInDir returns an error if no file under dir (recursively)
+// starts with "<kind>_" and ends with "_<name>.yaml".
+func HasFileWithKindAndNameInDir(dir, kind, name string) error {
+	files, err := ListFilesRecursivelyAsList(dir)
+	if err != nil {
+		return err
+	}
+	prefix := kind + "_"
+	suffix := "_" + name + ".yaml"
+	for _, f := range files {
+		base := filepath.Base(f)
+		if strings.HasPrefix(base, prefix) && strings.HasSuffix(base, suffix) {
+			return nil
+		}
+	}
+	return fmt.Errorf("no file matching kind %q and name %q found in %s", kind, name, dir)
+}
