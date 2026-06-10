@@ -45,7 +45,9 @@ func SetGroupedHelp(cmd *cobra.Command, inheritedFlagNames []string) {
 
 	cmd.SetUsageFunc(func(c *cobra.Command) error {
 		out := c.OutOrStdout()
-		fmt.Fprintf(out, "Usage:\n  %s\n\n", c.UseLine())
+		if _, err := fmt.Fprintf(out, "Usage:\n  %s\n\n", c.UseLine()); err != nil {
+			return err
+		}
 		commandSpecific := pflag.NewFlagSet("command-specific", pflag.ContinueOnError)
 		kubeClient := pflag.NewFlagSet("kube-client", pflag.ContinueOnError)
 
@@ -58,20 +60,36 @@ func SetGroupedHelp(cmd *cobra.Command, inheritedFlagNames []string) {
 		})
 
 		if commandSpecific.HasAvailableFlags() {
-			fmt.Fprintln(out, "Command-specific Flags:")
-			fmt.Fprint(out, commandSpecific.FlagUsages())
-			fmt.Fprintln(out)
+			if _, err := fmt.Fprintln(out, "Command-specific Flags:"); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprint(out, commandSpecific.FlagUsages()); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(out); err != nil {
+				return err
+			}
 		}
 
 		if kubeClient.HasAvailableFlags() {
-			fmt.Fprintln(out, "Inherited Kubernetes Client Flags:")
-			fmt.Fprint(out, kubeClient.FlagUsages())
-			fmt.Fprintln(out)
+			if _, err := fmt.Fprintln(out, "Inherited Kubernetes Client Flags:"); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprint(out, kubeClient.FlagUsages()); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(out); err != nil {
+				return err
+			}
 		}
 
 		if c.InheritedFlags().HasAvailableFlags() {
-			fmt.Fprintln(out, "Global Flags:")
-			fmt.Fprint(out, c.InheritedFlags().FlagUsages())
+			if _, err := fmt.Fprintln(out, "Global Flags:"); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprint(out, c.InheritedFlags().FlagUsages()); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
