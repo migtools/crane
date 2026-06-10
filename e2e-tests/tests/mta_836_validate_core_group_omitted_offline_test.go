@@ -139,6 +139,7 @@ var _ = Describe("Validate core group omission [Offline Mode]", func() {
 			foundCoreKinds[result.Kind] = true
 
 			Expect(result.APIVersion).To(Equal("v1"), "expected core resource %s to use apiVersion v1", result.Kind)
+			Expect(result.Namespace).To(Equal(namespace), "expected core resource %s to be in namespace %s", result.Kind, namespace)
 			Expect(result.Status).To(Equal(cranevalidate.StatusOK), "expected core resource %s to be compatible", result.Kind)
 		}
 
