@@ -79,7 +79,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		deploymentPattern := filepath.Join(paths.OutputDir, "resources", namespace, "Deployment_*.yaml")
 		deploymentMatches, err := filepath.Glob(deploymentPattern)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(deploymentMatches).NotTo(BeEmpty(), "expected at least one Deployment manifest")
+		Expect(deploymentMatches).To(HaveLen(1), "expected exactly one Deployment manifest")
 
 		deploymentPath := deploymentMatches[0]
 		deploymentBytes, err := os.ReadFile(deploymentPath)
@@ -96,9 +96,11 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 			Context:     scenario.KubectlTgtNonAdmin.Context,
 			InputDir:    filepath.Join(paths.OutputDir, "resources", namespace),
 			ValidateDir: validateDir,
+			OutputFormat: "json",
 		})
 
 		Expect(err).To(HaveOccurred(), "validate should fail when incompatible resources are present")
+		Expect(err.Error()).To(ContainSubstring("incompatible"))
 		log.Printf("Validate stdout: %s", stdout)
 
 		By("Verify validation report exists")
@@ -121,6 +123,9 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned")
 		Expect(report.Compatible).To(BeNumerically(">", 0), "expected some compatible resources")
 		Expect(report.Incompatible).To(Equal(1), "expected exactly 1 incompatible resource (Deployment)")
+		Expect(report.Compatible + report.Incompatible).To(Equal(report.TotalScanned),
+			"expected Compatible + Incompatible to equal TotalScanned (found %d + %d != %d)",
+			report.Compatible, report.Incompatible, report.TotalScanned)
 		log.Printf("Total: %d, Compatible: %d, Incompatible: %d", report.TotalScanned, report.Compatible, report.Incompatible)
 
 		By("Verify compatible resources (Service, ConfigMap, Secret) have status OK")
