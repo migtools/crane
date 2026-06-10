@@ -133,6 +133,36 @@ func TestGetFilePath_LongNameCollisionPrevention(t *testing.T) {
 	}
 }
 
+func TestGetFilePath_LongPrefixAndName(t *testing.T) {
+	// Test with very long namespace + group + long name
+	longNamespace := strings.Repeat("n", 63) // Kubernetes max namespace length
+	longGroup := strings.Repeat("g", 100)
+	longName := strings.Repeat("x", 253)
+
+	obj := unstructured.Unstructured{}
+	obj.SetKind("CustomResource")
+	obj.SetName(longName)
+	obj.SetNamespace(longNamespace)
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: longGroup, Version: "v1beta1", Kind: "CustomResource"})
+
+	path := getFilePath(obj)
+
+	// Should not exceed filesystem limit
+	if len(path) > 255 {
+		t.Errorf("path length %d exceeds 255: %q", len(path), path)
+	}
+
+	// Should end with .yaml
+	if !strings.HasSuffix(path, ".yaml") {
+		t.Errorf("path does not end with .yaml: %q", path)
+	}
+
+	// Should contain hash (8 hex chars before .yaml)
+	if len(path) < 14 { // at least "_" + 8 chars + ".yaml"
+		t.Errorf("path too short to contain hash: %q", path)
+	}
+}
+
 // ---------- isAdmittedResource ----------
 
 func TestIsAdmittedResource(t *testing.T) {

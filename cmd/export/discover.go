@@ -172,12 +172,9 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 }
 
 // getFilePath returns a stable filename from kind, group, version, namespace, and name.
-// If the resulting filename would exceed 255 characters (filesystem limit), the resource
-// name is truncated and a hash suffix is added to prevent collisions.
+// If the filename exceeds 255 characters, it is truncated and a hash suffix is added.
 func getFilePath(obj unstructured.Unstructured) string {
 	const maxFilenameLength = 255
-	const hashLength = 8
-	const yamlSuffix = ".yaml"
 
 	namespace := obj.GetNamespace()
 	if namespace == "" {
@@ -189,33 +186,26 @@ func getFilePath(obj unstructured.Unstructured) string {
 	version := obj.GetObjectKind().GroupVersionKind().Version
 	name := obj.GetName()
 
-	// Build prefix without the resource name
-	prefix := strings.Join([]string{kind, group, version, namespace}, "_") + "_"
-	fullPath := prefix + name + yamlSuffix
+	basename := strings.Join([]string{kind, group, version, namespace, name}, "_")
+	filename := basename + ".yaml"
 
-	// If filename fits within limit, return as-is
-	if len(fullPath) <= maxFilenameLength {
-		return fullPath
+	if len(filename) <= maxFilenameLength {
+		return filename
 	}
 
-	// Calculate available space for the resource name
-	// Format: prefix + truncatedName + "_" + hash(8 chars) + ".yaml"
-	hashSuffixLen := 1 + hashLength // "_" + 8 chars
-	availableForName := maxFilenameLength - len(prefix) - hashSuffixLen - len(yamlSuffix)
-
-	// Truncate name and add hash to prevent collisions
-	truncatedName := name
-	if availableForName > 0 {
-		truncatedName = name[:availableForName]
-	} else {
-		truncatedName = ""
+	maxBaseLen := maxFilenameLength - 14 // "_" + 8 hash chars + ".yaml"
+	truncated := basename
+	if len(basename) > maxBaseLen {
+		truncated = basename[:maxBaseLen]
 	}
 
-	// Generate hash from the full original name
-	hash := sha256.Sum256([]byte(name))
-	hashStr := fmt.Sprintf("%x", hash[:4]) // 4 bytes = 8 hex chars
+	hash := sha256.Sum256([]byte(filename))
+	hashStr := fmt.Sprintf("%x", hash[:4])
 
-	return prefix + truncatedName + "_" + hashStr + yamlSuffix
+	if len(truncated) > 0 {
+		return truncated + "_" + hashStr + ".yaml"
+	}
+	return hashStr + ".yaml"
 }
 
 // discoverPreferredResources returns server-preferred API resource lists, filtered to
