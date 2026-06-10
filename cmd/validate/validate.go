@@ -323,26 +323,6 @@ failed (or another error occurred).`,
 	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "json", "Report file format: json or yaml")
 	cmd.Flags().StringVar(&o.apiResourcesFile, "api-resources", "", "Path to API surface JSON file from capture-api-surface.sh for offline validation (mutually exclusive with --context/--kubeconfig/--server/--token/--cluster/--user)")
 	o.configFlags.AddFlags(cmd.Flags())
-	flags.SetGroupedHelp(cmd, []string{
-		"as",
-		"as-group",
-		"as-uid",
-		"as-user-extra",
-		"cache-dir",
-		"certificate-authority",
-		"client-certificate",
-		"client-key",
-		"cluster",
-		"context",
-		"disable-compression",
-		"insecure-skip-tls-verify",
-		"kubeconfig",
-		"namespace",
-		"request-timeout",
-		"server",
-		"tls-server-name",
-		"token",
-		"user",
-	})
+	flags.SetGroupedHelp(cmd, flags.KubernetesClientInheritedFlagNames())
 	return cmd
 }

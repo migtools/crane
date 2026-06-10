@@ -261,26 +261,6 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
 	o.configFlags.AddFlags(cmd.Flags())
-	flags.SetGroupedHelp(cmd, []string{
-		"as",
-		"as-group",
-		"as-uid",
-		"as-user-extra",
-		"cache-dir",
-		"certificate-authority",
-		"client-certificate",
-		"client-key",
-		"cluster",
-		"context",
-		"disable-compression",
-		"insecure-skip-tls-verify",
-		"kubeconfig",
-		"namespace",
-		"request-timeout",
-		"server",
-		"tls-server-name",
-		"token",
-		"user",
-	})
+	flags.SetGroupedHelp(cmd, flags.KubernetesClientInheritedFlagNames())
 	return cmd
 }
