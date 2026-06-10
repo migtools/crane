@@ -202,7 +202,7 @@ jobs:
       - name: Run touched crane e2e tests
         run: |
           if [ "${{ needs.detect-changes.outputs.run_mode }}" = "all" ]; then
-            ginkgo run -v --recurse "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
+            ginkgo run -v -r "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
           else
-            ginkgo run -v --recurse --focus-file="${{ needs.detect-changes.outputs.focus_file_regex }}" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
+            ginkgo run -v -r --focus-file="${{ needs.detect-changes.outputs.focus_file_regex }}" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
           fi
