@@ -5,7 +5,7 @@ set -e
 
 # ======= CONFIGURATION =======
 # Your private Slack Member ID - the message will go ONLY to you!
-TARGET_ID="U0B2U4W6UE4"
+TARGET_ID="C0B9JT8Q066"
 # Path to the tokens extracted from Slack
 CREDS_DIR="$HOME/.config/slack"
 # =============================
