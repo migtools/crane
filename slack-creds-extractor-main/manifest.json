@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Slack Token Extractor",
+  "version": "1.1",
+  "description": "Extracts Slack xoxc token and d cookie, saves to ~/.config/slack/ via native messaging",
+  "permissions": [
+    "alarms",
+    "cookies",
+    "nativeMessaging",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.slack.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Extract Slack Tokens"
+  }
+}

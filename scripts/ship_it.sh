@@ -7,7 +7,7 @@ set -e
 # Your private Slack Member ID - the message will go ONLY to you!
 TARGET_ID="U0B2U4W6UE4"
 # Path to the tokens extracted from Slack
-CREDS_DIR="$HOME/.local/share/slack-mcp"
+CREDS_DIR="$HOME/.config/slack"
 # =============================
 
 # Get commit message and branch name arguments
@@ -38,7 +38,7 @@ git commit -m "$COMMIT_MSG" --allow-empty
 
 # 3. Git operations: push to remote repository (Safe)
 echo "📦 Pushing code to remote branch..."
-git push origin "$BRANCH_NAME"
+git push personal "$BRANCH_NAME"
 echo "✅ Code successfully pushed to Git branch!"
 
 # =====================================================================
