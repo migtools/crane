@@ -14,6 +14,7 @@ import (
 
 var _ = Describe("PVC data integrity migration", func() {
 	It("[MTA-806] Migrate a PVC with data and verify checksum integrity", Label("tier0"), func() {
+		Skip("transfer-pvc command not available in mta-crane")
 		const testFileName = "testfile.txt"
 		appName := "app-with-empty-pvc"
 		namespace := appName

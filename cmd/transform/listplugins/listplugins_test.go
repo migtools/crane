@@ -21,59 +21,55 @@ func TestGetPluginNames(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name: "empty plugin directory returns only default plugin",
+			name: "empty plugin directory returns built-in plugins",
 			setupPlugins: func(t *testing.T, pluginDir string) {
-				// Create empty plugin directory
 				if err := os.MkdirAll(pluginDir, 0755); err != nil {
 					t.Fatalf("failed to create plugin dir: %v", err)
 				}
 			},
 			skipPlugins: []string{},
-			wantNames:   []string{"KubernetesPlugin"}, // Default plugin is always included
+			wantNames:   []string{"KubernetesPlugin", "OpenShiftPlugin"},
 			wantErr:     false,
 		},
 		{
-			name: "skip default plugin",
+			name: "skip KubernetesPlugin leaves OpenShiftPlugin",
 			setupPlugins: func(t *testing.T, pluginDir string) {
 				if err := os.MkdirAll(pluginDir, 0755); err != nil {
 					t.Fatalf("failed to create plugin dir: %v", err)
 				}
 			},
 			skipPlugins: []string{"KubernetesPlugin"},
-			wantNames:   []string{},
+			wantNames:   []string{"OpenShiftPlugin"},
 			wantErr:     false,
 		},
 		{
-			name: "nonexistent plugin directory",
+			name: "nonexistent plugin directory returns built-in plugins",
 			setupPlugins: func(t *testing.T, pluginDir string) {
 				// Don't create the directory
 			},
 			skipPlugins: []string{},
-			wantNames:   []string{"KubernetesPlugin"}, // Default plugin is still included
+			wantNames:   []string{"KubernetesPlugin", "OpenShiftPlugin"},
 			wantErr:     false,
 		},
 		{
-			name: "plugin directory with mock plugins",
+			name: "plugin directory with no external plugins returns built-ins",
 			setupPlugins: func(t *testing.T, pluginDir string) {
 				if err := os.MkdirAll(pluginDir, 0755); err != nil {
 					t.Fatalf("failed to create plugin dir: %v", err)
 				}
-				// Note: We can't easily test with real plugin binaries in unit tests
-				// This test verifies the function works with an empty directory
-				// Integration tests would be needed for testing with actual plugin binaries
 			},
 			skipPlugins: []string{},
-			wantNames:   []string{"KubernetesPlugin"},
+			wantNames:   []string{"KubernetesPlugin", "OpenShiftPlugin"},
 			wantErr:     false,
 		},
 		{
-			name: "skip multiple plugins",
+			name: "skip both built-in plugins",
 			setupPlugins: func(t *testing.T, pluginDir string) {
 				if err := os.MkdirAll(pluginDir, 0755); err != nil {
 					t.Fatalf("failed to create plugin dir: %v", err)
 				}
 			},
-			skipPlugins: []string{"KubernetesPlugin", "NonExistentPlugin"},
+			skipPlugins: []string{"KubernetesPlugin", "OpenShiftPlugin"},
 			wantNames:   []string{},
 			wantErr:     false,
 		},
