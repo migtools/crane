@@ -59,10 +59,19 @@ echo ""
 if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
     echo "💬 Preparing Slack message..."
     
+    PR_URL="https://github.com/Tamar-Dinavetsky/crane/tree/$BRANCH_NAME"
+
     if [ "$IS_NEW_PR" = true ]; then
-        SLACK_MESSAGE="📢 *New PR is ready for Review!* \n\n*Topic:* $COMMIT_MSG\n*Branch:* \`$BRANCH_NAME\`\n🔗 *Link:* $PR_URL"
+        # שימוש בגרש בודד פתוח מאפשר ירידת שורה אמיתית בעיצוב של סלאק
+        SLACK_MESSAGE="📢 *New PR is ready for Review!*
+
+• *Topic:* $COMMIT_MSG
+• *Link:* <$PR_URL|Click here to view code>"
     else
-        SLACK_MESSAGE="🔄 *PR Code Updated!* \n\n*Changes:* $COMMIT_MSG\n*Branch:* \`$BRANCH_NAME\`\n🔗 *Link:* $PR_URL"
+        SLACK_MESSAGE="🔄 *PR Code Updated!*
+
+• *Changes:* $COMMIT_MSG
+• *Link:* <$PR_URL|Click here to view code>"
     fi
     
     export SLACK_MESSAGE
