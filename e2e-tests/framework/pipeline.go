@@ -16,6 +16,9 @@ const (
 
 // RunCranePipeline executes export, transform, and apply in sequence.
 func RunCranePipeline(runner CraneRunner, e ExportOptions, t TransformOptions, a ApplyOptions) error {
+	if (e.ExportDir != t.ExportDir) || (e.ExportDir != a.ExportDir) || (t.TransformDir != a.TransformDir) {
+		return fmt.Errorf("pipeline directory mismatch: export/transform/apply options must agree on shared directories (exportDir, transformDir)")
+	}
 	if err := runner.Export(e); err != nil {
 		return err
 	}
@@ -29,18 +32,18 @@ func RunCranePipeline(runner CraneRunner, e ExportOptions, t TransformOptions, a
 }
 
 // RunCranePipelineWithChecks runs the pipeline and verifies generated stage files.
-func RunCranePipelineWithChecks(runner CraneRunner, e ExportOptions, t TransformOptions, a ApplyOptions) error {
-	if err := RunCranePipeline(runner, e, t, a); err != nil {
+func RunCranePipelineWithChecks(runner CraneRunner, exportOpts ExportOptions, transformOps TransformOptions, applyOpts ApplyOptions) error {
+	if err := RunCranePipeline(runner, exportOpts, transformOps, applyOpts); err != nil {
 		return err
 	}
 
-	if err := checkAndLogStageFiles("export", e.ExportDir); err != nil {
+	if err := checkAndLogStageFiles("export", exportOpts.ExportDir); err != nil {
 		return err
 	}
-	if err := checkAndLogStageFiles("transform", t.TransformDir); err != nil {
+	if err := checkAndLogStageFiles("transform", transformOps.TransformDir); err != nil {
 		return err
 	}
-	if err := checkAndLogStageFiles("output", a.OutputDir); err != nil {
+	if err := checkAndLogStageFiles("output", applyOpts.OutputDir); err != nil {
 		return err
 	}
 	return nil
