@@ -13,6 +13,7 @@ import (
 
 var _ = Describe("Empty PVC migration", func() {
 	It("[MTA-804] Migrate an empty PVC associated with an application", Label("tier0"), func() {
+		Skip("transfer-pvc command not available in mta-crane")
 		appName := "app-with-empty-pvc"
 		namespace := appName
 		scenario := NewMigrationScenario(

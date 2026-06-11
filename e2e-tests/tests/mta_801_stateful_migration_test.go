@@ -13,6 +13,7 @@ import (
 
 var _ = Describe("Stateful app migration", func() {
 	It("[MTA-801] Migrate all of PVCs that are associated with quiesced resource", Label("tier0"), func() {
+		Skip("transfer-pvc command not available in mta-crane")
 		appName := "redis"
 		namespace := appName
 		scenario := NewMigrationScenario(

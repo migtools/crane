@@ -97,6 +97,7 @@ func mongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error)
 
 var _ = Describe("MongoDB Migration", func() {
 	It("[BUG #213][MTA-811] Should migrate a MongoDB resource with data intact as nonadmin user", Label("BUG #213", "tier0"), func() {
+		Skip("transfer-pvc command not available in mta-crane")
 		appName := "mongodb"
 		namespace := appName
 		scenario := NewMigrationScenario(
