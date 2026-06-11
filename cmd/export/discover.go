@@ -304,11 +304,13 @@ func getObjects(requestTimeout time.Duration, g *groupResource, namespace string
 	p := pager.New(func(pagerCtx context.Context, opts metav1.ListOptions) (runtime.Object, error) {
 		// Create a fresh context with timeout for each page request
 		ctx := pagerCtx
+		cancel := func() {}
+
 		if requestTimeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
-			defer cancel()
+			ctx, cancel = context.WithTimeout(pagerCtx, requestTimeout)
 		}
+		defer cancel() 
+
 		if g.APIResource.Namespaced {
 			return c.Namespace(namespace).List(ctx, opts)
 		} else {
@@ -358,12 +360,14 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		}
 		// Create fresh context with timeout for each Get request
 		ctx := context.Background()
+		cancel := func() {} 
+		
 		if requestTimeout > 0 {
-			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
-			defer cancel()
 		}
+		
 		obj, err := c.Namespace(namespace).Get(ctx, u.GetName(), metav1.GetOptions{})
+		cancel() 
 		if err != nil {
 			return err
 		}
