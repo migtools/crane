@@ -2,13 +2,16 @@ package export
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -307,5 +310,73 @@ func TestExport_HelpGroupsFlags(t *testing.T) {
 
 	if !strings.Contains(kubeSection, "--context") {
 		t.Fatalf("expected --context in inherited kube/client section, got:\n%s", kubeSection)
+	}
+}
+
+func TestAllResourceListsForbidden(t *testing.T) {
+	forbiddenErr := apierrors.NewForbidden(
+		schema.GroupResource{Resource: "configmaps"},
+		"",
+		errors.New("forbidden"),
+	)
+	notFoundErr := apierrors.NewNotFound(
+		schema.GroupResource{Resource: "configmaps"},
+		"cm1",
+	)
+
+	apiResource := metav1.APIResource{
+		Name:       "configmaps",
+		Kind:       "ConfigMap",
+		Namespaced: true,
+	}
+
+	tests := []struct {
+		name         string
+		resources    []*groupResource
+		resourceErrs []*groupResourceError
+		want         bool
+	}{
+		{
+			name:         "no resources and no errors",
+			resources:    nil,
+			resourceErrs: nil,
+			want:         false,
+		},
+		{
+			name:      "all forbidden and no resources",
+			resources: nil,
+			resourceErrs: []*groupResourceError{
+				{APIResource: apiResource, Error: forbiddenErr},
+			},
+			want: true,
+		},
+		{
+			name:      "mixed errors and no resources",
+			resources: nil,
+			resourceErrs: []*groupResourceError{
+				{APIResource: apiResource, Error: forbiddenErr},
+				{APIResource: apiResource, Error: notFoundErr},
+			},
+			want: false,
+		},
+		{
+			name: "forbidden exists but resources exported",
+			resources: []*groupResource{
+				{APIResource: apiResource},
+			},
+			resourceErrs: []*groupResourceError{
+				{APIResource: apiResource, Error: forbiddenErr},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := allResourceListsForbidden(tt.resources, tt.resourceErrs)
+			if got != tt.want {
+				t.Fatalf("allResourceListsForbidden() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
