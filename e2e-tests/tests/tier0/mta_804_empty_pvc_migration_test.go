@@ -12,6 +12,7 @@ import (
 )
 
 var _ = Describe("Empty PVC migration", func() {
+	// comment to trigger a test run
 	It("[MTA-804] Migrate an empty PVC associated with an application", Label("tier0"), func() {
 		appName := "app-with-empty-pvc"
 		namespace := appName

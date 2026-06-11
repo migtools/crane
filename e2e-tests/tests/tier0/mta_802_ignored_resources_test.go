@@ -12,6 +12,7 @@ import (
 )
 
 var _ = Describe("Default Ignored resources", func() {
+	// comment to trigger a test run
 	It("[MTA-802] should be ignored", Label("tier0"), func() {
 		appName := "empty-namespace"
 		namespace := appName

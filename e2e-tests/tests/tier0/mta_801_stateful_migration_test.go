@@ -12,6 +12,7 @@ import (
 )
 
 var _ = Describe("Stateful app migration", func() {
+	// comment to trigger a test run
 	It("[MTA-801] Migrate all of PVCs that are associated with quiesced resource", Label("tier0"), func() {
 		appName := "redis"
 		namespace := appName
