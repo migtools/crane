@@ -10,6 +10,7 @@ import (
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/ginkgo/v2/types"
 )
  
 // init registers CLI flags used by the e2e test suite.
@@ -36,10 +37,13 @@ func TestE2E(t *testing.T) {
 		if id == "" {
 			return
 		}
-		if report.Failed() {
-			fmt.Printf("\n[CRANE-RESULT] FAILED %s\n", id)
-		} else {
+		switch report.State {
+		case types.SpecStatePassed:
 			fmt.Printf("\n[CRANE-RESULT] PASSED %s\n", id)
+		case types.SpecStateFailed, types.SpecStateTimedout, types.SpecStatePanicked:
+			fmt.Printf("\n[CRANE-RESULT] FAILED %s\n", id)
+		case types.SpecStateSkipped:
+			fmt.Printf("\n[CRANE-RESULT] SKIPPED %s\n", id)
 		}
 	})
 	RunSpecs(t, "E2E Suite", suiteConfig, reporterConfig)
