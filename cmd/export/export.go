@@ -117,6 +117,25 @@ func validateExportNamespace(ctx context.Context, client kubernetes.Interface, n
 	return nil
 }
 
+// allResourceListsForbidden reports whether export discovered no resources and
+// every per-resource list attempt failed with a Forbidden error. This is used
+// to trigger a non-zero exit for the strict "all Forbidden" export failure case.
+func allResourceListsForbidden(resources []*groupResource, resourceErrs []*groupResourceError) bool {
+	if len(resources) > 0 || len(resourceErrs) == 0 {
+		return false
+	}
+
+	for _, resourceErr := range resourceErrs {
+		if resourceErr == nil || resourceErr.Error == nil {
+			return false
+		}
+		if !apierrors.IsForbidden(resourceErr.Error) {
+			return false
+		}
+	}
+	return true
+}
+
 // Run performs discovery, lists resources, filters cluster-scoped RBAC to related
 // ServiceAccounts, writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
 func (o *ExportOptions) Run() error {
@@ -217,7 +236,12 @@ func (o *ExportOptions) Run() error {
 
 	errs = append(errs, writeResourcesErrors...)
 	errs = append(errs, writeErrorsErrors...)
-
+	if allResourceListsForbidden(resources, resourceErrs) {
+		errs = append(errs, fmt.Errorf(
+			"all resource types returned Forbidden for namespace %q -- verify the namespace exists and your user has list permissions",
+			o.userSpecifiedNamespace,
+		))
+	}
 	return errorsutil.NewAggregate(errs)
 }
 
