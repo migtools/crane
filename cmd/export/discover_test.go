@@ -1230,6 +1230,36 @@ func TestGetObjects_passesLabelSelectorToList(t *testing.T) {
 	}
 }
 
+func TestGetObjects_clusterScopedSkipsLabelSelector(t *testing.T) {
+	crb := &unstructured.Unstructured{}
+	crb.SetAPIVersion("rbac.authorization.k8s.io/v1")
+	crb.SetKind("ClusterRoleBinding")
+	crb.SetName("test-binding")
+	client := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), crb)
+	var sawLabel string
+	client.PrependReactor("list", "clusterrolebindings", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
+		la, ok := action.(kubetesting.ListActionImpl)
+		if !ok {
+			t.Fatalf("expected ListActionImpl, got %T", action)
+		}
+		sawLabel = la.GetListOptions().LabelSelector
+		return false, nil, nil
+	})
+	g := &groupResource{
+		APIGroup:        "rbac.authorization.k8s.io",
+		APIVersion:      "v1",
+		APIGroupVersion: "rbac.authorization.k8s.io/v1",
+		APIResource:     metav1.APIResource{Name: "clusterrolebindings", Kind: "ClusterRoleBinding", Namespaced: false},
+	}
+	_, err := getObjects(g, "", "app=test", client, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sawLabel != "" {
+		t.Fatalf("cluster-scoped resource got LabelSelector = %q, want empty", sawLabel)
+	}
+}
+
 func TestGetObjects_imageStreamTags_getFailure(t *testing.T) {
 	ist := &unstructured.Unstructured{}
 	ist.SetAPIVersion("image.openshift.io/v1")

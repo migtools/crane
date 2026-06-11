@@ -332,7 +332,7 @@ func getObjects(g *groupResource, namespace string, labelSelector string, d dyna
 		}
 	})
 	listOptions := metav1.ListOptions{}
-	if labelSelector != "" {
+	if labelSelector != "" && g.APIResource.Namespaced {
 		listOptions.LabelSelector = labelSelector
 	}
 
