@@ -4,13 +4,14 @@
 set -e
 
 # ======= CONFIGURATION =======
-# Your private Slack Member ID - the message will go ONLY to you!
-TARGET_ID="C0B9JT8Q066"
-# Path to the tokens extracted from Slack
+TARGET_ID="U0B2U4W6UE4"  # Private Slack ID for testing
 CREDS_DIR="$HOME/.config/slack"
+REPO_ORG="migtools"
+REPO_NAME="crane"
+MY_GITHUB_USER="Tamar-Dinavetsky"
 # =============================
 
-# Get commit message and branch name arguments
+# Get commit message and branch name from arguments
 COMMIT_MSG=$1
 BRANCH_NAME=$2
 
@@ -20,81 +21,85 @@ if [ -z "$COMMIT_MSG" ] || [ -z "$BRANCH_NAME" ]; then
     exit 1
 fi
 
-echo "🚀 Starting automation process for branch: $BRANCH_NAME..."
-
-# 1. Handle git branch switching or creation
-if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
-    echo "📝 Branch already exists. Switching to it..."
-    git checkout "$BRANCH_NAME"
-else
-    echo "🌿 Creating a new branch..."
-    git checkout -b "$BRANCH_NAME"
+# Ensure we have personal remote configured
+if ! git remote | grep -q "^personal$"; then
+    git remote add personal "https://github.com/$MY_GITHUB_USER/$REPO_NAME.git"
 fi
 
-# 2. Git operations: add and commit
+echo "🚀 Checking status for branch: $BRANCH_NAME..."
+# מעבר לבראנץ' המבוקש; אם הוא לא קיים מקומית, ניצור אותו
+git checkout "$BRANCH_NAME" 2>/dev/null || git checkout -b "$BRANCH_NAME"
+
+# 1. Git Commit
 echo "💾 Committing changes..."
 git add .
 git commit -m "$COMMIT_MSG" --allow-empty
 
-# 3. Git operations: push to remote repository (Safe)
-echo "📦 Pushing code to remote branch..."
-git push personal "$BRANCH_NAME"
-echo "✅ Code successfully pushed to Git branch!"
-
-# =====================================================================
-# 🟢 LIVE SLACK NOTIFICATION MODE (WITH SIMULATED PR LINK)
-# =====================================================================
-echo "🔍 Simulating Pull Request check (Safe mode - no real PR created)..."
-PR_URL="https://github.com/migtools/crane/pull/TEST-SIMULATION"
-IS_NEW_PR=true 
-
-echo ""
-if [ "$IS_NEW_PR" = true ]; then
-    read -p "❓ New PR simulated! Would you like to send a Slack notification? (y/n): " ANSWER
+# 2. Check if branch already exists on remote to determine mode (New vs Update)
+if git ls-remote --heads personal "$BRANCH_NAME" | grep -q "$BRANCH_NAME"; then
+    IS_UPDATE_MODE=true
+    echo "🔄 Mode: Updating an existing branch."
 else
-    read -p "❓ PR updated! Would you like to send an update notification to Slack? (y/n): " ANSWER
+    IS_UPDATE_MODE=false
+    echo "🌿 Mode: New branch detected."
 fi
-echo ""
 
-if [[ "$ANSWER" =~ ^[Yy]$ ]]; then
-    echo "💬 Preparing Slack message..."
+# 3. Push code to personal fork
+echo "📦 Pushing code to personal remote branch..."
+git push personal "$BRANCH_NAME" --force
+echo "✅ Code successfully pushed!"
+
+# 4. Handle PR and Slack based on your logic
+if [ "$IS_UPDATE_MODE" = true ]; then
+    # סוג א': רק עדכון - אין צורך ב-PR חדש ואין צורך לשלוח הודעה בסלאק
+    echo "⏭️ Branch updated successfully. Skipping Slack notification (team will see updates in GitHub automatically)."
+else
+    # סוג ב': בראנץ' חדש - פותחים PR אוטומטי ושולחים הודעה לסלאק רק אחרי שיש קישור חי
+    echo "🌿 Opening an official Pull Request on $REPO_ORG/$REPO_NAME via GitHub API..."
     
-    PR_URL="https://github.com/Tamar-Dinavetsky/crane/tree/$BRANCH_NAME"
+    PR_URL=$(gh pr create \
+        --repo "$REPO_ORG/$REPO_NAME" \
+        --head "$MY_GITHUB_USER:$BRANCH_NAME" \
+        --base "main" \
+        --title "$COMMIT_MSG" \
+        --body "Automated PR created by crane pipeline." 2>/dev/null || echo "")
 
-    if [ "$IS_NEW_PR" = true ]; then
-        # שימוש בגרש בודד פתוח מאפשר ירידת שורה אמיתית בעיצוב של סלאק
+    # אם ה-PR כבר היה פתוח במקרה, נשלוף את הקישור הקיים שלו
+    if [ -z "$PR_URL" ]; then
+        PR_URL=$(gh pr view --repo "$REPO_ORG/$REPO_NAME" --json url --jq .url 2>/dev/null || echo "")
+    fi
+
+    if [ -n "$PR_URL" ]; then
+        echo "🔗 Real PR Created successfully! URL: $PR_URL"
+        echo "💬 Preparing Slack message with the live link..."
+        
         SLACK_MESSAGE="📢 *New PR is ready for Review!*
 
 • *Topic:* $COMMIT_MSG
-• *Link:* <$PR_URL|Click here to view code>"
-    else
-        SLACK_MESSAGE="🔄 *PR Code Updated!*
+• *Branch:* \`$BRANCH_NAME\`
+• *Link:* <$PR_URL|Click here to view the PR on $REPO_ORG/$REPO_NAME>"
+        
+        export SLACK_MESSAGE
+        export TARGET_ID
+        export CREDS_DIR
 
-• *Changes:* $COMMIT_MSG
-• *Link:* <$PR_URL|Click here to view code>"
-    fi
-    
-    export SLACK_MESSAGE
-    export TARGET_ID
-    export CREDS_DIR
-
-    echo "📡 Triggering local Slack post tool..."
-    python3 -c "
+        echo "📡 Triggering local Slack post tool..."
+        python3 -c "
 import os
 import sys
-
 sys.path.append('scripts') 
 from slack import post_message
-
 msg = os.environ.get('SLACK_MESSAGE')
 target = os.environ.get('TARGET_ID')
 creds = os.environ.get('CREDS_DIR')
-
 post_message(target, msg, creds)
 "
-    echo "🎉 Test message successfully sent to your private Slack channel!"
-else
-    echo "⏭️ Skipping Slack notification as requested."
+        echo "🎉 Live PR link successfully sent to Slack!"
+    else
+        echo "⚠️ Could not open automated PR via 'gh CLI'. Falling back to safe simulation link."
+        PR_URL="https://github.com/$REPO_ORG/$REPO_NAME/compare/main...$MY_GITHUB_USER:$BRANCH_NAME"
+        echo "🔗 Simulated Link: $PR_URL"
+    fi
 fi
 
 echo "🏁 Process completed successfully!"
