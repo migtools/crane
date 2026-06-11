@@ -59,6 +59,10 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 
 		paths, err := NewScenarioPaths("crane-validate-mixed-offline-*")
 		Expect(err).NotTo(HaveOccurred())
+		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
@@ -74,7 +78,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Mutate Deployment to deprecated extensions/v1beta1 API version")
@@ -158,7 +162,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned")
 		Expect(report.Compatible).To(BeNumerically(">", 0), "expected some compatible resources")
 		Expect(report.Incompatible).To(Equal(1), "expected exactly 1 incompatible resource (Deployment)")
-		Expect(report.Compatible + report.Incompatible).To(Equal(report.TotalScanned),
+		Expect(report.Compatible+report.Incompatible).To(Equal(report.TotalScanned),
 			"expected Compatible + Incompatible to equal TotalScanned (found %d + %d != %d)",
 			report.Compatible, report.Incompatible, report.TotalScanned)
 		log.Printf("Total: %d, Compatible: %d, Incompatible: %d", report.TotalScanned, report.Compatible, report.Incompatible)

@@ -57,6 +57,10 @@ var _ = Describe("Validate alternative GV suggestion [Live Mode]", func() {
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 		paths, err := NewScenarioPaths("crane-pipeline-*")
 		Expect(err).NotTo(HaveOccurred())
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
+		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
@@ -67,7 +71,7 @@ var _ = Describe("Validate alternative GV suggestion [Live Mode]", func() {
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Mutate deployment apiversion to extensions/v1beta1")

@@ -110,6 +110,10 @@ var _ = Describe("Cronjob Quiesced", func() {
 		var err error
 		paths, err = NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
+		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
 
 		By("Verify source cronjob runs and emits expected log")
 		sourcePodName := waitForLatestCronPod(kubectlSrc)
@@ -127,7 +131,7 @@ var _ = Describe("Cronjob Quiesced", func() {
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Apply rendered manifests to target")

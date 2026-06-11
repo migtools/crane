@@ -15,32 +15,32 @@ const (
 )
 
 // RunCranePipeline executes export, transform, and apply in sequence.
-func RunCranePipeline(runner CraneRunner, namespace, exportDir, transformDir, outputDir string) error {
-	if err := runner.Export(namespace, exportDir); err != nil {
+func RunCranePipeline(runner CraneRunner, e ExportOptions, t TransformOptions, a ApplyOptions) error {
+	if err := runner.Export(e); err != nil {
 		return err
 	}
-	if err := runner.Transform(exportDir, transformDir); err != nil {
+	if err := runner.Transform(t); err != nil {
 		return err
 	}
-	if err := runner.Apply(exportDir, transformDir, outputDir); err != nil {
+	if err := runner.Apply(a); err != nil {
 		return err
 	}
 	return nil
 }
 
 // RunCranePipelineWithChecks runs the pipeline and verifies generated stage files.
-func RunCranePipelineWithChecks(runner CraneRunner, namespace string, paths ScenarioPaths) error {
-	if err := RunCranePipeline(runner, namespace, paths.ExportDir, paths.TransformDir, paths.OutputDir); err != nil {
+func RunCranePipelineWithChecks(runner CraneRunner, e ExportOptions, t TransformOptions, a ApplyOptions) error {
+	if err := RunCranePipeline(runner, e, t, a); err != nil {
 		return err
 	}
 
-	if err := checkAndLogStageFiles("export", paths.ExportDir); err != nil {
+	if err := checkAndLogStageFiles("export", e.ExportDir); err != nil {
 		return err
 	}
-	if err := checkAndLogStageFiles("transform", paths.TransformDir); err != nil {
+	if err := checkAndLogStageFiles("transform", t.TransformDir); err != nil {
 		return err
 	}
-	if err := checkAndLogStageFiles("output", paths.OutputDir); err != nil {
+	if err := checkAndLogStageFiles("output", a.OutputDir); err != nil {
 		return err
 	}
 	return nil
