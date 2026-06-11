@@ -4,7 +4,7 @@
 set -e
 
 # ======= CONFIGURATION =======
-TARGET_ID="U0B2U4W6UE4"  # Private Slack ID for testing
+TARGET_ID="C0B9JT8Q066"  # Private Slack ID for testing
 CREDS_DIR="$HOME/.config/slack"
 REPO_ORG="migtools"
 REPO_NAME="crane"
