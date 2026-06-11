@@ -281,11 +281,11 @@ func resourceToExtract(namespace string, labelSelector string, dynamicClient dyn
 			if err != nil {
 				switch {
 				case apierrors.IsForbidden(err):
-					log.Errorf("cannot list obj in namespace for groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("access denied for groupVersion %s, kind: %s (expected for namespace-admin users)\n", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsMethodNotSupported(err):
-					log.Errorf("list method not supported on the groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Warnf("list method not supported on the groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsNotFound(err):
-					log.Errorf("could not find the resource, most likely this is a virtual resource, groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("resource not found (virtual resource), groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
 				default:
 					log.Errorf("error listing objects: %#v, groupVersion %s, kind: %s\n", err, g.APIGroupVersion, g.APIResource.Kind)
 				}
