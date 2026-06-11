@@ -202,7 +202,6 @@ func (o *ExportOptions) Run() error {
 	var errs []error
 
 	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
-	allForbidden := allResourceListsForbidden(resources, resourceErrs)
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
 
@@ -237,9 +236,9 @@ func (o *ExportOptions) Run() error {
 
 	errs = append(errs, writeResourcesErrors...)
 	errs = append(errs, writeErrorsErrors...)
-	if allForbidden {
+	if allResourceListsForbidden(resources, resourceErrs) {
 		errs = append(errs, fmt.Errorf(
-			"export failed: all resource types returned Forbidden for namespace %q -- verify the namespace exists and your user has list permissions",
+			"all resource types returned Forbidden for namespace %q -- verify the namespace exists and your user has list permissions",
 			o.userSpecifiedNamespace,
 		))
 	}
