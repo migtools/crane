@@ -137,7 +137,10 @@ func (o *Options) run() error {
 		return err
 	}
 
-	// Create output directory
+	// Clean and recreate output directory so stale files from previous runs don't survive
+	if err := os.RemoveAll(outputDir); err != nil {
+		return fmt.Errorf("failed to clear output directory: %w", err)
+	}
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
