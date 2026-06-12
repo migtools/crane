@@ -89,6 +89,21 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
+	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
+		for _, f := range []struct {
+			flag string
+			val  *string
+		}{
+			{"--cluster", o.configFlags.ClusterName},
+			{"--server", o.configFlags.APIServer},
+			{"--user", o.configFlags.AuthInfoName},
+			{"--token", o.configFlags.BearerToken},
+		} {
+			if f.val != nil && *f.val != "" {
+				return fmt.Errorf("cannot use --context with %s; it overrides the value defined in the context", f.flag)
+			}
+		}
+	}
 	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
 		return fmt.Errorf("extras requires specifying a user or group to impersonate")
 	}
