@@ -44,6 +44,7 @@ type ExportOptions struct {
 	extras                 map[string][]string
 	QPS                    float32
 	Burst                  int
+	overwrite              bool
 
 	genericclioptions.IOStreams
 }
@@ -178,9 +179,14 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
-	if err = os.RemoveAll(o.exportDir); err != nil {
-		log.Errorf("error clearing export directory: %#v", err)
-		return err
+	if _, err := os.Stat(o.exportDir); err == nil {
+		if !o.overwrite {
+			return fmt.Errorf("export directory %q already exists; use --overwrite to replace it", o.exportDir)
+		}
+		if err = os.RemoveAll(o.exportDir); err != nil {
+			log.Errorf("error clearing export directory: %#v", err)
+			return err
+		}
 	}
 	resourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace)
 	if err = os.MkdirAll(resourceDir, 0700); err != nil {
@@ -299,6 +305,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
+	cmd.Flags().BoolVar(&o.overwrite, "overwrite", false, "Overwrite the export directory if it already exists")
 	o.configFlags.AddFlags(cmd.Flags())
 	flags.SetGroupedHelp(cmd, flags.KubernetesClientInheritedFlagNames())
 	return cmd
