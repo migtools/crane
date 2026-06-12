@@ -305,6 +305,16 @@ func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Uns
 		return nil, fmt.Errorf("kustomize build failed for stage directory %s: %w", stageDir, err)
 	}
 
+	// Check if kustomize produced any output
+	// Empty output means the stage has no resources to transform
+	if len(output) == 0 {
+		return nil, fmt.Errorf("stage produced no resources to transform.\n"+
+			"This can happen when:\n"+
+			"  - The stage received no input resources\n"+
+			"  - The plugin processed resources but produced no transformations\n"+
+			"  - A previous stage filtered out all resources")
+	}
+
 	// Parse the multi-document YAML output
 	var resources []unstructured.Unstructured
 
