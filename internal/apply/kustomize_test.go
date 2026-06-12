@@ -28,10 +28,10 @@ spec:
   replicas: 3
 `,
 			expectedFiles: map[string]bool{
-				"resources/default/Deployment_*_myapp.yaml": true,
+				"resources/default/340_Deployment_*_myapp.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/default/Deployment_*_myapp.yaml": "replicas: 3",
+				"resources/default/340_Deployment_*_myapp.yaml": "replicas: 3",
 			},
 		},
 		{
@@ -61,14 +61,14 @@ data:
   key: value
 `,
 			expectedFiles: map[string]bool{
-				"resources/ns1/Deployment_*_app1.yaml": true,
-				"resources/ns1/Service_*_svc1.yaml":    true,
-				"resources/ns2/ConfigMap_*_config1.yaml": true,
+				"resources/ns1/340_Deployment_*_app1.yaml": true,
+				"resources/ns1/400_Service_*_svc1.yaml":    true,
+				"resources/ns2/240_ConfigMap_*_config1.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/ns1/Deployment_*_app1.yaml": "replicas: 1",
-				"resources/ns1/Service_*_svc1.yaml":    "type: ClusterIP",
-				"resources/ns2/ConfigMap_*_config1.yaml": "key: value",
+				"resources/ns1/340_Deployment_*_app1.yaml": "replicas: 1",
+				"resources/ns1/400_Service_*_svc1.yaml":    "type: ClusterIP",
+				"resources/ns2/240_ConfigMap_*_config1.yaml": "key: value",
 			},
 		},
 		{
@@ -83,10 +83,10 @@ rules:
   verbs: ["*"]
 `,
 			expectedFiles: map[string]bool{
-				"resources/_cluster/ClusterRole_*_admin.yaml": true,
+				"resources/_cluster/050_ClusterRole_*_admin.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/_cluster/ClusterRole_*_admin.yaml": "verbs:",
+				"resources/_cluster/050_ClusterRole_*_admin.yaml": "verbs:",
 			},
 		},
 		{
@@ -109,12 +109,12 @@ rules:
   verbs: ["get", "list"]
 `,
 			expectedFiles: map[string]bool{
-				"resources/prod/Service_*_web.yaml": true,
-				"resources/_cluster/ClusterRole_*_reader.yaml": true,
+				"resources/prod/400_Service_*_web.yaml": true,
+				"resources/_cluster/050_ClusterRole_*_reader.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/prod/Service_*_web.yaml": "type: LoadBalancer",
-				"resources/_cluster/ClusterRole_*_reader.yaml": "verbs:",
+				"resources/prod/400_Service_*_web.yaml": "type: LoadBalancer",
+				"resources/_cluster/050_ClusterRole_*_reader.yaml": "verbs:",
 			},
 		},
 		{
@@ -137,10 +137,10 @@ spec:
         image: nginx
 `,
 			expectedFiles: map[string]bool{
-				"resources/test/Deployment_*_initcont.yaml": true,
+				"resources/test/340_Deployment_*_initcont.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/test/Deployment_*_initcont.yaml": "initContainers:",
+				"resources/test/340_Deployment_*_initcont.yaml": "initContainers:",
 			},
 		},
 		{
@@ -163,12 +163,12 @@ data:
   key: val
 `,
 			expectedFiles: map[string]bool{
-				"resources/default/Service_*_svc.yaml": true,
-				"resources/default/ConfigMap_*_cm.yaml": true,
+				"resources/default/400_Service_*_svc.yaml": true,
+				"resources/default/240_ConfigMap_*_cm.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/default/Service_*_svc.yaml": "type: ClusterIP",
-				"resources/default/ConfigMap_*_cm.yaml": "key: val",
+				"resources/default/400_Service_*_svc.yaml": "type: ClusterIP",
+				"resources/default/240_ConfigMap_*_cm.yaml": "key: val",
 			},
 		},
 	}
@@ -358,7 +358,7 @@ data:
 	}
 
 	// Read the generated file (using glob to find it with new naming)
-	globPattern := filepath.Join(tmpDir, "resources/default/ConfigMap_*_test-config.yaml")
+	globPattern := filepath.Join(tmpDir, "resources/default/240_ConfigMap_*_test-config.yaml")
 	matches, _ := filepath.Glob(globPattern)
 	if len(matches) == 0 {
 		t.Fatalf("No ConfigMap file found matching pattern: %s", globPattern)
@@ -462,7 +462,7 @@ subjects:
 	}
 
 	// Namespaced resource should exist
-	svcMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/prod/Service_*_web.yaml"))
+	svcMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/prod/400_Service_*_web.yaml"))
 	if len(svcMatches) == 0 {
 		t.Error("Service should be in output when --skip-cluster-scoped is set")
 	}
@@ -521,12 +521,12 @@ rules:
 	}
 
 	// Both should exist
-	svcMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/prod/Service_*_web.yaml"))
+	svcMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/prod/400_Service_*_web.yaml"))
 	if len(svcMatches) == 0 {
 		t.Error("Service should be in output")
 	}
 
-	crMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/_cluster/ClusterRole_*_reader.yaml"))
+	crMatches, _ := filepath.Glob(filepath.Join(tmpDir, "resources/_cluster/050_ClusterRole_*_reader.yaml"))
 	if len(crMatches) == 0 {
 		t.Error("ClusterRole should be in output when --skip-cluster-scoped is NOT set")
 	}
