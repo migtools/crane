@@ -240,6 +240,7 @@ func TestRun_UnresolvedStagesError(t *testing.T) {
 				Flags: Flags{
 					TransformDir: transformDir,
 					OutputDir:    outputDir,
+					Overwrite:    true,
 				},
 				RequestedStages: tt.requestedStages,
 			}
