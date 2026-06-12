@@ -178,19 +178,18 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
-	// create export directory if it doesnt exist
+	if err = os.RemoveAll(o.exportDir); err != nil {
+		log.Errorf("error clearing export directory: %#v", err)
+		return err
+	}
 	resourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace)
-	err = os.MkdirAll(resourceDir, 0700)
-	switch {
-	case os.IsExist(err):
-	case err != nil:
+	if err = os.MkdirAll(resourceDir, 0700); err != nil {
 		log.Errorf("error creating the resources directory: %#v", err)
 		return err
 	}
-	// create failures directory if it doesnt exist
 	failuresDir := filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace)
-	if err = prepareFailuresDir(failuresDir); err != nil {
-		log.Errorf("error preparing the failures directory: %#v", err)
+	if err = os.MkdirAll(failuresDir, 0700); err != nil {
+		log.Errorf("error creating the failures directory: %#v", err)
 		return err
 	}
 
@@ -226,10 +225,11 @@ func (o *ExportOptions) Run() error {
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
-	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
-	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
-		log.Errorf("error preparing cluster resources directory: %#v", err)
-		return err
+	if hasClusterScopedManifests(resources) {
+		if err = os.MkdirAll(clusterResourceDir, 0700); err != nil {
+			log.Errorf("error creating cluster resources directory: %#v", err)
+			return err
+		}
 	}
 
 	//count and log the no of crds
