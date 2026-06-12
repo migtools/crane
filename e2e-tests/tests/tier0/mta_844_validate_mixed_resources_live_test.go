@@ -90,6 +90,22 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		Expect(os.WriteFile(deploymentPath, []byte(mutatedDeployment), 0o644)).NotTo(HaveOccurred())
 		log.Printf("Mutated Deployment to extensions/v1beta1 at %s", deploymentPath)
 
+		By("Mutate ConfigMap to deprecated v1beta1 API version")
+		configMapPattern := filepath.Join(paths.OutputDir, "resources", namespace, "ConfigMap_*.yaml")
+		configMapMatches, err := filepath.Glob(configMapPattern)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(configMapMatches).To(HaveLen(1), "expected exactly one ConfigMap manifest (kube-root-ca.crt is filtered out by transform)")
+
+		appConfigMapPath := configMapMatches[0]
+
+		configMapBytes, err := os.ReadFile(appConfigMapPath)
+		Expect(err).NotTo(HaveOccurred())
+
+		mutatedConfigMap := strings.Replace(string(configMapBytes), "apiVersion: v1", "apiVersion: v1beta1", 1)
+		Expect(mutatedConfigMap).NotTo(Equal(string(configMapBytes)), "expected to replace ConfigMap apiVersion")
+		Expect(os.WriteFile(appConfigMapPath, []byte(mutatedConfigMap), 0o644)).NotTo(HaveOccurred())
+		log.Printf("Mutated ConfigMap to v1beta1 at %s", appConfigMapPath)
+
 		By("Run crane validate in live mode against target context")
 		validateDir := filepath.Join(paths.TempDir, "validate")
 		stdout, err := runner.Validate(ValidateOptions{
@@ -121,18 +137,18 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 
 		By("Verify report contains mixed results: both compatible and incompatible resources")
 		Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned")
-		Expect(report.Compatible).To(BeNumerically(">", 0), "expected some compatible resources")
-		Expect(report.Incompatible).To(Equal(1), "expected exactly 1 incompatible resource (Deployment)")
+		Expect(report.Compatible).To((Equal(3)), "expected 3 compatible resources")
+		Expect(report.Incompatible).To(Equal(2), "expected exactly 2 incompatible resources (Deployment and ConfigMap)")
 		Expect(report.Compatible + report.Incompatible).To(Equal(report.TotalScanned),
 			"expected Compatible + Incompatible to equal TotalScanned (found %d + %d != %d)",
 			report.Compatible, report.Incompatible, report.TotalScanned)
 		log.Printf("Total: %d, Compatible: %d, Incompatible: %d", report.TotalScanned, report.Compatible, report.Incompatible)
 
-		By("Verify compatible resources (Service, ConfigMap, Secret) have status OK")
+		By("Verify compatible resources (Service, Secret, RoleBinding) have status OK")
 		compatibleResources := map[string]string{
-			"Service":   "v1",
-			"ConfigMap": "v1",
-			"Secret":    "v1",
+			"Service":     "v1",
+			"Secret":      "v1",
+			"RoleBinding": "rbac.authorization.k8s.io/v1",
 		}
 
 		foundCompatible := make(map[string]bool)
@@ -157,42 +173,77 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 			log.Printf("Found compatible %s with status OK", kind)
 		}
 
-		By("Verify incompatible Deployment has correct status and suggestion")
-		foundIncompatibleDeployment := false
+		By("Verify incompatible resources (Deployment and ConfigMap) have correct status and suggestions")
+		incompatibleResources := map[string]struct {
+			apiVersion string
+			suggestion string
+		}{
+			"Deployment": {
+				apiVersion: "extensions/v1beta1",
+				suggestion: "available as apps/v1",
+			},
+			"ConfigMap": {
+				apiVersion: "v1beta1",
+				suggestion: "", // ConfigMap v1beta1 doesn't have a direct suggestion
+			},
+		}
+
+		foundIncompatible := make(map[string]bool)
 		for _, result := range report.Results {
-			if result.Kind == "Deployment" && result.APIVersion == "extensions/v1beta1" {
-				foundIncompatibleDeployment = true
-				Expect(result.Status).To(Equal(cranevalidate.StatusIncompatible),
-					"expected Deployment to have status Incompatible")
-				Expect(result.Suggestion).To(ContainSubstring("available as apps/v1"),
-					"expected suggestion to mention apps/v1")
-				Expect(result.Namespace).To(Equal(namespace),
-					"expected Deployment to be in namespace %s", namespace)
-				log.Printf("Found incompatible Deployment with suggestion: %s", result.Suggestion)
+			if expected, isIncompatible := incompatibleResources[result.Kind]; isIncompatible {
+				if result.APIVersion == expected.apiVersion {
+					foundIncompatible[result.Kind] = true
+					Expect(result.Status).To(Equal(cranevalidate.StatusIncompatible),
+						"expected %s to have status Incompatible", result.Kind)
+					if expected.suggestion != "" {
+						Expect(result.Suggestion).To(ContainSubstring(expected.suggestion),
+							"expected suggestion to mention %s", expected.suggestion)
+					}
+					Expect(result.Namespace).To(Equal(namespace),
+						"expected %s to be in namespace %s", result.Kind, namespace)
+					log.Printf("Found incompatible %s (%s) with suggestion: %s", result.Kind, result.APIVersion, result.Suggestion)
+				}
 			}
 		}
-		Expect(foundIncompatibleDeployment).To(BeTrue(), "expected to find incompatible Deployment in report")
 
-		By("Verify failures directory contains only the incompatible Deployment")
+		for kind := range incompatibleResources {
+			Expect(foundIncompatible[kind]).To(BeTrue(), "expected to find incompatible %s in report", kind)
+		}
+
+		By("Verify failures directory contains both incompatible resources")
 		failuresDir := filepath.Join(validateDir, "failures")
 		Expect(failuresDir).To(BeADirectory(), "expected failures/ directory to exist")
 
 		failureFiles, err := filepath.Glob(filepath.Join(failuresDir, "*.yaml"))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(failureFiles).To(HaveLen(1), "expected exactly 1 failure file for the incompatible Deployment")
+		Expect(failureFiles).To(HaveLen(2), "expected exactly 2 failure files for the incompatible resources")
 
-		failureBytes, err := os.ReadFile(failureFiles[0])
-		Expect(err).NotTo(HaveOccurred())
-		failureContent := string(failureBytes)
-		Expect(failureContent).To(ContainSubstring("apiVersion: extensions/v1beta1"),
-			"failure file should contain the deprecated apiVersion")
-		Expect(failureContent).To(ContainSubstring("kind: Deployment"),
-			"failure file should be for a Deployment")
-		Expect(failureContent).To(ContainSubstring("suggestion: available as apps/v1"),
-			"failure file should include the suggestion")
-		log.Printf("Failure file created at: %s", failureFiles[0])
+		// Verify both failure files exist
+		foundFailureKinds := make(map[string]bool)
+		for _, failureFile := range failureFiles {
+			failureBytes, err := os.ReadFile(failureFile)
+			Expect(err).NotTo(HaveOccurred())
+			failureContent := string(failureBytes)
 
-		By("Verify stdout contains suggestion for incompatible resource")
+			if strings.Contains(failureContent, "kind: Deployment") {
+				foundFailureKinds["Deployment"] = true
+				Expect(failureContent).To(ContainSubstring("apiVersion: extensions/v1beta1"),
+					"Deployment failure file should contain the deprecated apiVersion")
+				Expect(failureContent).To(ContainSubstring("suggestion: available as apps/v1"),
+					"Deployment failure file should include the suggestion")
+				log.Printf("Deployment failure file created at: %s", failureFile)
+			} else if strings.Contains(failureContent, "kind: ConfigMap") {
+				foundFailureKinds["ConfigMap"] = true
+				Expect(failureContent).To(ContainSubstring("apiVersion: v1beta1"),
+					"ConfigMap failure file should contain the deprecated apiVersion")
+				log.Printf("ConfigMap failure file created at: %s", failureFile)
+			}
+		}
+
+		Expect(foundFailureKinds["Deployment"]).To(BeTrue(), "expected to find Deployment failure file")
+		Expect(foundFailureKinds["ConfigMap"]).To(BeTrue(), "expected to find ConfigMap failure file")
+
+		By("Verify stdout contains suggestions for incompatible resources")
 		Expect(stdout).To(ContainSubstring("available as apps/v1"),
 			"stdout should contain suggestion for Deployment")
 
@@ -202,8 +253,8 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 			"========================================\n"+
 			"Mode: %s\n"+
 			"Total Scanned: %d\n"+
-			"Compatible: %d (Service, ConfigMap, Secret)\n"+
-			"Incompatible: %d (Deployment extensions/v1beta1)\n"+
+			"Compatible: %d (Service, Secret, RoleBinding)\n"+
+			"Incompatible: %d (Deployment extensions/v1beta1, ConfigMap v1beta1)\n"+
 			"========================================\n",
 			report.Mode,
 			report.TotalScanned,
