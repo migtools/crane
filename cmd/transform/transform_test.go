@@ -609,15 +609,24 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			)
 
 			if tt.expectError {
-				if err == nil {
-					t.Errorf("expected error but got none")
-				}
-				return
-			}
+                if err == nil {
+                    t.Fatalf("expected error but got none")
+                }
+                if !strings.Contains(err.Error(), "invalid custom stage name") || strings.Contains(err.Error(), "<nil>") {
+                    t.Errorf("expected error to contain validation context, but got: %v", err)
+                }
 
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+                stageDir := filepath.Join(subTransformDir, tt.requestedStage)
+                if _, statErr := os.Stat(stageDir); statErr == nil {
+                    t.Errorf("expected directory %s NOT to be created for invalid stage name", stageDir)
+                }
+
+                return
+            } else {
+                if err != nil {
+                    t.Fatalf("unexpected error: %v", err)
+                }
+            }
 
 			if len(resolved) != 1 {
 				t.Fatalf("expected 1 resolved stage, got %d", len(resolved))
