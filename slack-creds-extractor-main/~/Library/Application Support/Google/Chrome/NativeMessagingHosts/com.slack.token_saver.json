@@ -1,0 +1,9 @@
+{
+  "name": "com.slack.token_saver",
+  "description": "Save Slack tokens to ~/.config/slack/",
+  "path": "/Users/tdinavet/Documents/Crane-migration/crane/slack-creds-extractor-main/native-host/save_tokens.py",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://kkdheaobdhmeeifmaillccfahmmheoih/"
+  ]
+}
