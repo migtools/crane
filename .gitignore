@@ -24,3 +24,4 @@ scripts/mac_refresh.py
 slack-creds-extractor-main/
 crane-test/
 .claude/
+.env

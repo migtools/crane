@@ -4,7 +4,11 @@
 set -e
 
 # ======= CONFIGURATION =======
-TARGET_ID="C0B9JT8Q066"  # Private Slack ID for testing
+if [ -f .env ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+fi
+
+TARGET_ID="$SLACK_TARGET_ID" 
 CREDS_DIR="$HOME/.config/slack"
 REPO_ORG="migtools"
 REPO_NAME="crane"
@@ -61,15 +65,15 @@ else
         --title "$COMMIT_MSG" \
         --body "Automated PR created by crane pipeline." 2>/dev/null || echo "")
 
-    if [ -z "$PR_URL" ]; then
-        PR_URL=$(gh pr view --repo "$REPO_ORG/$REPO_NAME" --json url --jq .url 2>/dev/null || echo "")
-    fi
-
     if [ -n "$PR_URL" ]; then
         echo "🔗 Real PR Created successfully! URL: $PR_URL"
-        echo "💬 Preparing Slack message with the live link..."
         
-        SLACK_MESSAGE="📢 *New PR is ready for Review!*
+        # בדיקה האם קיבלנו מזהה סלאק תקין
+        if [ -z "$TARGET_ID" ]; then
+            echo "⚠️ Warning: SLACK_TARGET_ID is not defined in .env file. Skipping Slack notification."
+        else
+            echo "💬 Preparing Slack message with the live link..."
+            SLACK_MESSAGE="📢 *New PR is ready for Review!*
 
 •  $COMMIT_MSG
 •  <$PR_URL| PR link>"
