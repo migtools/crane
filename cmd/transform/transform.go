@@ -733,18 +733,18 @@ func (o *Options) resolveAndValidateStages(
 				continue
 			}
 
-			if err := validateStageNameToken(requested); err == nil {
-				stageName, err := o.createCustomStageWithAutoPriority(requested, nextPriority, orchestrator, transformDir, log)
-				if err != nil {
-					return nil, err
-				}
-				resolved = append(resolved, stageName)
-				seen[stageName] = true
-				nextPriority += 10
-				continue
+			if validationErr := validateStageNameToken(requested); validationErr != nil {
+				return nil, fmt.Errorf("invalid custom stage name %q: %w", requested, validationErr)
 			}
 
-			return nil, fmt.Errorf("invalid custom stage name %q: %v", requested, err)
+			stageName, err := o.createCustomStageWithAutoPriority(requested, nextPriority, orchestrator, transformDir, log)
+			if err != nil {
+				return nil, err
+			}
+			resolved = append(resolved, stageName)
+			seen[stageName] = true
+			nextPriority += 10
+			continue
 		}
 
 		// Plugin name - lazy-load and create stage
