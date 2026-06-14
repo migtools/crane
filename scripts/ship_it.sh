@@ -27,7 +27,6 @@ if ! git remote | grep -q "^personal$"; then
 fi
 
 echo "🚀 Checking status for branch: $BRANCH_NAME..."
-# מעבר לבראנץ' המבוקש; אם הוא לא קיים מקומית, ניצור אותו
 git checkout "$BRANCH_NAME" 2>/dev/null || git checkout -b "$BRANCH_NAME"
 
 # 1. Git Commit
@@ -51,10 +50,8 @@ echo "✅ Code successfully pushed!"
 
 # 4. Handle PR and Slack based on your logic
 if [ "$IS_UPDATE_MODE" = true ]; then
-    # סוג א': רק עדכון - אין צורך ב-PR חדש ואין צורך לשלוח הודעה בסלאק
     echo "⏭️ Branch updated successfully. Skipping Slack notification (team will see updates in GitHub automatically)."
 else
-    # סוג ב': בראנץ' חדש - פותחים PR אוטומטי ושולחים הודעה לסלאק רק אחרי שיש קישור חי
     echo "🌿 Opening an official Pull Request on $REPO_ORG/$REPO_NAME via GitHub API..."
     
     PR_URL=$(gh pr create \
@@ -64,7 +61,6 @@ else
         --title "$COMMIT_MSG" \
         --body "Automated PR created by crane pipeline." 2>/dev/null || echo "")
 
-    # אם ה-PR כבר היה פתוח במקרה, נשלוף את הקישור הקיים שלו
     if [ -z "$PR_URL" ]; then
         PR_URL=$(gh pr view --repo "$REPO_ORG/$REPO_NAME" --json url --jq .url 2>/dev/null || echo "")
     fi
@@ -75,8 +71,8 @@ else
         
         SLACK_MESSAGE="📢 *New PR is ready for Review!*
 
-• *Topic:* $COMMIT_MSG
-• *Link:* <$PR_URL|Click here to view the PR on $REPO_ORG/$REPO_NAME>"
+•  $COMMIT_MSG
+•  <$PR_URL| PR link>"
         
         export SLACK_MESSAGE
         export TARGET_ID
