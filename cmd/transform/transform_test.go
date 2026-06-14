@@ -562,6 +562,12 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			shouldCreate:   true,
 			expectError:    false,
 		},
+		{
+            name:           "invalid custom stage name returns wrapped error",
+            requestedStage: "invalid stage name!", 
+            shouldCreate:   false,
+            expectError:    true,
+        },
 	}
 
 	for _, tt := range tests {
