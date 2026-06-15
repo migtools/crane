@@ -25,7 +25,7 @@ var _ = Describe("Validate single incompatible Route [Live Mode]", func() {
 			config.TargetContext,
 		)
 
-		if scenario.TgtAppNonAdmin.Context == "" {
+		if scenario.KubectlTgtNonAdmin.Context == "" {
 			Skip("target-nonadmin-context is required")
 		}
 

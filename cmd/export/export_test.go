@@ -197,6 +197,101 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestValidate_ContextConflicts(t *testing.T) {
+	ptr := func(s string) *string { return &s }
+
+	tests := []struct {
+		name       string
+		context    *string
+		cluster    *string
+		server     *string
+		user       *string
+		token      *string
+		wantErr    bool
+		wantSubstr string
+	}{
+		{
+			name:    "context alone - ok",
+			context: ptr("my-ctx"),
+		},
+		{
+			name:       "context with cluster - error",
+			context:    ptr("my-ctx"),
+			cluster:    ptr("my-cluster"),
+			wantErr:    true,
+			wantSubstr: "--cluster",
+		},
+		{
+			name:       "context with server - error",
+			context:    ptr("my-ctx"),
+			server:     ptr("https://localhost:6443"),
+			wantErr:    true,
+			wantSubstr: "--server",
+		},
+		{
+			name:       "context with user - error",
+			context:    ptr("my-ctx"),
+			user:       ptr("admin"),
+			wantErr:    true,
+			wantSubstr: "--user",
+		},
+		{
+			name:       "context with token - error",
+			context:    ptr("my-ctx"),
+			token:      ptr("my-token"),
+			wantErr:    true,
+			wantSubstr: "--token",
+		},
+		{
+			name:    "no context with cluster - ok",
+			cluster: ptr("my-cluster"),
+		},
+		{
+			name:   "no context with server - ok",
+			server: ptr("https://localhost:6443"),
+		},
+		{
+			name:    "empty context with cluster - ok",
+			context: ptr(""),
+			cluster: ptr("my-cluster"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &ExportOptions{
+				configFlags: genericclioptions.NewConfigFlags(true),
+			}
+			if tt.context != nil {
+				o.configFlags.Context = tt.context
+			}
+			if tt.cluster != nil {
+				o.configFlags.ClusterName = tt.cluster
+			}
+			if tt.server != nil {
+				o.configFlags.APIServer = tt.server
+			}
+			if tt.user != nil {
+				o.configFlags.AuthInfoName = tt.user
+			}
+			if tt.token != nil {
+				o.configFlags.BearerToken = tt.token
+			}
+
+			err := o.Validate()
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantSubstr)
+			}
+		})
+	}
+}
+
 func TestNewExportCommand(t *testing.T) {
 	streams := genericclioptions.NewTestIOStreamsDiscard()
 	cmd := NewExportCommand(streams, nil)

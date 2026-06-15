@@ -1828,3 +1828,71 @@ resources:
 	t.Log("✓ Stage 2 output: all resources preserved with correct directory structure")
 	t.Log("✓ Resource content: ClusterRole rules survived two pipeline stages")
 }
+
+// TestEmptyStageErrorMessage verifies that when a stage has no resources,
+// a helpful error message is displayed instead of the generic kustomize error
+func TestEmptyStageErrorMessage(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "orchestrator-empty-stage-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	transformDir := filepath.Join(tmpDir, "transform")
+	stageDir := filepath.Join(transformDir, "10_EmptyStage")
+
+	if err := os.MkdirAll(stageDir, 0700); err != nil {
+		t.Fatalf("Failed to create stage dir: %v", err)
+	}
+
+	// Create empty kustomization.yaml (the bug scenario)
+	emptyKustomization := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: []
+`
+	if err := os.WriteFile(filepath.Join(stageDir, "kustomization.yaml"), []byte(emptyKustomization), 0644); err != nil {
+		t.Fatalf("Failed to write empty kustomization: %v", err)
+	}
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	o := &Orchestrator{
+		Log: logger,
+	}
+
+	// Try to apply transforms from this empty stage
+	_, err = o.applyStageTransforms(stageDir)
+
+	// Should error
+	if err == nil {
+		t.Fatal("Expected error when applying empty stage")
+	}
+
+	// Error message should be helpful, not just "kustomization.yaml is empty"
+	errMsg := err.Error()
+
+	// Check for helpful error message components
+	if !strings.Contains(errMsg, "stage produced no resources") {
+		t.Errorf("Error message should mention 'stage produced no resources', got: %s", errMsg)
+	}
+
+	// Should mention possible causes
+	expectedCauses := []string{
+		"received no input resources",
+		"produced no transformations",
+		"filtered out all resources",
+	}
+
+	foundCause := false
+	for _, cause := range expectedCauses {
+		if strings.Contains(errMsg, cause) {
+			foundCause = true
+			break
+		}
+	}
+
+	if !foundCause {
+		t.Errorf("Error message should mention at least one possible cause, got: %s", errMsg)
+	}
+}

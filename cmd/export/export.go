@@ -44,6 +44,7 @@ type ExportOptions struct {
 	extras                 map[string][]string
 	QPS                    float32
 	Burst                  int
+	overwrite              bool
 
 	genericclioptions.IOStreams
 }
@@ -89,6 +90,21 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
+	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
+		for _, f := range []struct {
+			flag string
+			val  *string
+		}{
+			{"--cluster", o.configFlags.ClusterName},
+			{"--server", o.configFlags.APIServer},
+			{"--user", o.configFlags.AuthInfoName},
+			{"--token", o.configFlags.BearerToken},
+		} {
+			if f.val != nil && *f.val != "" {
+				return fmt.Errorf("cannot use --context with %s; it overrides the value defined in the context", f.flag)
+			}
+		}
+	}
 	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
 		return fmt.Errorf("extras requires specifying a user or group to impersonate")
 	}
@@ -163,19 +179,23 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
-	// create export directory if it doesnt exist
+	if _, err := os.Stat(o.exportDir); err == nil {
+		if !o.overwrite {
+			return fmt.Errorf("export directory %q already exists; use --overwrite to replace it", o.exportDir)
+		}
+		if err = os.RemoveAll(o.exportDir); err != nil {
+			log.Errorf("error clearing export directory: %#v", err)
+			return err
+		}
+	}
 	resourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace)
-	err = os.MkdirAll(resourceDir, 0700)
-	switch {
-	case os.IsExist(err):
-	case err != nil:
+	if err = os.MkdirAll(resourceDir, 0700); err != nil {
 		log.Errorf("error creating the resources directory: %#v", err)
 		return err
 	}
-	// create failures directory if it doesnt exist
 	failuresDir := filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace)
-	if err = prepareFailuresDir(failuresDir); err != nil {
-		log.Errorf("error preparing the failures directory: %#v", err)
+	if err = os.MkdirAll(failuresDir, 0700); err != nil {
+		log.Errorf("error creating the failures directory: %#v", err)
 		return err
 	}
 
@@ -211,10 +231,11 @@ func (o *ExportOptions) Run() error {
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
-	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
-	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
-		log.Errorf("error preparing cluster resources directory: %#v", err)
-		return err
+	if hasClusterScopedManifests(resources) {
+		if err = os.MkdirAll(clusterResourceDir, 0700); err != nil {
+			log.Errorf("error creating cluster resources directory: %#v", err)
+			return err
+		}
 	}
 
 	//count and log the no of crds
@@ -284,6 +305,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")
+	cmd.Flags().BoolVar(&o.overwrite, "overwrite", false, "Overwrite the export directory if it already exists")
 	o.configFlags.AddFlags(cmd.Flags())
 	flags.SetGroupedHelp(cmd, flags.KubernetesClientInheritedFlagNames())
 	return cmd
