@@ -14,7 +14,7 @@ import (
 )
 
 var _ = Describe("Validate single incompatible Route [Live Mode]", func() {
-	It("[MTA-XXX] should fail validate for route.openshift.io/v1 Route on minikube", Label("tier0", "validate"), func() {
+	It("[MTA-846] should fail validate for route.openshift.io/v1 Route on minikube", Label("tier0", "validate"), func() {
 		namespace := "validate-single-incompatible-route-live"
 		scenario := NewMigrationScenario(
 			"simple-nginx-nopv",
