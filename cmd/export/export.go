@@ -278,6 +278,7 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 			if err := o.Validate(); err != nil {
 				return err
 			}
+			c.SilenceUsage = true
 			if err := o.Run(); err != nil {
 				return err
 			}

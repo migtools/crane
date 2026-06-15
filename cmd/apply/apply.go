@@ -84,6 +84,7 @@ If no stages specified, all discovered stages are applied.`,
 			if err := o.Validate(); err != nil {
 				return err
 			}
+			c.SilenceUsage = true
 			if err := o.Run(); err != nil {
 				return err
 			}
