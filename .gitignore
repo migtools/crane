@@ -17,3 +17,13 @@ vendor/
 
 crane
 .DS_Store
+
+
+# My Personal Tools and Scripts
+scripts/ship_it.sh
+scripts/mac_refresh.py
+scripts/slack.py
+slack-creds-extractor-main/
+crane-test/
+.claude/
+.env
