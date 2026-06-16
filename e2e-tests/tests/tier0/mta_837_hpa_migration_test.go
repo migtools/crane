@@ -114,19 +114,19 @@ var _ = Describe("HPA migration", func() {
 		log.Printf("HPA scaleTargetRef correctly references Deployment %s\n", deploymentName)
 
 		By("Verify HPA min/max replicas match source values")
-		minReplicas, err := toInt64(spec["minReplicas"])
+		minReplicas, err := utils.ToInt64(spec["minReplicas"])
 		Expect(err).NotTo(HaveOccurred())
 		Expect(minReplicas).To(Equal(int64(hpaMinReplicas)),
 			fmt.Sprintf("HPA minReplicas should be %d", hpaMinReplicas))
 
-		maxReplicas, err := toInt64(spec["maxReplicas"])
+		maxReplicas, err := utils.ToInt64(spec["maxReplicas"])
 		Expect(err).NotTo(HaveOccurred())
 		Expect(maxReplicas).To(Equal(int64(hpaMaxReplicas)),
 			fmt.Sprintf("HPA maxReplicas should be %d", hpaMaxReplicas))
 		log.Printf("HPA min/max replicas verified: min=%d max=%d\n", minReplicas, maxReplicas)
 
 		By("Verify HPA CPU utilization target matches source value")
-		cpuTarget := extractCPUAverageUtilization(spec)
+		cpuTarget := utils.ExtractCPUAverageUtilization(spec)
 		Expect(cpuTarget).To(Equal(int64(hpaCPUUtilization)),
 			fmt.Sprintf("HPA CPU averageUtilization should be %d", hpaCPUUtilization))
 		log.Printf("HPA CPU utilization target verified: %d%%\n", cpuTarget)

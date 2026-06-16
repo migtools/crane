@@ -904,8 +904,8 @@ func CaptureAPISurfaceScriptPath() (string, error) {
 	return scriptPath, nil
 }
 
-// toInt64 converts a JSON-unmarshalled number (float64 or json.Number) to int64.
-func toInt64(v any) (int64, error) {
+// ToInt64 converts a JSON-unmarshalled number (float64 or json.Number) to int64.
+func ToInt64(v any) (int64, error) {
 	switch n := v.(type) {
 	case float64:
 		return int64(n), nil
@@ -920,9 +920,9 @@ func toInt64(v any) (int64, error) {
 	}
 }
 
-// extractCPUAverageUtilization walks spec.metrics to find the CPU Resource metric
+// ExtractCPUAverageUtilization walks spec.metrics to find the CPU Resource metric
 // averageUtilization value.
-func extractCPUAverageUtilization(spec map[string]any) int64 {
+func ExtractCPUAverageUtilization(spec map[string]any) int64 {
 	metrics, ok := spec["metrics"].([]any)
 	if !ok {
 		return 0
@@ -946,7 +946,7 @@ func extractCPUAverageUtilization(spec map[string]any) int64 {
 		if !ok {
 			continue
 		}
-		val, err := toInt64(target["averageUtilization"])
+		val, err := ToInt64(target["averageUtilization"])
 		if err != nil {
 			return 0
 		}
