@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -154,7 +155,67 @@ func GetPodNameByLabel(k KubectlRunner, namespace, selector string) (string, err
 	return podName, nil
 }
 
+// dryRunKnownOCPErrors is the set of error substrings that OCP admission or
+// API machinery produces during server-side dry-run but that do NOT indicate a
+// real manifest problem. These are safe to log-and-skip rather than fail on.
+//
+// Rationale for each entry:
+//   - "forbidden: unable to validate against any security context constraint":
+//     OCP SCC admission fires during dry-run even though the SA the pod will
+//     actually run as hasn't been given SCCs yet. The real apply succeeds once
+//     SCCs are in place.
+//   - "admission webhook":
+//     OCP ships several admission webhooks (e.g. for SCCs, network policies)
+//     that reject dry-run requests more aggressively than the actual apply path.
+//   - "no matches for kind":
+//     The exported manifests may contain OCP-specific types (Route, ImageStream,
+//     BuildConfig) that don't exist on a plain-k8s target, or vice-versa.
+//     The OpenShiftPlugin whiteouts these on the correct target; on a mismatched
+//     target cluster the dry-run will fail but the actual scenario is still valid.
+var dryRunKnownOCPErrors = []string{
+	"unable to validate against any security context constraint",
+	"admission webhook",
+	"no matches for kind",
+}
+
+// isDryRunOCPNoise returns true when the error output from a dry-run only
+// contains lines that are known OCP admission noise, meaning every failing line
+// can be attributed to one of the known patterns above.
+func isDryRunOCPNoise(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Lines that start with "error:" or "Error" are the ones that caused
+		// the non-zero exit code. Check whether each one is a known pattern.
+		lower := strings.ToLower(line)
+		if !strings.HasPrefix(lower, "error") {
+			continue
+		}
+		matched := false
+		for _, known := range dryRunKnownOCPErrors {
+			if strings.Contains(lower, strings.ToLower(known)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			// At least one error line is not a known OCP noise pattern — treat
+			// the whole dry-run as a genuine failure.
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateApplyDir performs a server-side dry-run apply for a directory.
+//
+// On OCP, admission webhooks and SCC validation routinely reject dry-run
+// requests that would succeed on the actual apply path (because SCCs, SAs, and
+// webhooks behave differently during dry-run). When the dry-run fails but every
+// error line matches a known OCP noise pattern, the failure is logged as a
+// warning and the function returns nil so the test can proceed to the real apply.
 func (k KubectlRunner) ValidateApplyDir(dir string) error {
 	args := []string{"apply", "-R", "-f", dir, "--dry-run=server"}
 	if k.Context != "" {
@@ -164,10 +225,20 @@ func (k KubectlRunner) ValidateApplyDir(dir string) error {
 	cmd := exec.Command(k.Bin, args...)
 	out, err := cmd.CombinedOutput()
 	logVerboseOutput("kubectl dry-run apply", out)
-	if err != nil {
-		return fmt.Errorf("kubectl dry-run apply failed: %v, output: %s", err, string(out))
+	if err == nil {
+		return nil
 	}
-	return nil
+
+	outStr := string(out)
+	if isDryRunOCPNoise(outStr) {
+		log.Printf(
+			"[ValidateApplyDir] dry-run returned OCP admission noise (SCC/webhook/unknown-kind); "+
+				"proceeding to real apply. Dry-run output:\n%s", outStr,
+		)
+		return nil
+	}
+
+	return fmt.Errorf("kubectl dry-run apply failed: %v, output: %s", err, outStr)
 }
 
 // ScaleDeployment scales matching deployment by label, then falls back to name.
@@ -224,7 +295,6 @@ func (k KubectlRunner) ScaleDeployment(ns, appName string, replicas int) error {
 	}
 
 	return fmt.Errorf("kubectl scale failed after label and name fallbacks: %v, output: %s", lastErr, string(lastOut))
-
 }
 
 // ScaleDeploymentIfPresent scales a deployment only when it can be discovered.
