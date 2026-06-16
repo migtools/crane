@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"strconv"
-	"strings"
+
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -132,54 +132,3 @@ var _ = Describe("HPA migration", func() {
 		log.Printf("HPA CPU utilization target verified: %d%%\n", cpuTarget)
 	})
 })
-
-// toInt64 converts a JSON-unmarshalled number (float64 or json.Number) to int64.
-func toInt64(v any) (int64, error) {
-	switch n := v.(type) {
-	case float64:
-		return int64(n), nil
-	case json.Number:
-		return n.Int64()
-	case int64:
-		return n, nil
-	case string:
-		return strconv.ParseInt(strings.TrimSpace(n), 10, 64)
-	default:
-		return 0, fmt.Errorf("cannot convert %T to int64", v)
-	}
-}
-
-// extractCPUAverageUtilization walks spec.metrics to find the CPU Resource metric
-// averageUtilization value.
-func extractCPUAverageUtilization(spec map[string]any) int64 {
-	metrics, ok := spec["metrics"].([]any)
-	if !ok {
-		return 0
-	}
-	for _, m := range metrics {
-		metric, ok := m.(map[string]any)
-		if !ok {
-			continue
-		}
-		if metric["type"] != "Resource" {
-			continue
-		}
-		resource, ok := metric["resource"].(map[string]any)
-		if !ok {
-			continue
-		}
-		if resource["name"] != "cpu" {
-			continue
-		}
-		target, ok := resource["target"].(map[string]any)
-		if !ok {
-			continue
-		}
-		val, err := toInt64(target["averageUtilization"])
-		if err != nil {
-			return 0
-		}
-		return val
-	}
-	return 0
-}
