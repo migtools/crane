@@ -104,9 +104,9 @@ This approach ensures:
 
 ### Transform Command
 
-#### Single Stage Mode (Default)
+#### Default Mode (All Plugins)
 
-Create a single transform stage using all available plugins:
+Create transform stages for all available plugins:
 
 ```bash
 crane transform \
@@ -454,8 +454,8 @@ selector := transform.StageSelector{
 }
 err = applier.ApplyMultiStage(selector)
 
-// Apply only the final stage (most common)
-err = applier.ApplyFinalStage()
+// Apply all stages sequentially
+err = applier.ApplyMultiStage(transform.StageSelector{})
 ```
 
 ## Further Reading

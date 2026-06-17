@@ -18,7 +18,44 @@ Incompatible resources are written to a `failures/` directory under the validate
 
 ### Offline Validation
 
-Use `--api-resources` to validate offline against a captured API surface JSON file (produced by `scripts/capture-api-surface.sh`) when the target cluster is not directly reachable. This is mutually exclusive with `--context`, `--kubeconfig`, `--server`, `--token`, `--cluster`, and `--user`.
+Use `--api-resources` to validate offline against a captured API surface JSON file when the target cluster is not directly reachable. This is mutually exclusive with `--context`, `--kubeconfig`, `--server`, `--token`, `--cluster`, and `--user`.
+
+#### Capturing the API Surface
+
+Run the following script against the target cluster to capture its API surface for offline validation:
+
+```bash
+#!/bin/bash
+# capture-api-surface.sh
+# Usage: capture-api-surface.sh [-o output.json] [--context name] [--kubeconfig path]
+OUTPUT="api-surface.json"
+KUBECTL_FLAGS=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) OUTPUT="$2"; shift 2 ;;
+    --context|--kubeconfig) KUBECTL_FLAGS="$KUBECTL_FLAGS $1=$2"; shift 2 ;;
+    *) echo "Unknown flag: $1"; exit 1 ;;
+  esac
+done
+
+kubectl api-versions $KUBECTL_FLAGS | while read gv; do
+  endpoint=$([ "$gv" = "v1" ] && echo "/api/v1" || echo "/apis/$gv")
+  kubectl get --raw "$endpoint" $KUBECTL_FLAGS 2>/dev/null || true
+done | jq -s '{"apiResourceLists":.}' > "$OUTPUT"
+```
+
+Or as a one-liner:
+
+```bash
+kubectl api-versions | while read gv; do kubectl get --raw $([ "$gv" = "v1" ] && echo "/api/v1" || echo "/apis/$gv") 2>/dev/null || true; done | jq -s '{"apiResourceLists":.}' > api-surface.json
+```
+
+Then use the captured file for offline validation:
+
+```bash
+crane validate --api-resources api-surface.json
+```
 
 ## Flags
 

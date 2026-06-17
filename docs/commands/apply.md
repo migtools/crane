@@ -66,10 +66,21 @@ crane apply --transform-dir ./migration/transform --output-dir ./migration/outpu
 crane apply 10_KubernetesPlugin
 ```
 
-### Skip cluster-scoped resources
+### Skip cluster-scoped resources (non-admin migration)
+
+When migrating without cluster-admin privileges, use `--skip-cluster-scoped` to exclude ClusterRoles, ClusterRoleBindings, CRDs, and other cluster-scoped resources from the output. These resources typically require admin permissions to create on the target cluster.
 
 ```bash
 crane apply --skip-cluster-scoped
+```
+
+For a complete non-admin migration pipeline:
+
+```bash
+crane export -n my-app                    # Skips inaccessible resources gracefully
+crane transform
+crane apply --skip-cluster-scoped         # Excludes cluster-scoped resources
+crane validate --context target-cluster   # Or use --api-resources for offline
 ```
 
 ### Pass additional kustomize arguments

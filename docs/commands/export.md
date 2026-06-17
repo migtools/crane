@@ -56,6 +56,20 @@ export/
 
 Resource filenames follow the format: `Kind_group_version_namespace_name.yaml`
 
+### Admin vs Non-Admin Migration
+
+Crane supports migration for both cluster-admin and non-admin users:
+
+**Admin users** have full access and can export all resource types including cluster-scoped resources (ClusterRoles, ClusterRoleBindings, CRDs, etc.).
+
+**Non-admin users** can still use Crane with reduced permissions:
+- Export gracefully handles `Forbidden` errors — resources the user cannot list are skipped with a warning, and export continues with accessible resources
+- If the user cannot verify the namespace exists (no `get namespaces` permission), Crane logs a warning and proceeds
+- CRD collection skips CRDs the user cannot read, with a warning that they should already exist on the target cluster
+- Export only exits with a non-zero code if **all** resource types return Forbidden, indicating the user has no list permissions at all
+
+For the full non-admin pipeline, pair export with `crane apply --skip-cluster-scoped` (see [crane apply](./apply.md)).
+
 ## Examples
 
 ### Basic namespace export
