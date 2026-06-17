@@ -110,14 +110,14 @@ var _ = Describe("Role and RoleBinding migration", func() {
 		log.Printf("Crane pipeline completed for namespace %s\n", namespace)
 
 		By("Verify Role manifest is present in output directory")
-		rolePattern := filepath.Join(paths.OutputDir, "resources", namespace, "Role_*.yaml")
+		rolePattern := filepath.Join(paths.OutputDir, "resources", namespace, "*_Role_*.yaml")
 		roleMatches, err := filepath.Glob(rolePattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(roleMatches).NotTo(BeEmpty(), "expected Role manifest in output dir")
 		log.Printf("Role manifests in output: %v\n", roleMatches)
 
 		By("Verify RoleBinding manifest is present in output directory")
-		rbPattern := filepath.Join(paths.OutputDir, "resources", namespace, "RoleBinding_*.yaml")
+		rbPattern := filepath.Join(paths.OutputDir, "resources", namespace, "*_RoleBinding_*.yaml")
 		rbMatches, err := filepath.Glob(rbPattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rbMatches).NotTo(BeEmpty(), "expected RoleBinding manifest in output dir")

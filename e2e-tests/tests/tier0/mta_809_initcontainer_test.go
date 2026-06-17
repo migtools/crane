@@ -76,7 +76,7 @@ var _ = Describe("InitContainer Migration", func() {
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Validate the output directory Deployment has an init container")
-		pattern := filepath.Join(paths.OutputDir, "resources", namespace, "Deployment_*.yaml")
+		pattern := filepath.Join(paths.OutputDir, "resources", namespace, "*_Deployment_*.yaml")
 		matches, err := filepath.Glob(pattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matches).NotTo(BeEmpty(), "expected at least one Deployment manifest")

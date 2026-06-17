@@ -74,7 +74,7 @@ var _ = Describe("Validate alternative GV suggestion [Offline Mode]", func() {
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Mutate deployment apiversion to extensions/v1beta1")
-		deploymentPattern := filepath.Join(paths.OutputDir, "resources", namespace, "Deployment_*.yaml")
+		deploymentPattern := filepath.Join(paths.OutputDir, "resources", namespace, "*_Deployment_*.yaml")
 		matches, err := filepath.Glob(deploymentPattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matches).NotTo(BeEmpty(), "expected at least one Deployment manifest in output")
