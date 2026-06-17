@@ -59,17 +59,17 @@ fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
 - Always check type assertions and provide informative error messages
 - Include the actual resource type and API resource name in errors
 
-## Commit Messages
+## Commit and PR Title Conventions
 
-Use conventional commits format:
+Use verb-first titles that describe what the change does:
 
-- `fix:` for bug fixes
-- `feat:` for new features
-- `refactor:` for code restructuring
-- `test:` for test additions
-- `docs:` for documentation
+- `Fix` for bug fixes (e.g., `Fix transform error on empty namespace`)
+- `Add` for new features (e.g., `Add crane validate command`)
+- `Update` for enhancements (e.g., `Update crane-lib with resources whiteout`)
+- `Refactor` for code restructuring
+- `Remove` for removals
 
-Include issue references where applicable: `fix: improve error messages (#197)`
+Include issue references where applicable: `Fix transform error on empty namespace (#197)`
 
 ## Pull Request Guidelines
 

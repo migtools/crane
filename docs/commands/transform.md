@@ -58,7 +58,7 @@ You can edit resources in the `resources/` directory:
 vi transform/10_KubernetesPlugin/resources/Deployment_apps_v1_default_wordpress.yaml
 
 # Preview changes
-crane apply --stage 10_KubernetesPlugin
+crane apply 10_KubernetesPlugin
 
 # Apply changes
 kubectl apply -f output/output.yaml
@@ -128,20 +128,31 @@ transform/.work/
 
 ```bash
 # Default: discover and run all existing stages
-# If no stages exist, creates default 10_KubernetesPlugin stage
+# If no stages exist, creates stages for all available plugins
 crane transform
 
-# Run specific stage only (creates it if doesn't exist)
-crane transform --stage 10_KubernetesPlugin
+# Run specific stages only (creates them if they don't exist)
+crane transform 10_KubernetesPlugin
+
+# Run multiple specific stages
+crane transform 10_KubernetesPlugin 20_OpenshiftPlugin
 
 # Create a new plugin-based stage automatically
 # Stage name ending with "Plugin" will use that plugin
-crane transform --stage 35_OpenshiftPlugin
+crane transform 35_OpenshiftPlugin
 
 # Create a new pass-through stage for manual editing
 # Stage name NOT ending with "Plugin" creates empty pass-through
-crane transform --stage 40_CustomManualEdits
+crane transform 40_CustomManualEdits
+
+# Skip specific plugins when running all stages
+crane transform --skip-plugins OpenshiftPlugin
+
+# Use a declarative instructions file (mutually exclusive with positional stage args)
+crane transform --instructions-file instructions.yaml
 ```
+
+Shell autocompletion is available for plugin and stage names.
 
 ### Applying Transforms
 
@@ -176,7 +187,9 @@ output/
 
 ## Automatic Stage Creation
 
-Crane automatically creates new stages when you reference them with `--stage`. The stage name determines whether a plugin will be used or if it's a pass-through stage for manual editing.
+When no stages exist in the transform directory, `crane transform` automatically creates stages for **all available plugins** (not just KubernetesPlugin). Plugins are sorted alphabetically and assigned priorities starting at 10, incrementing by 5. Use `--skip-plugins` to exclude specific plugins from this default behavior.
+
+You can also create new stages by specifying them as positional arguments. The stage name determines whether a plugin will be used or if it's a pass-through stage for manual editing.
 
 ### Stage Naming Convention
 
@@ -198,7 +211,7 @@ Stage names ending with `Plugin` **must** have a corresponding plugin installed.
 
 ```bash
 # Creates a stage using OpenshiftPlugin
-crane transform --stage 20_OpenshiftPlugin
+crane transform 20_OpenshiftPlugin
 
 # Output:
 # - resources/ (from previous stage or export)
@@ -209,7 +222,7 @@ crane transform --stage 20_OpenshiftPlugin
 **If the plugin doesn't exist, you'll get an error:**
 
 ```bash
-crane transform --stage 20_NonexistentPlugin
+crane transform 20_NonexistentPlugin
 # Error: stage 20_NonexistentPlugin requires plugin 'NonexistentPlugin' 
 #        but it was not found (available plugins: KubernetesPlugin, NamespaceCleanup)
 ```
@@ -220,7 +233,7 @@ Stage names **not** ending with `Plugin` create pass-through stages where resour
 
 ```bash
 # Creates a pass-through stage for manual editing
-crane transform --stage 30_CustomEdits
+crane transform 30_CustomEdits
 
 # Output:
 # - resources/ (copied unchanged from previous stage)
@@ -334,7 +347,7 @@ kubectl kustomize transform/10_KubernetesPlugin/
 
 ```bash
 # Create a custom stage for manual edits
-crane transform --stage 40_CustomEdits
+crane transform 40_CustomEdits
 
 # Edit resources
 vi transform/40_CustomEdits/resources/Deployment_apps_v1_default_wordpress.yaml
@@ -361,10 +374,10 @@ crane transform
 crane transform --force
 
 # Run specific plugin stage (regenerates automatically)
-crane transform --stage 10_KubernetesPlugin
+crane transform 10_KubernetesPlugin
 
 # Run specific custom stage (requires --force if directory not empty)
-crane transform --stage 40_CustomEdits --force
+crane transform 40_CustomEdits --force
 ```
 
 ### 4. Working with Multiple Stages
@@ -374,11 +387,11 @@ crane transform --stage 40_CustomEdits --force
 crane transform
 
 # Automatically add more plugin stages
-crane transform --stage 20_OpenshiftPlugin
-crane transform --stage 30_ImagestreamPlugin
+crane transform 20_OpenshiftPlugin
+crane transform 30_ImagestreamPlugin
 
 # Add a manual editing stage
-crane transform --stage 40_CustomEdits
+crane transform 40_CustomEdits
 
 # Edit the manual stage (example: edit a specific deployment)
 vi transform/40_CustomEdits/resources/Deployment_apps_v1_default_wordpress.yaml
@@ -402,11 +415,11 @@ crane transform
 # Creates: 10_KubernetesPlugin/
 
 # 3. Add OpenShift-specific transformations
-crane transform --stage 20_OpenshiftPlugin
+crane transform 20_OpenshiftPlugin
 # Creates: 20_OpenshiftPlugin/ using OpenshiftPlugin
 
 # 4. Add a manual customization stage
-crane transform --stage 50_CustomLabels
+crane transform 50_CustomLabels
 # Creates: 50_CustomLabels/ as pass-through (resources copied from previous stage)
 
 # 5. Manually add custom labels
@@ -483,7 +496,7 @@ crane transform --force
 git diff transform/
 
 # Option 3: Only regenerate plugin stages (they auto-regenerate)
-crane transform --stage 10_KubernetesPlugin
+crane transform 10_KubernetesPlugin
 
 # Note: Plugin stages (ending with "Plugin") regenerate automatically without --force
 # Custom stages (not ending with "Plugin") require --force to protect manual edits
@@ -496,7 +509,7 @@ crane transform --stage 10_KubernetesPlugin
 **Solution**:
 ```bash
 # Validate by applying a single stage
-crane apply --stage 10_KubernetesPlugin
+crane apply 10_KubernetesPlugin
 
 # Check for missing files
 ls -la transform/10_KubernetesPlugin/resources/

@@ -81,7 +81,12 @@ func main() {
 
     var patches []PatchOp
 
-    // Example: add a migration label
+    // Example: add a migration label (ensure parent object exists first)
+    patches = append(patches, PatchOp{
+        Op:    "add",
+        Path:  "/metadata/labels",
+        Value: map[string]interface{}{},
+    })
     patches = append(patches, PatchOp{
         Op:    "add",
         Path:  "/metadata/labels/migrated-by",
@@ -90,11 +95,13 @@ func main() {
 
     // Example: remove a specific annotation
     annotations := resource.GetAnnotations()
-    if _, ok := annotations["source-cluster-only"]; ok {
-        patches = append(patches, PatchOp{
-            Op:   "remove",
-            Path: "/metadata/annotations/source-cluster-only",
-        })
+    if annotations != nil {
+        if _, ok := annotations["source-cluster-only"]; ok {
+            patches = append(patches, PatchOp{
+                Op:   "remove",
+                Path: "/metadata/annotations/source-cluster-only",
+            })
+        }
     }
 
     if err := json.NewEncoder(os.Stdout).Encode(patches); err != nil {
@@ -115,9 +122,11 @@ go build -o ~/.local/share/crane/plugins/MyCustomPlugin
 ```bash
 #!/bin/bash
 # Simple plugin that adds a label to all resources
+# Note: ensure /metadata/labels exists before adding child keys
 
 cat <<EOF
 [
+  {"op": "add", "path": "/metadata/labels", "value": {}},
   {"op": "add", "path": "/metadata/labels/environment", "value": "production"}
 ]
 EOF
@@ -147,7 +156,7 @@ Stage naming convention:
 cat sample-deployment.json | ./MyCustomPlugin
 
 # Test in a full pipeline
-crane transform --stage 20_MyCustomPlugin
+crane transform 20_MyCustomPlugin
 crane apply
 ```
 
@@ -181,7 +190,7 @@ Plugins are executed in stage order (by the numeric prefix). Lower numbers run f
 ## Best Practices
 
 1. **Idempotent**: Running the plugin multiple times should produce the same result
-2. **Defensive**: Check if fields exist before removing them
+2. **Defensive**: Check if fields and parent objects exist before modifying them
 3. **Focused**: Each plugin should handle one concern
 4. **Documented**: Include usage instructions and examples
 5. **Tested**: Cover edge cases (missing fields, different resource types)

@@ -5,7 +5,7 @@ Apply transformations to exported resources and produce final manifests.
 ## Synopsis
 
 ```bash
-crane apply [flags]
+crane apply [stage...] [flags]
 ```
 
 ## Description
@@ -21,9 +21,11 @@ Kustomize is embedded directly in the Crane binary (via the krusty API), so no e
 | `--export-dir` | `-e` | `export` | The path where exported resources are saved (kept for consistency; not used by apply) |
 | `--transform-dir` | `-t` | `transform` | The path where transform stage directories are located |
 | `--output-dir` | `-o` | `output` | The path where final manifests are written |
-| `--stage` | | | Apply a specific stage only (e.g., `10_KubernetesPlugin`). If not specified, all stages are applied |
 | `--kustomize-args` | | | Additional arguments for kustomize (e.g., `--enable-helm --helm-command=helm3`) |
 | `--skip-cluster-scoped` | | `false` | Exclude cluster-scoped resources (ClusterRole, ClusterRoleBinding, CRD, etc.) from output. Useful for non-admin migration scenarios |
+| `--overwrite` | | `false` | Overwrite the output directory if it already exists |
+
+Stages are specified as positional arguments (e.g., `crane apply 10_KubernetesPlugin`). Stages can be specified by directory name or plugin name. If no stages are specified, all discovered stages are applied sequentially.
 
 ## Output Structure
 
@@ -61,7 +63,7 @@ crane apply --transform-dir ./migration/transform --output-dir ./migration/outpu
 ### Apply a specific stage only
 
 ```bash
-crane apply --stage 10_KubernetesPlugin
+crane apply 10_KubernetesPlugin
 ```
 
 ### Skip cluster-scoped resources
@@ -87,7 +89,8 @@ kubectl apply -f output/output.yaml
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| `kustomization.yaml validation failed` | Invalid Kustomize syntax or missing resource files | Run `crane apply --stage <stage>` to isolate the failing stage |
+| `kustomization.yaml validation failed` | Invalid Kustomize syntax or missing resource files | Run `crane apply <stage>` to isolate the failing stage |
+| `output directory "X" already exists` | Output directory from a previous run | Use `--overwrite` to replace it |
 | `invalid stage name` | Stage name doesn't follow `<number>_<name>` format | Use a valid stage name like `10_KubernetesPlugin` |
 | `invalid kustomize-args` | Unsupported or malformed kustomize arguments | Check supported kustomize flags |
 

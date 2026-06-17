@@ -114,29 +114,29 @@ crane transform \
   --transform-dir transform
 ```
 
-This creates a `10_KubernetesPlugin` stage directory and runs all plugins (including the built-in `kubernetes` plugin) to clean exported resources.
+This creates default stages for all available plugins and runs them to clean exported resources. Plugins are sorted alphabetically and assigned priorities starting at 10, incrementing by 5.
 
 **Plugin Filtering** (optional):
 
-To run only specific plugins:
+To skip specific plugins:
 
 ```bash
 crane transform \
   --export-dir export \
   --transform-dir transform \
-  --stage-name 10_KubernetesPlugin \
-  --plugin-name kubernetes
+  --skip-plugins OpenshiftPlugin
 ```
-
-**Note**: When `--plugin-name` is omitted (default), ALL available plugins are used. This is recommended to ensure proper resource cleanup.
 
 #### Multi-Stage Mode
 
-Execute specific stages:
+Execute specific stages using positional arguments:
 
 ```bash
 # Run a specific stage
-crane transform --stage 20_OpenshiftPlugin
+crane transform 20_OpenshiftPlugin
+
+# Run multiple specific stages
+crane transform 10_KubernetesPlugin 20_OpenshiftPlugin
 ```
 
 #### Force Overwrite
@@ -144,14 +144,14 @@ crane transform --stage 20_OpenshiftPlugin
 Override dirty check protection:
 
 ```bash
-crane transform --force --stage-name 10_KubernetesPlugin
+crane transform --force 10_KubernetesPlugin
 ```
 
 ### Apply Command
 
-#### Apply Final Stage (Default)
+#### Apply All Stages (Default)
 
-Apply only the last stage in the pipeline:
+Apply all stages sequentially:
 
 ```bash
 crane apply \
@@ -159,11 +159,18 @@ crane apply \
   --output-dir output
 ```
 
-This builds the final stage using embedded kustomize and writes the result to `output/output.yaml`.
+This applies all stages using embedded kustomize and writes the result to `output/output.yaml`.
 
 #### Apply Specific Stages
 
-Apply applies all stages sequentially by default. The apply command does not support stage-specific flags as it always processes the complete pipeline to ensure sequential consistency.
+Apply specific stages using positional arguments:
+
+```bash
+crane apply 10_KubernetesPlugin
+crane apply 10_KubernetesPlugin 20_OpenshiftPlugin
+```
+
+If no stages are specified, all discovered stages are applied sequentially to ensure sequential consistency.
 
 ## Priority Assignment
 
@@ -176,15 +183,6 @@ Plugin priorities are automatically assigned from stage directory names:
 10_KubernetesPlugin    → plugin "kubernetes" gets priority 10
 20_OpenshiftPlugin     → plugin "openshift" gets priority 20
 30_ImagestreamPlugin   → plugin "imagestream" gets priority 30
-```
-
-### Manual Assignment
-
-Override auto-assigned priorities:
-
-```bash
-crane transform \
-  --plugin-priorities kubernetes:5,openshift:15,imagestream:25
 ```
 
 ### Recommended Priority Order
@@ -245,22 +243,19 @@ crane export --kubeconfig source.yaml --export-dir export
 crane transform \
   --export-dir export \
   --transform-dir transform \
-  --stage-name 10_KubernetesPlugin \
-  --plugin-name kubernetes
+  10_KubernetesPlugin
 
 # Create OpenShift-specific transformations
 crane transform \
   --transform-dir transform \
-  --stage-name 20_OpenshiftPlugin \
-  --plugin-name openshift
+  20_OpenshiftPlugin
 
 # Create ImageStream transformations
 crane transform \
   --transform-dir transform \
-  --stage-name 30_ImagestreamPlugin \
-  --plugin-name imagestream
+  30_ImagestreamPlugin
 
-# Apply final stage
+# Apply all stages
 crane apply --transform-dir transform --output-dir output
 ```
 
@@ -280,8 +275,8 @@ crane transform --export-dir export --transform-dir transform
 # Force overwrite if needed
 crane transform --export-dir export --transform-dir transform --force
 
-# Or preserve changes by using a different stage name
-crane transform --stage-name 20_custom
+# Or preserve changes by creating a new stage
+crane transform 20_custom
 ```
 
 ## Migration from JSONPatch Workflow
@@ -366,7 +361,7 @@ if err != nil {
 
 **Solution**:
 1. Use `--force` to overwrite changes
-2. Use a different `--stage-name` to preserve changes
+2. Create a new stage to preserve changes (e.g., `crane transform 20_custom`)
 3. Commit changes to Git before re-running transform
 
 ### Issue: Apply fails with "kustomization.yaml validation failed"
@@ -376,7 +371,7 @@ if err != nil {
 **Solution**:
 1. Check kustomization.yaml syntax
 2. Verify all resource files exist in resources/
-3. Run `crane apply --stage <stage>` to isolate the failing stage
+3. Run `crane apply <stage>` to isolate the failing stage
 
 ### Issue: Resources not appearing in output
 
@@ -479,9 +474,9 @@ Stages don't have to correspond to a plugin. If a stage directory name doesn't m
 
 ```bash
 # Create a multi-stage pipeline
-crane transform --stage-name 10_KubernetesPlugin   # Plugin-backed
-crane transform --stage-name 50_ManualEdits        # No matching plugin
-crane transform --stage-name 90_FinalCleanup       # No matching plugin
+crane transform 10_KubernetesPlugin   # Plugin-backed
+crane transform 50_ManualEdits        # No matching plugin
+crane transform 90_FinalCleanup       # No matching plugin
 ```
 
 **What happens:**
