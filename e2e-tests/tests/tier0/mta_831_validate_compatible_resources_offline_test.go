@@ -60,19 +60,20 @@ func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace 
 	Expect(report.Mode).To(Equal("offline"), "expected validation mode to be 'offline' in %s report", outputFormat)
 	log.Printf("%s validation mode: %s", outputFormat, report.Mode)
 
-	By("Verify all 4 resources were scanned in " + outputFormat + " report")
-	Expect(report.TotalScanned).To(Equal(4), "expected exactly 4 resources scanned in %s report", outputFormat)
-	Expect(report.Compatible).To(Equal(4), "expected all 4 resources to be compatible in %s report", outputFormat)
+	By("Verify all 5 resources were scanned in " + outputFormat + " report")
+	Expect(report.TotalScanned).To(Equal(5), "expected exactly 5 resources scanned in %s report", outputFormat)
+	Expect(report.Compatible).To(Equal(5), "expected all 5 resources to be compatible in %s report", outputFormat)
 	Expect(report.Incompatible).To(Equal(0), "expected no incompatible resources in %s report", outputFormat)
 	log.Printf("%s report - Total: %d, Compatible: %d, Incompatible: %d",
 		outputFormat, report.TotalScanned, report.Compatible, report.Incompatible)
 
 	By("Verify expected resource types are present in " + outputFormat + " results")
 	expectedResources := map[string]string{
-		"Deployment": "apps/v1",
-		"Service":    "v1",
-		"ConfigMap":  "v1",
-		"Secret":     "v1",
+		"Deployment":  "apps/v1",
+		"Service":     "v1",
+		"ConfigMap":   "v1",
+		"Secret":      "v1",
+		"RoleBinding": "rbac.authorization.k8s.io/v1",
 	}
 
 	foundResources := make(map[string]bool)
@@ -91,7 +92,7 @@ func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace 
 		}
 	}
 
-	By("Verify all 4 resource types were found in " + outputFormat + " report")
+	By("Verify all 5 resource types were found in " + outputFormat + " report")
 	var missingResources []string
 	for kind := range expectedResources {
 		if !foundResources[kind] {
@@ -113,7 +114,7 @@ func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace 
 	log.Printf("No failures directory created")
 }
 
-var _ = Describe("Crane validate: all compatible standard resources in offline mode", func() {
+var _ = Describe("Crane validate: all compatible standard resources in offline mode in JSON and YAML formats", func() {
 	It("[MTA-831] Generate and validate crane validate report in JSON format",
 		Label("tier0", "validate"), func() {
 		appName := "multi-resource-app"
@@ -228,7 +229,7 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 
 		By("Run crane validate in offline mode with output in YAML format")
 		validateDirYAML := filepath.Join(paths.TempDir, "validate-yaml")
-		reportYAML, err := runValidateAndParseReport(runner, filepath.Join(paths.OutputDir, "resources", namespace), validateDirYAML, apiSurfaceFile, "yaml")
+		reportYAML, err := runValidateAndParseReport(runner, paths.OutputDir, validateDirYAML, apiSurfaceFile, "yaml")
 		Expect(err).NotTo(HaveOccurred(), "validate with YAML output should succeed for all compatible resources")
 		verifyCompatibleResources(reportYAML, namespace, validateDirYAML, "YAML")
 
@@ -241,9 +242,8 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 			"Total Scanned: %d\n"+
 			"Compatible: %d\n"+
 			"Incompatible: %d\n"+
-			"All 4 resource types verified in YAML output!\n"+
 			"========================================\n",
-			reportYAML.Mode, report.APIResourcesSource,
+			reportYAML.Mode, reportYAML.APIResourcesSource,
 			reportYAML.TotalScanned, reportYAML.Compatible, reportYAML.Incompatible)
 	})
 })
