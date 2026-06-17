@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"strconv"
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
@@ -901,4 +902,55 @@ func CaptureAPISurfaceScriptPath() (string, error) {
 	}
 
 	return scriptPath, nil
+}
+
+// ToInt64 converts a JSON-unmarshalled number (float64 or json.Number) to int64.
+func ToInt64(v any) (int64, error) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), nil
+	case json.Number:
+		return n.Int64()
+	case int64:
+		return n, nil
+	case string:
+		return strconv.ParseInt(strings.TrimSpace(n), 10, 64)
+	default:
+		return 0, fmt.Errorf("cannot convert %T to int64", v)
+	}
+}
+
+// ExtractCPUAverageUtilization walks spec.metrics to find the CPU Resource metric
+// averageUtilization value.
+func ExtractCPUAverageUtilization(spec map[string]any) int64 {
+	metrics, ok := spec["metrics"].([]any)
+	if !ok {
+		return 0
+	}
+	for _, m := range metrics {
+		metric, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		if metric["type"] != "Resource" {
+			continue
+		}
+		resource, ok := metric["resource"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if resource["name"] != "cpu" {
+			continue
+		}
+		target, ok := resource["target"].(map[string]any)
+		if !ok {
+			continue
+		}
+		val, err := ToInt64(target["averageUtilization"])
+		if err != nil {
+			return 0
+		}
+		return val
+	}
+	return 0
 }
