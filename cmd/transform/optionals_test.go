@@ -1,7 +1,6 @@
 package transform
 
 import (
-	"encoding/json"
 	"testing"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -10,17 +9,14 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// mockPluginWithOptionals implements cranelib.Plugin and tracks whether optionals were received
+// mockPluginWithOptionals implements cranelib.Plugin and captures received optionals
 type mockPluginWithOptionals struct {
 	name              string
 	receivedOptionals map[string]string
 }
 
 func (m *mockPluginWithOptionals) Run(request cranelib.PluginRequest) (cranelib.PluginResponse, error) {
-	// Capture the optionals that were passed to the plugin
 	m.receivedOptionals = request.Extras
-
-	// Return a simple response with no transformations (empty patch)
 	return cranelib.PluginResponse{
 		Version:    string(cranelib.V1),
 		Patches:    jsonpatch.Patch{},
@@ -37,22 +33,9 @@ func (m *mockPluginWithOptionals) Metadata() cranelib.PluginMetadata {
 	}
 }
 
-// TestOptionalFlags_PassedToPlugin verifies that optional flags are passed to plugins via Runner
-func TestOptionalFlags_PassedToPlugin(t *testing.T) {
-	// Setup test optionals
-	testOptionals := map[string]string{
-		"registry-replacement": "docker.io=quay.io",
-		"add-annotations":      "migration=crane,team=platform",
-	}
-
-	// Create mock plugin
-	mockPlugin := &mockPluginWithOptionals{
-		name:              "TestPlugin",
-		receivedOptionals: make(map[string]string),
-	}
-
-	// Create a simple test resource
-	testResource := unstructured.Unstructured{
+// testConfigMap creates a simple ConfigMap for testing
+func testConfigMap() unstructured.Unstructured {
+	return unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "v1",
 			"kind":       "ConfigMap",
@@ -65,40 +48,61 @@ func TestOptionalFlags_PassedToPlugin(t *testing.T) {
 			},
 		},
 	}
+}
+
+// assertMapEquals verifies two string maps are equal
+func assertMapEquals(t *testing.T, expected, actual map[string]string) {
+	t.Helper()
+
+	if len(actual) != len(expected) {
+		t.Errorf("expected %d keys, got %d", len(expected), len(actual))
+	}
+
+	for key, expectedValue := range expected {
+		actualValue, ok := actual[key]
+		if !ok {
+			t.Errorf("expected key %q to be present", key)
+			continue
+		}
+		if actualValue != expectedValue {
+			t.Errorf("key %q: expected value %q, got %q", key, expectedValue, actualValue)
+		}
+	}
+}
+
+// TestOptionalFlags_PassedToPlugin verifies that optional flags are passed to plugins via Runner
+func TestOptionalFlags_PassedToPlugin(t *testing.T) {
+	testOptionals := map[string]string{
+		"registry-replacement": "docker.io=quay.io",
+		"add-annotations":      "migration=crane,team=platform",
+	}
+
+	mockPlugin := &mockPluginWithOptionals{
+		name:              "TestPlugin",
+		receivedOptionals: make(map[string]string),
+	}
 
 	log := logrus.New()
-	log.SetLevel(logrus.FatalLevel) // Suppress log output during tests
+	log.SetLevel(logrus.FatalLevel)
 
-	// Create runner with optionals - this is what orchestrator uses
 	runner := cranelib.Runner{
 		Log:           log,
 		OptionalFlags: testOptionals,
 	}
 
-	// Run the plugin - this should pass optionals
-	_, err := runner.Run(testResource, []cranelib.Plugin{mockPlugin})
+	_, err := runner.Run(testConfigMap(), []cranelib.Plugin{mockPlugin})
 	if err != nil {
 		t.Fatalf("failed to run plugin: %v", err)
 	}
 
-	// Verify that optionals were passed to the plugin
 	if len(mockPlugin.receivedOptionals) == 0 {
 		t.Fatal("expected plugin to receive optionals, but got none")
 	}
 
-	for key, expectedValue := range testOptionals {
-		receivedValue, ok := mockPlugin.receivedOptionals[key]
-		if !ok {
-			t.Errorf("expected plugin to receive optional key %q, but it was missing", key)
-			continue
-		}
-		if receivedValue != expectedValue {
-			t.Errorf("optional key %q: expected value %q, got %q", key, expectedValue, receivedValue)
-		}
-	}
+	assertMapEquals(t, testOptionals, mockPlugin.receivedOptionals)
 }
 
-// TestOptionalFlagsToLower verifies that optional flags keys are lowercased
+// TestOptionalFlagsToLower verifies that optional flags keys are normalized to lowercase
 func TestOptionalFlagsToLower(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -130,98 +134,23 @@ func TestOptionalFlagsToLower(t *testing.T) {
 			input:    map[string]string{},
 			expected: map[string]string{},
 		},
+		{
+			name: "uppercase keys",
+			input: map[string]string{
+				"FOO": "bar",
+				"BAZ": "qux",
+			},
+			expected: map[string]string{
+				"foo": "bar",
+				"baz": "qux",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := optionalFlagsToLower(tt.input)
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("expected %d keys, got %d", len(tt.expected), len(result))
-			}
-
-			for key, expectedValue := range tt.expected {
-				resultValue, ok := result[key]
-				if !ok {
-					t.Errorf("expected key %q to be present in result", key)
-					continue
-				}
-				if resultValue != expectedValue {
-					t.Errorf("key %q: expected value %q, got %q", key, expectedValue, resultValue)
-				}
-			}
-		})
-	}
-}
-
-// TestOptionalFlags_JSONParsing verifies that optional flags JSON string is parsed correctly
-func TestOptionalFlags_JSONParsing(t *testing.T) {
-	tests := []struct {
-		name        string
-		jsonString  string
-		expected    map[string]string
-		expectError bool
-	}{
-		{
-			name:       "valid JSON",
-			jsonString: `{"registry-replacement": "docker.io=quay.io", "add-annotations": "migration=crane"}`,
-			expected: map[string]string{
-				"registry-replacement": "docker.io=quay.io",
-				"add-annotations":      "migration=crane",
-			},
-			expectError: false,
-		},
-		{
-			name:       "empty JSON object",
-			jsonString: `{}`,
-			expected:   map[string]string{},
-			expectError: false,
-		},
-		{
-			name:        "invalid JSON",
-			jsonString:  `{invalid json}`,
-			expectError: true,
-		},
-		{
-			name:       "JSON with special characters",
-			jsonString: `{"pvc-rename-map": "old-pvc-1:new-pvc-1,old-pvc-2:new-pvc-2"}`,
-			expected: map[string]string{
-				"pvc-rename-map": "old-pvc-1:new-pvc-1,old-pvc-2:new-pvc-2",
-			},
-			expectError: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var result map[string]string
-			err := json.Unmarshal([]byte(tt.jsonString), &result)
-
-			if tt.expectError {
-				if err == nil {
-					t.Error("expected error parsing JSON, but got none")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("unexpected error parsing JSON: %v", err)
-			}
-
-			if len(result) != len(tt.expected) {
-				t.Errorf("expected %d keys, got %d", len(tt.expected), len(result))
-			}
-
-			for key, expectedValue := range tt.expected {
-				resultValue, ok := result[key]
-				if !ok {
-					t.Errorf("expected key %q to be present in result", key)
-					continue
-				}
-				if resultValue != expectedValue {
-					t.Errorf("key %q: expected value %q, got %q", key, expectedValue, resultValue)
-				}
-			}
+			assertMapEquals(t, tt.expected, result)
 		})
 	}
 }
