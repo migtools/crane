@@ -22,8 +22,6 @@ var ResourceOrder = map[string]int{
 	"VolumeSnapshotClass":         100,
 	"CSIDriver":                   110,
 	"CSINode":                     120,
-	"ValidatingWebhookConfiguration": 130,
-	"MutatingWebhookConfiguration":   140,
 
 	// Namespace-scoped configuration resources
 	"ResourceQuota":      200,
@@ -68,6 +66,10 @@ var ResourceOrder = map[string]int{
 	"ImageStreamTag":     650,
 	"Template":           660,
 	"SecurityContextConstraints": 670,
+
+	// Admission webhooks (must come after workload resources to avoid bootstrap deadlock)
+	"ValidatingWebhookConfiguration": 800,
+	"MutatingWebhookConfiguration":   810,
 
 	// Default for unknown types
 	"_default": 1000,

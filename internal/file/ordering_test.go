@@ -51,6 +51,34 @@ func TestGetResourceOrder_ConfigMapBeforeDeployment(t *testing.T) {
 	}
 }
 
+func TestGetResourceOrder_WebhooksAfterWorkloads(t *testing.T) {
+	// Webhooks must come after workloads to avoid bootstrap deadlock
+	deploymentOrder := GetResourceOrder("Deployment")
+	serviceOrder := GetResourceOrder("Service")
+	validatingWebhookOrder := GetResourceOrder("ValidatingWebhookConfiguration")
+	mutatingWebhookOrder := GetResourceOrder("MutatingWebhookConfiguration")
+
+	if validatingWebhookOrder <= deploymentOrder {
+		t.Errorf("ValidatingWebhookConfiguration order (%d) should be greater than Deployment order (%d) to avoid bootstrap deadlock",
+			validatingWebhookOrder, deploymentOrder)
+	}
+
+	if validatingWebhookOrder <= serviceOrder {
+		t.Errorf("ValidatingWebhookConfiguration order (%d) should be greater than Service order (%d) to avoid bootstrap deadlock",
+			validatingWebhookOrder, serviceOrder)
+	}
+
+	if mutatingWebhookOrder <= deploymentOrder {
+		t.Errorf("MutatingWebhookConfiguration order (%d) should be greater than Deployment order (%d) to avoid bootstrap deadlock",
+			mutatingWebhookOrder, deploymentOrder)
+	}
+
+	if mutatingWebhookOrder <= serviceOrder {
+		t.Errorf("MutatingWebhookConfiguration order (%d) should be greater than Service order (%d) to avoid bootstrap deadlock",
+			mutatingWebhookOrder, serviceOrder)
+	}
+}
+
 func TestGetOrderedResourceFilename(t *testing.T) {
 	tests := []struct {
 		name     string
