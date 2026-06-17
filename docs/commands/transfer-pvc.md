@@ -33,8 +33,8 @@ The above command transfers PVC (along with PV data) named `<pvc_name>` in the n
 | `--destination-image` | string | No | Custom image to use for destination rsync Pod |
 | `--source-image` | string | No | Custom image to use for source rsync Pod |
 | `--endpoint` | string | No | Kind of endpoint to create in destination cluster (see [Endpoint Options](#endpoint-options)) |
-| `--ingress-class` | string | No | Ingress class when endpoint is nginx-ingress |
-| `--subdomain` | string | No | Custom subdomain to use for the endpoint |
+| `--ingress-class` | string | When endpoint is nginx-ingress | Ingress class when endpoint is nginx-ingress |
+| `--subdomain` | string | When endpoint is nginx-ingress | Custom subdomain to use for the endpoint |
 | `--output` | string | No | Output transfer stats in the specified file |
 | `--verify` | bool | No | Verify transferred files using checksums |
 

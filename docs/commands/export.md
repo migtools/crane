@@ -30,8 +30,11 @@ When custom resources are found in the namespace, Crane automatically collects t
 | `--as-extras` | | | Extra impersonation info (format: `key=val1,val2;key2=val3`) |
 | `--qps` | `-q` | `100` | Query-per-second rate for API requests |
 | `--burst` | `-b` | `1000` | API burst rate |
+| `--overwrite` | | `false` | Overwrite the export directory if it already exists |
 
 Standard kubeconfig flags (`--kubeconfig`, `--context`, `--cluster`, `--as`, `--as-group`, etc.) are also available.
+
+> **Note:** `--context` is mutually exclusive with `--cluster`, `--server`, `--user`, and `--token`.
 
 ## Output Structure
 
@@ -101,6 +104,8 @@ crane export -n my-app --crd-skip-group monitoring.coreos.com
 | `namespaces "X" not found` | Namespace does not exist | Verify namespace name |
 | `cannot verify namespace exists` | Insufficient RBAC (warning only) | Export proceeds; verify namespace exists manually |
 | `extras requires specifying a user or group` | `--as-extras` used without `--as` | Add `--as` or `--as-group` flag |
+| `export directory "X" already exists` | Export directory from a previous run | Use `--overwrite` to replace it |
+| Non-zero exit with aggregated error | All namespace list calls returned Forbidden | Ensure service account has list permissions on at least one namespace |
 
 ## Next Steps
 

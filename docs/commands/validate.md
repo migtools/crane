@@ -18,7 +18,7 @@ Incompatible resources are written to a `failures/` directory under the validate
 
 ### Offline Validation
 
-Use `--api-resources` to validate offline against a captured API surface JSON file (produced by `scripts/capture-api-surface.sh`) when the target cluster is not directly reachable. This is mutually exclusive with `--context`/`--kubeconfig`.
+Use `--api-resources` to validate offline against a captured API surface JSON file (produced by `scripts/capture-api-surface.sh`) when the target cluster is not directly reachable. This is mutually exclusive with `--context`, `--kubeconfig`, `--server`, `--token`, `--cluster`, and `--user`.
 
 ## Flags
 
@@ -27,7 +27,8 @@ Use `--api-resources` to validate offline against a captured API surface JSON fi
 | `--input-dir` | `-i` | `output` | Path to the apply output directory containing final manifests |
 | `--validate-dir` | | `validate` | Path where validation results and failures are saved |
 | `--output` | `-o` | `json` | Report file format: `json` or `yaml` |
-| `--api-resources` | | | Path to API surface JSON file for offline validation (mutually exclusive with `--context`/`--kubeconfig`) |
+| `--api-resources` | | | Path to API surface JSON file for offline validation (mutually exclusive with `--context`/`--kubeconfig`/`--server`/`--token`/`--cluster`/`--user`) |
+| `--overwrite` | | `false` | Overwrite the validate directory if it already exists |
 
 Standard kubeconfig flags (`--kubeconfig`, `--context`, `--cluster`, etc.) are also available to specify the target cluster for live validation.
 
@@ -94,7 +95,8 @@ crane validate --context target-cluster
 |-------|-------|----------|
 | `input-dir "X" is not a directory` | Path doesn't exist or isn't a directory | Run `crane apply` first to generate output |
 | `loading kubeconfig` | Cannot connect to target cluster | Check kubeconfig and `--context` flag, or use `--api-resources` for offline mode |
-| `--api-resources and --context are mutually exclusive` | Both offline and live flags specified | Use one mode or the other |
+| `--api-resources and --context are mutually exclusive` | Both offline and live flags specified | Use one mode or the other. `--api-resources` is also mutually exclusive with `--kubeconfig`, `--server`, `--token`, `--cluster`, and `--user` |
+| `validate directory "X" already exists` | Validate directory from a previous run | Use `--overwrite` to replace it |
 | Validation failures | GVKs not available on target cluster | Install required CRDs/operators on target, or transform manifests to use supported API versions |
 
 ## Next Steps

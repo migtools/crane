@@ -22,6 +22,8 @@ This plugin runs as the default first stage (`10_KubernetesPlugin`) and is alway
 
 The [konveyor/crane-plugins](https://github.com/konveyor/crane-plugins) repository contains community-contributed plugins based on experience from real-world Kubernetes migrations.
 
+> **Note:** Community plugins (e.g., OpenshiftPlugin) are not actively maintained. Verify plugin compatibility before use in production.
+
 ### OpenShift Plugin
 
 The [konveyor/crane-plugin-openshift](https://github.com/konveyor/crane-plugin-openshift) plugin handles OpenShift-specific migration concerns:
@@ -42,7 +44,7 @@ chmod +x ~/.local/share/crane/plugins/OpenshiftPlugin
 Use in a transform stage:
 
 ```bash
-crane transform --stage 20_OpenshiftPlugin
+crane transform 20_OpenshiftPlugin
 ```
 
 ## Managing Plugins
@@ -63,7 +65,7 @@ crane transform list-plugins
 
 ### Skipping Plugins
 
-Skip specific plugins during transform:
+By default, `crane transform` creates stages for all available plugins. Skip specific plugins during transform:
 
 ```bash
 crane transform --skip-plugins OpenshiftPlugin
