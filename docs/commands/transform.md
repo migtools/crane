@@ -1,6 +1,10 @@
-# Crane Transform Directory Structure
+# crane transform
 
-This document explains the structure of the `transform/` directory created by Crane's multi-stage Kustomize pipeline.
+Transform exported resources using plugins and produce Kustomize stages.
+
+## Overview
+
+This document explains the `crane transform` command and the structure of the `transform/` directory it creates.
 
 ## Quick Start
 
