@@ -292,6 +292,68 @@ func TestValidate_ContextConflicts(t *testing.T) {
 	}
 }
 
+func TestValidate_CRDGroupConflict(t *testing.T) {
+	tests := []struct {
+		name             string
+		crdSkipGroups    []string
+		crdIncludeGroups []string
+		wantErr          bool
+		wantSubstr       string
+	}{
+		{
+			name:             "no overlap - ok",
+			crdSkipGroups:    []string{"foo.io"},
+			crdIncludeGroups: []string{"bar.io"},
+		},
+		{
+			name:             "overlap - error",
+			crdSkipGroups:    []string{"example.com"},
+			crdIncludeGroups: []string{"example.com"},
+			wantErr:          true,
+			wantSubstr:       "example.com",
+		},
+		{
+			name:             "partial overlap - error on first match",
+			crdSkipGroups:    []string{"foo.io", "bar.io"},
+			crdIncludeGroups: []string{"bar.io", "baz.io"},
+			wantErr:          true,
+			wantSubstr:       "bar.io",
+		},
+		{
+			name:          "skip only - ok",
+			crdSkipGroups: []string{"foo.io"},
+		},
+		{
+			name:             "include only - ok",
+			crdIncludeGroups: []string{"foo.io"},
+		},
+		{
+			name: "both empty - ok",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &ExportOptions{
+				configFlags:      genericclioptions.NewConfigFlags(true),
+				crdSkipGroups:    tt.crdSkipGroups,
+				crdIncludeGroups: tt.crdIncludeGroups,
+			}
+
+			err := o.Validate()
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantSubstr)
+			}
+		})
+	}
+}
+
 func TestNewExportCommand(t *testing.T) {
 	streams := genericclioptions.NewTestIOStreamsDiscard()
 	cmd := NewExportCommand(streams, nil)
