@@ -1251,7 +1251,7 @@ func TestGetObjects_clusterScopedSkipsLabelSelector(t *testing.T) {
 		APIGroupVersion: "rbac.authorization.k8s.io/v1",
 		APIResource:     metav1.APIResource{Name: "clusterrolebindings", Kind: "ClusterRoleBinding", Namespaced: false},
 	}
-	_, err := getObjects(g, "", "app=test", client, testLogger())
+	_, err := getObjects(0,g, "", "app=test", client, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
