@@ -163,12 +163,12 @@ data:
   key: val
 `,
 			expectedFiles: map[string]bool{
-				"resources/default/400_Service_*_svc.yaml": true,
-				"resources/default/240_ConfigMap_*_cm.yaml": true,
+				"resources/default/Service_*_svc.yaml": true,
+				"resources/default/ConfigMap_*_cm.yaml": true,
 			},
 			expectedInFile: map[string]string{
-				"resources/default/400_Service_*_svc.yaml": "type: ClusterIP",
-				"resources/default/240_ConfigMap_*_cm.yaml": "key: val",
+				"resources/default/Service_*_svc.yaml": "type: ClusterIP",
+				"resources/default/ConfigMap_*_cm.yaml": "key: val",
 			},
 		},
 	}
@@ -358,7 +358,7 @@ data:
 	}
 
 	// Read the generated file (using glob to find it with new naming)
-	globPattern := filepath.Join(tmpDir, "resources/default/240_ConfigMap_*_test-config.yaml")
+	globPattern := filepath.Join(tmpDir, "resources/default/ConfigMap_*_test-config.yaml")
 	matches, _ := filepath.Glob(globPattern)
 	if len(matches) == 0 {
 		t.Fatalf("No ConfigMap file found matching pattern: %s", globPattern)
