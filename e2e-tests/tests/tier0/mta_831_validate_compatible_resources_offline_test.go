@@ -16,9 +16,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// runValidateAndParseReport runs crane validate and parses the report
 func runValidateAndParseReport(runner CraneRunner, inputDir string, validateDir string,
 	apiSurfaceFile string, outputFormat string) (cranevalidate.ValidationReport, error) {
+	// Ran crane validate command and parse the report
 	stdout, err := runner.Validate(ValidateOptions{
 		InputDir:         inputDir,
 		ValidateDir:      validateDir,
@@ -54,9 +54,9 @@ func runValidateAndParseReport(runner CraneRunner, inputDir string, validateDir 
 	return report, nil
 }
 
-// verifyCompatibleResources validates that a report contains all expected compatible resources
-func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace string,
+func verifyValidateResults(report cranevalidate.ValidationReport, namespace string,
 	validateDir string, apiSurfaceFile string, outputFormat string) {
+	// Verify report data and creation of failures directory when required
 	By(outputFormat + " report: Verify report shows offline mode")
 	Expect(report.Mode).To(Equal("offline"), "expected validation mode to be 'offline' in %s report", outputFormat)
 	log.Printf("%s validation mode: %s", outputFormat, report.Mode)
@@ -116,7 +116,7 @@ func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace 
 }
 
 var _ = Describe("Crane validate: all compatible standard resources in offline mode in JSON and YAML formats", func() {
-	It("[MTA-831] Generate and validate crane validate report in JSON format",
+	It("[MTA-831][MTA-848] Generate and validate crane validate report in JSON and YAML formats",
 		Label("tier0", "validate"), func() {
 		appName := "multi-resource-app"
 		namespace := "multi-resource-831-offline"
@@ -221,7 +221,7 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 			report, err := runValidateAndParseReport(runner, paths.OutputDir, validateDir, apiSurfaceFile, ft.format)
 			Expect(err).NotTo(HaveOccurred(), "validate with %s output should succeed for all compatible resources", ft.label)
 
-			verifyCompatibleResources(report, namespace, validateDir, apiSurfaceFile, ft.label)
+			verifyValidateResults(report, namespace, validateDir, apiSurfaceFile, ft.label)
 
 			log.Printf("\n"+
 				"========================================\n"+
