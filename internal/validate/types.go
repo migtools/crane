@@ -22,24 +22,24 @@ const (
 
 // ValidationResult is one row in the final report.
 type ValidationResult struct {
-	APIVersion     string           `json:"apiVersion"`
-	Kind           string           `json:"kind"`
-	Namespace      string           `json:"namespace,omitempty"`
-	ResourcePlural string           `json:"resourcePlural,omitempty"`
-	Status         ValidationStatus `json:"status"`
-	Reason         string           `json:"reason,omitempty"`
-	Suggestion     string           `json:"suggestion,omitempty"`
+	APIVersion     string           `json:"apiVersion" yaml:"apiVersion"`
+	Kind           string           `json:"kind" yaml:"kind"`
+	Namespace      string           `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	ResourcePlural string           `json:"resourcePlural,omitempty" yaml:"resourcePlural,omitempty"`
+	Status         ValidationStatus `json:"status" yaml:"status"`
+	Reason         string           `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Suggestion     string           `json:"suggestion,omitempty" yaml:"suggestion,omitempty"`
 }
 
 // ValidationReport is the complete output.
 type ValidationReport struct {
-	Mode               string             `json:"mode"`                         // "live" or "offline"
-	APIResourcesSource string             `json:"apiResourcesSource,omitempty"` // file path (offline mode)
-	ClusterContext     string             `json:"clusterContext,omitempty"`     // kubeconfig context (live mode)
-	Results            []ValidationResult `json:"results"`
-	TotalScanned       int                `json:"totalScanned"`
-	Compatible         int                `json:"compatible"`
-	Incompatible       int                `json:"incompatible"`
+	Mode               string             `json:"mode" yaml:"mode"`                                                 // "live" or "offline"
+	APIResourcesSource string             `json:"apiResourcesSource,omitempty" yaml:"apiResourcesSource,omitempty"` // file path (offline mode)
+	ClusterContext     string             `json:"clusterContext,omitempty" yaml:"clusterContext,omitempty"`         // kubeconfig context (live mode)
+	Results            []ValidationResult `json:"results" yaml:"results"`
+	TotalScanned       int                `json:"totalScanned" yaml:"totalScanned"`
+	Compatible         int                `json:"compatible" yaml:"compatible"`
+	Incompatible       int                `json:"incompatible" yaml:"incompatible"`
 }
 
 // HasIncompatible returns true if any resources are incompatible with the target.
