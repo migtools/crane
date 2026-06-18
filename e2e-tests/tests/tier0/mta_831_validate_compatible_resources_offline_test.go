@@ -17,8 +17,8 @@ import (
 )
 
 // runValidateAndParseReport runs crane validate and parses the report
-func runValidateAndParseReport(runner CraneRunner, inputDir string, validateDir string, apiSurfaceFile string, outputFormat string) (cranevalidate.ValidationReport, error) {
-	By("Run crane validate with " + outputFormat + " output format")
+func runValidateAndParseReport(runner CraneRunner, inputDir string, validateDir string,
+	apiSurfaceFile string, outputFormat string) (cranevalidate.ValidationReport, error) {
 	stdout, err := runner.Validate(ValidateOptions{
 		InputDir:         inputDir,
 		ValidateDir:      validateDir,
@@ -55,19 +55,25 @@ func runValidateAndParseReport(runner CraneRunner, inputDir string, validateDir 
 }
 
 // verifyCompatibleResources validates that a report contains all expected compatible resources
-func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace string, validateDir string, outputFormat string) {
-	By("Verify report shows offline mode for " + outputFormat + " output")
+func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace string,
+	validateDir string, apiSurfaceFile string, outputFormat string) {
+	By(outputFormat + " report: Verify report shows offline mode")
 	Expect(report.Mode).To(Equal("offline"), "expected validation mode to be 'offline' in %s report", outputFormat)
 	log.Printf("%s validation mode: %s", outputFormat, report.Mode)
 
-	By("Verify all 5 resources were scanned in " + outputFormat + " report")
+	By(outputFormat + " report: Verify apiResourcesSource is set to the captured API surface file")
+	Expect(report.APIResourcesSource).NotTo(BeEmpty(), "expected apiResourcesSource to be set in offline mode")
+	Expect(report.APIResourcesSource).To(Equal(apiSurfaceFile), "expected apiResourcesSource to match API surface file path")
+	log.Printf("API resources source: %s", report.APIResourcesSource)
+
+	By(outputFormat + " report: Verify resource count")
 	Expect(report.TotalScanned).To(Equal(5), "expected exactly 5 resources scanned in %s report", outputFormat)
 	Expect(report.Compatible).To(Equal(5), "expected all 5 resources to be compatible in %s report", outputFormat)
 	Expect(report.Incompatible).To(Equal(0), "expected no incompatible resources in %s report", outputFormat)
 	log.Printf("%s report - Total: %d, Compatible: %d, Incompatible: %d",
 		outputFormat, report.TotalScanned, report.Compatible, report.Incompatible)
 
-	By("Verify expected resource types are present in " + outputFormat + " results")
+	By(outputFormat + " report: Verify resource API version, namespace, status")
 	expectedResources := map[string]string{
 		"Deployment":  "apps/v1",
 		"Service":     "v1",
@@ -78,9 +84,6 @@ func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace 
 
 	foundResources := make(map[string]bool)
 	for _, result := range report.Results {
-		log.Printf("%s report resource: %s/%s (namespace: %s, status: %s)",
-			outputFormat, result.APIVersion, result.Kind, result.Namespace, result.Status)
-
 		if expectedAPIVersion, expected := expectedResources[result.Kind]; expected {
 			foundResources[result.Kind] = true
 			Expect(result.APIVersion).To(Equal(expectedAPIVersion),
@@ -90,9 +93,11 @@ func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace 
 			Expect(result.Namespace).To(Equal(namespace),
 				"expected %s to be in namespace %s in %s report", result.Kind, namespace, outputFormat)
 		}
+		log.Printf("✓ %s report: Found %s with apiVersion %s in namespace %s with status %s", 
+			outputFormat, result.Kind, result.APIVersion, result.Namespace, result.Status)
 	}
 
-	By("Verify all 5 resource types were found in " + outputFormat + " report")
+	By(outputFormat + " report: Verify all expected resources were found")
 	var missingResources []string
 	for kind := range expectedResources {
 		if !foundResources[kind] {
@@ -102,11 +107,7 @@ func verifyCompatibleResources(report cranevalidate.ValidationReport, namespace 
 	Expect(missingResources).To(BeEmpty(),
 		"expected to find all resources in %s validation results, missing: %v", outputFormat, missingResources)
 
-	for kind := range expectedResources {
-		log.Printf("✓ Found %s in %s report with correct apiVersion and status", kind, outputFormat)
-	}
-
-	By("Verify no failures directory was created")
+	By(outputFormat + " output: Verify no failures directory was created")
 	failuresDir := filepath.Join(validateDir, "failures")
 	_, err := os.Stat(failuresDir)
 	Expect(os.IsNotExist(err)).To(BeTrue(),
@@ -118,7 +119,7 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 	It("[MTA-831] Generate and validate crane validate report in JSON format",
 		Label("tier0", "validate"), func() {
 		appName := "multi-resource-app"
-		namespace := appName
+		namespace := "multi-resource-831-offline"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -200,50 +201,84 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 		Expect(err).NotTo(HaveOccurred(), "API surface file should contain valid JSON")
 		log.Printf("API surface file validated")
 
-		// Automate MTA-848: Generate and validate crane validate report in YAML format
-		By("Run crane validate in offline mode with output in JSON format")
-		validateDir := filepath.Join(paths.TempDir, "validate")
-		report, err := runValidateAndParseReport(runner, paths.OutputDir, validateDir, apiSurfaceFile, "json")
-		Expect(err).NotTo(HaveOccurred(), "validate with JSON output should succeed for all compatible resources")
-		log.Printf("Crane validate completed with output in JSON format")
+		// Table-driven validation for both JSON and YAML formats
+		type formatTest struct {
+			format    string
+			dirSuffix string
+			label     string
+		}
 
-		By("Verify apiResourcesSource is set to the captured API surface file")
-		Expect(report.APIResourcesSource).NotTo(BeEmpty(), "expected apiResourcesSource to be set in offline mode")
-		Expect(report.APIResourcesSource).To(Equal(apiSurfaceFile), "expected apiResourcesSource to match API surface file path")
-		log.Printf("API resources source: %s", report.APIResourcesSource)
+		formats := []formatTest{
+			{format: "json", dirSuffix: "validate", label: "JSON"},
+			{format: "yaml", dirSuffix: "validate-yaml", label: "YAML"},
+		}
 
-		verifyCompatibleResources(report, namespace, validateDir, "JSON")
+		reports := make(map[string]cranevalidate.ValidationReport)
 
-		log.Printf("\n"+
-			"========================================\n"+
-			"JSON OUTPUT VALIDATION SUCCESS\n"+
-			"========================================\n"+
-			"Mode: %s\n"+
-			"API Resources Source: %s\n"+
-			"Total Scanned: %d\n"+
-			"Compatible: %d\n"+
-			"Incompatible: %d\n"+
-			"========================================\n",
-			report.Mode, report.APIResourcesSource,
-			report.TotalScanned, report.Compatible, report.Incompatible)
+		for _, ft := range formats {
+			By("Run crane validate in offline mode with output in " + ft.label + " format")
+			validateDir := filepath.Join(paths.TempDir, ft.dirSuffix)
+			report, err := runValidateAndParseReport(runner, paths.OutputDir, validateDir, apiSurfaceFile, ft.format)
+			Expect(err).NotTo(HaveOccurred(), "validate with %s output should succeed for all compatible resources", ft.label)
 
-		By("Run crane validate in offline mode with output in YAML format")
-		validateDirYAML := filepath.Join(paths.TempDir, "validate-yaml")
-		reportYAML, err := runValidateAndParseReport(runner, paths.OutputDir, validateDirYAML, apiSurfaceFile, "yaml")
-		Expect(err).NotTo(HaveOccurred(), "validate with YAML output should succeed for all compatible resources")
-		verifyCompatibleResources(reportYAML, namespace, validateDirYAML, "YAML")
+			verifyCompatibleResources(report, namespace, validateDir, apiSurfaceFile, ft.label)
 
-		log.Printf("\n"+
-			"========================================\n"+
-			"YAML OUTPUT VALIDATION SUCCESS\n"+
-			"========================================\n"+
-			"Mode: %s\n"+
-			"API Resources Source: %s\n"+
-			"Total Scanned: %d\n"+
-			"Compatible: %d\n"+
-			"Incompatible: %d\n"+
-			"========================================\n",
-			reportYAML.Mode, reportYAML.APIResourcesSource,
-			reportYAML.TotalScanned, reportYAML.Compatible, reportYAML.Incompatible)
+			log.Printf("\n"+
+				"========================================\n"+
+				"%s OUTPUT VALIDATION SUCCESS\n"+
+				"========================================\n"+
+				"Mode: %s\n"+
+				"API Resources Source: %s\n"+
+				"Total Scanned: %d\n"+
+				"Compatible: %d\n"+
+				"Incompatible: %d\n"+
+				"========================================\n",
+				ft.label, report.Mode, report.APIResourcesSource,
+				report.TotalScanned, report.Compatible, report.Incompatible)
+
+			reports[ft.label] = report
+		}
+
+		report := reports["JSON"]
+		reportYAML := reports["YAML"]
+
+		By("Verify JSON and YAML reports contain identical data")
+		Expect(reportYAML.Mode).To(Equal(report.Mode), "JSON and YAML reports should have same mode")
+		Expect(reportYAML.APIResourcesSource).To(Equal(report.APIResourcesSource), "JSON and YAML reports should have same apiResourcesSource")
+		Expect(reportYAML.TotalScanned).To(Equal(report.TotalScanned), "JSON and YAML reports should have same totalScanned")
+		Expect(reportYAML.Compatible).To(Equal(report.Compatible), "JSON and YAML reports should have same compatible count")
+		Expect(reportYAML.Incompatible).To(Equal(report.Incompatible), "JSON and YAML reports should have same incompatible count")
+		Expect(reportYAML.Results).To(HaveLen(len(report.Results)), "JSON and YAML reports should have same number of results")
+
+		By("Verify each resource in JSON and YAML reports match")
+		// Create maps for easier comparison
+		jsonResults := make(map[string]cranevalidate.ValidationResult)
+		for _, r := range report.Results {
+			key := r.Kind + "/" + r.Namespace
+			jsonResults[key] = r
+		}
+
+		yamlResults := make(map[string]cranevalidate.ValidationResult)
+		for _, r := range reportYAML.Results {
+			key := r.Kind + "/" + r.Namespace
+			yamlResults[key] = r
+		}
+
+		// Verify same resources in both formats
+		for key, jsonRes := range jsonResults {
+			yamlRes, found := yamlResults[key]
+			Expect(found).To(BeTrue(), "resource %s found in JSON but missing in YAML", key)
+			Expect(yamlRes.APIVersion).To(Equal(jsonRes.APIVersion), "resource %s has different apiVersion in JSON vs YAML", key)
+			Expect(yamlRes.Status).To(Equal(jsonRes.Status), "resource %s has different status in JSON vs YAML", key)
+			Expect(yamlRes.ResourcePlural).To(Equal(jsonRes.ResourcePlural), "resource %s has different resourcePlural in JSON vs YAML", key)
+		}
+
+		// Verify no extra resources in YAML
+		for key := range yamlResults {
+			_, found := jsonResults[key]
+			Expect(found).To(BeTrue(), "resource %s found in YAML but missing in JSON", key)
+		}
+
+		log.Printf("✅ JSON and YAML reports are identical!")
 	})
 })
