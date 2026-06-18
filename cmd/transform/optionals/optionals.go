@@ -47,8 +47,9 @@ func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
-		Use:   "optionals",
-		Short: "Return a list of optional fields accepted by configured plugins",
+		Use:        "optionals",
+		Short:      "Return a list of optional fields accepted by configured plugins",
+		Deprecated: "use custom stages with kustomization patches instead. Optional flags apply globally to all stages and will be removed in a future version.",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
