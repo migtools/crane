@@ -2,12 +2,16 @@ package export
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -193,6 +197,101 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestValidate_ContextConflicts(t *testing.T) {
+	ptr := func(s string) *string { return &s }
+
+	tests := []struct {
+		name       string
+		context    *string
+		cluster    *string
+		server     *string
+		user       *string
+		token      *string
+		wantErr    bool
+		wantSubstr string
+	}{
+		{
+			name:    "context alone - ok",
+			context: ptr("my-ctx"),
+		},
+		{
+			name:       "context with cluster - error",
+			context:    ptr("my-ctx"),
+			cluster:    ptr("my-cluster"),
+			wantErr:    true,
+			wantSubstr: "--cluster",
+		},
+		{
+			name:       "context with server - error",
+			context:    ptr("my-ctx"),
+			server:     ptr("https://localhost:6443"),
+			wantErr:    true,
+			wantSubstr: "--server",
+		},
+		{
+			name:       "context with user - error",
+			context:    ptr("my-ctx"),
+			user:       ptr("admin"),
+			wantErr:    true,
+			wantSubstr: "--user",
+		},
+		{
+			name:       "context with token - error",
+			context:    ptr("my-ctx"),
+			token:      ptr("my-token"),
+			wantErr:    true,
+			wantSubstr: "--token",
+		},
+		{
+			name:    "no context with cluster - ok",
+			cluster: ptr("my-cluster"),
+		},
+		{
+			name:   "no context with server - ok",
+			server: ptr("https://localhost:6443"),
+		},
+		{
+			name:    "empty context with cluster - ok",
+			context: ptr(""),
+			cluster: ptr("my-cluster"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &ExportOptions{
+				configFlags: genericclioptions.NewConfigFlags(true),
+			}
+			if tt.context != nil {
+				o.configFlags.Context = tt.context
+			}
+			if tt.cluster != nil {
+				o.configFlags.ClusterName = tt.cluster
+			}
+			if tt.server != nil {
+				o.configFlags.APIServer = tt.server
+			}
+			if tt.user != nil {
+				o.configFlags.AuthInfoName = tt.user
+			}
+			if tt.token != nil {
+				o.configFlags.BearerToken = tt.token
+			}
+
+			err := o.Validate()
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), tt.wantSubstr) {
+				t.Fatalf("error = %q, want substring %q", err.Error(), tt.wantSubstr)
+			}
+		})
+	}
+}
+
 func TestNewExportCommand(t *testing.T) {
 	streams := genericclioptions.NewTestIOStreamsDiscard()
 	cmd := NewExportCommand(streams, nil)
@@ -259,4 +358,120 @@ func TestValidateExportNamespace(t *testing.T) {
 			t.Fatal("expected error")
 		}
 	})
+}
+
+func TestExport_HelpGroupsFlags(t *testing.T) {
+	streams, _, outBuf, _ := genericclioptions.NewTestIOStreams()
+	cmd := NewExportCommand(streams, nil)
+
+	// Ensure help output goes to our buffer for assertions.
+	cmd.SetOut(outBuf)
+	cmd.SetErr(outBuf)
+
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error running --help: %v", err)
+	}
+
+	help := outBuf.String()
+
+	commandSpecificHeader := "Command-specific Flags:"
+	kubeHeader := "Inherited Kubernetes Client Flags:"
+
+	commandSpecificIdx := strings.Index(help, commandSpecificHeader)
+	if commandSpecificIdx == -1 {
+		t.Fatalf("missing %q section in help output:\n%s", commandSpecificHeader, help)
+	}
+
+	kubeIdx := strings.Index(help, kubeHeader)
+	if kubeIdx == -1 {
+		t.Fatalf("missing %q section in help output:\n%s", kubeHeader, help)
+	}
+
+	if commandSpecificIdx > kubeIdx {
+		t.Fatalf("expected command-specific section before inherited kube/client section")
+	}
+
+	commandSpecificSection := help[commandSpecificIdx:kubeIdx]
+	kubeSection := help[kubeIdx:]
+
+	if !strings.Contains(commandSpecificSection, "--export-dir") {
+		t.Fatalf("expected --export-dir in command-specific section, got:\n%s", commandSpecificSection)
+	}
+
+	if strings.Contains(commandSpecificSection, "--context") {
+		t.Fatalf("did not expect --context in command-specific section, got:\n%s", commandSpecificSection)
+	}
+
+	if !strings.Contains(kubeSection, "--context") {
+		t.Fatalf("expected --context in inherited kube/client section, got:\n%s", kubeSection)
+	}
+}
+
+func TestAllResourceListsForbidden(t *testing.T) {
+	forbiddenErr := apierrors.NewForbidden(
+		schema.GroupResource{Resource: "configmaps"},
+		"",
+		errors.New("forbidden"),
+	)
+	notFoundErr := apierrors.NewNotFound(
+		schema.GroupResource{Resource: "configmaps"},
+		"cm1",
+	)
+
+	apiResource := metav1.APIResource{
+		Name:       "configmaps",
+		Kind:       "ConfigMap",
+		Namespaced: true,
+	}
+
+	tests := []struct {
+		name         string
+		resources    []*groupResource
+		resourceErrs []*groupResourceError
+		want         bool
+	}{
+		{
+			name:         "no resources and no errors",
+			resources:    nil,
+			resourceErrs: nil,
+			want:         false,
+		},
+		{
+			name:      "all forbidden and no resources",
+			resources: nil,
+			resourceErrs: []*groupResourceError{
+				{APIResource: apiResource, Error: forbiddenErr},
+			},
+			want: true,
+		},
+		{
+			name:      "mixed errors and no resources",
+			resources: nil,
+			resourceErrs: []*groupResourceError{
+				{APIResource: apiResource, Error: forbiddenErr},
+				{APIResource: apiResource, Error: notFoundErr},
+			},
+			want: false,
+		},
+		{
+			name: "forbidden exists but resources exported",
+			resources: []*groupResource{
+				{APIResource: apiResource},
+			},
+			resourceErrs: []*groupResourceError{
+				{APIResource: apiResource, Error: forbiddenErr},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := allResourceListsForbidden(tt.resources, tt.resourceErrs)
+			if got != tt.want {
+				t.Fatalf("allResourceListsForbidden() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

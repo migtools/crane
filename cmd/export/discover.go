@@ -2,6 +2,7 @@ package export
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -172,12 +173,40 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 }
 
 // getFilePath returns a stable filename from kind, group, version, namespace, and name.
+// If the filename exceeds 255 characters, it is truncated and a hash suffix is added.
 func getFilePath(obj unstructured.Unstructured) string {
+	const maxFilenameLength = 255
+
 	namespace := obj.GetNamespace()
 	if namespace == "" {
 		namespace = "clusterscoped"
 	}
-	return strings.Join([]string{obj.GetKind(), obj.GetObjectKind().GroupVersionKind().GroupKind().Group, obj.GetObjectKind().GroupVersionKind().Version, namespace, obj.GetName()}, "_") + ".yaml"
+
+	kind := obj.GetKind()
+	group := obj.GetObjectKind().GroupVersionKind().GroupKind().Group
+	version := obj.GetObjectKind().GroupVersionKind().Version
+	name := obj.GetName()
+
+	basename := strings.Join([]string{kind, group, version, namespace, name}, "_")
+	filename := basename + ".yaml"
+
+	if len(filename) <= maxFilenameLength {
+		return filename
+	}
+
+	maxBaseLen := maxFilenameLength - 22 // "_" + 16 hash chars + ".yaml"
+	truncated := basename
+	if len(basename) > maxBaseLen {
+		truncated = basename[:maxBaseLen]
+	}
+
+	hash := sha256.Sum256([]byte(filename))
+	hashStr := fmt.Sprintf("%x", hash[:8])
+
+	if len(truncated) > 0 {
+		return truncated + "_" + hashStr + ".yaml"
+	}
+	return hashStr + ".yaml"
 }
 
 // discoverPreferredResources returns server-preferred API resource lists, filtered to
@@ -258,11 +287,11 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				}
 				switch {
 				case apierrors.IsForbidden(err):
-					log.Errorf("cannot list obj in namespace for groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("access denied for groupVersion %s, kind: %s (expected for namespace-admin users)\n", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsMethodNotSupported(err):
-					log.Errorf("list method not supported on the groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Warnf("list method not supported on the groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsNotFound(err):
-					log.Errorf("could not find the resource, most likely this is a virtual resource, groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("resource not found (virtual resource), groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
 				default:
 					log.Errorf("error listing objects: %#v, groupVersion %s, kind: %s\n", err, g.APIGroupVersion, g.APIResource.Kind)
 				}
@@ -318,7 +347,7 @@ func getObjects(requestTimeout time.Duration, g *groupResource, namespace string
 		}
 	})
 	listOptions := metav1.ListOptions{}
-	if labelSelector != "" {
+	if labelSelector != "" && g.APIResource.Namespaced {
 		listOptions.LabelSelector = labelSelector
 	}
 

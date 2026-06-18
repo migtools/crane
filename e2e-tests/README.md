@@ -8,8 +8,11 @@ The suite is built with Ginkgo/Gomega and is organized to keep scenario code rea
 
 - `config/config.go`
   - Shared runtime configuration values populated from test flags (paths, kube contexts, verbose mode).
-- `tests/e2e_suite_test.go`
-  - Ginkgo suite entrypoint.
+- `tests/tier0/e2e_suite_test.go`
+  - Ginkgo suite entrypoint for tier0 tests.
+  - Registers CLI flags and configures test logging.
+- `tests/tier1/e2e_suite_test.go`
+  - Ginkgo suite entrypoint for tier1 tests.
   - Registers CLI flags and configures test logging.
 - `framework/app.go`
   - Wrapper around `k8sdeploy` app lifecycle commands: deploy, validate, remove.
@@ -42,6 +45,15 @@ The suite is built with Ginkgo/Gomega and is organized to keep scenario code rea
 - `utils/utils.go`
   - Generic test utility functions (temp directory creation, recursive file listing, file presence checks).
 
+## Test Organization
+
+Tests are organized into two tiers under `tests/`:
+
+- `tests/tier0/` — must-have gate tests; run on every push to main and nightly. These cover core migration scenarios that must pass before a release.
+- `tests/tier1/` — extended coverage; run nightly. These cover more advanced or environment-specific scenarios.
+
+Each tier is a separate Go package with its own `e2e_suite_test.go` entrypoint. Tests are also tagged with a matching Ginkgo label (`Label("tier0")` or `Label("tier1")`) so they can be filtered independently.
+
 ## How the Suite Works
 
 At a high level, each migration test follows the same pattern:
@@ -68,10 +80,36 @@ For namespace-admin scenarios, tests additionally:
 
 ## Running the Tests
 
-From repo root:
+Run all tiers from repo root:
 
 ```bash
-ginkgo run -v e2e-tests/tests -- \
+ginkgo run -v --recurse e2e-tests/tests -- \
+  --k8sdeploy-bin=/path/to/k8sdeploy \
+  --crane-bin=/path/to/crane \
+  --source-context=src \
+  --target-context=tgt \
+  --source-nonadmin-context=src-dev \
+  --target-nonadmin-context=tgt-dev \
+  --verbose-logs
+```
+
+Run only tier0:
+
+```bash
+ginkgo run -v --recurse --label-filter="tier0" e2e-tests/tests -- \
+  --k8sdeploy-bin=/path/to/k8sdeploy \
+  --crane-bin=/path/to/crane \
+  --source-context=src \
+  --target-context=tgt \
+  --source-nonadmin-context=src-dev \
+  --target-nonadmin-context=tgt-dev \
+  --verbose-logs
+```
+
+Run only tier1:
+
+```bash
+ginkgo run -v --recurse --label-filter="tier1" e2e-tests/tests -- \
   --k8sdeploy-bin=/path/to/k8sdeploy \
   --crane-bin=/path/to/crane \
   --source-context=src \
@@ -84,7 +122,7 @@ ginkgo run -v e2e-tests/tests -- \
 Run a single spec by focus:
 
 ```bash
-ginkgo run -v --focus="\[MTC-329\]" e2e-tests/tests -- \
+ginkgo run -v --recurse --focus="\[MTC-329\]" e2e-tests/tests -- \
   --k8sdeploy-bin=/path/to/k8sdeploy \
   --crane-bin=/path/to/crane \
   --source-context=src \
@@ -95,7 +133,7 @@ ginkgo run -v --focus="\[MTC-329\]" e2e-tests/tests -- \
 
 ## Flags
 
-Defined in `tests/e2e_suite_test.go`:
+Defined in `tests/tier0/e2e_suite_test.go` and `tests/tier1/e2e_suite_test.go`:
 
 - `--k8sdeploy-bin` path to `k8sdeploy` executable
 - `--crane-bin` path to `crane` executable
@@ -118,6 +156,7 @@ For consistency, prefer this structure:
    - `ApplyOutputToTarget(...)` for admin flows
    - `ApplyOutputToTargetNonAdmin(...)` for namespace-admin flows
    - `SetupNamespaceAdminUsersForScenario(...)` for non-admin RBAC setup
-5. Keep test-specific assertions and scenario-specific logic in the `tests/` file.
+5. Place the file in `tests/tier0/` or `tests/tier1/` depending on its tier, and tag the `It()` block with the matching `Label("tier0")` or `Label("tier1")`.
+6. Keep test-specific assertions and scenario-specific logic in the test file.
 
 This keeps scenario files focused on behavior, while framework files handle command plumbing and shared orchestration.

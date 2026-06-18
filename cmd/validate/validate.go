@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/internal/flags"
 	internalValidate "github.com/konveyor/crane/internal/validate"
@@ -23,19 +24,23 @@ type ValidateOptions struct {
 	validateDir      string
 	outputFormat     string
 	apiResourcesFile string
+	overwrite        bool
 
 	genericclioptions.IOStreams
 }
 
-// Complete loads the kubeconfig to ensure the target cluster is reachable.
+// Complete resolves the kubeconfig/context and constructs a discovery client,
+// failing fast on an invalid or nonexistent context before any manifest scan.
+// Note: this does not contact the API server; cluster unreachability is
+// detected later in Run() when discovery is queried.
 // Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 	if o.apiResourcesFile != "" {
 		return nil
 	}
-	_, err := o.configFlags.ToRawKubeConfigLoader().RawConfig()
+	_, err := o.configFlags.ToDiscoveryClient()
 	if err != nil {
-		return fmt.Errorf("loading kubeconfig for target cluster: %w", err)
+		return fmt.Errorf("creating discovery client: %w", err)
 	}
 	return nil
 }
@@ -50,6 +55,7 @@ func (o *ValidateOptions) Validate() error {
 		return fmt.Errorf("input-dir %q is not a directory", o.inputDir)
 	}
 
+	o.outputFormat = strings.ToLower(o.outputFormat)
 	if o.outputFormat != "yaml" && o.outputFormat != "json" {
 		return fmt.Errorf("--output must be \"yaml\" or \"json\", got %q", o.outputFormat)
 	}
@@ -60,6 +66,18 @@ func (o *ValidateOptions) Validate() error {
 		}
 		if o.configFlags.KubeConfig != nil && *o.configFlags.KubeConfig != "" {
 			return fmt.Errorf("--api-resources and --kubeconfig are mutually exclusive; use --api-resources for offline validation or --kubeconfig for live validation")
+		}
+		if o.configFlags.APIServer != nil && *o.configFlags.APIServer != "" {
+			return fmt.Errorf("--api-resources and --server are mutually exclusive; use --api-resources for offline validation or --server for live validation")
+		}
+		if o.configFlags.BearerToken != nil && *o.configFlags.BearerToken != "" {
+			return fmt.Errorf("--api-resources and --token are mutually exclusive; use --api-resources for offline validation or --token for live validation")
+		}
+		if o.configFlags.ClusterName != nil && *o.configFlags.ClusterName != "" {
+			return fmt.Errorf("--api-resources and --cluster are mutually exclusive; use --api-resources for offline validation or --cluster for live validation")
+		}
+		if o.configFlags.AuthInfoName != nil && *o.configFlags.AuthInfoName != "" {
+			return fmt.Errorf("--api-resources and --user are mutually exclusive; use --api-resources for offline validation or --user for live validation")
 		}
 		if _, err := os.Stat(o.apiResourcesFile); err != nil {
 			return fmt.Errorf("api-resources file %q: %w", o.apiResourcesFile, err)
@@ -73,6 +91,15 @@ func (o *ValidateOptions) Validate() error {
 func (o *ValidateOptions) Run() error {
 	log := o.globalFlags.GetLogger()
 
+	log.Debugf("Input directory: %s", o.inputDir)
+	log.Debugf("Validate directory: %s", o.validateDir)
+	log.Debugf("Output format: %s", o.outputFormat)
+	if o.apiResourcesFile != "" {
+		log.Debugf("Mode: offline (api-resources: %s)", o.apiResourcesFile)
+	} else {
+		log.Debugf("Mode: live")
+	}
+
 	entries, err := internalValidate.ScanManifests(internalValidate.ScanOptions{Dirs: []string{o.inputDir}}, log)
 	if err != nil {
 		return fmt.Errorf("scanning manifests: %w", err)
@@ -80,16 +107,21 @@ func (o *ValidateOptions) Run() error {
 
 	log.Infof("Scanned %d distinct GVK+namespace tuples", len(entries))
 
+	if len(entries) == 0 {
+		return fmt.Errorf("no manifests found in %s: nothing to validate", o.inputDir)
+	}
+
 	var report *internalValidate.ValidationReport
 
 	if o.apiResourcesFile != "" {
-		index, err := internalValidate.ParseAPIResourcesJSON(o.apiResourcesFile)
+		index, err := internalValidate.ParseAPIResourcesJSON(o.apiResourcesFile, log)
 		if err != nil {
 			return fmt.Errorf("loading api-resources: %w", err)
 		}
-		report = internalValidate.MatchResultsFromIndex(entries, index)
+		report = internalValidate.MatchResultsFromIndex(entries, index, log)
 		report.Mode = "offline"
 		report.APIResourcesSource = o.apiResourcesFile
+		log.Infof("Validating in offline mode using api-resources file %q", o.apiResourcesFile)
 	} else {
 		discoveryClient, err := o.configFlags.ToDiscoveryClient()
 		if err != nil {
@@ -104,16 +136,30 @@ func (o *ValidateOptions) Run() error {
 		report.Mode = "live"
 		if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 			report.ClusterContext = *o.configFlags.Context
+			log.Infof("Validating in live mode against context %q", *o.configFlags.Context)
+		} else {
+			log.Infof("Validating in live mode against current kubeconfig context")
 		}
 	}
 
 	internalValidate.FormatTable(o.Out, report)
 
+	if _, err := os.Stat(o.validateDir); err == nil {
+		if !o.overwrite {
+			return fmt.Errorf("validate directory %q already exists; use --overwrite to replace it", o.validateDir)
+		}
+		if err := os.RemoveAll(o.validateDir); err != nil {
+			return fmt.Errorf("clearing validate directory %q: %w", o.validateDir, err)
+		}
+	}
 	if err := os.MkdirAll(o.validateDir, 0700); err != nil {
 		return fmt.Errorf("creating validate directory: %w", err)
 	}
+
 	reportExt := o.outputFormat
 	reportPath := filepath.Join(o.validateDir, "report."+reportExt)
+	failuresDir := filepath.Join(o.validateDir, "failures")
+
 	reportFile, err := os.Create(reportPath)
 	if err != nil {
 		return fmt.Errorf("creating validation report %q: %w", reportPath, err)
@@ -135,7 +181,6 @@ func (o *ValidateOptions) Run() error {
 	log.Infof("Wrote validation report to %s", reportPath)
 
 	if report.HasIncompatible() {
-		failuresDir := filepath.Join(o.validateDir, "failures")
 		if err := internalValidate.WriteFailures(failuresDir, report, log); err != nil {
 			return fmt.Errorf("writing validation failures to %q: %w", failuresDir, err)
 		}
@@ -149,7 +194,7 @@ func (o *ValidateOptions) Run() error {
 func NewValidateCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ValidateOptions{
 		configFlags:      genericclioptions.NewConfigFlags(true),
-		IOStreams:         streams,
+		IOStreams:        streams,
 		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
@@ -196,8 +241,9 @@ failed (or another error occurred).`,
 	cmd.Flags().StringVarP(&o.inputDir, "input-dir", "i", "output", "The path to the apply output directory containing final manifests")
 	cmd.Flags().StringVar(&o.validateDir, "validate-dir", "validate", "The path where validation results and failures are saved")
 	cmd.Flags().StringVarP(&o.outputFormat, "output", "o", "json", "Report file format: json or yaml")
-	cmd.Flags().StringVar(&o.apiResourcesFile, "api-resources", "", "Path to API surface JSON file from capture-api-surface.sh for offline validation (mutually exclusive with --context/--kubeconfig)")
+	cmd.Flags().StringVar(&o.apiResourcesFile, "api-resources", "", "Path to API surface JSON file from capture-api-surface.sh for offline validation (mutually exclusive with --context/--kubeconfig/--server/--token/--cluster/--user)")
+	cmd.Flags().BoolVar(&o.overwrite, "overwrite", false, "Overwrite the validate directory if it already exists")
 	o.configFlags.AddFlags(cmd.Flags())
-
+	flags.SetGroupedHelp(cmd, flags.KubernetesClientInheritedFlagNames())
 	return cmd
 }

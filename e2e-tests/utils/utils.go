@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"strconv"
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
@@ -97,6 +98,21 @@ func ReadTestdataFile(filename string) (string, error) {
 	}
 
 	return string(b), nil
+}
+
+// TestdataFilePath returns the path to a file under e2e-tests/testdata,
+// resolved relative to this package so it does not depend on process working directory.
+func TestdataFilePath(filename string) (string, error) {
+	if filename == "" {
+		return "", fmt.Errorf("filename is required")
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+	baseDir := filepath.Dir(thisFile)
+	path := filepath.Join(baseDir, "..", "testdata", filename)
+	return path, nil
 }
 
 // GoldenManifestsDir returns the path to the golden fixtures directory for an app and pipeline stage.
@@ -864,4 +880,77 @@ func AssertKindsNotInActiveKustomizeResources(transformDir string, deniedKinds [
 		}
 		return nil
 	})
+}
+
+// CaptureAPISurfaceScriptPath returns the absolute path to scripts/capture-api-surface.sh.
+// The path is resolved relative to this source file so tests do not depend on the
+// process working directory or crane binary location. It also verifies the script
+// exists and returns an error when it cannot be found.
+func CaptureAPISurfaceScriptPath() (string, error) {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+
+	// thisFile => <repo>/e2e-tests/utils/utils.go
+	// repo root => <repo>
+	baseDir := filepath.Dir(thisFile)
+	scriptPath := filepath.Join(baseDir, "..", "..", "scripts", "capture-api-surface.sh")
+
+	if _, err := os.Stat(scriptPath); err != nil {
+		return "", fmt.Errorf("capture script not found at %s: %w", scriptPath, err)
+	}
+
+	return scriptPath, nil
+}
+
+// ToInt64 converts a JSON-unmarshalled number (float64 or json.Number) to int64.
+func ToInt64(v any) (int64, error) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), nil
+	case json.Number:
+		return n.Int64()
+	case int64:
+		return n, nil
+	case string:
+		return strconv.ParseInt(strings.TrimSpace(n), 10, 64)
+	default:
+		return 0, fmt.Errorf("cannot convert %T to int64", v)
+	}
+}
+
+// ExtractCPUAverageUtilization walks spec.metrics to find the CPU Resource metric
+// averageUtilization value.
+func ExtractCPUAverageUtilization(spec map[string]any) int64 {
+	metrics, ok := spec["metrics"].([]any)
+	if !ok {
+		return 0
+	}
+	for _, m := range metrics {
+		metric, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		if metric["type"] != "Resource" {
+			continue
+		}
+		resource, ok := metric["resource"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if resource["name"] != "cpu" {
+			continue
+		}
+		target, ok := resource["target"].(map[string]any)
+		if !ok {
+			continue
+		}
+		val, err := ToInt64(target["averageUtilization"])
+		if err != nil {
+			return 0
+		}
+		return val
+	}
+	return 0
 }

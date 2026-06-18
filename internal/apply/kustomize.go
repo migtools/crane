@@ -19,10 +19,11 @@ import (
 
 // KustomizeApplier applies transformations using embedded kustomize
 type KustomizeApplier struct {
-	Log           *logrus.Logger
-	TransformDir  string
-	OutputDir     string
-	KustomizeArgs []string
+	Log               *logrus.Logger
+	TransformDir      string
+	OutputDir         string
+	KustomizeArgs     []string
+	SkipClusterScoped bool
 }
 
 // ApplySingleStage applies a single transform stage to produce output
@@ -50,6 +51,14 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 	output, err := k.runKustomizeBuild(stageDir)
 	if err != nil {
 		return fmt.Errorf("kustomize build failed for stage %s: %w", stageName, err)
+	}
+
+	// Filter cluster-scoped resources if requested
+	if k.SkipClusterScoped {
+		output, err = k.filterClusterScopedResources(output)
+		if err != nil {
+			return fmt.Errorf("failed to filter cluster-scoped resources: %w", err)
+		}
 	}
 
 	// Write output to output directory
@@ -91,6 +100,14 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 		return fmt.Errorf("kustomize build failed for stage %s: %w", lastStage.DirName, err)
 	}
 
+	// Filter cluster-scoped resources if requested
+	if k.SkipClusterScoped {
+		output, err = k.filterClusterScopedResources(output)
+		if err != nil {
+			return fmt.Errorf("failed to filter cluster-scoped resources: %w", err)
+		}
+	}
+
 	// Write to output.yaml (single file with all resources)
 	outputPath := filepath.Join(k.OutputDir, "output.yaml")
 	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
@@ -121,6 +138,61 @@ func (k *KustomizeApplier) runKustomizeBuild(dir string) ([]byte, error) {
 	return runner.Build(dir)
 }
 
+// filterClusterScopedResources removes cluster-scoped resources from a multi-document YAML stream
+func (k *KustomizeApplier) filterClusterScopedResources(yamlData []byte) ([]byte, error) {
+	decoder := yamlv3.NewDecoder(strings.NewReader(string(yamlData)))
+	var result bytes.Buffer
+	first := true
+
+	for {
+		var doc interface{}
+		err := decoder.Decode(&doc)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode YAML document: %w", err)
+		}
+		if doc == nil {
+			continue
+		}
+
+		var buf bytes.Buffer
+		encoder := yamlv3.NewEncoder(&buf)
+		encoder.SetIndent(2)
+		if err := encoder.Encode(doc); err != nil {
+			return nil, fmt.Errorf("failed to encode YAML document: %w", err)
+		}
+		if err := encoder.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close YAML encoder: %w", err)
+		}
+		docBytes := buf.Bytes()
+
+		jsonData, err := yaml.YAMLToJSON(docBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert YAML to JSON: %w", err)
+		}
+
+		u := unstructured.Unstructured{}
+		if err := u.UnmarshalJSON(jsonData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal resource: %w", err)
+		}
+
+		if u.GetNamespace() == "" {
+			k.Log.Infof("Skipping cluster-scoped resource %s/%s (--skip-cluster-scoped)", u.GetKind(), u.GetName())
+			continue
+		}
+
+		if !first {
+			result.WriteString("---\n")
+		}
+		result.Write(docBytes)
+		first = false
+	}
+
+	return result.Bytes(), nil
+}
+
 // splitMultiDocYAMLToFiles splits a multi-document YAML into individual resource files
 // This maintains backward compatibility with tests/tools expecting separate files
 func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
@@ -149,7 +221,9 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 		if err := encoder.Encode(doc); err != nil {
 			return fmt.Errorf("failed to encode YAML document: %w", err)
 		}
-		encoder.Close() // Flush the encoder
+		if err := encoder.Close(); err != nil {
+			return fmt.Errorf("failed to close YAML encoder: %w", err)
+		}
 		docBytes := buf.Bytes()
 
 		// Convert YAML to JSON to extract metadata

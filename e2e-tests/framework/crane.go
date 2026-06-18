@@ -22,6 +22,16 @@ type TransferPVCOptions struct {
 	Subdomain       string
 }
 
+// ValidateOptions contains arguments for the crane validate command.
+type ValidateOptions struct {
+	Context          string
+	InputDir         string
+	ValidateDir      string
+	OutputFormat     string
+	APIResourcesFile string
+	ExtraArgs        []string
+}
+
 // Export runs crane export for a namespace into the given export directory.
 func (c CraneRunner) Export(namespace, exportDir string) error {
 	args := []string{"export", "--context", c.SourceContext, "--namespace", namespace, "--export-dir", exportDir}
@@ -53,21 +63,46 @@ func (c CraneRunner) Transform(exportDir, transformDir string) error {
 // TransformStage runs crane transform with a specific stage.
 func (c CraneRunner) TransformStage(exportDir, transformDir, stage string) error {
 	if stage == "" {
-		return fmt.Errorf("crane transform --stage requires a non-empty stage")
+		return fmt.Errorf("crane transform requires a non-empty stage")
 	}
 	args := []string{
 		"transform",
 		"--export-dir", exportDir,
 		"--transform-dir", transformDir,
-		"--stage", stage,
+		stage,
 	}
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir
 	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane transform --stage", out)
+	logVerboseOutput("crane transform with stage", out)
 	if err != nil {
-		return fmt.Errorf("crane transform --stage %q failed: %v, output: %s", stage, err, string(out))
+		return fmt.Errorf("crane transform with stage %q failed: %v, output: %s", stage, err, string(out))
+	}
+	return nil
+}
+
+// TransformWithInstructionsFile runs crane transform using an instructions file.
+func (c CraneRunner) TransformWithInstructionsFile(exportDir, transformDir, instructionsFile string, force bool) error {
+	if instructionsFile == "" {
+		return fmt.Errorf("crane transform --instructions-file requires a non-empty instructions file path")
+	}
+	args := []string{
+		"transform",
+		"--export-dir", exportDir,
+		"--transform-dir", transformDir,
+		"--instructions-file", instructionsFile,
+	}
+	if force {
+		args = append(args, "--force")
+	}
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane transform --instructions-file", out)
+	if err != nil {
+		return fmt.Errorf("crane transform --instructions-file failed: %w, output: %s", err, string(out))
 	}
 	return nil
 }
@@ -107,4 +142,38 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
 	}
 	return nil
+}
+
+// Validate runs crane validate and returns command output or an error.
+func (c CraneRunner) Validate(opts ValidateOptions) (stdout string, err error) {
+	args := []string{"validate"}
+
+	if opts.Context != "" {
+		args = append(args, "--context", opts.Context)
+	}
+	if opts.InputDir != "" {
+		args = append(args, "--input-dir", opts.InputDir)
+	}
+	if opts.ValidateDir != "" {
+		args = append(args, "--validate-dir", opts.ValidateDir)
+	}
+	if opts.OutputFormat != "" {
+		args = append(args, "--output", opts.OutputFormat)
+	}
+	if opts.APIResourcesFile != "" {
+		args = append(args, "--api-resources", opts.APIResourcesFile)
+	}
+	if len(opts.ExtraArgs) > 0 {
+		args = append(args, opts.ExtraArgs...)
+	}
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, cmdErr := cmd.CombinedOutput()
+	logVerboseOutput("crane validate", out)
+	stdout = string(out)
+	if cmdErr != nil {
+		return stdout, fmt.Errorf("crane validate failed: %v, output: %s", cmdErr, stdout)
+	}
+	return stdout, nil
 }

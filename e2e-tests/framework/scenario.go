@@ -31,28 +31,32 @@ func NewMigrationScenario(appName, namespace, k8sDeployBin, craneBin, srcCtx, tg
 		AppName:   appName,
 		Namespace: namespace,
 		SrcApp: K8sDeployApp{
-			Name:      appName,
-			Namespace: namespace,
-			Bin:       k8sDeployBin,
-			Context:   srcCtx,
+			Name:            appName,
+			Namespace:       namespace,
+			Bin:             k8sDeployBin,
+			Context:         srcCtx,
+			InsecureSkipTLS: config.InsecureSkipTLSVerify,
 		},
 		TgtApp: K8sDeployApp{
-			Name:      appName,
-			Namespace: namespace,
-			Bin:       k8sDeployBin,
-			Context:   tgtCtx,
+			Name:            appName,
+			Namespace:       namespace,
+			Bin:             k8sDeployBin,
+			Context:         tgtCtx,
+			InsecureSkipTLS: config.InsecureSkipTLSVerify,
 		},
 		SrcAppNonAdmin: K8sDeployApp{
-			Name:      appName,
-			Namespace: namespace,
-			Bin:       k8sDeployBin,
-			Context:   config.SourceNonAdminContext,
+			Name:            appName,
+			Namespace:       namespace,
+			Bin:             k8sDeployBin,
+			Context:         config.SourceNonAdminContext,
+			InsecureSkipTLS: config.InsecureSkipTLSVerify,
 		},
 		TgtAppNonAdmin: K8sDeployApp{
-			Name:      appName,
-			Namespace: namespace,
-			Bin:       k8sDeployBin,
-			Context:   config.TargetNonAdminContext,
+			Name:            appName,
+			Namespace:       namespace,
+			Bin:             k8sDeployBin,
+			Context:         config.TargetNonAdminContext,
+			InsecureSkipTLS: config.InsecureSkipTLSVerify,
 		},
 		KubectlSrc:         KubectlRunner{Bin: "kubectl", Context: srcCtx},
 		KubectlTgt:         KubectlRunner{Bin: "kubectl", Context: tgtCtx},
@@ -74,6 +78,7 @@ type ScenarioPaths struct {
 	ExportDir    string
 	TransformDir string
 	OutputDir    string
+	ValidateDir  string
 }
 
 // NewScenarioPaths creates a temp workspace and standard export/transform/output dirs.
@@ -88,6 +93,7 @@ func NewScenarioPaths(prefix string) (ScenarioPaths, error) {
 		ExportDir:    tempDir + "/export",
 		TransformDir: tempDir + "/transform",
 		OutputDir:    tempDir + "/output",
+		ValidateDir:  tempDir + "/validate",
 	}, nil
 }
 
