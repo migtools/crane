@@ -303,9 +303,6 @@ spec:
 		filenames = append(filenames, f.Name())
 	}
 
-	// Service (400) should come before Deployment (340) - wait, that's wrong!
-	// Let me check: Service is 400, Deployment is 340
-	// So Deployment (340) comes before Service (400)
 	if !strings.HasPrefix(filenames[0], "340_Deployment_") {
 		t.Errorf("First file should be Deployment (340), got: %s", filenames[0])
 	}
