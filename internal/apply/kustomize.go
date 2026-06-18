@@ -24,6 +24,7 @@ type KustomizeApplier struct {
 	OutputDir         string
 	KustomizeArgs     []string
 	SkipClusterScoped bool
+	Ordered           bool // Enable ordered resource filenames with dependency-aware prefixes
 }
 
 // ApplySingleStage applies a single transform stage to produce output
@@ -260,8 +261,13 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 			return fmt.Errorf("failed to create resource directory %s: %w", resourceDir, err)
 		}
 
-		// Write individual file using ordered filename for dependency-aware application
-		filename := file.GetOrderedResourceFilename(u)
+		// Write individual file - use ordered filename if requested
+		var filename string
+		if k.Ordered {
+			filename = file.GetOrderedResourceFilename(u)
+		} else {
+			filename = file.GetResourceFilename(u)
+		}
 		filePath := filepath.Join(resourceDir, filename)
 
 		if err := os.WriteFile(filePath, docBytes, 0644); err != nil {

@@ -78,7 +78,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Mutate Deployment to deprecated extensions/v1beta1 API version")
-		deploymentPattern := filepath.Join(paths.OutputDir, "resources", namespace, "*_Deployment_*.yaml")
+		deploymentPattern := filepath.Join(paths.OutputDir, "resources", namespace, "Deployment_*.yaml")
 		deploymentMatches, err := filepath.Glob(deploymentPattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(deploymentMatches).NotTo(BeEmpty(), "expected at least one Deployment manifest")

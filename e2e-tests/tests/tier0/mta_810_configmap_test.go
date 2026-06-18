@@ -74,7 +74,7 @@ var _ = Describe("ConfigMap Migration", func() {
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Verify the output directory ConfigMap has the correct data")
-		pattern := filepath.Join(paths.OutputDir, "resources", namespace, "*_ConfigMap_*.yaml")
+		pattern := filepath.Join(paths.OutputDir, "resources", namespace, "ConfigMap_*.yaml")
 		matches, err := filepath.Glob(pattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matches).NotTo(BeEmpty(), "expected at least one ConfigMap manifest")
