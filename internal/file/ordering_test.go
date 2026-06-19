@@ -1,6 +1,8 @@
 package file
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -19,7 +21,7 @@ func TestGetResourceOrder(t *testing.T) {
 		{"RoleBinding", 310},
 		{"Deployment", 340},
 		{"Service", 400},
-		{"UnknownKind", 1000}, // Default
+		{"UnknownKind", 999}, // Default
 	}
 
 	for _, tt := range tests {
@@ -136,6 +138,71 @@ func TestGetOrderedResourceFilename(t *testing.T) {
 				t.Errorf("GetOrderedResourceFilename() = %s, want %s", filename, tt.expected)
 			}
 		})
+	}
+}
+
+func TestOrderValues_MaxThreeDigits(t *testing.T) {
+	// Ensure all order values are ≤ 999 to maintain 3-digit padding
+	// This prevents the sorting bug where 4-digit values (e.g., 1000) sort
+	// lexicographically before 3-digit values (e.g., 240)
+	for kind, order := range ResourceOrder {
+		if order > 999 {
+			t.Errorf("Order value for %s is %d, but must be ≤ 999 to maintain 3-digit padding. "+
+				"Either reduce the order value or switch to 4-digit padding (%%04d)", kind, order)
+		}
+	}
+}
+
+func TestOrderedFilenames_LexicographicSorting(t *testing.T) {
+	// Verify that ordered filenames sort lexicographically in the same order as numeric ordering
+	// This is critical for tools that apply resources in sorted filename order
+	testResources := []struct {
+		kind     string
+		name     string
+		order    int
+	}{
+		{"Namespace", "ns1", 10},
+		{"ConfigMap", "cm1", 240},
+		{"Role", "role1", 300},
+		{"Deployment", "deploy1", 340},
+		{"Service", "svc1", 400},
+		{"MutatingWebhookConfiguration", "mwc1", 810},
+		{"UnknownKind", "unknown1", 999},
+	}
+
+	var filenames []string
+	for _, r := range testResources {
+		obj := unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       r.kind,
+				"metadata": map[string]interface{}{
+					"name":      r.name,
+					"namespace": "default",
+				},
+			},
+		}
+		filename := GetOrderedResourceFilename(obj)
+		filenames = append(filenames, filename)
+	}
+
+	// Create a sorted copy
+	sorted := make([]string, len(filenames))
+	copy(sorted, filenames)
+	sort.Strings(sorted)
+
+	// Verify lexicographic sorting matches numeric ordering
+	for i := range filenames {
+		if filenames[i] != sorted[i] {
+			t.Errorf("Filename ordering mismatch at index %d:\n  expected: %s\n  got:      %s\n  Lexicographic sort does not match numeric ordering",
+				i, filenames[i], sorted[i])
+		}
+	}
+
+	// Specifically verify UnknownKind (999) comes last
+	lastFile := filenames[len(filenames)-1]
+	if !strings.HasPrefix(lastFile, "999_") {
+		t.Errorf("UnknownKind should be last (999_...), but got: %s", lastFile)
 	}
 }
 

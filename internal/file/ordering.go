@@ -7,6 +7,8 @@ import (
 
 // ResourceOrder defines the application order for Kubernetes resources.
 // Lower numbers are applied first to ensure dependencies exist before dependents.
+// All order values must be ≤ 999 to maintain 3-digit padding in ordered filenames.
+// Unknown resource kinds use order 999 to ensure they are applied last.
 // This ordering follows kubectl's resource ordering for apply operations.
 var ResourceOrder = map[string]int{
 	// Cluster-wide resources
@@ -72,7 +74,7 @@ var ResourceOrder = map[string]int{
 	"MutatingWebhookConfiguration":   810,
 
 	// Default for unknown types
-	"_default": 1000,
+	"_default": 999,
 }
 
 // GetResourceOrder returns the application order for a given resource kind.
