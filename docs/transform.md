@@ -9,20 +9,24 @@ After running `crane transform`, you'll see:
 ```
 transform/
 └── 10_KubernetesPlugin/
-    ├── resources/
+    ├── input/
     │   ├── ConfigMap__v1_default_nginx-config.yaml
     │   ├── Deployment_apps_v1_default_wordpress.yaml
     │   └── Service__v1_default_kubernetes.yaml
     ├── patches/
     │   └── default--apps-v1--Deployment--wordpress.patch.yaml
+    ├── output/
+    │   └── default/
+    │       └── Deployment_apps_v1_default_wordpress.yaml
     └── kustomization.yaml
 ```
 
 ### What's in Each Directory?
 
-- **`resources/`**: Individual Kubernetes manifest files, one per resource
+- **`input/`**: Input resources for this stage (flat files)
 - **`patches/`**: Kustomize patches to apply to resources
-- **`kustomization.yaml`**: Kustomize configuration file
+- **`output/`**: Materialized output after applying kustomization
+- **`kustomization.yaml`**: Kustomize configuration file (references `input/`)
 
 ## Working with Transform Output
 
@@ -47,11 +51,11 @@ kubectl apply -k transform/10_KubernetesPlugin/
 
 ### Making Manual Changes
 
-You can edit resources in the `resources/` directory:
+You can edit resources in the `input/` directory:
 
 ```bash
 # Edit a deployment
-vi transform/10_KubernetesPlugin/resources/Deployment_apps_v1_default_wordpress.yaml
+vi transform/10_KubernetesPlugin/input/Deployment_apps_v1_default_wordpress.yaml
 
 # Preview changes
 kubectl kustomize transform/10_KubernetesPlugin/
@@ -88,36 +92,31 @@ This ensures that:
 - Resources marked as whiteout (deleted) don't appear in subsequent stages
 - Each stage sees the actual state of resources, not just patch instructions
 
-### Working Directory Structure
+### Multi-Stage Directory Structure
 
-When running multistage transforms, Crane creates a working directory structure for debugging:
+When running multistage transforms, each stage contains its complete transformation pipeline:
 
 ```text
 transform/
-├── 10_KubernetesPlugin/     # Stage 1 transform artifacts
-│   ├── resources/
-│   ├── patches/
+├── 10_KubernetesPlugin/     # Stage 1
+│   ├── input/               # Input resources (flat files)
+│   ├── patches/             # Transformations
+│   ├── output/              # Materialized output (organized by namespace)
 │   └── kustomization.yaml
-├── 20_OpenshiftPlugin/      # Stage 2 transform artifacts
-│   ├── resources/
-│   ├── patches/
-│   └── kustomization.yaml
-└── .work/                   # Intermediate working artifacts
-    ├── 10_KubernetesPlugin/
-    │   ├── input/           # Stage 1 input snapshot (from export)
-    │   └── output/          # Stage 1 materialized output
-    └── 20_OpenshiftPlugin/
-        ├── input/           # Stage 2 input snapshot (Stage 1 output)
-        └── output/          # Stage 2 materialized output
+└── 20_OpenshiftPlugin/      # Stage 2
+    ├── input/               # Input (from Stage 1 output)
+    ├── patches/             # Transformations
+    ├── output/              # Materialized output
+    └── kustomization.yaml
 ```
 
-The `.work/` directory contains intermediate snapshots useful for debugging multi-stage pipelines.
+Each stage's `output/` becomes the next stage's `input/`, creating a sequential pipeline.
 
-**Important**: The `.work/` directory contains intermediate snapshots that are regenerated on each transform run. These are useful for debugging but should not be committed to version control. Add to your `.gitignore`:
+**Note**: `output/` directories are regenerated on each transform run and can be added to `.gitignore` if desired:
 
 ```gitignore
-# Crane intermediate artifacts (regenerated on each run)
-transform/.work/
+# Crane output artifacts (regenerated on each run)
+transform/*/output/
 ```
 
 ### Running Multi-Stage Transforms
