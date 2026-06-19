@@ -110,18 +110,13 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 		o.Log.Infof("Stage %s: loaded %d input resource(s)", stage.DirName, len(inputResources))
 
-		// Step 3: Save input to working directory for debugging
-		stageInputDir := opts.GetStageInputDir(stage.DirName)
-		if err := o.writeResourcesToDirectory(inputResources, stageInputDir); err != nil {
-			return fmt.Errorf("stage %s: failed to write input snapshot: %w", stage.DirName, err)
-		}
-
-		// Step 4: Execute transform for this stage (generates transform artifacts)
+		// Step 3: Execute transform for this stage (generates transform artifacts)
+		// Note: Input resources will be written to input/ directory by executeStage via writer
 		if err := o.executeStage(stage, inputResources, allPlugins); err != nil {
 			return fmt.Errorf("stage %s: transform execution failed: %w", stage.DirName, err)
 		}
 
-		// Step 5: Apply transforms to get output resources
+		// Step 4: Apply transforms to get output resources
 		stageTransformDir := opts.GetStageTransformDir(stage.DirName)
 		outputResources, err := o.applyStageTransforms(stageTransformDir)
 		if err != nil {
@@ -130,7 +125,7 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 		o.Log.Infof("Stage %s: produced %d output resource(s)", stage.DirName, len(outputResources))
 
-		// Step 6: Write output to working directory (becomes input for next stage)
+		// Step 5: Write output (becomes input for next stage)
 		stageOutputDir := opts.GetStageOutputDir(stage.DirName)
 		if err := o.writeResourcesToDirectory(outputResources, stageOutputDir); err != nil {
 			return fmt.Errorf("stage %s: failed to write output: %w", stage.DirName, err)

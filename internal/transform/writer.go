@@ -51,7 +51,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	}
 
 	// Create stage directories
-	resourcesDir := w.opts.GetResourcesDir(w.stageName)
+	resourcesDir := w.opts.GetInputDir(w.stageName)
 	patchesDir := w.opts.GetPatchesDir(w.stageName)
 
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
@@ -189,10 +189,10 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 		// Check if this resource is active or whiteout
 		resourceID := getResourceID(resource)
 		if activeResourceIDs[resourceID] {
-			resourcePaths = append(resourcePaths, filepath.Join("resources", filename))
+			resourcePaths = append(resourcePaths, filepath.Join(file.InputDirName, filename))
 		} else {
 			// This resource is whiteout - add comment
-			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - resources/%s", filename))
+			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - %s/%s", file.InputDirName, filename))
 		}
 	}
 

@@ -444,13 +444,6 @@ func TestReconcileInstructionStages_Force(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(transformDir, "50_Stage2"), 0755); err != nil {
 		t.Fatalf("failed to create stage: %v", err)
 	}
-	// Also create work dirs
-	if err := os.MkdirAll(filepath.Join(transformDir, ".work", "10_KubernetesPlugin"), 0755); err != nil {
-		t.Fatalf("failed to create work: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(transformDir, ".work", "50_Stage2"), 0755); err != nil {
-		t.Fatalf("failed to create work: %v", err)
-	}
 
 	o := &Options{
 		Flags: Flags{
@@ -476,11 +469,6 @@ func TestReconcileInstructionStages_Force(t *testing.T) {
 	_, err = os.Stat(filepath.Join(transformDir, "50_Stage2"))
 	if !os.IsNotExist(err) {
 		t.Fatalf("expected extra stage dir to be deleted, got err: %v", err)
-	}
-	// Extra stage work dir should be deleted.
-	_, err = os.Stat(filepath.Join(transformDir, ".work", "50_Stage2"))
-	if !os.IsNotExist(err) {
-		t.Fatalf("expected extra stage work dir to be deleted, got err: %v", err)
 	}
 }
 
@@ -524,7 +512,7 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 		t.Fatalf("failed to create existing stage dir: %v", err)
 	}
 	// Create output directory to simulate stage has been run
-	existingStageOutputDir := filepath.Join(transformDir, ".work", "10_KubernetesPlugin", "output")
+	existingStageOutputDir := filepath.Join(transformDir, "10_KubernetesPlugin", "output")
 	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
 		t.Fatalf("failed to create existing stage output dir: %v", err)
 	}
@@ -589,7 +577,7 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			if err := os.MkdirAll(existingStageDir, 0755); err != nil {
 				t.Fatalf("failed to create existing stage dir: %v", err)
 			}
-			existingStageOutputDir := filepath.Join(subTransformDir, ".work", "10_KubernetesPlugin", "output")
+			existingStageOutputDir := filepath.Join(subTransformDir, "10_KubernetesPlugin", "output")
 			if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
 				t.Fatalf("failed to create existing stage output dir: %v", err)
 			}
@@ -683,7 +671,7 @@ func TestResolveAndValidateStages_MultipleCustomStages(t *testing.T) {
 		t.Fatalf("failed to create existing stage dir: %v", err)
 	}
 	// Create output directory to simulate stage has been run
-	existingStageOutputDir := filepath.Join(transformDir, ".work", "10_KubernetesPlugin", "output")
+	existingStageOutputDir := filepath.Join(transformDir, "10_KubernetesPlugin", "output")
 	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
 		t.Fatalf("failed to create existing stage output dir: %v", err)
 	}
@@ -826,7 +814,7 @@ func TestResolveAndValidateStages_CustomStageWithPreviousStageOutput(t *testing.
 		t.Fatalf("failed to create existing stage dir: %v", err)
 	}
 	// Create output directory to simulate stage has been run
-	existingStageOutputDir := filepath.Join(transformDir, ".work", "10_KubernetesPlugin", "output")
+	existingStageOutputDir := filepath.Join(transformDir, "10_KubernetesPlugin", "output")
 	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
 		t.Fatalf("failed to create existing stage output dir: %v", err)
 	}
@@ -924,7 +912,7 @@ func TestResolveAndValidateStages_BaseNameCreatesNewStage(t *testing.T) {
 		t.Fatalf("failed to create existing stage dir: %v", err)
 	}
 	// Create output directory to pass previous stage check
-	existingStageOutputDir := filepath.Join(env.TransformDir, ".work", "10_KubernetesPlugin", "output")
+	existingStageOutputDir := filepath.Join(env.TransformDir, "10_KubernetesPlugin", "output")
 	if err := os.MkdirAll(existingStageOutputDir, 0755); err != nil {
 		t.Fatalf("failed to create existing stage output dir: %v", err)
 	}
@@ -1123,8 +1111,5 @@ func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
 	// Validate should not create transform artifacts.
 	if _, statErr := os.Stat(transformDir); !os.IsNotExist(statErr) {
 		t.Fatalf("expected transform dir to not exist after validation failure, got stat err: %v", statErr)
-	}
-	if _, statErr := os.Stat(filepath.Join(transformDir, ".work")); !os.IsNotExist(statErr) {
-		t.Fatalf("expected .work dir to not exist after validation failure, got stat err: %v", statErr)
 	}
 }
