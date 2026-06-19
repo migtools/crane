@@ -196,7 +196,7 @@ func TestWriteStage_ClusterScopedResources(t *testing.T) {
 	}
 
 	// Verify resource files use "clusterscoped" in filename
-	resourcesDir := filepath.Join(transformDir, stageName, "resources")
+	resourcesDir := filepath.Join(transformDir, stageName, "input")
 	entries, err := os.ReadDir(resourcesDir)
 	if err != nil {
 		t.Fatalf("Failed to read resources dir: %v", err)
@@ -311,7 +311,7 @@ func TestWriteStage_MixedNamespacedAndClusterScoped(t *testing.T) {
 	}
 
 	// Verify both resource files exist
-	resourcesDir := filepath.Join(transformDir, stageName, "resources")
+	resourcesDir := filepath.Join(transformDir, stageName, "input")
 	entries, err := os.ReadDir(resourcesDir)
 	if err != nil {
 		t.Fatalf("Failed to read resources dir: %v", err)
@@ -413,7 +413,7 @@ func TestWriteStage_ClusterScopedWhiteout(t *testing.T) {
 	}
 
 	// Verify resource file is written to disk
-	resourceFile := filepath.Join(transformDir, stageName, "resources",
+	resourceFile := filepath.Join(transformDir, stageName, "input",
 		"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_whiteout-role.yaml")
 	if _, err := os.Stat(resourceFile); os.IsNotExist(err) {
 		t.Error("Whiteout cluster-scoped resource should still be written to disk")
@@ -427,8 +427,8 @@ func TestWriteStage_ClusterScopedWhiteout(t *testing.T) {
 	kStr := string(kData)
 
 	// Check the resource is NOT active (uncommented) but IS commented out
-	// We need to be precise: "# - resources/..." (commented) also contains "- resources/..." as substring
-	resourceRef := "resources/ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_whiteout-role.yaml"
+	// We need to be precise: "# - input/..." (commented) also contains "- input/..." as substring
+	resourceRef := "input/ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_whiteout-role.yaml"
 	lines := strings.Split(kStr, "\n")
 	foundActive := false
 	foundCommented := false

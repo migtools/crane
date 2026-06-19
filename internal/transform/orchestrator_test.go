@@ -89,7 +89,7 @@ func TestRunMultiStage_StageOrdering(t *testing.T) {
 	transformDir := filepath.Join(tmpDir, "transform")
 
 	// Create export directory with a test resource
-	resourcesDir := filepath.Join(exportDir, "resources", "default")
+	resourcesDir := filepath.Join(exportDir, "input")
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create export dir: %v", err)
 	}
@@ -111,7 +111,7 @@ data:
 	// Create pre-existing stages in transform directory (simulating partial pipeline execution)
 	// Stage 10_KubernetesPlugin exists
 	stage10Dir := filepath.Join(transformDir, "10_KubernetesPlugin")
-	stage10ResourcesDir := filepath.Join(stage10Dir, "resources")
+	stage10ResourcesDir := filepath.Join(stage10Dir, "input")
 	if err := os.MkdirAll(stage10ResourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create stage 10 dir: %v", err)
 	}
@@ -133,7 +133,7 @@ resources:
 
 	// Create stage 20_OpenshiftPlugin directory (exists but empty, so stage 30 will fail loading from it)
 	stage20Dir := filepath.Join(transformDir, "20_OpenshiftPlugin")
-	stage20ResourcesDir := filepath.Join(stage20Dir, "resources")
+	stage20ResourcesDir := filepath.Join(stage20Dir, "input")
 	if err := os.MkdirAll(stage20ResourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create stage 20 dir: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestRunMultiStage_PreviousStageDependency(t *testing.T) {
 	transformDir := filepath.Join(tmpDir, "transform")
 
 	// Create export directory with test resource
-	resourcesDir := filepath.Join(exportDir, "resources", "default")
+	resourcesDir := filepath.Join(exportDir, "input")
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create export dir: %v", err)
 	}
@@ -242,7 +242,7 @@ data:
 
 	// Create first stage (10_KubernetesPlugin) that exists
 	stage10Dir := filepath.Join(transformDir, "10_KubernetesPlugin")
-	stage10ResourcesDir := filepath.Join(stage10Dir, "resources")
+	stage10ResourcesDir := filepath.Join(stage10Dir, "input")
 	if err := os.MkdirAll(stage10ResourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create stage 10 dir: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestNonMatchingPluginName_ResourcesPassThrough(t *testing.T) {
 	_ = filepath.Join(tmpDir, "transform") // Not used in this test
 
 	// Create export directory with test resource
-	resourcesDir := filepath.Join(exportDir, "resources", "default")
+	resourcesDir := filepath.Join(exportDir, "input")
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create export dir: %v", err)
 	}
@@ -651,7 +651,7 @@ data:
 
 	// Create stage 1 with kustomization (no plugins)
 	stage1Dir := filepath.Join(transformDir, "10_stage1")
-	stage1ResourcesDir := filepath.Join(stage1Dir, "resources")
+	stage1ResourcesDir := filepath.Join(stage1Dir, "input")
 
 	if err := os.MkdirAll(stage1ResourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create stage1 resources dir: %v", err)
@@ -678,7 +678,7 @@ resources:
 
 	// Create stage 2 with kustomization
 	stage2Dir := filepath.Join(transformDir, "20_stage2")
-	stage2ResourcesDir := filepath.Join(stage2Dir, "resources")
+	stage2ResourcesDir := filepath.Join(stage2Dir, "input")
 
 	if err := os.MkdirAll(stage2ResourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create stage2 resources dir: %v", err)
@@ -718,10 +718,10 @@ resources: []
 		ExportDir:    exportDir,
 	}
 
-	// Assert .work/<stage>/input and .work/<stage>/output directories exist
-	stage1InputDir := opts.GetStageInputDir("10_stage1")
+	// Assert <stage>/input and <stage>/output directories exist
+	stage1InputDir := opts.GetInputDir("10_stage1")
 	stage1OutputDir := opts.GetStageOutputDir("10_stage1")
-	stage2InputDir := opts.GetStageInputDir("20_stage2")
+	stage2InputDir := opts.GetInputDir("20_stage2")
 	stage2OutputDir := opts.GetStageOutputDir("20_stage2")
 
 	if _, err := os.Stat(stage1InputDir); os.IsNotExist(err) {
@@ -738,9 +738,9 @@ resources: []
 	}
 
 	// Assert stage 1 input contains original export data
-	stage1InputFiles, _ := filepath.Glob(filepath.Join(stage1InputDir, "default", "ConfigMap_*_config-one.yaml"))
+	stage1InputFiles, _ := filepath.Glob(filepath.Join(stage1InputDir, "ConfigMap_*_config-one.yaml"))
 	if len(stage1InputFiles) == 0 {
-		t.Errorf("Stage 1 input should contain config-one from export in: %s/default/", stage1InputDir)
+		t.Errorf("Stage 1 input should contain config-one from export in: %s", stage1InputDir)
 	}
 
 	// Assert stage 1 output exists
@@ -750,8 +750,8 @@ resources: []
 	}
 
 	// Assert stage 2 input contains stage 1 output (both resources)
-	stage2InputFiles1, _ := filepath.Glob(filepath.Join(stage2InputDir, "default", "ConfigMap_*_config-one.yaml"))
-	stage2InputFiles2, _ := filepath.Glob(filepath.Join(stage2InputDir, "default", "ConfigMap_*_config-two.yaml"))
+	stage2InputFiles1, _ := filepath.Glob(filepath.Join(stage2InputDir, "ConfigMap_*_config-one.yaml"))
+	stage2InputFiles2, _ := filepath.Glob(filepath.Join(stage2InputDir, "ConfigMap_*_config-two.yaml"))
 
 	if len(stage2InputFiles1) > 0 {
 		stage2Input1, err := os.ReadFile(stage2InputFiles1[0])
@@ -764,11 +764,11 @@ resources: []
 			}
 		}
 	} else {
-		t.Errorf("Stage 2 input should contain config-one from stage 1 output in: %s/default/", stage2InputDir)
+		t.Errorf("Stage 2 input should contain config-one from stage 1 output in: %s", stage2InputDir)
 	}
 
 	if len(stage2InputFiles2) == 0 {
-		t.Errorf("Stage 2 input should contain config-two from stage 1 output in: %s/default/", stage2InputDir)
+		t.Errorf("Stage 2 input should contain config-two from stage 1 output in: %s", stage2InputDir)
 	}
 
 	// Assert stage 2 output exists
@@ -891,7 +891,7 @@ data:
 	// 4. kubectl kustomize output would exclude whiteout types
 
 	stageDir := filepath.Join(transformDir, "10_test_stage")
-	resourcesDir := filepath.Join(stageDir, "resources")
+	resourcesDir := filepath.Join(stageDir, "input")
 
 	// Count resources written
 	resourceFileMap := make(map[string]string) // filename -> path
@@ -1238,7 +1238,7 @@ data:
 	}
 
 	// Verify stage 2 resources/ directory
-	stage2ResourcesDir := filepath.Join(transformDir, "20_stage2", "resources")
+	stage2ResourcesDir := filepath.Join(transformDir, "20_stage2", "input")
 	stage2Files := make(map[string]bool)
 	filepath.Walk(stage2ResourcesDir, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() && filepath.Ext(path) == ".yaml" {
@@ -1363,7 +1363,7 @@ data:
 	}
 
 	stageDir := filepath.Join(transformDir, "10_mixed_stage")
-	resourcesDir := filepath.Join(stageDir, "resources")
+	resourcesDir := filepath.Join(stageDir, "input")
 
 	// Check resource files written
 	resourceFiles := make(map[string]string)
@@ -1466,19 +1466,15 @@ func TestStageWorkingDirectoryStructure(t *testing.T) {
 	stageName := "10_TestStage"
 
 	// Verify path structure
-	expectedWorkDir := filepath.Join(transformDir, ".work", stageName)
-	expectedInputDir := filepath.Join(expectedWorkDir, "input")
-	expectedOutputDir := filepath.Join(expectedWorkDir, "output")
+	expectedStageDir := filepath.Join(transformDir, stageName)
+	expectedInputDir := filepath.Join(expectedStageDir, "input")
+	expectedOutputDir := filepath.Join(expectedStageDir, "output")
 	expectedTransformDir := filepath.Join(transformDir, stageName)
 
-	actualWorkDir := opts.GetStageWorkDir(stageName)
-	actualInputDir := opts.GetStageInputDir(stageName)
+	actualInputDir := opts.GetInputDir(stageName)
 	actualOutputDir := opts.GetStageOutputDir(stageName)
 	actualTransformDir := opts.GetStageTransformDir(stageName)
 
-	if actualWorkDir != expectedWorkDir {
-		t.Errorf("Work dir mismatch: expected %s, got %s", expectedWorkDir, actualWorkDir)
-	}
 	if actualInputDir != expectedInputDir {
 		t.Errorf("Input dir mismatch: expected %s, got %s", expectedInputDir, actualInputDir)
 	}
@@ -1557,7 +1553,7 @@ data:
 	// Test 2: Create a stage and verify it executes
 	t.Run("single stage executes successfully", func(t *testing.T) {
 		stage1Dir := filepath.Join(transformDir, "10_stage1")
-		stage1ResourcesDir := filepath.Join(stage1Dir, "resources")
+		stage1ResourcesDir := filepath.Join(stage1Dir, "input")
 
 		if err := os.MkdirAll(stage1ResourcesDir, 0700); err != nil {
 			t.Fatalf("Failed to create stage1 resources dir: %v", err)
@@ -1682,7 +1678,7 @@ subjects:
 	// Create two pass-through stages (no plugins)
 	for _, stageName := range []string{"10_stage1", "20_stage2"} {
 		stageDir := filepath.Join(transformDir, stageName)
-		stageResourcesDir := filepath.Join(stageDir, "resources")
+		stageResourcesDir := filepath.Join(stageDir, "input")
 		if err := os.MkdirAll(stageResourcesDir, 0700); err != nil {
 			t.Fatalf("Failed to create %s resources dir: %v", stageName, err)
 		}
@@ -1698,7 +1694,7 @@ resources: []
 
 	// Also write the actual resources into stage 1 so kustomize can build them on first pass
 	stage1Dir := filepath.Join(transformDir, "10_stage1")
-	stage1Resources := filepath.Join(stage1Dir, "resources")
+	stage1Resources := filepath.Join(stage1Dir, "input")
 	if err := os.WriteFile(filepath.Join(stage1Resources, "Deployment_apps_v1_my-app_web.yaml"), []byte(deploymentYAML), 0644); err != nil {
 		t.Fatalf("Failed to write stage1 deployment: %v", err)
 	}
@@ -1763,15 +1759,15 @@ resources:
 	}
 
 	// === Stage 2 input verification (should match stage 1 output) ===
-	stage2InputDir := opts.GetStageInputDir("20_stage2")
+	stage2InputDir := opts.GetInputDir("20_stage2")
 
-	stage2InputNs, _ := filepath.Glob(filepath.Join(stage2InputDir, "my-app", "Deployment_*_web.yaml"))
+	stage2InputNs, _ := filepath.Glob(filepath.Join(stage2InputDir, "Deployment_*_web.yaml"))
 	if len(stage2InputNs) == 0 {
-		t.Errorf("Stage 2 input: should contain Deployment from stage 1 output under my-app/")
+		t.Errorf("Stage 2 input: should contain Deployment from stage 1 output")
 	}
-	stage2InputCluster, _ := filepath.Glob(filepath.Join(stage2InputDir, "_cluster", "ClusterRole_*_web-reader.yaml"))
+	stage2InputCluster, _ := filepath.Glob(filepath.Join(stage2InputDir, "ClusterRole_*_web-reader.yaml"))
 	if len(stage2InputCluster) == 0 {
-		t.Errorf("Stage 2 input: should contain ClusterRole from stage 1 output under _cluster/")
+		t.Errorf("Stage 2 input: should contain ClusterRole from stage 1 output")
 	}
 
 	// === Stage 2 transform artifacts verification ===
