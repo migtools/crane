@@ -1486,9 +1486,9 @@ func TestStageWorkingDirectoryStructure(t *testing.T) {
 	}
 
 	t.Log("✓ Working directory structure is correct")
-	t.Log("  - .work/<stage>/input/    - snapshot of input resources")
+	t.Log("  - <stage>/input/         - snapshot of input resources")
 	t.Log("  - <stage>/               - transform artifacts (kustomization, patches)")
-	t.Log("  - .work/<stage>/output/   - materialized output (next stage input)")
+	t.Log("  - <stage>/output/        - materialized output (next stage input)")
 }
 
 // TestStageFailurePropagation tests that pipeline stops when stages are misconfigured
