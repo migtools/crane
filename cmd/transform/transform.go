@@ -382,16 +382,11 @@ func (o *Options) reconcileInstructionStages(transformDir string, desiredStages 
 	}
 
 	for _, extra := range extras {
-		stagePath := filepath.Join(transformDir, extra)              // transform/<stageName>
-		stageWorkPath := filepath.Join(transformDir, ".work", extra) // transform/.work/<stageName>
+		stagePath := filepath.Join(transformDir, extra) // transform/<stageName>
 		if err := os.RemoveAll(stagePath); err != nil {
 			return fmt.Errorf("failed to delete extra stage directory %q at path %q: %w", extra, stagePath, err)
 		}
-		if err := os.RemoveAll(stageWorkPath); err != nil {
-			return fmt.Errorf("failed to delete extra stage work directory %q at path %q: %w", extra, stageWorkPath, err)
-		}
 		log.Infof("Deleted stage directory not present in instructions file: %s", stagePath)
-		log.Infof("Deleted stage work directory not present in instructions file: %s", stageWorkPath)
 	}
 	return nil
 }

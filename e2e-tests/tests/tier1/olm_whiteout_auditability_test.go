@@ -97,7 +97,7 @@ var _ = Describe("OLM whiteout", func() {
 
 			olmKindsDeployed := []string{"Subscription", "CatalogSource", "OperatorGroup"}
 
-			By("Verify whiteout resource files exist in transform resources/ directory")
+			By("Verify whiteout resource files exist in transform input/ directory")
 			Expect(utils.AssertWhiteoutResourceFilesExist(paths.TransformDir, olmKindsDeployed)).NotTo(HaveOccurred())
 
 			By("Verify kustomization.yaml has whiteout comments for OLM kinds")
