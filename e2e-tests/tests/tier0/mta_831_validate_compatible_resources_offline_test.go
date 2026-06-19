@@ -13,107 +13,7 @@ import (
 	cranevalidate "github.com/konveyor/crane/internal/validate"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"gopkg.in/yaml.v3"
 )
-
-func runValidateAndParseReport(runner CraneRunner, inputDir string, validateDir string,
-	apiSurfaceFile string, outputFormat string) (cranevalidate.ValidationReport, error) {
-	// Ran crane validate command and parse the report
-	stdout, err := runner.Validate(ValidateOptions{
-		InputDir:         inputDir,
-		ValidateDir:      validateDir,
-		APIResourcesFile: apiSurfaceFile,
-		OutputFormat:     outputFormat,
-	})
-	if err != nil {
-		return cranevalidate.ValidationReport{}, err
-	}
-	log.Printf("Validate %s stdout: %s", outputFormat, stdout)
-
-	By("Verify " + outputFormat + " validation report exists")
-	reportExt := "." + outputFormat
-	reportPath := filepath.Join(validateDir, "report"+reportExt)
-	Expect(reportPath).To(BeAnExistingFile(), "expected report%s at %s", reportExt, reportPath)
-
-	By("Parse and verify " + outputFormat + " validation report")
-	reportData, err := os.ReadFile(reportPath)
-	if err != nil {
-		return cranevalidate.ValidationReport{}, err
-	}
-
-	var report cranevalidate.ValidationReport
-	if outputFormat == "yaml" {
-		err = yaml.Unmarshal(reportData, &report)
-	} else {
-		err = json.Unmarshal(reportData, &report)
-	}
-	if err != nil {
-		return cranevalidate.ValidationReport{}, err
-	}
-
-	return report, nil
-}
-
-func verifyValidateResults(report cranevalidate.ValidationReport, namespace string,
-	validateDir string, apiSurfaceFile string, outputFormat string) {
-	// Verify report data and creation of failures directory when required
-	By(outputFormat + " report: Verify report shows offline mode")
-	Expect(report.Mode).To(Equal("offline"), "expected validation mode to be 'offline' in %s report", outputFormat)
-	log.Printf("%s validation mode: %s", outputFormat, report.Mode)
-
-	By(outputFormat + " report: Verify apiResourcesSource is set to the captured API surface file")
-	Expect(report.APIResourcesSource).NotTo(BeEmpty(), "expected apiResourcesSource to be set in offline mode")
-	Expect(report.APIResourcesSource).To(Equal(apiSurfaceFile), "expected apiResourcesSource to match API surface file path")
-	log.Printf("API resources source: %s", report.APIResourcesSource)
-
-	By(outputFormat + " report: Verify resource count")
-	Expect(report.TotalScanned).To(Equal(5), "expected exactly 5 resources scanned in %s report", outputFormat)
-	Expect(report.Compatible).To(Equal(5), "expected all 5 resources to be compatible in %s report", outputFormat)
-	Expect(report.Incompatible).To(Equal(0), "expected no incompatible resources in %s report", outputFormat)
-	log.Printf("%s report - Total: %d, Compatible: %d, Incompatible: %d",
-		outputFormat, report.TotalScanned, report.Compatible, report.Incompatible)
-
-	By(outputFormat + " report: Verify resource API version, namespace, status")
-	expectedResources := map[string]string{
-		"Deployment":  "apps/v1",
-		"Service":     "v1",
-		"ConfigMap":   "v1",
-		"Secret":      "v1",
-		"RoleBinding": "rbac.authorization.k8s.io/v1",
-	}
-
-	foundResources := make(map[string]bool)
-	for _, result := range report.Results {
-		if expectedAPIVersion, expected := expectedResources[result.Kind]; expected {
-			foundResources[result.Kind] = true
-			Expect(result.APIVersion).To(Equal(expectedAPIVersion),
-				"expected %s to have apiVersion %s in %s report", result.Kind, expectedAPIVersion, outputFormat)
-			Expect(result.Status).To(Equal(cranevalidate.StatusOK),
-				"expected %s to have status OK in %s report", result.Kind, outputFormat)
-			Expect(result.Namespace).To(Equal(namespace),
-				"expected %s to be in namespace %s in %s report", result.Kind, namespace, outputFormat)
-		}
-		log.Printf("✓ %s report: Found %s with apiVersion %s in namespace %s with status %s", 
-			outputFormat, result.Kind, result.APIVersion, result.Namespace, result.Status)
-	}
-
-	By(outputFormat + " report: Verify all expected resources were found")
-	var missingResources []string
-	for kind := range expectedResources {
-		if !foundResources[kind] {
-			missingResources = append(missingResources, kind)
-		}
-	}
-	Expect(missingResources).To(BeEmpty(),
-		"expected to find all resources in %s validation results, missing: %v", outputFormat, missingResources)
-
-	By(outputFormat + " output: Verify no failures directory was created")
-	failuresDir := filepath.Join(validateDir, "failures")
-	_, err := os.Stat(failuresDir)
-	Expect(os.IsNotExist(err)).To(BeTrue(),
-		"expected no failures/ directory for all compatible resources")
-	log.Printf("No failures directory created")
-}
 
 var _ = Describe("Crane validate: all compatible standard resources in offline mode in JSON and YAML formats", func() {
 	It("[MTA-831][MTA-848] Generate and validate crane validate report in JSON and YAML formats",
@@ -218,10 +118,44 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 		for _, ft := range formats {
 			By("Run crane validate in offline mode with output in " + ft.label + " format")
 			validateDir := filepath.Join(paths.TempDir, ft.dirSuffix)
-			report, err := runValidateAndParseReport(runner, paths.OutputDir, validateDir, apiSurfaceFile, ft.format)
-			Expect(err).NotTo(HaveOccurred(), "validate with %s output should succeed for all compatible resources", ft.label)
 
-			verifyValidateResults(report, namespace, validateDir, apiSurfaceFile, ft.label)
+			// Run crane validate command
+			stdout, err := runner.Validate(ValidateOptions{
+				InputDir:         paths.OutputDir,
+				ValidateDir:      validateDir,
+				APIResourcesFile: apiSurfaceFile,
+				OutputFormat:     ft.format,
+			})
+			Expect(err).NotTo(HaveOccurred(), "crane validate should succeed")
+			log.Printf("Validate %s stdout: %s", ft.format, stdout)
+
+			By("Parse " + ft.label + " validation report")
+			var report cranevalidate.ValidationReport
+			err = utils.ParseValidationReport(validateDir, ft.format, &report)
+			Expect(err).NotTo(HaveOccurred(), "should parse %s report", ft.label)
+
+			// Define expectations for this test
+			expectations := utils.ValidationExpectations{
+				ValidationReport: cranevalidate.ValidationReport{
+					Mode:               "offline",
+					APIResourcesSource: apiSurfaceFile,
+					TotalScanned:       5,
+					Compatible:         5,
+					Incompatible:       0,
+				},
+				ExpectedResources: map[string]string{
+					"Deployment":  "apps/v1",
+					"Service":     "v1",
+					"ConfigMap":   "v1",
+					"Secret":      "v1",
+					"RoleBinding": "rbac.authorization.k8s.io/v1",
+				},
+				ExpectedStatus:    cranevalidate.StatusOK,
+				Namespace:         namespace,
+				ExpectFailuresDir: false,
+			}
+
+			utils.VerifyValidateResults(report, validateDir, ft.label, expectations)
 
 			log.Printf("\n"+
 				"========================================\n"+
