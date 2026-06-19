@@ -76,7 +76,6 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 // These can be changed if different naming is preferred (e.g., "input-resources" instead of "input")
 const (
 	InputDirName   = "input"    // input resources directory within a stage
-	NewDirName     = "new"      // (future) new resources created by plugin
 	PatchesDirName = "patches"  // patches directory within a stage
 	OutputDirName  = "output"   // output directory within a stage
 )

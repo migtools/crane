@@ -120,7 +120,7 @@ data:
 	kustomization10 := `apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- resources/configmap.yaml
+- input/configmap.yaml
 `
 	if err := os.WriteFile(filepath.Join(stage10Dir, "kustomization.yaml"), []byte(kustomization10), 0644); err != nil {
 		t.Fatalf("Failed to write kustomization: %v", err)
@@ -263,7 +263,7 @@ data:
 	kustomization10 := `apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- resources/configmap.yaml
+- input/configmap.yaml
 `
 	if err := os.WriteFile(filepath.Join(stage10Dir, "kustomization.yaml"), []byte(kustomization10), 0644); err != nil {
 		t.Fatalf("Failed to write kustomization: %v", err)
