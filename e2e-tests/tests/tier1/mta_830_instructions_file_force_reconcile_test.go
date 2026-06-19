@@ -81,8 +81,8 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		orphanStagePath := filepath.Join(paths.TransformDir, "99_OrphanStage")
 		err = os.MkdirAll(orphanStagePath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
-		// Create mirrored orphan work directory that should also be deleted with --force
-		workOrphanPath := filepath.Join(paths.TransformDir, ".work", "99_OrphanStage")
+		// Create orphan output directory within stage that should also be deleted with --force
+		workOrphanPath := filepath.Join(paths.TransformDir, "99_OrphanStage", "output")
 		err = os.MkdirAll(workOrphanPath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
 		//Create path for CustomStage that should be overwritten with --force
@@ -98,7 +98,7 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(orphanDirInfo.IsDir()).To(BeTrue())
 
-		By("Assert orphan stage work dir exists before running transform")
+		By("Assert orphan stage output dir exists before running transform")
 		workOrphanDirInfo, err := os.Stat(workOrphanPath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(workOrphanDirInfo.IsDir()).To(BeTrue())
@@ -123,9 +123,9 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		_, err = os.Stat(orphanStagePath)
 		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage to be removed by --force")
 
-		By("Assert orphan stage work dir is removed by --force")
+		By("Assert orphan stage (including output dir) is removed by --force")
 		_, err = os.Stat(workOrphanPath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage work dir to be removed by --force")
+		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage output dir to be removed by --force")
 
 		By("Assert preexisting custom stage file is removed by --force")
 		_, err = os.Stat(customStageExistingFilePath)

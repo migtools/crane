@@ -728,7 +728,7 @@ func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "resources/") {
+		if !strings.Contains(rel, "input/") {
 			return nil
 		}
 		name := info.Name()
@@ -750,13 +750,13 @@ func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("whiteout resource files missing from transform resources/ for kinds: %v", missing)
+		return fmt.Errorf("whiteout resource files missing from transform input/ for kinds: %v", missing)
 	}
 	return nil
 }
 
 // AssertWhiteoutResourceFileCount verifies that exactly expectedCount files
-// matching the given kind prefix exist in the transform resources/ directory.
+// matching the given kind prefix exist in the transform input/ directory.
 func AssertWhiteoutResourceFileCount(transformDir string, kind string, expectedCount int) error {
 	count := 0
 
@@ -768,7 +768,7 @@ func AssertWhiteoutResourceFileCount(transformDir string, kind string, expectedC
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "resources/") {
+		if !strings.Contains(rel, "input/") {
 			return nil
 		}
 		if strings.HasPrefix(info.Name(), kind+"_") || strings.HasPrefix(info.Name(), kind+".") {
