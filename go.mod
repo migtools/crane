@@ -11,7 +11,7 @@ require (
 	github.com/google/gnostic-models v0.7.0
 	github.com/google/go-cmp v0.7.0
 	github.com/jarcoal/httpmock v1.2.0
-	github.com/konveyor/crane-lib v0.1.6-0.20260414113823-a9f07d55042b
+	github.com/konveyor/crane-lib v0.1.6-0.20260618130404-9791be7b44bd
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.0
@@ -19,6 +19,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20260318142011-72bf34f474bc
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.10.0
+	github.com/spf13/pflag v1.0.9
 	github.com/spf13/viper v1.12.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/mod v0.32.0
@@ -79,7 +80,6 @@ require (
 	github.com/spf13/afero v1.9.2 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/subosito/gotenv v1.3.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
