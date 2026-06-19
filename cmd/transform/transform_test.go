@@ -444,13 +444,6 @@ func TestReconcileInstructionStages_Force(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(transformDir, "50_Stage2"), 0755); err != nil {
 		t.Fatalf("failed to create stage: %v", err)
 	}
-	// Also create work dirs
-	if err := os.MkdirAll(filepath.Join(transformDir, ".work", "10_KubernetesPlugin"), 0755); err != nil {
-		t.Fatalf("failed to create work: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(transformDir, ".work", "50_Stage2"), 0755); err != nil {
-		t.Fatalf("failed to create work: %v", err)
-	}
 
 	o := &Options{
 		Flags: Flags{
@@ -476,11 +469,6 @@ func TestReconcileInstructionStages_Force(t *testing.T) {
 	_, err = os.Stat(filepath.Join(transformDir, "50_Stage2"))
 	if !os.IsNotExist(err) {
 		t.Fatalf("expected extra stage dir to be deleted, got err: %v", err)
-	}
-	// Extra stage work dir should be deleted.
-	_, err = os.Stat(filepath.Join(transformDir, ".work", "50_Stage2"))
-	if !os.IsNotExist(err) {
-		t.Fatalf("expected extra stage work dir to be deleted, got err: %v", err)
 	}
 }
 
@@ -1123,8 +1111,5 @@ func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
 	// Validate should not create transform artifacts.
 	if _, statErr := os.Stat(transformDir); !os.IsNotExist(statErr) {
 		t.Fatalf("expected transform dir to not exist after validation failure, got stat err: %v", statErr)
-	}
-	if _, statErr := os.Stat(filepath.Join(transformDir, ".work")); !os.IsNotExist(statErr) {
-		t.Fatalf("expected .work dir to not exist after validation failure, got stat err: %v", statErr)
 	}
 }

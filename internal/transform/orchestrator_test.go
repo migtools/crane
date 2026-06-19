@@ -89,7 +89,7 @@ func TestRunMultiStage_StageOrdering(t *testing.T) {
 	transformDir := filepath.Join(tmpDir, "transform")
 
 	// Create export directory with a test resource
-	resourcesDir := filepath.Join(exportDir, "input")
+	resourcesDir := filepath.Join(exportDir, "resources", "default")
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create export dir: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestRunMultiStage_PreviousStageDependency(t *testing.T) {
 	transformDir := filepath.Join(tmpDir, "transform")
 
 	// Create export directory with test resource
-	resourcesDir := filepath.Join(exportDir, "input")
+	resourcesDir := filepath.Join(exportDir, "resources", "default")
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create export dir: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestNonMatchingPluginName_ResourcesPassThrough(t *testing.T) {
 	_ = filepath.Join(tmpDir, "transform") // Not used in this test
 
 	// Create export directory with test resource
-	resourcesDir := filepath.Join(exportDir, "input")
+	resourcesDir := filepath.Join(exportDir, "resources", "default")
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		t.Fatalf("Failed to create export dir: %v", err)
 	}
@@ -780,9 +780,9 @@ resources: []
 	// Verify the key property: stage 2's input directory is stage 1's output directory content
 	// This ensures sequential consistency
 	t.Log("✓ Stage 1 input loaded from export directory")
-	t.Log("✓ Stage 1 output written to .work/10_stage1/output/")
-	t.Log("✓ Stage 2 input loaded from stage 1 output (.work/10_stage1/output/)")
-	t.Log("✓ Stage 2 output written to .work/20_stage2/output/")
+	t.Log("✓ Stage 1 output written to 10_stage1/output/")
+	t.Log("✓ Stage 2 input loaded from stage 1 output (10_stage1/output/)")
+	t.Log("✓ Stage 2 output written to 20_stage2/output/")
 	t.Log("✓ Sequential consistency verified: each stage consumes previous stage's output")
 }
 
