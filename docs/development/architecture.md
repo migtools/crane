@@ -37,7 +37,7 @@ The transform phase uses a multi-stage Kustomize pipeline:
 
 1. **Stage discovery** — Scans `transform/` for existing stage directories matching `<number>_<name>` pattern
 2. **Plugin execution** — For plugin-based stages (name ending in `Plugin`), loads and runs the matching plugin to generate JSONPatch operations
-3. **Resource writing** — Writes individual resource files to `<stage>/resources/`
+3. **Resource writing** — Writes individual resource files to `<stage>/input/`
 4. **Patch writing** — Writes plugin-generated patches to `<stage>/patches/`
 5. **Kustomization generation** — Generates `kustomization.yaml` linking resources and patches
 
@@ -48,7 +48,7 @@ The transform phase uses a multi-stage Kustomize pipeline:
 
 ### Sequential Consistency
 
-In multi-stage pipelines, each stage runs on the fully materialized output of the previous stage (not raw patches). Intermediate artifacts are stored in `transform/.work/<stage>/input/` and `transform/.work/<stage>/output/`.
+In multi-stage pipelines, each stage runs on the fully materialized output of the previous stage (not raw patches). Each stage contains `input/`, `patches/`, and `output/` directly within the stage directory (e.g., `transform/<stage>/input/`, `transform/<stage>/output/`).
 
 ### Key Components
 
