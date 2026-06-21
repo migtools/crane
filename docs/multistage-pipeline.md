@@ -15,16 +15,15 @@ Each stage is a directory following the naming convention `<priority>_<plugin-na
 ```text
 transform/
 ├── 10_KubernetesPlugin/
-│   ├── resources/
+│   ├── input/
 │   │   ├── deployment.yaml          # Grouped by resource type
 │   │   ├── service.yaml
 │   │   └── configmap.yaml
 │   ├── patches/
 │   │   ├── deployment-myapp-default.yaml
 │   │   └── service-myapp-default.yaml
+│   ├── output/                       # Materialized output (next stage input)
 │   ├── kustomization.yaml            # Generated Kustomize file
-│   ├── whiteout-report.yaml          # Resources excluded from output
-│   ├── ignored-patches-report.yaml   # Patches discarded due to conflicts
 │   └── .crane-metadata.json          # Stage metadata with content hashes
 ├── 20_OpenshiftPlugin/
 │   └── ...
@@ -41,7 +40,7 @@ Resources are grouped by type (kind + API group) into multi-document YAML files:
 ### Kustomization File
 
 Each stage contains a `kustomization.yaml` that references:
-- **resources**: List of resource files from the `resources/` directory
+- **resources**: List of resource files from the `input/` directory
 - **patches**: Strategic merge patches or JSON patches with target selectors
 
 Example:
@@ -49,8 +48,8 @@ Example:
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- resources/deployment.yaml
-- resources/service.yaml
+- input/deployment.yaml
+- input/service.yaml
 patches:
 - path: patches/deployment-myapp-default.yaml
   target:
@@ -265,7 +264,7 @@ crane apply --transform-dir transform --output-dir output
 # Initial transform
 crane transform --export-dir export --transform-dir transform
 
-# Make manual edits to resources in transform/10_KubernetesPlugin/resources/
+# Make manual edits to resources in transform/10_KubernetesPlugin/input/
 # Edit deployment.yaml to add annotations, etc.
 
 # Try to re-run transform (will fail due to dirty check)
@@ -296,10 +295,11 @@ transform/
 ```text
 transform/
 └── 10_KubernetesPlugin/
-    ├── resources/
+    ├── input/
     │   └── deployment.yaml         # Grouped by type
     ├── patches/
     │   └── deployment-myapp-default.yaml
+    ├── output/                     # Materialized output
     └── kustomization.yaml
 ```
 
@@ -370,7 +370,7 @@ if err != nil {
 
 **Solution**:
 1. Check kustomization.yaml syntax
-2. Verify all resource files exist in resources/
+2. Verify all resource files exist in input/
 3. Run `crane apply <stage>` to isolate the failing stage
 
 ### Issue: Resources not appearing in output
@@ -482,7 +482,7 @@ crane transform 90_FinalCleanup       # No matching plugin
 **What happens:**
 
 1. **10_KubernetesPlugin**: Resources transformed by KubernetesPlugin (removes metadata.uid, etc.)
-2. **50_ManualEdits**: Resources copied unchanged to `transform/50_ManualEdits/resources/`
+2. **50_ManualEdits**: Resources copied unchanged to `transform/50_ManualEdits/input/`
    - No plugins match "ManualEdits" 
    - No patches generated
    - You can manually edit resources in this stage
@@ -506,13 +506,13 @@ export/
     └── deployment.yaml (raw export with uid, resourceVersion, etc.)
         ↓
 transform/10_KubernetesPlugin/  (plugin: removes server-managed fields)
-└── resources/deployment.yaml (cleaned)
+└── input/deployment.yaml (cleaned)
         ↓
 transform/50_ManualEdits/       (no plugin: user edits)
-└── resources/deployment.yaml (manually edited)
+└── input/deployment.yaml (manually edited)
         ↓
 transform/90_CustomPlugin/      (plugin: custom transformations)
-└── resources/deployment.yaml (custom patches applied)
+└── input/deployment.yaml (custom patches applied)
         ↓
 output/output.yaml (final result)
 ```
