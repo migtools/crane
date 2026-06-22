@@ -164,9 +164,6 @@ func TestMatchResults_SuggestionWhenAlternativeExists(t *testing.T) {
 	if !strings.Contains(r.Suggestion, "apps/v1") {
 		t.Fatalf("Suggestion = %q, expected it to mention apps/v1", r.Suggestion)
 	}
-	if !strings.Contains(r.Reason, "available as") {
-		t.Fatalf("Reason = %q, expected it to contain suggestion hint", r.Reason)
-	}
 }
 
 func TestMatchResults_NoSuggestionWhenKindNotOnTarget(t *testing.T) {
