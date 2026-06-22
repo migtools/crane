@@ -569,7 +569,7 @@ func (o *Options) createCustomStageWithExplicitName(
 	transformDir string,
 	log *logrus.Logger,
 ) error {
-	log.Warnf("Creating custom stage directory %q with no plugins — resources will be copied as-is. If this was a typo, delete the directory and re-run with the correct stage name.", stageName)
+	log.Infof("Creating custom stage directory %q with no plugins — resources will be copied as-is. If this was a typo, delete the directory and re-run with the correct stage name.", stageName)
 
 	if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
 		return fmt.Errorf("failed to ensure previous stages are run: %w", err)
@@ -587,7 +587,7 @@ func (o *Options) createCustomStageWithAutoPriority(
 	log *logrus.Logger,
 ) (string, error) {
 	stageName := internalTransform.GenerateStageName(priority, baseName)
-	log.Warnf("Creating custom stage %q with no plugins — resources will be copied as-is. If this was a typo, delete the directory and re-run with the correct stage name.", stageName)
+	log.Infof("Creating custom stage %q with no plugins — resources will be copied as-is. If this was a typo, delete the directory and re-run with the correct stage name.", stageName)
 
 	if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
 		return "", fmt.Errorf("failed to ensure previous stages are run: %w", err)
