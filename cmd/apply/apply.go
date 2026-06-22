@@ -37,6 +37,8 @@ type Flags struct {
 	// Skip cluster-scoped resources in output
 	SkipClusterScoped bool `mapstructure:"skip-cluster-scoped"`
 	Overwrite         bool `mapstructure:"overwrite"`
+	// Enable ordered resource filenames for dependency-aware kubectl apply
+	Ordered bool `mapstructure:"ordered"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -124,6 +126,8 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	// Cluster-scoped filtering
 	cmd.Flags().BoolVar(&o.SkipClusterScoped, "skip-cluster-scoped", false, "Exclude cluster-scoped resources (ClusterRole, ClusterRoleBinding, CRD, etc.) from output. Useful for non-admin migration scenarios.")
 	cmd.Flags().BoolVar(&o.Overwrite, "overwrite", false, "Overwrite the output directory if it already exists")
+	// Ordered resource filenames
+	cmd.Flags().BoolVar(&o.Ordered, "ordered", false, "Add ordering prefix to resource filenames (e.g., 300_Role_*, 310_RoleBinding_*) to ensure dependency-aware kubectl apply")
 }
 
 func (o *Options) run() error {
@@ -164,6 +168,7 @@ func (o *Options) run() error {
 		OutputDir:         outputDir,
 		KustomizeArgs:     kustomizeArgs,
 		SkipClusterScoped: o.SkipClusterScoped,
+		Ordered:           o.Ordered,
 	}
 
 	// Determine which stages to apply
