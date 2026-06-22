@@ -113,6 +113,17 @@ func (o *ExportOptions) Validate() error {
 			return fmt.Errorf("invalid --label-selector: %w", err)
 		}
 	}
+	if len(o.crdSkipGroups) > 0 && len(o.crdIncludeGroups) > 0 {
+		includeSet := make(map[string]bool, len(o.crdIncludeGroups))
+		for _, g := range o.crdIncludeGroups {
+			includeSet[g] = true
+		}
+		for _, g := range o.crdSkipGroups {
+			if includeSet[g] {
+				return fmt.Errorf("CRD group %q appears in both --crd-skip-group and --crd-include-group", g)
+			}
+		}
+	}
 	return nil
 }
 
