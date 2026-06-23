@@ -1,6 +1,6 @@
 # Crane Compatibility Matrix: Namespace vs. Cluster Resources
 
-> **Note to Users:** Crane is primarily a namespace-scoped migration tool. However, it can migrate cluster-scoped resources if they are explicitly related to the namespace workload and the migration context has sufficient RBAC permissions.
+> **Note to Users:** Crane supports migration for both admin and non-admin users. Admin users can export all resources including cluster-scoped types. Non-admin users can migrate namespace-scoped resources — Crane gracefully skips inaccessible cluster-scoped resources with warnings rather than failing. See [crane export](./commands/export.md) and [crane apply](./commands/apply.md) for details.
 
 ---
 
