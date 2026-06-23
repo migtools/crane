@@ -94,12 +94,12 @@ var _ = Describe("Custom transformation stage", func() {
 		WaitForSourceQuiesce(kubectlSrcNonAdmin, namespace, "app="+appName, serviceName)
 
 		log.Printf("Running crane export for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Export(srcApp.Namespace, paths.ExportDir)).NotTo(HaveOccurred())
+		Expect(runner.Export(ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir})).NotTo(HaveOccurred())
 		log.Printf("Running crane transform default stage for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Transform(paths.ExportDir, paths.TransformDir)).NotTo(HaveOccurred())
+		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir})).NotTo(HaveOccurred())
 		log.Printf("Running crane transform with specific stage for namespace %s\n", srcApp.Namespace)
-		Expect(runner.TransformStage(paths.ExportDir, paths.TransformDir, "50_CustomModifications")).NotTo(HaveOccurred())
-
+		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			Stages: []string{"50_CustomModifications"}})).NotTo(HaveOccurred())
 		By("Update custom stage kustomization with namespace, labels, and image override")
 		stageDir := filepath.Join(paths.TransformDir, "50_CustomModifications")
 		kustomizationPath := filepath.Join(stageDir, "kustomization.yaml")
@@ -159,7 +159,8 @@ var _ = Describe("Custom transformation stage", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		log.Printf("Running crane apply for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Apply(paths.ExportDir, paths.TransformDir, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Verify rendered output contains custom stage changes")

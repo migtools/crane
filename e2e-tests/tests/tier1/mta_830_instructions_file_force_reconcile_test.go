@@ -72,7 +72,7 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline with instructions file")
 		log.Printf("Running crane export for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Export(srcApp.Namespace, paths.ExportDir)).NotTo(HaveOccurred())
+		Expect(runner.Export(ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir})).NotTo(HaveOccurred())
 
 		By("Create transform dir with orphan stage and existing stage present in instructions-file")
 		err = os.MkdirAll(paths.TransformDir, 0o755)
@@ -116,7 +116,8 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
 		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(runner.TransformWithInstructionsFile(paths.ExportDir, paths.TransformDir, instructionsFile, true)).NotTo(HaveOccurred())
+		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			InstructionsFile: instructionsFile, Force: true})).NotTo(HaveOccurred())
 
 		By("Assert post transform orphan stage is removed and existing CustomStage is overwritten ")
 		By("Assert orphan stage dir is removed by --force")
@@ -141,7 +142,8 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		}
 
 		log.Printf("Running crane apply for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Apply(paths.ExportDir, paths.TransformDir, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Apply rendered manifests to target")

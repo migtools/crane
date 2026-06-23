@@ -52,7 +52,10 @@ var _ = Describe("OLM whiteout", func() {
 
 			paths, err := NewScenarioPaths("crane-export-*")
 			Expect(err).NotTo(HaveOccurred())
-
+			exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+			transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+			applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+				OutputDir: paths.OutputDir}
 			DeferCleanup(func() {
 				By("Cleanup source and target resources")
 				if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
@@ -77,7 +80,7 @@ var _ = Describe("OLM whiteout", func() {
 
 			By("Run crane export/transform/apply pipeline")
 			log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-			Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+			Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 			log.Printf("Crane pipeline completed for namespace %s", srcApp.Namespace)
 
 			By("Verify output directory does not contain OLM whiteout kinds")
