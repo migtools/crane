@@ -5,12 +5,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
 	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/yaml"
 )
 
 var _ = Describe("Instructions-file migration", func() {
@@ -82,6 +84,60 @@ var _ = Describe("Instructions-file migration", func() {
 			_, err = os.Stat(dirPath)
 			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("expected stage dir %q at %q to be present", stageDir, dirPath))
 		}
+
+		By("Verify transform directory structure")
+		workDirPath := filepath.Join(paths.TransformDir, ".work")
+		_, err = os.Stat(workDirPath)
+		Expect(os.IsNotExist(err)).To(BeTrue(), fmt.Sprintf("did not expect legacy transform work dir at %q", workDirPath))
+
+		stageSubDirs := []string{"input", "output"}
+		for _, stageDir := range stageDirectories {
+			stagePath := filepath.Join(paths.TransformDir, stageDir)
+			for _, subDir := range stageSubDirs {
+				subDirPath := filepath.Join(stagePath, subDir)
+				_, err = os.Stat(subDirPath)
+				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("expected stage subdir %q at %q to be present", subDir, subDirPath))
+
+				yamlFileCount := 0
+				walkErr := filepath.WalkDir(subDirPath, func(path string, d os.DirEntry, walkErr error) error {
+					if walkErr != nil {
+						return walkErr
+					}
+					if d.IsDir() {
+						return nil
+					}
+					if strings.HasSuffix(d.Name(), ".yaml") {
+						yamlFileCount++
+					}
+					return nil
+				})
+				Expect(walkErr).NotTo(HaveOccurred(), fmt.Sprintf("failed to walk yaml files in %q", subDirPath))
+				Expect(yamlFileCount).To(BeNumerically(">", 0), fmt.Sprintf("expected yaml files in %q", subDirPath))
+			}
+
+			kustomizationPath := filepath.Join(stagePath, "kustomization.yaml")
+			kustomizationBytes, readErr := os.ReadFile(kustomizationPath)
+			Expect(readErr).NotTo(HaveOccurred(), fmt.Sprintf("expected kustomization file at %q", kustomizationPath))
+
+			kustomization := map[string]any{}
+			unmarshalErr := yaml.Unmarshal(kustomizationBytes, &kustomization)
+			Expect(unmarshalErr).NotTo(HaveOccurred(), fmt.Sprintf("failed to parse kustomization yaml at %q", kustomizationPath))
+
+			resourcesRaw, exists := kustomization["resources"]
+			Expect(exists).To(BeTrue(), fmt.Sprintf("expected resources field in kustomization %q", kustomizationPath))
+
+			resources, ok := resourcesRaw.([]any)
+			Expect(ok).To(BeTrue(), fmt.Sprintf("expected resources in %q to be []any but got %T", kustomizationPath, resourcesRaw))
+			Expect(resources).NotTo(BeEmpty(), fmt.Sprintf("expected resources list in %q to be non-empty", kustomizationPath))
+
+			for i, resourceRaw := range resources {
+				resourcePath, pathOK := resourceRaw.(string)
+				Expect(pathOK).To(BeTrue(), fmt.Sprintf("expected resources[%d] in %q to be string but got %T", i, kustomizationPath, resourceRaw))
+				Expect(resourcePath).To(HavePrefix("input/"), fmt.Sprintf("expected resources[%d]=%q in %q to reference input/ path", i, resourcePath, kustomizationPath))
+				Expect(resourcePath).NotTo(ContainSubstring("resources/"), fmt.Sprintf("did not expect legacy resources/ path in resources[%d]=%q in %q", i, resourcePath, kustomizationPath))
+			}
+		}
+
 		log.Printf("Running crane apply for namespace %s\n", srcApp.Namespace)
 		Expect(runner.Apply(paths.ExportDir, paths.TransformDir, paths.OutputDir)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
