@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
   issues: write
 
 concurrency:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   notify:
-    # issue_comment runs for both issues and PRs; continue only for PR comments. 
+    # issue_comment runs for both issues and PRs; continue only for PR comments 
     if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
@@ -100,8 +100,8 @@ jobs:
         uses: ./.github/actions/slack-incoming-webhook
         with:
           text: |
-            :eyes: PR Ready for Review
-            *${{ steps.guard.outputs.pr_title }}*
+            :pr-open-1: PR Ready for Review
+            PR Title: ${{ steps.guard.outputs.pr_title }}
             PR: ${{ steps.guard.outputs.pr_url }}
             Author: @${{ steps.guard.outputs.pr_author }}
             Triggered by: @${{ steps.guard.outputs.commenter }}
