@@ -61,6 +61,10 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
 		paths, err := NewScenarioPaths("crane-validate-mixed-*")
+		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
@@ -72,7 +76,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Mutate Deployment to deprecated extensions/v1beta1 API version")
@@ -109,9 +113,9 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		By("Run crane validate in live mode against target context")
 		validateDir := filepath.Join(paths.TempDir, "validate")
 		stdout, err := runner.Validate(ValidateOptions{
-			Context:     scenario.KubectlTgtNonAdmin.Context,
-			InputDir:    filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir: validateDir,
+			Context:      scenario.KubectlTgtNonAdmin.Context,
+			InputDir:     filepath.Join(paths.OutputDir, "resources", namespace),
+			ValidateDir:  validateDir,
 			OutputFormat: "json",
 		})
 
@@ -139,7 +143,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned")
 		Expect(report.Compatible).To((Equal(3)), "expected 3 compatible resources")
 		Expect(report.Incompatible).To(Equal(2), "expected exactly 2 incompatible resources (Deployment and ConfigMap)")
-		Expect(report.Compatible + report.Incompatible).To(Equal(report.TotalScanned),
+		Expect(report.Compatible+report.Incompatible).To(Equal(report.TotalScanned),
 			"expected Compatible + Incompatible to equal TotalScanned (found %d + %d != %d)",
 			report.Compatible, report.Incompatible, report.TotalScanned)
 		log.Printf("Total: %d, Compatible: %d, Incompatible: %d", report.TotalScanned, report.Compatible, report.Incompatible)

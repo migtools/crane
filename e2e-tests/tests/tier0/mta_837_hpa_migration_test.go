@@ -6,7 +6,6 @@ import (
 	"log"
 	"path/filepath"
 
-
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
 	"github.com/konveyor/crane/e2e-tests/utils"
@@ -23,9 +22,9 @@ var _ = Describe("HPA migration", func() {
 		serviceName := "my-" + appName
 
 		const (
-			hpaMinReplicas     = 1
-			hpaMaxReplicas     = 5
-			hpaCPUUtilization  = 50
+			hpaMinReplicas    = 1
+			hpaMaxReplicas    = 5
+			hpaCPUUtilization = 50
 		)
 
 		scenario := NewMigrationScenario(
@@ -55,6 +54,10 @@ var _ = Describe("HPA migration", func() {
 		Expect(json.Unmarshal([]byte(hpaOut), &hpaSrc)).NotTo(HaveOccurred())
 
 		paths, err := NewScenarioPaths("crane-export-*")
+		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
@@ -71,7 +74,7 @@ var _ = Describe("HPA migration", func() {
 
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Verify HPA manifest is present in output directory")

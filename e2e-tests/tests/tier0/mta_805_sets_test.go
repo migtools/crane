@@ -71,6 +71,10 @@ var _ = Describe("Sets resources migration", func() {
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
+		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
 
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
@@ -83,7 +87,7 @@ var _ = Describe("Sets resources migration", func() {
 
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		Expect(RunCranePipelineWithChecks(runner, namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Validate output directory contains DaemonSet , ReplicaSet and StatefulSet resource manifest")

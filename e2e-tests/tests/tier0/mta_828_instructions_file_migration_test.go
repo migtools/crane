@@ -72,11 +72,13 @@ var _ = Describe("Instructions-file migration", func() {
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline with instructions file")
 		log.Printf("Running crane export for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Export(srcApp.Namespace, paths.ExportDir)).NotTo(HaveOccurred())
+		Expect(runner.Export(ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir})).NotTo(HaveOccurred())
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
 		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(runner.TransformWithInstructionsFile(paths.ExportDir, paths.TransformDir, instructionsFile, false)).NotTo(HaveOccurred())
+		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			InstructionsFile: instructionsFile, Force: false})).NotTo(HaveOccurred())
+
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
 		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
 		for _, stageDir := range stageDirectories {
@@ -148,7 +150,8 @@ var _ = Describe("Instructions-file migration", func() {
 		}
 
 		log.Printf("Running crane apply for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Apply(paths.ExportDir, paths.TransformDir, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Apply rendered manifests to target")
