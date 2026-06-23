@@ -88,15 +88,24 @@ var _ = Describe("Instructions-file migration", func() {
 		By("Verify transform directory structure")
 		workDirPath := filepath.Join(paths.TransformDir, ".work")
 		_, err = os.Stat(workDirPath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), fmt.Sprintf("did not expect legacy transform work dir at %q", workDirPath))
+		if err == nil {
+			Fail(fmt.Sprintf("did not expect legacy transform work dir at %q, but it exists", workDirPath))
+		}
+		if !os.IsNotExist(err) {
+			Fail(fmt.Sprintf(
+				"unexpected error while checking legacy transform work dir at %q: err=%v type=%T",
+				workDirPath, err, err,
+			))
+		}
 
 		stageSubDirs := []string{"input", "output"}
 		for _, stageDir := range stageDirectories {
 			stagePath := filepath.Join(paths.TransformDir, stageDir)
 			for _, subDir := range stageSubDirs {
 				subDirPath := filepath.Join(stagePath, subDir)
-				_, err = os.Stat(subDirPath)
-				Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("expected stage subdir %q at %q to be present", subDir, subDirPath))
+				subDirInfo, statErr := os.Stat(subDirPath)
+				Expect(statErr).NotTo(HaveOccurred(), fmt.Sprintf("expected stage subdir %q at %q to be present", subDir, subDirPath))
+				Expect(subDirInfo.IsDir()).To(BeTrue(), fmt.Sprintf("expected stage subdir %q at %q to be a directory", subDir, subDirPath))
 
 				yamlFileCount := 0
 				walkErr := filepath.WalkDir(subDirPath, func(path string, d os.DirEntry, walkErr error) error {
