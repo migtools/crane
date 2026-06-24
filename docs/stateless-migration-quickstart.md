@@ -22,6 +22,8 @@ export SOURCE_NAMESPACE=source-namespace
 
 ## 2) Export
 
+`crane export` discovers resources in the source namespace and writes them as Kubernetes manifest files on disk.
+
 Run export with an explicit export directory:
 
 - `-e export` tells Crane to write exported manifests under the `export/` directory.
@@ -54,6 +56,8 @@ What you can expect to see (example):
 - If extraction fails for specific objects, failure artifacts are written under `export/failures/${SOURCE_NAMESPACE}/`
 
 ## 3) Transform (Default Stage)
+
+`crane transform` takes exported manifests (output from `crane export`), cleans and updates them in stages, and saves the results in `transform/`.
 
 A stage is one step in the transform pipeline.
 
@@ -149,6 +153,8 @@ crane transform -e export -t transform --force
 
 ## 5) Apply (Render Final Manifests)
 
+`crane apply` renders the final manifests from transform stages into deployable output files.
+
 Run apply with explicit transform and output directories:
 
 - `-t transform` tells Crane which staged transform directory to read.
@@ -179,6 +185,8 @@ crane apply \
 ```
 
 ## 6) Validate (Optional, Recommended)
+
+`crane validate` checks whether the rendered manifests are compatible with the target cluster API.
 
 Run live validation against the target cluster API. This step is optional, but strongly recommended before promoting manifests across environments:
 
