@@ -139,7 +139,7 @@ kubectl kustomize transform/25_CustomStage
 
 In most pipelines, your custom stage is the last stage under `transform/`, so rendering that directory should show the manifests that will feed into the final apply output.
 
-For a deeper explanation of stage ordering, stage structure, and multi-stage behavior, see [Multi-Stage Kustomize Transform Pipeline](./kustomize-multistage.md).
+For a deeper explanation of stage ordering, stage structure, and multi-stage behavior, see [Multi-Stage Kustomize Transform Pipeline](./multistage-pipeline.md).
 
 If a custom stage already contains edits, rerun with `--force` to regenerate:
 
