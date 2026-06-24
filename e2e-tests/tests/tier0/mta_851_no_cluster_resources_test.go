@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 
@@ -35,7 +36,9 @@ var _ = Describe("Cluster-level export control", func() {
 			OutputDir: paths.OutputDir}
 
 		DeferCleanup(func() {
-			CleanupScenario(paths.TempDir, srcApp, tgtApp)
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
 		})
 
 		By("Deploying namespace-only app on source cluster")

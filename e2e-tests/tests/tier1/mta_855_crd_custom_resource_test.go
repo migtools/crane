@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"log"
 	"path/filepath"
 
 	"github.com/konveyor/crane/e2e-tests/config"
@@ -46,6 +47,7 @@ var _ = Describe("Cluster-level RBAC export", func() {
 			Namespace: namespace,
 			Kind:      "Widget",
 			YAML:      crYAML,
+			Resource:  "widgets",
 		}
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
@@ -53,8 +55,12 @@ var _ = Describe("Cluster-level RBAC export", func() {
 			OutputDir: paths.OutputDir}
 
 		DeferCleanup(func() {
-			ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{cr, crd})
-			CleanupScenario(paths.TempDir, srcApp, tgtApp)
+			if err := ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{cr, crd}); err != nil {
+				log.Printf("Resources cleanup: %v", err)
+			}
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("Scenario cleanup: %v", err)
+			}
 		})
 
 		By("Deploying app on source cluster")

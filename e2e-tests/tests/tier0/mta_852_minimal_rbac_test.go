@@ -43,8 +43,13 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		cr := ClusterRole{Name: clusterRoleName, Verb: "get,list,watch", Resource: "pods"}
 		sa := ServiceAccount{Name: "nginx-sa", Namespace: namespace}
 		DeferCleanup(func() {
-			ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{cr, crb, sa})
-			CleanupScenario(paths.TempDir, srcApp, tgtApp)
+			if err := ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{cr, crb, sa}); err != nil {
+				log.Printf("Resources cleanup: %v", err)
+			}
+
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("Scenario cleanup: %v", err)
+			}
 		})
 
 		By("Prepare source app")

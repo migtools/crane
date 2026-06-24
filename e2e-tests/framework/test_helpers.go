@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
@@ -71,12 +72,14 @@ func ValidateClusterRBAC(kubectl KubectlRunner, bindings []ExpectedClusterRoleBi
 			return fmt.Errorf("CRB %s references %s, expected %s", b.ClusterRoleBindingName, roleRef, b.ClusterRoleName)
 		}
 
-		subject, err := kubectl.Run("get", "clusterrolebinding", b.ClusterRoleBindingName, "-o", "jsonpath={.subjects[*].name}")
+		subjectOutput, err := kubectl.Run("get", "clusterrolebinding", b.ClusterRoleBindingName, "-o", "jsonpath={.subjects[*].name}")
 		if err != nil {
 			return fmt.Errorf("failed to get subject for CRB %s: %w", b.ClusterRoleBindingName, err)
 		}
-		if subject != b.SubjectName {
-			return fmt.Errorf("CRB %s subject is %s, expected %s", b.ClusterRoleBindingName, subject, b.SubjectName)
+		subjects := strings.Fields(subjectOutput)
+
+		if !slices.Contains(subjects, b.SubjectName) {
+			return fmt.Errorf("CRB %s subject is %s, expected %s", b.ClusterRoleBindingName, subjectOutput, b.SubjectName)
 		}
 		log.Printf("CRB %s -> CR %s (subject: %s) verified", b.ClusterRoleBindingName, b.ClusterRoleName, b.SubjectName)
 	}

@@ -45,13 +45,13 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
-			ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{
-				readCR, writeCR, readCRB, writeCRB, sa,
-			})
-		})
+			if err := ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{readCR, writeCR, readCRB, writeCRB, sa}); err != nil {
+				log.Printf("Resources cleanup: %v", err)
+			}
 
-		DeferCleanup(func() {
-			CleanupScenario(paths.TempDir, srcApp, tgtApp)
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("Scenario cleanup: %v", err)
+			}
 		})
 
 		By("Deploying app with ServiceAccount on source cluster")

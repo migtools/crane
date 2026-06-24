@@ -1,13 +1,13 @@
 package e2e
 
 import (
+	"log"
 	"path/filepath"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
 	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
-	"github.com/onsi/gomega"
 	. "github.com/onsi/gomega"
 )
 
@@ -46,13 +46,13 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		kubectlSrc := scenario.KubectlSrc
 		kubectlTgt := scenario.KubectlTgt
 		paths, err := NewScenarioPaths("crane-na1-*")
+		Expect(err).NotTo(HaveOccurred())
 		runner := scenario.CraneNonAdmin
 
 		exportOpts := ExportOptions{Namespace: srcAppNonAdmin.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
-		Expect(err).NotTo(HaveOccurred())
 
 		crb := ClusterRoleBinding{Name: clusterRoleBindingName, ClusterRoleName: clusterRoleName}
 		cr := ClusterRole{Name: clusterRoleName, Verb: "get,list,watch", Resource: "pods"}
@@ -63,8 +63,12 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 
 		DeferCleanup(rbacCleanup)
 		DeferCleanup(func() {
-			ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{crb, cr})
-			CleanupScenario(paths.TempDir, srcAppNonAdmin, tgtAppNonAdmin)
+			if err := ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{crb, cr}); err != nil {
+				log.Printf("Resources cleanup: %v", err)
+			}
+			if err := CleanupScenario(paths.TempDir, srcAppNonAdmin, tgtAppNonAdmin); err != nil {
+				log.Printf("Scenario cleanup: %v", err)
+			}
 
 		})
 
@@ -85,7 +89,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 		By("Verifying cluster resources failed to export (expected for namespace-admin)")
-		Expect(utils.AssertFilesExist(filepath.Join(paths.ExportDir, "failures"), deniedResources)).To(HaveOccurred())
+		Expect(utils.AssertFilesExist(filepath.Join(paths.ExportDir, "failures", namespace), deniedResources)).NotTo(HaveOccurred())
 
 		By("Verifying no cluster resources in output _cluster directory")
 		Expect(utils.AssertNoKindsInOutput(paths.OutputDir, []string{"ClusterRole", "ClusterRoleBinding"})).NotTo(HaveOccurred())
@@ -95,7 +99,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
-		Eventually(tgtAppNonAdmin.Validate, "2m", "10s").Should(gomega.Succeed())
+		Eventually(tgtAppNonAdmin.Validate, "2m", "10s").Should(Succeed())
 
 	})
 

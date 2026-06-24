@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -11,14 +12,16 @@ type Resource interface {
 	Create(k KubectlRunner) error
 }
 
-func ResourceCleanup(clusters []KubectlRunner, resources []Resource) {
+func ResourceCleanup(clusters []KubectlRunner, resources []Resource) error {
+	var errs []error
 	for _, k := range clusters {
 		for _, r := range resources {
 			if err := r.Delete(k); err != nil {
-				log.Printf("cleanup: %v", err)
+				errs = append(errs, err)
 			}
 		}
 	}
+	return errors.Join(errs...)
 }
 
 type ClusterRole struct {
