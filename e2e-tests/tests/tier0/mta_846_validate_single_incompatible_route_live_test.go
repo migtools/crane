@@ -28,9 +28,6 @@ var _ = Describe("Validate single incompatible Route [Live Mode]", func() {
 			Skip("Route is supported on OpenShift targets; this minikube-only incompatibility check is not applicable")
 		}
 
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required")
-		}
 
 		runner := scenario.CraneNonAdmin
 		paths, err := NewScenarioPaths("crane-validate-single-route-live-*")

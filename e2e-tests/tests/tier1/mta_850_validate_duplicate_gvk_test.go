@@ -63,9 +63,6 @@ var _ = Describe("Crane validate with duplicate GVK resources in live mode", fun
 			config.TargetContext,
 		)
 
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for live validation test")
-		}
 
 		runner := scenario.CraneNonAdmin
 		runner.WorkDir = tempDir
