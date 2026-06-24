@@ -408,7 +408,7 @@ func parseRsyncLogs(rawLogs string) (p *Progress, unprocessedData string) {
 	finalFileCountRegex := regexp.MustCompile(`Number of regular files transferred: (.*)`)
 	unprocessedLines := regexp.MustCompile(`.*?\n(.*)$`)
 	// retries
-	retryRegex := regexp.MustCompile(`Syncronization failed. Retrying in \d+ seconds. Retry (\d+)/.*`)
+	retryRegex := regexp.MustCompile(`Synchronization failed. Retrying in \d+ seconds. Retry (\d+)/.*`)
 
 	inProgressLines := fileProgressRegex.FindAllStringSubmatch(rawLogs, -1)
 	for _, matched := range inProgressLines {
