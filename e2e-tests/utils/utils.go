@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"slices"
 	"sort"
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
@@ -953,4 +953,27 @@ func ExtractCPUAverageUtilization(spec map[string]any) int64 {
 		return val
 	}
 	return 0
+}
+
+func AssertFilesExist(dir string, expectedFiles []string) error {
+	files, err := ListFilesRecursivelyAsList(dir)
+	if err != nil {
+		return err
+	}
+
+	fileSet := make(map[string]bool)
+	for _, f := range files {
+		fileSet[f] = true
+	}
+
+	var missing []string
+	for _, f := range expectedFiles {
+		if !fileSet[f] {
+			missing = append(missing, f)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing files: %v", missing)
+	}
+	return nil
 }
