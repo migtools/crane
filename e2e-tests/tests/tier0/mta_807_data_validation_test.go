@@ -75,7 +75,7 @@ func mysqlAuthorsCount(k KubectlRunner, namespace, podName string) (int, error) 
 	out, err := k.Run(
 		"exec", podName, "-n", namespace, "--",
 		"sh", "-c",
-		`MYSQL_PWD="$MYSQL_PASSWORD" mysql -N -B -u"$MYSQL_USER" "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM authors;"`,
+		`MYSQL_PWD="$MYSQL_PASSWORD" mysql -N -B -h 127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM authors;"`,
 	)
 	if err != nil {
 		return 0, err
@@ -138,11 +138,15 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
+
+		isOCP := scenario.KubectlSrc.IsOpenShift()
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
+			"has_scc":        isOCP,
 		}
 		tgtApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
+			"has_scc":        isOCP,
 		}
 
 		By("Grant namespace admin permissions to nonadmin user on source and target")
