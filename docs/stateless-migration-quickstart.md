@@ -55,6 +55,14 @@ What you can expect to see (example):
 
 ## 3) Transform (Default Stage)
 
+A stage is one step in the transform pipeline.
+
+Think of it like an assembly line:
+- Stage 1 takes your exported manifests and makes the first set of changes.
+- Stage 2 takes Stage 1 output and applies the next changes.
+
+Example: `10_KubernetesPlugin` runs first, then `25_CustomStage` runs on top of that result.
+
 Run transform with explicit input and stage directories:
 
 - `-e export` tells Crane to read exported resources from the `export/` directory.
