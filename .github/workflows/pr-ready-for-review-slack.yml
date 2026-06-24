@@ -123,7 +123,6 @@ jobs:
         with:
           text: |
             :pr-open-1: PR Ready for Review
-            @mta-app-migration
             PR Title: ${{ steps.guard.outputs.pr_title }}
             PR: ${{ steps.guard.outputs.pr_url }}
             Author: @${{ steps.guard.outputs.pr_author }}
