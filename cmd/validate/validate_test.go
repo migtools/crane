@@ -297,7 +297,38 @@ func TestValidate_Flags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := tt.setup(t)
-			err := o.Validate()
+			// Create a minimal cobra command for testing
+			cmd := &cobra.Command{}
+
+			// Ensure configFlags is initialized (some tests don't set it)
+			if o.configFlags == nil {
+				o.configFlags = genericclioptions.NewConfigFlags(true)
+			}
+			o.configFlags.AddFlags(cmd.Flags())
+
+			// For mutual exclusivity tests, simulate flag parsing by marking flags as changed
+			if strings.Contains(tt.name, "mutually exclusive") {
+				if o.configFlags.Context != nil && *o.configFlags.Context != "" {
+					cmd.Flags().Set("context", *o.configFlags.Context)
+				}
+				if o.configFlags.KubeConfig != nil && *o.configFlags.KubeConfig != "" {
+					cmd.Flags().Set("kubeconfig", *o.configFlags.KubeConfig)
+				}
+				if o.configFlags.APIServer != nil && *o.configFlags.APIServer != "" {
+					cmd.Flags().Set("server", *o.configFlags.APIServer)
+				}
+				if o.configFlags.BearerToken != nil && *o.configFlags.BearerToken != "" {
+					cmd.Flags().Set("token", *o.configFlags.BearerToken)
+				}
+				if o.configFlags.ClusterName != nil && *o.configFlags.ClusterName != "" {
+					cmd.Flags().Set("cluster", *o.configFlags.ClusterName)
+				}
+				if o.configFlags.AuthInfoName != nil && *o.configFlags.AuthInfoName != "" {
+					cmd.Flags().Set("user", *o.configFlags.AuthInfoName)
+				}
+			}
+
+			err := o.Validate(cmd)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
