@@ -160,8 +160,8 @@ INFO[0000] Successfully applied final stage to .../output/output.yaml
 
 What you can expect to see (example):
 
-- `output/output.yaml` generated
-- `output/resources/` generated with split manifests
+- `output/output.yaml` generated as one combined file containing all rendered resources (useful for a single `kubectl apply -f`).
+- `output/resources/` generated as separate files per resource (useful when you want to review, diff, or apply resources selectively).
 
 For namespace-only/non-admin scenarios:
 
