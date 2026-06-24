@@ -33,7 +33,7 @@ jobs:
           echo "should_react=false" >> "$GITHUB_OUTPUT"
           comment_body="$(jq -r '.comment.body // ""' "$GITHUB_EVENT_PATH")"
           comment_body="$(printf '%s' "$comment_body" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/\r$//')"
-          if [[ "$comment_body" != "/ready-for-review" && "$comment_body" != "/ready-for-review-reset" ]]; then
+          if [[ "$comment_body" != "/ready-for-review" && "$comment_body" != "/ready-for-review-reset" && "$comment_body" != "/rfr" && "$comment_body" != "/rfr-reset" ]]; then
             echo "should_notify=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -59,7 +59,7 @@ jobs:
           echo "should_react=true" >> "$GITHUB_OUTPUT"
           echo "comment_id=${comment_id}" >> "$GITHUB_OUTPUT"
 
-          if [[ "$comment_body" == "/ready-for-review-reset" ]]; then
+          if [[ "$comment_body" == "/ready-for-review-reset" || "$comment_body" == "/rfr-reset" ]]; then
             set +e
             gh api "repos/${GITHUB_REPOSITORY}/issues/${pr_number}/labels/ready-for-review-notified" -X DELETE
             rc=$?
