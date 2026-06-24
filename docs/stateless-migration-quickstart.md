@@ -99,7 +99,7 @@ transform/
     │   └── ...Service...
     ├── kustomization.yaml
     ├── output/
-    │   └── simple-migration/
+    │   └── <source-namespace>/
     │       ├── ...ConfigMap...
     │       ├── ...Deployment...
     │       ├── ...Secret...
@@ -130,6 +130,8 @@ kubectl kustomize transform/25_CustomStage
 ```
 
 In most pipelines, your custom stage is the last stage under `transform/`, so rendering that directory should show the manifests that will feed into the final apply output.
+
+For a deeper explanation of stage ordering, stage structure, and multi-stage behavior, see [Multi-Stage Kustomize Transform Pipeline](./kustomize-multistage.md).
 
 If a custom stage already contains edits, rerun with `--force` to regenerate:
 
@@ -185,11 +187,11 @@ crane validate \
 Example output snippet (abbreviated):
 
 ```text
-INFO[0000] Scanned 4 distinct GVK+namespace tuples
+INFO[0000] Scanned 3 distinct GVK+namespace tuples
 INFO[0000] Validating in live mode against context "tgt"
 Mode: live (context: tgt)
 ...
-Summary: 4 scanned, 4 compatible, 0 incompatible
+Summary: 3 scanned, 3 compatible, 0 incompatible
 Result: PASSED — all resources compatible with target cluster
 INFO[0000] Wrote validation report to validate/report.json
 ```

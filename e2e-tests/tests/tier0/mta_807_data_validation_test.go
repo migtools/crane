@@ -182,6 +182,10 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
+		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
 
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
@@ -235,7 +239,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
 		runner.WorkDir = paths.TempDir
-		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Transfer PVCs")

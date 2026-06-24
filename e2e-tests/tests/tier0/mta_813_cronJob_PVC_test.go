@@ -70,6 +70,10 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
+		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
@@ -162,7 +166,7 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline as non-admin")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
-		Expect(RunCranePipelineWithChecks(runner, srcApp.Namespace, paths)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Transfer PVC from source to target")
@@ -205,7 +209,7 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 
 		By("Apply rendered manifests to target as non-admin")
 		log.Printf("Applying manifests from %s to namespace %s\n", paths.OutputDir, tgtApp.Namespace)
-		Expect(ApplyOutputToTargetNonAdmin(scenario.KubectlTgtNonAdmin	, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(scenario.KubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 		log.Printf("Manifests applied to target\n")
 
 		By("Verify CronJob landed on target with correct schedule")

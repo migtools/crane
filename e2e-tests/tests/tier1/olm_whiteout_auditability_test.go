@@ -90,11 +90,10 @@ var _ = Describe("OLM whiteout", func() {
 			runner.WorkDir = paths.TempDir
 
 			By("Run crane export")
-			Expect(runner.Export(namespace, paths.ExportDir)).NotTo(HaveOccurred())
+			Expect(runner.Export(ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir})).NotTo(HaveOccurred())
 
 			By("Run crane transform")
-			Expect(runner.Transform(paths.ExportDir, paths.TransformDir)).NotTo(HaveOccurred())
-
+			Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir})).NotTo(HaveOccurred())
 			olmKindsDeployed := []string{"Subscription", "CatalogSource", "OperatorGroup"}
 
 			By("Verify whiteout resource files exist in transform input/ directory")
@@ -107,7 +106,8 @@ var _ = Describe("OLM whiteout", func() {
 			Expect(utils.AssertKindsNotInActiveKustomizeResources(paths.TransformDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
 
 			By("Run crane apply")
-			Expect(runner.Apply(paths.ExportDir, paths.TransformDir, paths.OutputDir)).NotTo(HaveOccurred())
+			Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+				OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 
 			By("Verify output does not contain OLM whiteout kinds")
 			Expect(utils.AssertNoKindsInOutput(paths.OutputDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
@@ -139,7 +139,10 @@ var _ = Describe("OLM whiteout", func() {
 
 			paths, err := NewScenarioPaths("crane-multi-op-*")
 			Expect(err).NotTo(HaveOccurred())
-
+			applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+				OutputDir: paths.OutputDir}
+			exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
+			transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 			DeferCleanup(func() {
 				By("Cleanup OLM resources on source")
 				for _, res := range []struct {
@@ -200,7 +203,7 @@ var _ = Describe("OLM whiteout", func() {
 
 			By("Run crane export/transform/apply pipeline")
 			log.Printf("Running crane pipeline for namespace %s\n", namespace)
-			Expect(RunCranePipelineWithChecks(runner, namespace, paths)).NotTo(HaveOccurred())
+			Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 			By("Verify no OLM whiteout kinds in output")
 			Expect(utils.AssertNoKindsInOutput(paths.OutputDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
@@ -246,7 +249,10 @@ var _ = Describe("OLM whiteout", func() {
 
 			paths, err := NewScenarioPaths("crane-export-*")
 			Expect(err).NotTo(HaveOccurred())
-
+			applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+				OutputDir: paths.OutputDir}
+			exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
+			transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 			DeferCleanup(func() {
 				By("Cleanup OLM resources on source")
 				for _, res := range []struct {
@@ -295,7 +301,7 @@ var _ = Describe("OLM whiteout", func() {
 
 			By("Run crane export/transform/apply pipeline")
 			log.Printf("Running crane pipeline for namespace %s\n", namespace)
-			Expect(RunCranePipelineWithChecks(runner, namespace, paths)).NotTo(HaveOccurred())
+			Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 			log.Printf("Crane pipeline completed for namespace %s", namespace)
 
 			By("Verify output does not contain OLM whiteout kinds")
