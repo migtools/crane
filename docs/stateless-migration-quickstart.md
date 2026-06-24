@@ -258,6 +258,11 @@ Example report structure:
 
 For repeatable pipelines, drive stage behavior with an instructions file:
 
+```bash
+crane transform \
+  --instructions-file ./instructions.yaml
+```
+
 Example `instructions.yaml`:
 
 ```yaml
@@ -266,10 +271,18 @@ stages:
   - CustomStage
 ```
 
-```bash
-crane transform \
-  --instructions-file ./instructions.yaml
+Stage directory names created from the example above:
+
+```text
+transform/
+├── 10_KubernetesPlugin/
+└── 20_CustomStage/
 ```
+
+How this works:
+
+- Crane takes each entry in `stages:` and auto-generates stage directory names with numeric prefixes (`10_`, `20_`, `30_`, ...).
+- Prefix numbers control execution order from lowest to highest.
 
 What you should see (example):
 
