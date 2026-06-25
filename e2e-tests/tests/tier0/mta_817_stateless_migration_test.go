@@ -28,6 +28,7 @@ var _ = Describe("Stateless migration", func() {
 		tgtApp := scenario.TgtApp
 		kubectlSrc := scenario.KubectlSrc
 		kubectlTgt := scenario.KubectlTgt
+		isOpenShift := kubectlSrc.IsOpenShift()
 		By("Prepare source app")
 		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
 		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
@@ -56,17 +57,25 @@ var _ = Describe("Stateless migration", func() {
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Compare YAML semantic diff of golden and actual export files")
-		goldenExportDir, err := utils.GoldenManifestsDir(appName, "export")
+		goldenExportDir, err := utils.GoldenManifestsDirForPlatform(appName, "export", isOpenShift)
 		Expect(err).NotTo(HaveOccurred())
-		if err := utils.CompareDirectoryYAMLSemanticsExport(goldenExportDir, paths.ExportDir); err != nil {
+		compareExport := utils.CompareDirectoryYAMLSemanticsExport
+		if isOpenShift {
+			compareExport = utils.CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults
+		}
+		if err := compareExport(goldenExportDir, paths.ExportDir); err != nil {
 			Fail(fmt.Sprintf("YAML semantic diff of golden and actual export files: %v", err))
 		} else {
 			log.Printf("YAML semantic diff of golden and actual export files: no differences found")
 		}
 		By("Compare YAML semantic diff of golden and actual output files")
-		goldenOutputDir, err := utils.GoldenManifestsDir(appName, "output")
+		goldenOutputDir, err := utils.GoldenManifestsDirForPlatform(appName, "output", isOpenShift)
 		Expect(err).NotTo(HaveOccurred())
-		if err := utils.CompareDirectoryYAMLSemantics(goldenOutputDir, paths.OutputDir); err != nil {
+		compareOutput := utils.CompareDirectoryYAMLSemantics
+		if isOpenShift {
+			compareOutput = utils.CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults
+		}
+		if err := compareOutput(goldenOutputDir, paths.OutputDir); err != nil {
 			Fail(fmt.Sprintf("YAML semantic diff of golden and actual output files: %v", err))
 		} else {
 			log.Printf("YAML semantic diff of golden and actual output files: no differences found")

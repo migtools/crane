@@ -680,6 +680,30 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 			},
 		},
 		{
+			name: "openshift_dockercfg_secret_generated_suffixes_match",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/secret-builder-a.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: builder-dockercfg-abc12\ndata:\n  .dockercfg: AAAA\ntype: kubernetes.io/dockercfg\n")
+				write(t, golden, "resources/secret-default-a.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: default-dockercfg-abc12\ndata:\n  .dockercfg: BBBB\ntype: kubernetes.io/dockercfg\n")
+				write(t, golden, "resources/secret-deployer-a.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: deployer-dockercfg-abc12\ndata:\n  .dockercfg: CCCC\ntype: kubernetes.io/dockercfg\n")
+				write(t, got, "resources/secret-builder-b.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: builder-dockercfg-xyz89\ndata:\n  .dockercfg: XXXX\ntype: kubernetes.io/dockercfg\n")
+				write(t, got, "resources/secret-default-b.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: default-dockercfg-xyz89\ndata:\n  .dockercfg: YYYY\ntype: kubernetes.io/dockercfg\n")
+				write(t, got, "resources/secret-deployer-b.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: deployer-dockercfg-xyz89\ndata:\n  .dockercfg: ZZZZ\ntype: kubernetes.io/dockercfg\n")
+				return golden, got
+			},
+		},
+		{
+			name: "serviceaccount_dockercfg_secret_references_match_after_normalization",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/sa-builder-a.yaml", "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  namespace: ns\n  name: builder\n  annotations:\n    openshift.io/internal-registry-pull-secret-ref: builder-dockercfg-abc12\nimagePullSecrets:\n  - name: builder-dockercfg-abc12\nsecrets:\n  - name: builder-dockercfg-abc12\n")
+				write(t, got, "resources/sa-builder-b.yaml", "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  namespace: ns\n  name: builder\n  annotations:\n    openshift.io/internal-registry-pull-secret-ref: builder-dockercfg-xyz89\nimagePullSecrets:\n  - name: builder-dockercfg-xyz89\nsecrets:\n  - name: builder-dockercfg-xyz89\n")
+				return golden, got
+			},
+		},
+		{
 			name: "same_identity_multiplicity_mismatch_fails",
 			build: func(t *testing.T) (string, string) {
 				golden := t.TempDir()
@@ -715,6 +739,48 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults(t *testing.T) {
+	write := func(t *testing.T, dir, rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("allows_optional_ocp_defaults_missing_on_one_side", func(t *testing.T) {
+		golden := t.TempDir()
+		got := t.TempDir()
+		write(t, golden, "deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  namespace: ns\n  name: app\nspec:\n  replicas: 0\n")
+		write(t, got, "deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  namespace: ns\n  name: app\nspec:\n  replicas: 0\n")
+
+		write(t, golden, "sa.yaml", "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  namespace: ns\n  name: builder\n")
+		write(t, golden, "rb.yaml", "apiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  namespace: ns\n  name: system:deployers\n")
+		write(t, golden, "cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: openshift-service-ca.crt\n")
+
+		if err := CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults(golden, got); err != nil {
+			t.Fatalf("CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults: %v", err)
+		}
+	})
+
+	t.Run("still_fails_when_required_identity_missing", func(t *testing.T) {
+		golden := t.TempDir()
+		got := t.TempDir()
+		write(t, golden, "deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  namespace: ns\n  name: app\nspec:\n  replicas: 0\n")
+
+		err := CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults(golden, got)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "resource identity sets differ") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestLooksLikeYAMLFile(t *testing.T) {
@@ -1040,6 +1106,37 @@ func TestNormalizeUnstableFields(t *testing.T) {
 				meta := m["metadata"].(map[string]any)
 				if meta["name"] != "my-svc" {
 					t.Fatalf("expected service metadata.name to stay, got: %v", meta["name"])
+				}
+			},
+		},
+		{
+			name: "drops_nested_template_metadata_creation_timestamp",
+			in: map[string]any{
+				"apiVersion": "apps/v1",
+				"kind":       "Deployment",
+				"spec": map[string]any{
+					"template": map[string]any{
+						"metadata": map[string]any{
+							"creationTimestamp": nil,
+							"labels": map[string]any{
+								"app": "demo",
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				spec := m["spec"].(map[string]any)
+				template := spec["template"].(map[string]any)
+				meta := template["metadata"].(map[string]any)
+				if _, exists := meta["creationTimestamp"]; exists {
+					t.Fatal("expected spec.template.metadata.creationTimestamp to be removed")
+				}
+				labels := meta["labels"].(map[string]any)
+				if labels["app"] != "demo" {
+					t.Fatalf("expected labels to remain, got: %#v", labels)
 				}
 			},
 		},
