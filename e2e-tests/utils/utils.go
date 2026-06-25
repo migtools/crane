@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"slices"
 	"sort"
-	"strings"
 	"strconv"
+	"strings"
 
 	"github.com/google/go-cmp/cmp"
 	"gopkg.in/yaml.v3"
@@ -138,6 +138,32 @@ func GoldenManifestsDir(appName, stage string) (string, error) {
 	baseDir := filepath.Dir(thisFile)
 	path := filepath.Join(baseDir, "..", "golden-manifests", appName, stage)
 	return path, nil
+}
+
+// GoldenManifestsDirForPlatform resolves golden fixtures with OpenShift-aware fallback.
+// For OpenShift, it first checks e2e-tests/golden-manifests-ocp/<app>/<stage>.
+// If that directory does not exist, it falls back to the default
+// e2e-tests/golden-manifests/<app>/<stage>.
+func GoldenManifestsDirForPlatform(appName, stage string, isOpenShift bool) (string, error) {
+	defaultDir, err := GoldenManifestsDir(appName, stage)
+	if err != nil {
+		return "", err
+	}
+	if !isOpenShift {
+		return defaultDir, nil
+	}
+
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+	baseDir := filepath.Dir(thisFile)
+	ocpDir := filepath.Join(baseDir, "..", "golden-manifests-ocp", appName, stage)
+	if info, statErr := os.Stat(ocpDir); statErr == nil && info.IsDir() {
+		return ocpDir, nil
+	}
+
+	return defaultDir, nil
 }
 
 // CompareDirectoryFileSets compares the file sets in two directories and returns an error if they differ.
@@ -374,6 +400,14 @@ func extractResourceIdentity(doc any) (string, error) {
 		return "", fmt.Errorf("missing metadata.name")
 	}
 
+	// OpenShift dockercfg Secret names include generated suffixes.
+	// Canonicalize identities so export comparisons are stable across runs.
+	if kind == "Secret" {
+		if canonicalSecretName := canonicalOpenShiftDockercfgSecretName(name); canonicalSecretName != "" {
+			return fmt.Sprintf("%s|%s|%s|%s", apiVersion, kind, namespace, canonicalSecretName), nil
+		}
+	}
+
 	return fmt.Sprintf("%s|%s|%s|%s", apiVersion, kind, namespace, name), nil
 }
 
@@ -393,6 +427,19 @@ func parseYAMLDocuments(data []byte) ([]any, error) {
 		docs = append(docs, doc)
 	}
 	return docs, nil
+}
+
+func canonicalOpenShiftDockercfgSecretName(name string) string {
+	switch {
+	case strings.HasPrefix(name, "builder-dockercfg-"):
+		return "dockercfg:builder"
+	case strings.HasPrefix(name, "default-dockercfg-"):
+		return "dockercfg:default"
+	case strings.HasPrefix(name, "deployer-dockercfg-"):
+		return "dockercfg:deployer"
+	default:
+		return ""
+	}
 }
 
 // compareYAMLFileBytes parses two YAML inputs and compares their decoded document
@@ -563,6 +610,24 @@ func normalizeUnstableFields(doc any) any {
 		}
 	}
 
+	if kind == "Secret" {
+		name, _ := metadata["name"].(string)
+		if canonicalSecretName := canonicalOpenShiftDockercfgSecretName(name); canonicalSecretName != "" {
+			metadata["name"] = canonicalSecretName
+			// OpenShift dockercfg token material is runtime-generated and unstable.
+			// Keep the secret identity/type assertions while ignoring token payload drift.
+			if data, ok := root["data"].(map[string]any); ok {
+				delete(data, ".dockercfg")
+			}
+			return normalized
+		}
+	}
+
+	if kind == "ServiceAccount" {
+		normalizeServiceAccountDockercfgReferences(root)
+		return normalized
+	}
+
 	if kind != "Pod" && kind != "EndpointSlice" {
 		return normalized
 	}
@@ -630,6 +695,38 @@ func normalizePodServiceAccountVolumeNames(root map[string]any) {
 	if initContainers, _ := spec["initContainers"].([]any); initContainers != nil {
 		normalizeMountNames(initContainers)
 	}
+}
+
+// normalizeServiceAccountDockercfgReferences canonicalizes generated
+// OpenShift dockercfg secret references in ServiceAccount fields.
+func normalizeServiceAccountDockercfgReferences(root map[string]any) {
+	metadata, _ := root["metadata"].(map[string]any)
+	if metadata != nil {
+		if annotations, _ := metadata["annotations"].(map[string]any); annotations != nil {
+			if ref, _ := annotations["openshift.io/internal-registry-pull-secret-ref"].(string); ref != "" {
+				if canonical := canonicalOpenShiftDockercfgSecretName(ref); canonical != "" {
+					annotations["openshift.io/internal-registry-pull-secret-ref"] = canonical
+				}
+			}
+		}
+	}
+
+	canonicalizeSecretNameRefs := func(field string) {
+		refs, _ := root[field].([]any)
+		for _, refValue := range refs {
+			ref, ok := refValue.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := ref["name"].(string)
+			if canonical := canonicalOpenShiftDockercfgSecretName(name); canonical != "" {
+				ref["name"] = canonical
+			}
+		}
+	}
+
+	canonicalizeSecretNameRefs("imagePullSecrets")
+	canonicalizeSecretNameRefs("secrets")
 }
 
 // normalizeWithPath recursively copies and normalizes a decoded YAML value while

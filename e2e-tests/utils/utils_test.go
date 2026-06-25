@@ -680,6 +680,30 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 			},
 		},
 		{
+			name: "openshift_dockercfg_secret_generated_suffixes_match",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/secret-builder-a.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: builder-dockercfg-abc12\ndata:\n  .dockercfg: AAAA\ntype: kubernetes.io/dockercfg\n")
+				write(t, golden, "resources/secret-default-a.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: default-dockercfg-abc12\ndata:\n  .dockercfg: BBBB\ntype: kubernetes.io/dockercfg\n")
+				write(t, golden, "resources/secret-deployer-a.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: deployer-dockercfg-abc12\ndata:\n  .dockercfg: CCCC\ntype: kubernetes.io/dockercfg\n")
+				write(t, got, "resources/secret-builder-b.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: builder-dockercfg-xyz89\ndata:\n  .dockercfg: XXXX\ntype: kubernetes.io/dockercfg\n")
+				write(t, got, "resources/secret-default-b.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: default-dockercfg-xyz89\ndata:\n  .dockercfg: YYYY\ntype: kubernetes.io/dockercfg\n")
+				write(t, got, "resources/secret-deployer-b.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: ns\n  name: deployer-dockercfg-xyz89\ndata:\n  .dockercfg: ZZZZ\ntype: kubernetes.io/dockercfg\n")
+				return golden, got
+			},
+		},
+		{
+			name: "serviceaccount_dockercfg_secret_references_match_after_normalization",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/sa-builder-a.yaml", "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  namespace: ns\n  name: builder\n  annotations:\n    openshift.io/internal-registry-pull-secret-ref: builder-dockercfg-abc12\nimagePullSecrets:\n  - name: builder-dockercfg-abc12\nsecrets:\n  - name: builder-dockercfg-abc12\n")
+				write(t, got, "resources/sa-builder-b.yaml", "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  namespace: ns\n  name: builder\n  annotations:\n    openshift.io/internal-registry-pull-secret-ref: builder-dockercfg-xyz89\nimagePullSecrets:\n  - name: builder-dockercfg-xyz89\nsecrets:\n  - name: builder-dockercfg-xyz89\n")
+				return golden, got
+			},
+		},
+		{
 			name: "same_identity_multiplicity_mismatch_fails",
 			build: func(t *testing.T) (string, string) {
 				golden := t.TempDir()
