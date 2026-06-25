@@ -42,10 +42,11 @@ func TestNewValidateCommand(t *testing.T) {
 
 func TestValidate_Flags(t *testing.T) {
 	tests := []struct {
-		name     string
-		setup    func(t *testing.T) *ValidateOptions
-		wantErr  bool
-		errMatch string
+		name                     string
+		setup                    func(t *testing.T) *ValidateOptions
+		wantErr                  bool
+		errMatch                 string
+		setMutualExclusionFlags  bool // If true, explicitly mark kubeconfig-related flags as changed
 	}{
 		{
 			name: "missing input-dir",
@@ -167,8 +168,9 @@ func TestValidate_Flags(t *testing.T) {
 					apiResourcesFile: f,
 				}
 			},
-			wantErr:  true,
-			errMatch: "--api-resources and --context are mutually exclusive",
+			wantErr:                 true,
+			errMatch:                "--api-resources and --context are mutually exclusive",
+			setMutualExclusionFlags: true,
 		},
 		{
 			name: "api-resources with --kubeconfig is mutually exclusive",
@@ -188,8 +190,9 @@ func TestValidate_Flags(t *testing.T) {
 					apiResourcesFile: f,
 				}
 			},
-			wantErr:  true,
-			errMatch: "--api-resources and --kubeconfig are mutually exclusive",
+			wantErr:                 true,
+			errMatch:                "--api-resources and --kubeconfig are mutually exclusive",
+			setMutualExclusionFlags: true,
 		},
 		{
 			name: "api-resources with --server is mutually exclusive",
@@ -209,8 +212,9 @@ func TestValidate_Flags(t *testing.T) {
 					apiResourcesFile: f,
 				}
 			},
-			wantErr:  true,
-			errMatch: "--api-resources and --server are mutually exclusive",
+			wantErr:                 true,
+			errMatch:                "--api-resources and --server are mutually exclusive",
+			setMutualExclusionFlags: true,
 		},
 		{
 			name: "api-resources with --token is mutually exclusive",
@@ -230,8 +234,9 @@ func TestValidate_Flags(t *testing.T) {
 					apiResourcesFile: f,
 				}
 			},
-			wantErr:  true,
-			errMatch: "--api-resources and --token are mutually exclusive",
+			wantErr:                 true,
+			errMatch:                "--api-resources and --token are mutually exclusive",
+			setMutualExclusionFlags: true,
 		},
 		{
 			name: "api-resources with --cluster is mutually exclusive",
@@ -251,8 +256,9 @@ func TestValidate_Flags(t *testing.T) {
 					apiResourcesFile: f,
 				}
 			},
-			wantErr:  true,
-			errMatch: "--api-resources and --cluster are mutually exclusive",
+			wantErr:                 true,
+			errMatch:                "--api-resources and --cluster are mutually exclusive",
+			setMutualExclusionFlags: true,
 		},
 		{
 			name: "api-resources with --user is mutually exclusive",
@@ -272,8 +278,9 @@ func TestValidate_Flags(t *testing.T) {
 					apiResourcesFile: f,
 				}
 			},
-			wantErr:  true,
-			errMatch: "--api-resources and --user are mutually exclusive",
+			wantErr:                 true,
+			errMatch:                "--api-resources and --user are mutually exclusive",
+			setMutualExclusionFlags: true,
 		},
 		{
 			name: "api-resources valid file accepted",
@@ -306,25 +313,38 @@ func TestValidate_Flags(t *testing.T) {
 			}
 			o.configFlags.AddFlags(cmd.Flags())
 
-			// For mutual exclusivity tests, simulate flag parsing by marking flags as changed
-			if strings.Contains(tt.name, "mutually exclusive") {
+			// For mutual exclusivity tests, explicitly mark kubeconfig-related flags as changed
+			// to simulate user-provided flags (vs environment/default values)
+			if tt.setMutualExclusionFlags {
 				if o.configFlags.Context != nil && *o.configFlags.Context != "" {
-					cmd.Flags().Set("context", *o.configFlags.Context)
+					if err := cmd.Flags().Set("context", *o.configFlags.Context); err != nil {
+						t.Fatalf("failed to set context flag: %v", err)
+					}
 				}
 				if o.configFlags.KubeConfig != nil && *o.configFlags.KubeConfig != "" {
-					cmd.Flags().Set("kubeconfig", *o.configFlags.KubeConfig)
+					if err := cmd.Flags().Set("kubeconfig", *o.configFlags.KubeConfig); err != nil {
+						t.Fatalf("failed to set kubeconfig flag: %v", err)
+					}
 				}
 				if o.configFlags.APIServer != nil && *o.configFlags.APIServer != "" {
-					cmd.Flags().Set("server", *o.configFlags.APIServer)
+					if err := cmd.Flags().Set("server", *o.configFlags.APIServer); err != nil {
+						t.Fatalf("failed to set server flag: %v", err)
+					}
 				}
 				if o.configFlags.BearerToken != nil && *o.configFlags.BearerToken != "" {
-					cmd.Flags().Set("token", *o.configFlags.BearerToken)
+					if err := cmd.Flags().Set("token", *o.configFlags.BearerToken); err != nil {
+						t.Fatalf("failed to set token flag: %v", err)
+					}
 				}
 				if o.configFlags.ClusterName != nil && *o.configFlags.ClusterName != "" {
-					cmd.Flags().Set("cluster", *o.configFlags.ClusterName)
+					if err := cmd.Flags().Set("cluster", *o.configFlags.ClusterName); err != nil {
+						t.Fatalf("failed to set cluster flag: %v", err)
+					}
 				}
 				if o.configFlags.AuthInfoName != nil && *o.configFlags.AuthInfoName != "" {
-					cmd.Flags().Set("user", *o.configFlags.AuthInfoName)
+					if err := cmd.Flags().Set("user", *o.configFlags.AuthInfoName); err != nil {
+						t.Fatalf("failed to set user flag: %v", err)
+					}
 				}
 			}
 
