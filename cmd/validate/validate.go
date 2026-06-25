@@ -35,6 +35,12 @@ type ValidateOptions struct {
 // detected later in Run() when discovery is queried.
 // Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
+	kubeconfigFlag := c.Flags().Lookup("kubeconfig")
+	if kubeconfigFlag == nil || !kubeconfigFlag.Changed {
+		emptyStr := ""
+		o.configFlags.KubeConfig = &emptyStr
+	}
+
 	if o.apiResourcesFile != "" {
 		return nil
 	}
@@ -126,7 +132,7 @@ func (o *ValidateOptions) Run() error {
 		discoveryClient, err := o.configFlags.ToDiscoveryClient()
 		if err != nil {
 			return fmt.Errorf("creating discovery client: %w", err)
-		}
+		} 
 		discoveryClient.Invalidate()
 
 		report, err = internalValidate.MatchResults(entries, internalValidate.MatchOptions{DiscoveryClient: discoveryClient}, log)
