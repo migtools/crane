@@ -55,8 +55,20 @@ func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, e
 // for the route.openshift.io API group. This is used to conditionally adjust
 // test app manifests for OCP's SCC requirements.
 func (k KubectlRunner) IsOpenShift() bool {
-	_, err := k.Run("api-resources", "--api-group=route.openshift.io", "--no-headers")
-	return err == nil
+	out, err := k.Run("api-resources", "--api-group=route.openshift.io", "--no-headers")
+	if err != nil {
+		return false
+	}
+	cleaned := StripKubectlWarnings(out)
+	if strings.TrimSpace(cleaned) == "" {
+		return false
+	}
+	for _, line := range strings.Split(cleaned, "\n") {
+		if strings.Contains(line, "route.openshift.io/") {
+			return true
+		}
+	}
+	return false
 }
 
 // OLMAPIAvailable reports whether the Subscription CRD is registered on the cluster.

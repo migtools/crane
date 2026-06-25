@@ -741,6 +741,48 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 	}
 }
 
+func TestCompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults(t *testing.T) {
+	write := func(t *testing.T, dir, rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Run("allows_optional_ocp_defaults_missing_on_one_side", func(t *testing.T) {
+		golden := t.TempDir()
+		got := t.TempDir()
+		write(t, golden, "deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  namespace: ns\n  name: app\nspec:\n  replicas: 0\n")
+		write(t, got, "deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  namespace: ns\n  name: app\nspec:\n  replicas: 0\n")
+
+		write(t, golden, "sa.yaml", "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  namespace: ns\n  name: builder\n")
+		write(t, golden, "rb.yaml", "apiVersion: rbac.authorization.k8s.io/v1\nkind: RoleBinding\nmetadata:\n  namespace: ns\n  name: system:deployers\n")
+		write(t, golden, "cm.yaml", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: ns\n  name: openshift-service-ca.crt\n")
+
+		if err := CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults(golden, got); err != nil {
+			t.Fatalf("CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults: %v", err)
+		}
+	})
+
+	t.Run("still_fails_when_required_identity_missing", func(t *testing.T) {
+		golden := t.TempDir()
+		got := t.TempDir()
+		write(t, golden, "deploy.yaml", "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  namespace: ns\n  name: app\nspec:\n  replicas: 0\n")
+
+		err := CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults(golden, got)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !strings.Contains(err.Error(), "resource identity sets differ") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 func TestLooksLikeYAMLFile(t *testing.T) {
 	// Accept yaml extensions (or no extension) and reject non-yaml extensions.
 	cases := []struct {
@@ -1064,6 +1106,37 @@ func TestNormalizeUnstableFields(t *testing.T) {
 				meta := m["metadata"].(map[string]any)
 				if meta["name"] != "my-svc" {
 					t.Fatalf("expected service metadata.name to stay, got: %v", meta["name"])
+				}
+			},
+		},
+		{
+			name: "drops_nested_template_metadata_creation_timestamp",
+			in: map[string]any{
+				"apiVersion": "apps/v1",
+				"kind":       "Deployment",
+				"spec": map[string]any{
+					"template": map[string]any{
+						"metadata": map[string]any{
+							"creationTimestamp": nil,
+							"labels": map[string]any{
+								"app": "demo",
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				spec := m["spec"].(map[string]any)
+				template := spec["template"].(map[string]any)
+				meta := template["metadata"].(map[string]any)
+				if _, exists := meta["creationTimestamp"]; exists {
+					t.Fatal("expected spec.template.metadata.creationTimestamp to be removed")
+				}
+				labels := meta["labels"].(map[string]any)
+				if labels["app"] != "demo" {
+					t.Fatalf("expected labels to remain, got: %#v", labels)
 				}
 			},
 		},

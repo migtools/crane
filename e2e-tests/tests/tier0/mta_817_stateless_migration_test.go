@@ -59,7 +59,11 @@ var _ = Describe("Stateless migration", func() {
 		By("Compare YAML semantic diff of golden and actual export files")
 		goldenExportDir, err := utils.GoldenManifestsDirForPlatform(appName, "export", isOpenShift)
 		Expect(err).NotTo(HaveOccurred())
-		if err := utils.CompareDirectoryYAMLSemanticsExport(goldenExportDir, paths.ExportDir); err != nil {
+		compareExport := utils.CompareDirectoryYAMLSemanticsExport
+		if isOpenShift {
+			compareExport = utils.CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults
+		}
+		if err := compareExport(goldenExportDir, paths.ExportDir); err != nil {
 			Fail(fmt.Sprintf("YAML semantic diff of golden and actual export files: %v", err))
 		} else {
 			log.Printf("YAML semantic diff of golden and actual export files: no differences found")
@@ -69,7 +73,7 @@ var _ = Describe("Stateless migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		compareOutput := utils.CompareDirectoryYAMLSemantics
 		if isOpenShift {
-			compareOutput = utils.CompareDirectoryYAMLSemanticsExport
+			compareOutput = utils.CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults
 		}
 		if err := compareOutput(goldenOutputDir, paths.OutputDir); err != nil {
 			Fail(fmt.Sprintf("YAML semantic diff of golden and actual output files: %v", err))
