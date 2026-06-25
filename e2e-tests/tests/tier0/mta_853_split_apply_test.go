@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Namespace-admin cluster-level migration", func() {
-	It("[MTA-853] Should migrate workload with split apply: namespace-admin + cluster-admin", Label("namespace-admin"), func() {
+	It("[MTA-853] Should migrate workload with split apply: namespace-admin + cluster-admin", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName

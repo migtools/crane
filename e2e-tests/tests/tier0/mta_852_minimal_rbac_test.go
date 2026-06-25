@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Cluster-level RBAC export", func() {
-	It("[MTA-852] Should export ClusterRole and ClusterRoleBinding for linked ServiceAccount", Label("cluster-admin"), func() {
+	It("[MTA-852] Should export ClusterRole and ClusterRoleBinding for linked ServiceAccount", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName

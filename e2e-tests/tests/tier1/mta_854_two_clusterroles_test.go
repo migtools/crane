@@ -10,8 +10,8 @@ import (
 )
 
 var _ = Describe("Cluster-level RBAC export", func() {
-	It("[MTA-854] Should export two ClusterRoles and two ClusterRoleBindings for one Deployment", Label("cluster-admin"), func() {
-		appName := "nginx-with-serviceaccount"
+	It("[MTA-854] Should export two ClusterRoles and two ClusterRoleBindings for one Deployment", Label("tier1"), func() {
+		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName
 		readClusterRole := "crane-e2e-pod-reader"
@@ -40,10 +40,12 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		readCRB := ClusterRoleBinding{Name: readClusterRoleBindingName, ClusterRoleName: readClusterRole}
 		writeCRB := ClusterRoleBinding{Name: writeClusterRoleBindingName, ClusterRoleName: writeClusterRole}
 		sa := ServiceAccount{Name: "nginx-sa", Namespace: namespace}
+
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
+
 		DeferCleanup(func() {
 			if err := ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{readCR, writeCR, readCRB, writeCRB, sa}); err != nil {
 				log.Printf("Resources cleanup: %v", err)
@@ -54,7 +56,7 @@ var _ = Describe("Cluster-level RBAC export", func() {
 			}
 		})
 
-		By("Deploying app with ServiceAccount on source cluster")
+		By("Deploying app with on source cluster")
 		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
 
 		By("Creating ClusterRole with pod read permissions")
@@ -68,6 +70,9 @@ var _ = Describe("Cluster-level RBAC export", func() {
 
 		By("Creating ClusterRoleBinding for write ClusterRole")
 		Expect(writeCRB.Create(kubectlSrc)).NotTo(HaveOccurred())
+
+		By("Creating Service-Account on Namespace")
+		Expect(sa.Create(kubectlSrc)).NotTo(HaveOccurred())
 
 		By("Bind Relevent Service-Account to Read cluster role")
 		Expect(readCRB.AddSubject(kubectlSrc, sa)).NotTo(HaveOccurred())
