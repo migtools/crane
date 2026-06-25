@@ -13,7 +13,7 @@ import (
 )
 
 var _ = Describe("PVC data integrity migration", func() {
-	It("[MTA-806] Migrate a PVC with data and verify checksum integrity", Label("tier0"), func() {
+	It("[MTA-806] Migrate a PVC with data and verify checksum integrity", Label("tier0", "pvc-transfer"), func() {
 		const testFileName = "testfile.txt"
 		appName := "app-with-empty-pvc"
 		namespace := appName
