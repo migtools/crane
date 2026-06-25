@@ -51,6 +51,14 @@ func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, e
 	return strings.TrimSpace(string(out)), nil
 }
 
+// IsOpenShift reports whether the cluster is an OpenShift cluster by checking
+// for the route.openshift.io API group. This is used to conditionally adjust
+// test app manifests for OCP's SCC requirements.
+func (k KubectlRunner) IsOpenShift() bool {
+	_, err := k.Run("api-resources", "--api-group=route.openshift.io", "--no-headers")
+	return err == nil
+}
+
 // OLMAPIAvailable reports whether the Subscription CRD is registered on the cluster.
 func (k KubectlRunner) OLMAPIAvailable() (bool, error) {
 	_, err := k.Run("get", "crd", "subscriptions.operators.coreos.com")
