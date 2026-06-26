@@ -814,7 +814,13 @@ func normalizeWithPath(value any, path []string) any {
 				continue
 			}
 			nextPath := append(append([]string{}, path...), k)
-			out[k] = normalizeWithPath(child, nextPath)
+			normalized := normalizeWithPath(child, nextPath)
+			// Drop empty maps — an empty map {} is semantically identical to
+			// the field not existing and should not cause comparison failures.
+			if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
+				continue
+			}
+			out[k] = normalized
 		}
 		return out
 	case []any:
