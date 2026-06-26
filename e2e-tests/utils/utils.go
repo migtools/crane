@@ -674,6 +674,12 @@ func normalizeUnstableFields(doc any) any {
 			}
 			return normalized
 		}
+		if name == "openshift-service-ca.crt" {
+			if data, ok := root["data"].(map[string]any); ok {
+				delete(data, "service-ca.crt")
+			}
+			return normalized
+		}
 	}
 
 	if kind == "Secret" {
