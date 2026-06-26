@@ -822,10 +822,12 @@ func normalizeWithPath(value any, path []string) any {
 			}
 			nextPath := append(append([]string{}, path...), k)
 			normalized := normalizeWithPath(child, nextPath)
-			// Drop empty maps — an empty map {} is semantically identical to
-			// the field not existing and should not cause comparison failures.
-			if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
-				continue
+			// An empty securityContext: {} is semantically identical to absent.
+			// Some plugins strip it, others preserve it — treat both as equal.
+			if k == "securityContext" {
+				if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
+					continue
+				}
 			}
 			out[k] = normalized
 		}
