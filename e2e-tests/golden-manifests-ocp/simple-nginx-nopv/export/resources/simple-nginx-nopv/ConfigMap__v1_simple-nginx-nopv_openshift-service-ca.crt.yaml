@@ -1,52 +1,9 @@
 apiVersion: v1
 data:
-  service-ca.crt: |
-    -----BEGIN CERTIFICATE-----
-    MIIDUTCCAjmgAwIBAgIIKKPQCpyFyEwwDQYJKoZIhvcNAQELBQAwNjE0MDIGA1UE
-    Awwrb3BlbnNoaWZ0LXNlcnZpY2Utc2VydmluZy1zaWduZXJAMTc4MjM2MTU3ODAe
-    Fw0yNjA2MjUwNDI2MTdaFw0yODA4MjMwNDI2MThaMDYxNDAyBgNVBAMMK29wZW5z
-    aGlmdC1zZXJ2aWNlLXNlcnZpbmctc2lnbmVyQDE3ODIzNjE1NzgwggEiMA0GCSqG
-    SIb3DQEBAQUAA4IBDwAwggEKAoIBAQDEF+KyARM/wH3u1Zqllr02wPPffCUb1XH4
-    b5WapFpCCDtrE0kkQJPjNbWwB0fCvU+tmTGsy5a/paRTqK6BigreCiyQuITcgOXX
-    ZDrT6Hi0R3WWVFWhGuaXkQg2GWrlBTkj5QvFly6j8miLtj5BrlJ3ic4N2vfb/oGC
-    EONPYJMhiEWAIiDLLO0Db5DJHdS1TIWNkSdsxuNs8wROkzcxcAdva+nnNZ89jtLM
-    SHJM3m9tID2LVUrcmZk95OUP4oiTsm466HhCLkwPUf5rrtgrSowdF6Wojy8Z1lUo
-    v7GfvBXJmu6wzIsESO237DdsVfqe1OU0i9PzRCyNvQqUas6Kfkp1AgMBAAGjYzBh
-    MA4GA1UdDwEB/wQEAwICpDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQ3Lbnu
-    HkMHGSx7BiX8I6djomJTEzAfBgNVHSMEGDAWgBQ3LbnuHkMHGSx7BiX8I6djomJT
-    EzANBgkqhkiG9w0BAQsFAAOCAQEAsPHqoo5UATYlb8C1WA/lCeL+W6YIGXQEUIQc
-    KLSwqbiv7vEUu7v20PCfK5BHVnD/XC1XrvHmP+L2iFWIJLq5GKkUXgylMY6k9JAc
-    1k1ggMl1GHuj2yZw3VTqL+UssWumX5CIw1gnFtg5oxBgZFN7WG9MexrvpP7gOd2w
-    rZ5t1+drNsE1RqzlUXFu61n11NkIjkTSzP4Cwe2HwntLrngowy8CK+WULSJeG0wR
-    Arse3oASsLaBvrrZ35TFJmZDulkeEwHk07twTwyfSL9agVFa9LklDlVzbC0x0ATQ
-    Dd5d0t3qcpjadAMBh5UJXrJVDpwfi5Fo9qFp33Qf1pckhZVYqw==
-    -----END CERTIFICATE-----
+  service-ca.crt: REDACTED
 kind: ConfigMap
 metadata:
   annotations:
     service.beta.openshift.io/inject-cabundle: "true"
-  creationTimestamp: "2026-06-25T05:47:03Z"
-  managedFields:
-  - apiVersion: v1
-    fieldsType: FieldsV1
-    fieldsV1:
-      f:data: {}
-      f:metadata:
-        f:annotations:
-          .: {}
-          f:service.beta.openshift.io/inject-cabundle: {}
-    manager: kube-controller-manager
-    operation: Update
-    time: "2026-06-25T05:47:03Z"
-  - apiVersion: v1
-    fieldsType: FieldsV1
-    fieldsV1:
-      f:data:
-        f:service-ca.crt: {}
-    manager: service-ca-operator
-    operation: Update
-    time: "2026-06-25T05:47:03Z"
   name: openshift-service-ca.crt
   namespace: simple-nginx-nopv
-  resourceVersion: "44837"
-  uid: 00634819-e4fa-4fd0-a5b7-8b3294fe1654
