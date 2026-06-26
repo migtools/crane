@@ -81,7 +81,7 @@ How does it work? Crane works by:
 
 4. `$ crane transform`
   * A directory `transform/10_KubernetesPlugin/` is created with a Kustomize layout:
-    * `resources/` - Exported resources grouped by type
+    * `input/` - Exported resources grouped by type
     * `patches/` - JSONPatch operations to clean resources
     * `kustomization.yaml` - Kustomize configuration
   * The built-in Kubernetes plugin generates patches to remove live/runtime metadata
@@ -96,7 +96,7 @@ How does it work? Crane works by:
               path: /metadata/creationTimestamp
           
       * These patches remove server-managed fields that would conflict when applying to a new cluster.
-    * `$ cat transform/10_KubernetesPlugin/resources/secret.yaml` - Contains the original exported Secret with all metadata
+    * `$ cat transform/10_KubernetesPlugin/input/secret.yaml` - Contains the original exported Secret with all metadata
 
 5. `$ crane apply`
   * Runs `kubectl kustomize` on the transform stage to apply patches

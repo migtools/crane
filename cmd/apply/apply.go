@@ -36,6 +36,9 @@ type Flags struct {
 	KustomizeArgs string `mapstructure:"kustomize-args"`
 	// Skip cluster-scoped resources in output
 	SkipClusterScoped bool `mapstructure:"skip-cluster-scoped"`
+	Overwrite         bool `mapstructure:"overwrite"`
+	// Enable ordered resource filenames for dependency-aware kubectl apply
+	Ordered bool `mapstructure:"ordered"`
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
@@ -45,7 +48,16 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// No validation needed - stages are resolved in run()
+	info, err := os.Stat(o.TransformDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("transform-dir %q does not exist", o.TransformDir)
+		}
+		return fmt.Errorf("transform-dir %q is not accessible: %v", o.TransformDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("transform-dir %q is not a directory", o.TransformDir)
+	}
 	return nil
 }
 
@@ -113,6 +125,9 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
 	// Cluster-scoped filtering
 	cmd.Flags().BoolVar(&o.SkipClusterScoped, "skip-cluster-scoped", false, "Exclude cluster-scoped resources (ClusterRole, ClusterRoleBinding, CRD, etc.) from output. Useful for non-admin migration scenarios.")
+	cmd.Flags().BoolVar(&o.Overwrite, "overwrite", false, "Overwrite the output directory if it already exists")
+	// Ordered resource filenames
+	cmd.Flags().BoolVar(&o.Ordered, "ordered", false, "Add ordering prefix to resource filenames (e.g., 300_Role_*, 310_RoleBinding_*) to ensure dependency-aware kubectl apply")
 }
 
 func (o *Options) run() error {
@@ -128,7 +143,14 @@ func (o *Options) run() error {
 		return err
 	}
 
-	// Create output directory
+	if _, err := os.Stat(outputDir); err == nil {
+		if !o.Overwrite {
+			return fmt.Errorf("output directory %q already exists; use --overwrite to replace it", outputDir)
+		}
+		if err := os.RemoveAll(outputDir); err != nil {
+			return fmt.Errorf("failed to clear output directory: %w", err)
+		}
+	}
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -146,6 +168,7 @@ func (o *Options) run() error {
 		OutputDir:         outputDir,
 		KustomizeArgs:     kustomizeArgs,
 		SkipClusterScoped: o.SkipClusterScoped,
+		Ordered:           o.Ordered,
 	}
 
 	// Determine which stages to apply

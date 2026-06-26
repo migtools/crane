@@ -1,0 +1,49 @@
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints: null
+kind: EndpointSlice
+metadata:
+  annotations:
+    endpoints.kubernetes.io/last-change-trigger-time: "2026-06-25T05:47:07Z"
+  creationTimestamp: "2026-06-25T05:47:06Z"
+  generateName: my-simple-nginx-nopv-
+  generation: 2
+  labels:
+    app: simple-nginx-nopv
+    endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+    kubernetes.io/service-name: my-simple-nginx-nopv
+  managedFields:
+  - apiVersion: discovery.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:addressType: {}
+      f:endpoints: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:endpoints.kubernetes.io/last-change-trigger-time: {}
+        f:generateName: {}
+        f:labels:
+          .: {}
+          f:app: {}
+          f:endpointslice.kubernetes.io/managed-by: {}
+          f:kubernetes.io/service-name: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"96239f1b-9a7f-4720-84cf-78b75455e545"}: {}
+      f:ports: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-06-25T05:47:07Z"
+  name: my-simple-nginx-nopv-rf7lk
+  namespace: simple-nginx-nopv
+  ownerReferences:
+  - apiVersion: v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Service
+    name: my-simple-nginx-nopv
+    uid: 96239f1b-9a7f-4720-84cf-78b75455e545
+  resourceVersion: "44884"
+  uid: b87f1be9-2788-41d3-901e-27bfd5d7ecb6
+ports: null

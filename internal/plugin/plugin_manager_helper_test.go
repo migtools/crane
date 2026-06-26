@@ -109,6 +109,61 @@ func TestGetYamlFromUrlWithFile(t *testing.T) {
 	assert.DeepEqual(t, index, resp)
 }
 
+func TestFilterPluginForOsArch_PersistsFilter(t *testing.T) {
+	p := Plugin{
+		Versions: []PluginVersion{
+			{
+				Name:    "TestPlugin",
+				Version: "0.0.1",
+				Binaries: []Binary{
+					{OS: "linux", Arch: "amd64", URI: "https://example.com/linux-amd64"},
+					{OS: "darwin", Arch: "amd64", URI: "https://example.com/darwin-amd64"},
+					{OS: "darwin", Arch: "arm64", URI: "https://example.com/darwin-arm64"},
+				},
+			},
+		},
+	}
+
+	available := FilterPluginForOsArch(&p)
+
+	if !available {
+		t.Fatal("expected plugin to be available for current platform")
+	}
+
+	// After filtering, each version should have exactly 1 binary matching current OS/arch
+	for _, version := range p.Versions {
+		if len(version.Binaries) != 1 {
+			t.Fatalf("expected 1 binary after filter, got %d", len(version.Binaries))
+		}
+		if version.Binaries[0].OS != runtime.GOOS {
+			t.Errorf("binary OS = %q, want %q", version.Binaries[0].OS, runtime.GOOS)
+		}
+		if version.Binaries[0].Arch != runtime.GOARCH {
+			t.Errorf("binary Arch = %q, want %q", version.Binaries[0].Arch, runtime.GOARCH)
+		}
+	}
+}
+
+func TestFilterPluginForOsArch_NoPlatformMatch(t *testing.T) {
+	p := Plugin{
+		Versions: []PluginVersion{
+			{
+				Name:    "TestPlugin",
+				Version: "0.0.1",
+				Binaries: []Binary{
+					{OS: "plan9", Arch: "mips", URI: "https://example.com/plan9-mips"},
+				},
+			},
+		},
+	}
+
+	available := FilterPluginForOsArch(&p)
+
+	if available {
+		t.Fatal("expected plugin to be unavailable for non-matching platform")
+	}
+}
+
 func TestYamlToManifestWithFile(t *testing.T) {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skip("original fixture is linux/amd64-only; assertions run on linux/amd64")

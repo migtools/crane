@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/cmd/transform/listplugins"
 	"github.com/konveyor/crane/cmd/transform/optionals"
 	"github.com/konveyor/crane/internal/file"
@@ -16,7 +17,6 @@ import (
 	"github.com/konveyor/crane/internal/kustomize"
 	"github.com/konveyor/crane/internal/plugin"
 	internalTransform "github.com/konveyor/crane/internal/transform"
-	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -60,7 +60,21 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	// No validation needed - stages are resolved in run()
+	exportDir, err := filepath.Abs(o.ExportDir)
+	if err != nil {
+		return fmt.Errorf("resolving export-dir %q: %w", o.ExportDir, err)
+	}
+	o.ExportDir = exportDir
+	info, err := os.Stat(o.ExportDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("export-dir %q does not exist", o.ExportDir)
+		}
+		return fmt.Errorf("export-dir %q is not accessible: %v", o.ExportDir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("export-dir %q is not a directory", o.ExportDir)
+	}
 	return nil
 }
 
@@ -143,9 +157,12 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
-	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins ran in transform operation. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
 	cmd.Flags().StringVar(&o.InstructionsFile, "instructions-file", "", "Path to the transform instructions file")
 	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
+
+	// Deprecated: optional-flags will be removed in a future version
+	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "(DEPRECATED) JSON string holding flag value pairs to be passed to all plugins. Use custom stages with kustomization instead. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
+	cmd.Flags().MarkDeprecated("optional-flags", "use custom stages with kustomization patches instead. This flag applies globally to all stages and will be removed in a future version.")
 
 	// Kustomize arguments
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
@@ -365,20 +382,14 @@ func (o *Options) reconcileInstructionStages(transformDir string, desiredStages 
 	}
 
 	for _, extra := range extras {
-		stagePath := filepath.Join(transformDir, extra)              // transform/<stageName>
-		stageWorkPath := filepath.Join(transformDir, ".work", extra) // transform/.work/<stageName>
+		stagePath := filepath.Join(transformDir, extra) // transform/<stageName>
 		if err := os.RemoveAll(stagePath); err != nil {
 			return fmt.Errorf("failed to delete extra stage directory %q at path %q: %w", extra, stagePath, err)
 		}
-		if err := os.RemoveAll(stageWorkPath); err != nil {
-			return fmt.Errorf("failed to delete extra stage work directory %q at path %q: %w", extra, stageWorkPath, err)
-		}
 		log.Infof("Deleted stage directory not present in instructions file: %s", stagePath)
-		log.Infof("Deleted stage work directory not present in instructions file: %s", stageWorkPath)
 	}
 	return nil
 }
-
 
 // ensurePreviousStagesRun ensures all existing stages have been run
 // and have output directories. This prepares the environment for creating a new stage.
@@ -556,7 +567,7 @@ func (o *Options) createCustomStageWithExplicitName(
 	transformDir string,
 	log *logrus.Logger,
 ) error {
-	log.Infof("Creating custom stage directory: %s", stageName)
+	log.Infof("Creating custom stage directory %q with no plugins — resources will be copied as-is. If this was a typo, delete the directory and re-run with the correct stage name.", stageName)
 
 	if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
 		return fmt.Errorf("failed to ensure previous stages are run: %w", err)
@@ -574,7 +585,7 @@ func (o *Options) createCustomStageWithAutoPriority(
 	log *logrus.Logger,
 ) (string, error) {
 	stageName := internalTransform.GenerateStageName(priority, baseName)
-	log.Infof("Creating custom stage with automatic priority: %s -> %s", baseName, stageName)
+	log.Infof("Creating custom stage %q with no plugins — resources will be copied as-is. If this was a typo, delete the directory and re-run with the correct stage name.", stageName)
 
 	if err := o.ensurePreviousStagesRun(orchestrator, transformDir, log); err != nil {
 		return "", fmt.Errorf("failed to ensure previous stages are run: %w", err)
@@ -645,7 +656,7 @@ func (o *Options) resolveAndValidateStages(
 	nextPriority := maxPriority + 10
 
 	var resolved []string
-	seen := make(map[string]bool) // Prevent duplicates
+	seen := make(map[string]bool)    // Prevent duplicates
 	var allPlugins []cranelib.Plugin // Lazy-loaded on first plugin creation
 
 	for _, requested := range requestedStages {
@@ -720,18 +731,18 @@ func (o *Options) resolveAndValidateStages(
 				continue
 			}
 
-			if err := validateStageNameToken(requested); err == nil {
-				stageName, err := o.createCustomStageWithAutoPriority(requested, nextPriority, orchestrator, transformDir, log)
-				if err != nil {
-					return nil, err
-				}
-				resolved = append(resolved, stageName)
-				seen[stageName] = true
-				nextPriority += 10
-				continue
+			if validationErr := validateStageNameToken(requested); validationErr != nil {
+				return nil, fmt.Errorf("invalid custom stage name %q: %w", requested, validationErr)
 			}
 
-			return nil, fmt.Errorf("invalid custom stage name %q: %v", requested, err)
+			stageName, err := o.createCustomStageWithAutoPriority(requested, nextPriority, orchestrator, transformDir, log)
+			if err != nil {
+				return nil, err
+			}
+			resolved = append(resolved, stageName)
+			seen[stageName] = true
+			nextPriority += 10
+			continue
 		}
 
 		// Plugin name - lazy-load and create stage

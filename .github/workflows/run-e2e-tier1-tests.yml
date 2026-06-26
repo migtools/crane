@@ -24,7 +24,7 @@ jobs:
         with:
           cpus: max
           memory: "8192"
-          label_filter: tier1
+          label_filter: tier1 && !pvc-transfer
           create_users: "true"
           src_user: "dev"
           tgt_user: "dev"
