@@ -378,8 +378,8 @@ github.com/maxatome/go-testdeep v1.11.0/go.mod h1:011SgQ6efzZYAen6fDn4BqQ+lUR72y
 github.com/mfridman/tparse v0.18.0 h1:wh6dzOKaIwkUGyKgOntDW4liXSo37qg5AXbIhkMV3vE=
 github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC8DvP0i/A=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
-github.com/migtools/crane-plugin-openshift v0.1.0 h1:HLjKpUoS5Nw+al/H5iBkU+uVCvr2Kg00hkhv6djWVBE=
-github.com/migtools/crane-plugin-openshift v0.1.0/go.mod h1:wFdbjNnSn8tSen9oYy8769ivLmwAS3TFL34H1jfSeFw=
+github.com/migtools/crane-plugin-openshift v0.1.1 h1:67h9tND4GeRlsbADbVo7RvMz//Q+yKvGoyHjeTJal9w=
+github.com/migtools/crane-plugin-openshift v0.1.1/go.mod h1:wFdbjNnSn8tSen9oYy8769ivLmwAS3TFL34H1jfSeFw=
 github.com/mitchellh/cli v1.0.0/go.mod h1:hNIlj7HEI86fIcpObd7a0FcrxTWetlwJDGcceTlRvqc=
 github.com/mitchellh/go-homedir v1.0.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
 github.com/mitchellh/go-homedir v1.1.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
