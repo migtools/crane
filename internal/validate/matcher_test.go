@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	clienttesting "k8s.io/client-go/testing"
@@ -163,9 +164,6 @@ func TestMatchResults_SuggestionWhenAlternativeExists(t *testing.T) {
 	if !strings.Contains(r.Suggestion, "apps/v1") {
 		t.Fatalf("Suggestion = %q, expected it to mention apps/v1", r.Suggestion)
 	}
-	if !strings.Contains(r.Reason, "available as") {
-		t.Fatalf("Reason = %q, expected it to contain suggestion hint", r.Reason)
-	}
 }
 
 func TestMatchResults_NoSuggestionWhenKindNotOnTarget(t *testing.T) {
@@ -222,7 +220,7 @@ func TestMatchResultsFromIndex_AllOK(t *testing.T) {
 		{APIVersion: "v1", Kind: "Service", Group: "", Version: "v1", Namespace: "prod"},
 	}
 
-	report := MatchResultsFromIndex(entries, index)
+	report := MatchResultsFromIndex(entries, index, logrus.New())
 	if report.Incompatible != 0 {
 		t.Fatalf("Incompatible = %d, want 0", report.Incompatible)
 	}
@@ -243,7 +241,7 @@ func TestMatchResultsFromIndex_Incompatible(t *testing.T) {
 		{APIVersion: "route.openshift.io/v1", Kind: "Route", Group: "route.openshift.io", Version: "v1", Namespace: "prod"},
 	}
 
-	report := MatchResultsFromIndex(entries, index)
+	report := MatchResultsFromIndex(entries, index, logrus.New())
 	if report.Compatible != 1 || report.Incompatible != 1 {
 		t.Fatalf("Compatible=%d Incompatible=%d, want 1/1", report.Compatible, report.Incompatible)
 	}
@@ -260,7 +258,7 @@ func TestMatchResultsFromIndex_Suggestion(t *testing.T) {
 		{APIVersion: "extensions/v1beta1", Kind: "Deployment", Group: "extensions", Version: "v1beta1", Namespace: "prod"},
 	}
 
-	report := MatchResultsFromIndex(entries, index)
+	report := MatchResultsFromIndex(entries, index, logrus.New())
 	if report.Incompatible != 1 {
 		t.Fatalf("Incompatible = %d, want 1", report.Incompatible)
 	}

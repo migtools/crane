@@ -72,6 +72,14 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 	return jsonFiles, nil
 }
 
+// Directory name constants for stage structure
+// These can be changed if different naming is preferred (e.g., "input-resources" instead of "input")
+const (
+	InputDirName   = "input"    // input resources directory within a stage
+	PatchesDirName = "patches"  // patches directory within a stage
+	OutputDirName  = "output"   // output directory within a stage
+)
+
 //TODO: @shawn-hurley Add errors for these methods to validate that the correct struct values are set.
 type PathOpts struct {
 	TransformDir      string
@@ -124,28 +132,16 @@ func (opts *PathOpts) GetStageDir(stageName string) string {
 	return filepath.Join(opts.TransformDir, stageName)
 }
 
-// GetResourcesDir returns the path to the resources directory within a stage
-// Format: <transformDir>/<stageName>/resources
-func (opts *PathOpts) GetResourcesDir(stageName string) string {
-	return filepath.Join(opts.GetStageDir(stageName), "resources")
+// GetInputDir returns the path to the input directory within a stage
+// Format: <transformDir>/<stageName>/input
+func (opts *PathOpts) GetInputDir(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), InputDirName)
 }
 
 // GetPatchesDir returns the path to the patches directory within a stage
 // Format: <transformDir>/<stageName>/patches
 func (opts *PathOpts) GetPatchesDir(stageName string) string {
-	return filepath.Join(opts.GetStageDir(stageName), "patches")
-}
-
-// GetReportsDir returns the path to the reports directory within a stage
-// Format: <transformDir>/<stageName>/reports
-func (opts *PathOpts) GetReportsDir(stageName string) string {
-	return filepath.Join(opts.GetStageDir(stageName), "reports")
-}
-
-// GetWhiteoutsDir returns the path to the whiteouts directory within a stage
-// Format: <transformDir>/<stageName>/whiteouts
-func (opts *PathOpts) GetWhiteoutsDir(stageName string) string {
-	return filepath.Join(opts.GetStageDir(stageName), "whiteouts")
+	return filepath.Join(opts.GetStageDir(stageName), PatchesDirName)
 }
 
 // GetKustomizationPath returns the path to kustomization.yaml within a stage
@@ -161,39 +157,15 @@ func (opts *PathOpts) GetMetadataPath(stageName string) string {
 }
 
 // GetResourceTypeFilePath returns the path to a resource type file within a stage
-// Format: <transformDir>/<stageName>/resources/<filename>
+// Format: <transformDir>/<stageName>/input/<filename>
 func (opts *PathOpts) GetResourceTypeFilePath(stageName, filename string) string {
-	return filepath.Join(opts.GetResourcesDir(stageName), filename)
+	return filepath.Join(opts.GetInputDir(stageName), filename)
 }
 
 // GetPatchFilePath returns the path to a patch file within a stage
 // Format: <transformDir>/<stageName>/patches/<filename>
 func (opts *PathOpts) GetPatchFilePath(stageName, filename string) string {
 	return filepath.Join(opts.GetPatchesDir(stageName), filename)
-}
-
-// GetWhiteoutReportPath returns the path to the whiteout report file
-// Format: <transformDir>/<stageName>/whiteouts/whiteouts.json
-func (opts *PathOpts) GetWhiteoutReportPath(stageName string) string {
-	return filepath.Join(opts.GetWhiteoutsDir(stageName), "whiteouts.json")
-}
-
-// GetIgnoredPatchReportPath returns the path to the ignored patches report file
-// Format: <transformDir>/<stageName>/reports/ignored-patches.json
-func (opts *PathOpts) GetIgnoredPatchReportPath(stageName string) string {
-	return filepath.Join(opts.GetReportsDir(stageName), "ignored-patches.json")
-}
-
-// GetStageWorkDir returns the path to the working directory for a stage
-// Format: <transformDir>/.work/<stageName>
-func (opts *PathOpts) GetStageWorkDir(stageName string) string {
-	return filepath.Join(opts.TransformDir, ".work", stageName)
-}
-
-// GetStageInputDir returns the path to the input directory for a stage
-// Format: <transformDir>/.work/<stageName>/input
-func (opts *PathOpts) GetStageInputDir(stageName string) string {
-	return filepath.Join(opts.GetStageWorkDir(stageName), "input")
 }
 
 // GetStageTransformDir returns the path to the transform directory for a stage
@@ -204,9 +176,9 @@ func (opts *PathOpts) GetStageTransformDir(stageName string) string {
 }
 
 // GetStageOutputDir returns the path to the output directory for a stage
-// Format: <transformDir>/.work/<stageName>/output
+// Format: <transformDir>/<stageName>/output
 func (opts *PathOpts) GetStageOutputDir(stageName string) string {
-	return filepath.Join(opts.GetStageWorkDir(stageName), "output")
+	return filepath.Join(opts.GetStageDir(stageName), OutputDirName)
 }
 
 // GetResourceFilename returns a stable filename from kind, group, version, namespace, and name.

@@ -230,9 +230,9 @@ func TestKustomizeLayoutPaths(t *testing.T) {
 		}
 	})
 
-	t.Run("GetResourcesDir", func(t *testing.T) {
-		result := opts.GetResourcesDir("10_kubernetes")
-		expected := "/transform/10_kubernetes/resources"
+	t.Run("GetInputDir", func(t *testing.T) {
+		result := opts.GetInputDir("10_kubernetes")
+		expected := "/transform/10_kubernetes/input"
 		if result != expected {
 			t.Errorf("expected %v, got %v", expected, result)
 		}
@@ -241,22 +241,6 @@ func TestKustomizeLayoutPaths(t *testing.T) {
 	t.Run("GetPatchesDir", func(t *testing.T) {
 		result := opts.GetPatchesDir("10_kubernetes")
 		expected := "/transform/10_kubernetes/patches"
-		if result != expected {
-			t.Errorf("expected %v, got %v", expected, result)
-		}
-	})
-
-	t.Run("GetReportsDir", func(t *testing.T) {
-		result := opts.GetReportsDir("10_kubernetes")
-		expected := "/transform/10_kubernetes/reports"
-		if result != expected {
-			t.Errorf("expected %v, got %v", expected, result)
-		}
-	})
-
-	t.Run("GetWhiteoutsDir", func(t *testing.T) {
-		result := opts.GetWhiteoutsDir("10_kubernetes")
-		expected := "/transform/10_kubernetes/whiteouts"
 		if result != expected {
 			t.Errorf("expected %v, got %v", expected, result)
 		}
@@ -280,7 +264,7 @@ func TestKustomizeLayoutPaths(t *testing.T) {
 
 	t.Run("GetResourceTypeFilePath", func(t *testing.T) {
 		result := opts.GetResourceTypeFilePath("10_kubernetes", "deployment.yaml")
-		expected := "/transform/10_kubernetes/resources/deployment.yaml"
+		expected := "/transform/10_kubernetes/input/deployment.yaml"
 		if result != expected {
 			t.Errorf("expected %v, got %v", expected, result)
 		}
@@ -289,22 +273,6 @@ func TestKustomizeLayoutPaths(t *testing.T) {
 	t.Run("GetPatchFilePath", func(t *testing.T) {
 		result := opts.GetPatchFilePath("10_kubernetes", "default--apps-v1--Deployment--nginx.patch.yaml")
 		expected := "/transform/10_kubernetes/patches/default--apps-v1--Deployment--nginx.patch.yaml"
-		if result != expected {
-			t.Errorf("expected %v, got %v", expected, result)
-		}
-	})
-
-	t.Run("GetWhiteoutReportPath", func(t *testing.T) {
-		result := opts.GetWhiteoutReportPath("10_kubernetes")
-		expected := "/transform/10_kubernetes/whiteouts/whiteouts.json"
-		if result != expected {
-			t.Errorf("expected %v, got %v", expected, result)
-		}
-	})
-
-	t.Run("GetIgnoredPatchReportPath", func(t *testing.T) {
-		result := opts.GetIgnoredPatchReportPath("10_kubernetes")
-		expected := "/transform/10_kubernetes/reports/ignored-patches.json"
 		if result != expected {
 			t.Errorf("expected %v, got %v", expected, result)
 		}
@@ -334,10 +302,10 @@ func TestMultiStagePaths(t *testing.T) {
 				t.Errorf("expected %v, got %v", stage.expected, stageDir)
 			}
 
-			resourcesDir := opts.GetResourcesDir(stage.name)
-			expectedResources := stage.expected + "/resources"
-			if resourcesDir != expectedResources {
-				t.Errorf("expected %v, got %v", expectedResources, resourcesDir)
+			inputDir := opts.GetInputDir(stage.name)
+			expectedInput := stage.expected + "/input"
+			if inputDir != expectedInput {
+				t.Errorf("expected %v, got %v", expectedInput, inputDir)
 			}
 
 			kustomizationPath := opts.GetKustomizationPath(stage.name)

@@ -16,3 +16,4 @@
 vendor/
 
 crane
+.DS_Store

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/go-cmp/cmp"
@@ -139,6 +140,32 @@ func GoldenManifestsDir(appName, stage string) (string, error) {
 	return path, nil
 }
 
+// GoldenManifestsDirForPlatform resolves golden fixtures with OpenShift-aware fallback.
+// For OpenShift, it first checks e2e-tests/golden-manifests-ocp/<app>/<stage>.
+// If that directory does not exist, it falls back to the default
+// e2e-tests/golden-manifests/<app>/<stage>.
+func GoldenManifestsDirForPlatform(appName, stage string, isOpenShift bool) (string, error) {
+	defaultDir, err := GoldenManifestsDir(appName, stage)
+	if err != nil {
+		return "", err
+	}
+	if !isOpenShift {
+		return defaultDir, nil
+	}
+
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("runtime.Caller failed")
+	}
+	baseDir := filepath.Dir(thisFile)
+	ocpDir := filepath.Join(baseDir, "..", "golden-manifests-ocp", appName, stage)
+	if info, statErr := os.Stat(ocpDir); statErr == nil && info.IsDir() {
+		return ocpDir, nil
+	}
+
+	return defaultDir, nil
+}
+
 // CompareDirectoryFileSets compares the file sets in two directories and returns an error if they differ.
 func CompareDirectoryFileSets(goldenDir, gotDir string) error {
 	goldenInfo, err := os.Stat(goldenDir)
@@ -210,6 +237,21 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 // When multiple documents map to the same identity, both sides are compared as
 // multisets after canonical JSON normalization.
 func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
+	return compareDirectoryYAMLSemanticsExport(goldenDir, gotDir, nil)
+}
+
+// CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults compares
+// export/output semantics while allowing OCP default resources that may be
+// stripped by downstream plugins (for example mta-ops OpenShiftPlugin) to be
+// present on only one side.
+func CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults(goldenDir, gotDir string) error {
+	return compareDirectoryYAMLSemanticsExport(goldenDir, gotDir, isOptionalOCPOutputIdentity)
+}
+
+func compareDirectoryYAMLSemanticsExport(
+	goldenDir, gotDir string,
+	isOptionalIdentity func(string) bool,
+) error {
 	goldenIndex, err := buildNormalizedExportIndex(goldenDir)
 	if err != nil {
 		return fmt.Errorf("index golden export directory %q: %w", goldenDir, err)
@@ -219,25 +261,57 @@ func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
 		return fmt.Errorf("index got export directory %q: %w", gotDir, err)
 	}
 
-	goldenIDs := make([]string, 0, len(goldenIndex))
+	if isOptionalIdentity == nil {
+		goldenIDs := make([]string, 0, len(goldenIndex))
+		for identity := range goldenIndex {
+			goldenIDs = append(goldenIDs, identity)
+		}
+		sort.Strings(goldenIDs)
+
+		gotIDs := make([]string, 0, len(gotIndex))
+		for identity := range gotIndex {
+			gotIDs = append(gotIDs, identity)
+		}
+		sort.Strings(gotIDs)
+
+		if !slices.Equal(goldenIDs, gotIDs) {
+			return fmt.Errorf("resource identity sets differ between golden and got directories: %v vs %v", goldenIDs, gotIDs)
+		}
+	}
+
+	unionIDsSet := make(map[string]struct{}, len(goldenIndex)+len(gotIndex))
 	for identity := range goldenIndex {
-		goldenIDs = append(goldenIDs, identity)
+		unionIDsSet[identity] = struct{}{}
 	}
-	sort.Strings(goldenIDs)
-
-	gotIDs := make([]string, 0, len(gotIndex))
 	for identity := range gotIndex {
-		gotIDs = append(gotIDs, identity)
+		unionIDsSet[identity] = struct{}{}
 	}
-	sort.Strings(gotIDs)
-
-	if !slices.Equal(goldenIDs, gotIDs) {
-		return fmt.Errorf("resource identity sets differ between golden and got directories: %v vs %v", goldenIDs, gotIDs)
+	unionIDs := make([]string, 0, len(unionIDsSet))
+	for identity := range unionIDsSet {
+		unionIDs = append(unionIDs, identity)
 	}
+	sort.Strings(unionIDs)
 
-	for _, identity := range goldenIDs {
-		goldenEntries := goldenIndex[identity]
-		gotEntries := gotIndex[identity]
+	for _, identity := range unionIDs {
+		goldenEntries, goldenOK := goldenIndex[identity]
+		gotEntries, gotOK := gotIndex[identity]
+		if !goldenOK || !gotOK {
+			if isOptionalIdentity != nil && isOptionalIdentity(identity) {
+				continue
+			}
+			goldenIDs := make([]string, 0, len(goldenIndex))
+			for id := range goldenIndex {
+				goldenIDs = append(goldenIDs, id)
+			}
+			sort.Strings(goldenIDs)
+			gotIDs := make([]string, 0, len(gotIndex))
+			for id := range gotIndex {
+				gotIDs = append(gotIDs, id)
+			}
+			sort.Strings(gotIDs)
+			return fmt.Errorf("resource identity sets differ between golden and got directories: %v vs %v", goldenIDs, gotIDs)
+		}
+
 		goldenDocs, err := canonicalizeDocs(goldenEntries)
 		if err != nil {
 			return fmt.Errorf("canonicalize golden docs for identity %q: %w", identity, err)
@@ -251,6 +325,25 @@ func CompareDirectoryYAMLSemanticsExport(goldenDir, gotDir string) error {
 		}
 	}
 	return nil
+}
+
+func isOptionalOCPOutputIdentity(identity string) bool {
+	switch {
+	case strings.HasPrefix(identity, "rbac.authorization.k8s.io/v1|RoleBinding|") &&
+		(strings.HasSuffix(identity, "|system:deployers") ||
+			strings.HasSuffix(identity, "|system:image-builders") ||
+			strings.HasSuffix(identity, "|system:image-pullers")):
+		return true
+	case strings.HasPrefix(identity, "v1|ServiceAccount|") &&
+		(strings.HasSuffix(identity, "|builder") ||
+			strings.HasSuffix(identity, "|deployer")):
+		return true
+	case strings.HasPrefix(identity, "v1|ConfigMap|") &&
+		strings.HasSuffix(identity, "|openshift-service-ca.crt"):
+		return true
+	default:
+		return false
+	}
 }
 
 type exportIndexedDoc struct {
@@ -373,6 +466,14 @@ func extractResourceIdentity(doc any) (string, error) {
 		return "", fmt.Errorf("missing metadata.name")
 	}
 
+	// OpenShift dockercfg Secret names include generated suffixes.
+	// Canonicalize identities so export comparisons are stable across runs.
+	if kind == "Secret" {
+		if canonicalSecretName := canonicalOpenShiftDockercfgSecretName(name); canonicalSecretName != "" {
+			return fmt.Sprintf("%s|%s|%s|%s", apiVersion, kind, namespace, canonicalSecretName), nil
+		}
+	}
+
 	return fmt.Sprintf("%s|%s|%s|%s", apiVersion, kind, namespace, name), nil
 }
 
@@ -392,6 +493,19 @@ func parseYAMLDocuments(data []byte) ([]any, error) {
 		docs = append(docs, doc)
 	}
 	return docs, nil
+}
+
+func canonicalOpenShiftDockercfgSecretName(name string) string {
+	switch {
+	case strings.HasPrefix(name, "builder-dockercfg-"):
+		return "dockercfg:builder"
+	case strings.HasPrefix(name, "default-dockercfg-"):
+		return "dockercfg:default"
+	case strings.HasPrefix(name, "deployer-dockercfg-"):
+		return "dockercfg:deployer"
+	default:
+		return ""
+	}
 }
 
 // compareYAMLFileBytes parses two YAML inputs and compares their decoded document
@@ -560,6 +674,30 @@ func normalizeUnstableFields(doc any) any {
 			}
 			return normalized
 		}
+		if name == "openshift-service-ca.crt" {
+			if data, ok := root["data"].(map[string]any); ok {
+				delete(data, "service-ca.crt")
+			}
+			return normalized
+		}
+	}
+
+	if kind == "Secret" {
+		name, _ := metadata["name"].(string)
+		if canonicalSecretName := canonicalOpenShiftDockercfgSecretName(name); canonicalSecretName != "" {
+			metadata["name"] = canonicalSecretName
+			// OpenShift dockercfg token material is runtime-generated and unstable.
+			// Keep the secret identity/type assertions while ignoring token payload drift.
+			if data, ok := root["data"].(map[string]any); ok {
+				delete(data, ".dockercfg")
+			}
+			return normalized
+		}
+	}
+
+	if kind == "ServiceAccount" {
+		normalizeServiceAccountDockercfgReferences(root)
+		return normalized
 	}
 
 	if kind != "Pod" && kind != "EndpointSlice" {
@@ -631,6 +769,38 @@ func normalizePodServiceAccountVolumeNames(root map[string]any) {
 	}
 }
 
+// normalizeServiceAccountDockercfgReferences canonicalizes generated
+// OpenShift dockercfg secret references in ServiceAccount fields.
+func normalizeServiceAccountDockercfgReferences(root map[string]any) {
+	metadata, _ := root["metadata"].(map[string]any)
+	if metadata != nil {
+		if annotations, _ := metadata["annotations"].(map[string]any); annotations != nil {
+			if ref, _ := annotations["openshift.io/internal-registry-pull-secret-ref"].(string); ref != "" {
+				if canonical := canonicalOpenShiftDockercfgSecretName(ref); canonical != "" {
+					annotations["openshift.io/internal-registry-pull-secret-ref"] = canonical
+				}
+			}
+		}
+	}
+
+	canonicalizeSecretNameRefs := func(field string) {
+		refs, _ := root[field].([]any)
+		for _, refValue := range refs {
+			ref, ok := refValue.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := ref["name"].(string)
+			if canonical := canonicalOpenShiftDockercfgSecretName(name); canonical != "" {
+				ref["name"] = canonical
+			}
+		}
+	}
+
+	canonicalizeSecretNameRefs("imagePullSecrets")
+	canonicalizeSecretNameRefs("secrets")
+}
+
 // normalizeWithPath recursively copies and normalizes a decoded YAML value while
 // tracking the current key path for field-drop decisions.
 // For list elements, path is unchanged because list indices are not part of
@@ -684,6 +854,11 @@ func shouldDropField(path []string, key string) bool {
 		case "uid":
 			return true
 		}
+	} else if len(path) == 3 && path[0] == "spec" && path[1] == "template" && path[2] == "metadata" {
+		switch key {
+		case "creationTimestamp":
+			return true
+		}
 	} else if len(path) == 1 && path[0] == "spec" {
 		switch key {
 		case "clusterIP", "clusterIPs", "volumeName":
@@ -727,7 +902,7 @@ func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "resources/") {
+		if !strings.Contains(rel, "input/") {
 			return nil
 		}
 		name := info.Name()
@@ -749,13 +924,13 @@ func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("whiteout resource files missing from transform resources/ for kinds: %v", missing)
+		return fmt.Errorf("whiteout resource files missing from transform input/ for kinds: %v", missing)
 	}
 	return nil
 }
 
 // AssertWhiteoutResourceFileCount verifies that exactly expectedCount files
-// matching the given kind prefix exist in the transform resources/ directory.
+// matching the given kind prefix exist in the transform input/ directory.
 func AssertWhiteoutResourceFileCount(transformDir string, kind string, expectedCount int) error {
 	count := 0
 
@@ -767,7 +942,7 @@ func AssertWhiteoutResourceFileCount(transformDir string, kind string, expectedC
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "resources/") {
+		if !strings.Contains(rel, "input/") {
 			return nil
 		}
 		if strings.HasPrefix(info.Name(), kind+"_") || strings.HasPrefix(info.Name(), kind+".") {
@@ -901,4 +1076,55 @@ func CaptureAPISurfaceScriptPath() (string, error) {
 	}
 
 	return scriptPath, nil
+}
+
+// ToInt64 converts a JSON-unmarshalled number (float64 or json.Number) to int64.
+func ToInt64(v any) (int64, error) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), nil
+	case json.Number:
+		return n.Int64()
+	case int64:
+		return n, nil
+	case string:
+		return strconv.ParseInt(strings.TrimSpace(n), 10, 64)
+	default:
+		return 0, fmt.Errorf("cannot convert %T to int64", v)
+	}
+}
+
+// ExtractCPUAverageUtilization walks spec.metrics to find the CPU Resource metric
+// averageUtilization value.
+func ExtractCPUAverageUtilization(spec map[string]any) int64 {
+	metrics, ok := spec["metrics"].([]any)
+	if !ok {
+		return 0
+	}
+	for _, m := range metrics {
+		metric, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		if metric["type"] != "Resource" {
+			continue
+		}
+		resource, ok := metric["resource"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if resource["name"] != "cpu" {
+			continue
+		}
+		target, ok := resource["target"].(map[string]any)
+		if !ok {
+			continue
+		}
+		val, err := ToInt64(target["averageUtilization"])
+		if err != nil {
+			return 0
+		}
+		return val
+	}
+	return 0
 }

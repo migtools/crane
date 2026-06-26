@@ -16,19 +16,29 @@ type App interface {
 }
 
 type K8sDeployApp struct {
-	Name      string
-	Namespace string
-	Bin       string
-	Context   string
-	ExtraVars map[string]any
+	Name             string
+	Namespace        string
+	Bin              string
+	Context          string
+	ExtraVars        map[string]any
+	InsecureSkipTLS  bool
+}
+
+// globalArgs returns k8sdeploy global flags (must come before the subcommand).
+func (a K8sDeployApp) globalArgs() []string {
+	var args []string
+	if a.Context != "" {
+		args = append(args, "--context", a.Context)
+	}
+	if a.InsecureSkipTLS {
+		args = append(args, "--insecure-skip-tls-verify")
+	}
+	return args
 }
 
 // Deploy runs k8sdeploy deploy for the configured app and namespace.
 func (a K8sDeployApp) Deploy() error {
-	args := []string{}
-	if a.Context != "" {
-		args = append(args, "--context", a.Context)
-	}
+	args := a.globalArgs()
 	args = append(args, "deploy", a.Name, "-n", a.Namespace)
 	var err error
 	args, err = a.withExtraVars(args)
@@ -47,10 +57,7 @@ func (a K8sDeployApp) Deploy() error {
 
 // Validate runs k8sdeploy validate for the configured app and namespace.
 func (a K8sDeployApp) Validate() error {
-	args := []string{}
-	if a.Context != "" {
-		args = append(args, "--context", a.Context)
-	}
+	args := a.globalArgs()
 	args = append(args, "validate", a.Name, "-n", a.Namespace)
 	var err error
 	args, err = a.withExtraVars(args)
@@ -69,10 +76,7 @@ func (a K8sDeployApp) Validate() error {
 
 // Cleanup runs k8sdeploy remove for the configured app and namespace.
 func (a K8sDeployApp) Cleanup() error {
-	args := []string{}
-	if a.Context != "" {
-		args = append(args, "--context", a.Context)
-	}
+	args := a.globalArgs()
 	args = append(args, "remove", a.Name, "-n", a.Namespace)
 	var err error
 	args, err = a.withExtraVars(args)

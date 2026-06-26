@@ -6,7 +6,9 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"strings"
 
+	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -111,9 +113,13 @@ func GetClusterNodeIP(contextName string) (string, error) {
 // ResolveUsernameForContext resolves the Kubernetes username represented by a
 // kubeconfig context for use in RBAC subjects.
 //
-// For client-certificate contexts, this is the certificate subject CommonName
-// (CN), which is the identity used by Kubernetes RBAC. If no client certificate
-// is configured, it falls back to kubeconfig auth info key name.
+// Resolution order:
+//  1. Client certificate CN — used by minikube cert-based contexts; this is the
+//     identity Kubernetes RBAC evaluates directly.
+//  2. SelfSubjectReview API — used by OCP token-based contexts (HTPasswd, OIDC,
+//     etc.); asks the API server "who am I?" which is the authoritative answer.
+//  3. AuthInfo key name up to the first "/" — last-resort fallback that handles
+//     kubeconfigs where the auth-info key is set to the bare username (e.g. "dev").
 //
 // If contextName is empty, it falls back to current-context.
 func ResolveUsernameForContext(contextName string) (string, error) {
@@ -144,7 +150,8 @@ func ResolveUsernameForContext(contextName string) (string, error) {
 		return "", fmt.Errorf("auth info %q referenced by context %q not found in kubeconfig", ctx.AuthInfo, ctxName)
 	}
 
-	// Prefer certificate CN because that is the user identity evaluated by RBAC.
+	// 1. Prefer certificate CN — this is the user identity evaluated by RBAC on
+	// minikube and any cluster using client-cert authentication.
 	var certBytes []byte
 	if len(authInfo.ClientCertificateData) > 0 {
 		certBytes = authInfo.ClientCertificateData
@@ -175,8 +182,51 @@ func ResolveUsernameForContext(contextName string) (string, error) {
 		return cert.Subject.CommonName, nil
 	}
 
-	return ctx.AuthInfo, nil
+	// 2. Token-based context (OCP HTPasswd / OIDC / service-account token).
+	// Ask the API server who the token belongs to via SelfSubjectReview.
+	// This is available on Kubernetes ≥ 1.28 and all OCP 4.x versions.
+	if authInfo.Token != "" || authInfo.TokenFile != "" {
+		username, err := resolveUsernameViaSelfSubjectReview(ctxName)
+		if err == nil {
+			return username, nil
+		}
+		// Non-fatal: fall through to the key-name heuristic so that
+		// environments without the API (e.g. older clusters) still work.
+	}
 
+	// 3. Last resort: use the auth-info key name, trimming everything from the
+	// first "/" onwards. OCP kubeconfigs typically produce keys like
+	// "dev/api-cluster-...:6443"; the part before "/" is the bare username.
+	keyName := ctx.AuthInfo
+	if idx := strings.Index(keyName, "/"); idx != -1 {
+		keyName = keyName[:idx]
+	}
+	return keyName, nil
+}
+
+// resolveUsernameViaSelfSubjectReview calls the SelfSubjectReview API using the
+// credentials of the given context and returns the username the API server
+// resolved. Available on Kubernetes ≥ 1.28 and all OCP 4.x.
+func resolveUsernameViaSelfSubjectReview(contextName string) (string, error) {
+	clientSet, err := NewClientSetForContext(contextName)
+	if err != nil {
+		return "", fmt.Errorf("failed building clientset for SelfSubjectReview: %w", err)
+	}
+
+	review, err := clientSet.AuthenticationV1().SelfSubjectReviews().Create(
+		context.Background(),
+		&authenticationv1.SelfSubjectReview{},
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return "", fmt.Errorf("SelfSubjectReview failed for context %q: %w", contextName, err)
+	}
+
+	username := review.Status.UserInfo.Username
+	if username == "" {
+		return "", fmt.Errorf("SelfSubjectReview returned empty username for context %q", contextName)
+	}
+	return username, nil
 }
 
 // parseClientCertificate parses a single X.509 client certificate from kubeconfig

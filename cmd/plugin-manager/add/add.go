@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/konveyor/crane/internal/flags"
@@ -155,7 +156,11 @@ func (o *Options) run(args []string) error {
 				for _, value := range pluginsMap[args[0]] {
 					// check if the version is mentioned and matches the version in pluginsMap file
 					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
-						return downloadBinary(o.PluginDir, value.Name, value.Binaries[0].URI, log)
+						uri, err := binaryURIForPlatform(value)
+						if err != nil {
+							return err
+						}
+						return downloadBinary(o.PluginDir, value.Name, uri, log)
 					} else {
 						log.Errorf("The version %s of plugin %s is not available", installVersion, value.Name)
 						fmt.Printf("Run \"crane plugin-manager list --name %s --params\" to see available versions along with additional information \n", args[0])
@@ -173,7 +178,11 @@ func (o *Options) run(args []string) error {
 				}
 				for _, value := range pluginsMap[args[0]] {
 					if string(value.Version) == installVersion {
-						return downloadBinary(o.PluginDir, value.Name, value.Binaries[0].URI, log)
+						uri, err := binaryURIForPlatform(value)
+						if err != nil {
+							return err
+						}
+						return downloadBinary(o.PluginDir, value.Name, uri, log)
 					}
 				}
 				log.Errorf("The %s version of the plugin %s is not found", installVersion, args[0])
@@ -237,4 +246,15 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	}
 	log.Infof("pluginBinary %s added to the path - %s", filename, filepath)
 	return err
+}
+
+// binaryURIForPlatform returns the download URI for the current OS/arch.
+// Returns an error if no matching binary is available.
+func binaryURIForPlatform(version plugin.PluginVersion) (string, error) {
+	for _, binary := range version.Binaries {
+		if binary.OS == runtime.GOOS && binary.Arch == runtime.GOARCH {
+			return binary.URI, nil
+		}
+	}
+	return "", fmt.Errorf("plugin %s %s has no binary for %s/%s", version.Name, version.Version, runtime.GOOS, runtime.GOARCH)
 }

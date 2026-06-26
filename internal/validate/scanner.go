@@ -35,21 +35,25 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 	index := map[string]*ManifestEntry{}
 
 	for _, dir := range opts.Dirs {
+		log.Debugf("Scanning directory: %s", dir)
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 			if d.IsDir() {
 				if d.Name() == "failures" {
+					log.Debugf("Skipping failures/ directory: %s", path)
 					return filepath.SkipDir
 				}
 				return nil
 			}
 			ext := strings.ToLower(filepath.Ext(path))
 			if ext != ".yaml" && ext != ".yml" && ext != ".json" {
+				log.Debugf("Skipping non-manifest file: %s", path)
 				return nil
 			}
 
+			log.Debugf("Reading manifest file: %s", path)
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("read %s: %w", path, err)
@@ -82,6 +86,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 					continue
 				}
 				if meta.APIVersion == "" || meta.Kind == "" {
+					log.Debugf("  Skipping document #%d in %s: missing apiVersion or kind", docIdx, path)
 					continue
 				}
 
@@ -94,6 +99,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 				key := fmt.Sprintf("%s/%s/%s/%s", gv.Group, gv.Version, meta.Kind, meta.Metadata.Namespace)
 				if entry, ok := index[key]; ok {
 					entry.SourceFiles = append(entry.SourceFiles, path)
+					log.Debugf("  Duplicate GVK+ns %s (additional source: %s)", key, path)
 				} else {
 					index[key] = &ManifestEntry{
 						APIVersion:  meta.APIVersion,
@@ -103,6 +109,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 						Namespace:   meta.Metadata.Namespace,
 						SourceFiles: []string{path},
 					}
+					log.Debugf("  Found %s/%s (namespace: %q) in %s", meta.APIVersion, meta.Kind, meta.Metadata.Namespace, path)
 				}
 			}
 			return nil

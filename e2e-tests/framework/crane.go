@@ -32,9 +32,67 @@ type ValidateOptions struct {
 	ExtraArgs        []string
 }
 
+type ExportOptions struct {
+	Namespace        string
+	ExportDir        string
+	LabelSelector    string
+	CRDSkipGroups    []string
+	CRDIncludeGroups []string
+	AsExtras         string
+	QPS              float32
+	Burst            int
+}
+
+type TransformOptions struct {
+	ExportDir         string
+	TransformDir      string
+	PluginDir         string
+	IgnoredPatchesDir string
+	SkipPlugins       []string
+	OptionalFlags     string
+	Force             bool
+	KustomizeArgs     string
+	InstructionsFile  string
+	Stages            []string
+}
+
+type ApplyOptions struct {
+	ExportDir         string
+	TransformDir      string
+	OutputDir         string
+	KustomizeArgs     string
+	SkipClusterScoped bool
+	Stages            []string
+}
+
 // Export runs crane export for a namespace into the given export directory.
-func (c CraneRunner) Export(namespace, exportDir string) error {
-	args := []string{"export", "--context", c.SourceContext, "--namespace", namespace, "--export-dir", exportDir}
+func (c CraneRunner) Export(opts ExportOptions) error {
+	args := []string{"export", "--context", c.SourceContext}
+
+	if opts.Namespace != "" {
+		args = append(args, "--namespace", opts.Namespace)
+	}
+	if opts.ExportDir != "" {
+		args = append(args, "--export-dir", opts.ExportDir)
+	}
+	if opts.LabelSelector != "" {
+		args = append(args, "--label-selector", opts.LabelSelector)
+	}
+	for _, g := range opts.CRDSkipGroups {
+		args = append(args, "--crd-skip-group", g)
+	}
+	for _, g := range opts.CRDIncludeGroups {
+		args = append(args, "--crd-include-group", g)
+	}
+	if opts.AsExtras != "" {
+		args = append(args, "--as-extras", opts.AsExtras)
+	}
+	if opts.QPS > 0 {
+		args = append(args, "--qps", fmt.Sprintf("%g", opts.QPS))
+	}
+	if opts.Burst > 0 {
+		args = append(args, "--burst", fmt.Sprintf("%d", opts.Burst))
+	}
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir
@@ -47,8 +105,38 @@ func (c CraneRunner) Export(namespace, exportDir string) error {
 }
 
 // Transform runs crane transform from export directory to transform directory.
-func (c CraneRunner) Transform(exportDir, transformDir string) error {
-	args := []string{"transform", "--export-dir", exportDir, "--transform-dir", transformDir}
+func (c CraneRunner) Transform(opts TransformOptions) error {
+	args := []string{"transform"}
+
+	if opts.ExportDir != "" {
+		args = append(args, "--export-dir", opts.ExportDir)
+	}
+	if opts.TransformDir != "" {
+		args = append(args, "--transform-dir", opts.TransformDir)
+	}
+	if opts.PluginDir != "" {
+		args = append(args, "--plugin-dir", opts.PluginDir)
+	}
+	if opts.IgnoredPatchesDir != "" {
+		args = append(args, "--ignored-patches-dir", opts.IgnoredPatchesDir)
+	}
+	for _, p := range opts.SkipPlugins {
+		args = append(args, "--skip-plugins", p)
+	}
+	if opts.OptionalFlags != "" {
+		args = append(args, "--optional-flags", opts.OptionalFlags)
+	}
+	if opts.Force {
+		args = append(args, "--force")
+	}
+	if opts.KustomizeArgs != "" {
+		args = append(args, "--kustomize-args", opts.KustomizeArgs)
+	}
+	if opts.InstructionsFile != "" {
+		args = append(args, "--instructions-file", opts.InstructionsFile)
+	}
+	args = append(args, opts.Stages...)
+
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir
@@ -60,56 +148,27 @@ func (c CraneRunner) Transform(exportDir, transformDir string) error {
 	return nil
 }
 
-// TransformStage runs crane transform with a specific stage.
-func (c CraneRunner) TransformStage(exportDir, transformDir, stage string) error {
-	if stage == "" {
-		return fmt.Errorf("crane transform requires a non-empty stage")
-	}
-	args := []string{
-		"transform",
-		"--export-dir", exportDir,
-		"--transform-dir", transformDir,
-		stage,
-	}
-	logVerboseCommand(c.Bin, args)
-	cmd := exec.Command(c.Bin, args...)
-	cmd.Dir = c.WorkDir
-	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane transform with stage", out)
-	if err != nil {
-		return fmt.Errorf("crane transform with stage %q failed: %v, output: %s", stage, err, string(out))
-	}
-	return nil
-}
-
-// TransformWithInstructionsFile runs crane transform using an instructions file.
-func (c CraneRunner) TransformWithInstructionsFile(exportDir, transformDir, instructionsFile string, force bool) error {
-	if instructionsFile == "" {
-		return fmt.Errorf("crane transform --instructions-file requires a non-empty instructions file path")
-	}
-	args := []string{
-		"transform",
-		"--export-dir", exportDir,
-		"--transform-dir", transformDir,
-		"--instructions-file", instructionsFile,
-	}
-	if force {
-		args = append(args, "--force")
-	}
-	logVerboseCommand(c.Bin, args)
-	cmd := exec.Command(c.Bin, args...)
-	cmd.Dir = c.WorkDir
-	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane transform --instructions-file", out)
-	if err != nil {
-		return fmt.Errorf("crane transform --instructions-file failed: %w, output: %s", err, string(out))
-	}
-	return nil
-}
-
 // Apply runs crane apply to render manifests into the output directory.
-func (c CraneRunner) Apply(exportDir, transformDir string, outputDir string) error {
-	args := []string{"apply", "--export-dir", exportDir, "--transform-dir", transformDir, "--output-dir", outputDir}
+func (c CraneRunner) Apply(opts ApplyOptions) error {
+	args := []string{"apply"}
+
+	if opts.ExportDir != "" {
+		args = append(args, "--export-dir", opts.ExportDir)
+	}
+	if opts.TransformDir != "" {
+		args = append(args, "--transform-dir", opts.TransformDir)
+	}
+	if opts.OutputDir != "" {
+		args = append(args, "--output-dir", opts.OutputDir)
+	}
+	if opts.KustomizeArgs != "" {
+		args = append(args, "--kustomize-args", opts.KustomizeArgs)
+	}
+	if opts.SkipClusterScoped {
+		args = append(args, "--skip-cluster-scoped")
+	}
+	args = append(args, opts.Stages...)
+
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir
