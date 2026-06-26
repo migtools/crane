@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd/api"
+
 )
 
 // ExportOptions holds CLI flags and runtime state for a single export run.
@@ -52,6 +53,14 @@ type ExportOptions struct {
 // Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
+
+	if c != nil {
+		kubeconfigFlag := c.Flags().Lookup("kubeconfig")
+		if kubeconfigFlag == nil || !kubeconfigFlag.Changed {
+			emptyStr := ""
+			o.configFlags.KubeConfig = &emptyStr
+		}
+	}
 
 	o.rawConfig, err = o.configFlags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {

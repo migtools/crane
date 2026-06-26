@@ -35,6 +35,12 @@ type ValidateOptions struct {
 // detected later in Run() when discovery is queried.
 // Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
+	kubeconfigFlag := c.Flags().Lookup("kubeconfig")
+	if kubeconfigFlag == nil || !kubeconfigFlag.Changed {
+		emptyStr := ""
+		o.configFlags.KubeConfig = &emptyStr
+	}
+
 	if o.apiResourcesFile != "" {
 		return nil
 	}
@@ -46,7 +52,7 @@ func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 }
 
 // Validate checks that flags have valid values.
-func (o *ValidateOptions) Validate() error {
+func (o *ValidateOptions) Validate(cmd *cobra.Command) error {
 	info, err := os.Stat(o.inputDir)
 	if err != nil {
 		return fmt.Errorf("input-dir %q: %w", o.inputDir, err)
@@ -61,22 +67,25 @@ func (o *ValidateOptions) Validate() error {
 	}
 
 	if o.apiResourcesFile != "" {
-		if o.configFlags.Context != nil && *o.configFlags.Context != "" {
+		// Only enforce mutual exclusivity if kubeconfig flags were EXPLICITLY set by user.
+		// Ignore default kubeconfig loaded from KUBECONFIG env var or ~/.kube/config.
+		// This allows offline validation to work in CI/CD environments where KUBECONFIG is set.
+		if cmd.Flags().Changed("context") {
 			return fmt.Errorf("--api-resources and --context are mutually exclusive; use --api-resources for offline validation or --context for live validation")
 		}
-		if o.configFlags.KubeConfig != nil && *o.configFlags.KubeConfig != "" {
+		if cmd.Flags().Changed("kubeconfig") {
 			return fmt.Errorf("--api-resources and --kubeconfig are mutually exclusive; use --api-resources for offline validation or --kubeconfig for live validation")
 		}
-		if o.configFlags.APIServer != nil && *o.configFlags.APIServer != "" {
+		if cmd.Flags().Changed("server") {
 			return fmt.Errorf("--api-resources and --server are mutually exclusive; use --api-resources for offline validation or --server for live validation")
 		}
-		if o.configFlags.BearerToken != nil && *o.configFlags.BearerToken != "" {
+		if cmd.Flags().Changed("token") {
 			return fmt.Errorf("--api-resources and --token are mutually exclusive; use --api-resources for offline validation or --token for live validation")
 		}
-		if o.configFlags.ClusterName != nil && *o.configFlags.ClusterName != "" {
+		if cmd.Flags().Changed("cluster") {
 			return fmt.Errorf("--api-resources and --cluster are mutually exclusive; use --api-resources for offline validation or --cluster for live validation")
 		}
-		if o.configFlags.AuthInfoName != nil && *o.configFlags.AuthInfoName != "" {
+		if cmd.Flags().Changed("user") {
 			return fmt.Errorf("--api-resources and --user are mutually exclusive; use --api-resources for offline validation or --user for live validation")
 		}
 		if _, err := os.Stat(o.apiResourcesFile); err != nil {
@@ -126,7 +135,7 @@ func (o *ValidateOptions) Run() error {
 		discoveryClient, err := o.configFlags.ToDiscoveryClient()
 		if err != nil {
 			return fmt.Errorf("creating discovery client: %w", err)
-		}
+		} 
 		discoveryClient.Invalidate()
 
 		report, err = internalValidate.MatchResults(entries, internalValidate.MatchOptions{DiscoveryClient: discoveryClient}, log)
@@ -223,7 +232,7 @@ failed (or another error occurred).`,
 			if err := o.Complete(c, args); err != nil {
 				return err
 			}
-			if err := o.Validate(); err != nil {
+			if err := o.Validate(c); err != nil {
 				return err
 			}
 			if err := o.Run(); err != nil {

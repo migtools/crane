@@ -167,6 +167,5 @@ func addSuggestion(result *ValidationResult, entry ManifestEntry, kindIndex map[
 	sort.Strings(available)
 	suggestion := fmt.Sprintf("available as %s", strings.Join(available, ", "))
 	result.Suggestion = suggestion
-	result.Reason = fmt.Sprintf("%s (%s)", result.Reason, suggestion)
 }
 

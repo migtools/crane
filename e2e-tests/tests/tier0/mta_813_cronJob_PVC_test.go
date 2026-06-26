@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("CronJob with attached PVC migration as non-admin user", func() {
-	It("[BUG #330][BUG #408][MTA-813] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "BUG #408", "tier0"), func() {
+	It("[BUG #330][BUG #408][MTA-813] Should migrate a cronjob and its attached PVC as a namespace-admin user", Label("BUG #330", "BUG #408", "tier0", "pvc-transfer"), func() {
 		appName := "cronjob"
 		namespace := "mta-813-ns"
 		expectedLogSubstring := fmt.Sprintf("Hello! from namespace %s", namespace)
