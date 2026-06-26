@@ -522,6 +522,13 @@ func compareYAMLFileBytes(relPath string, golden, got []byte) error {
 		return fmt.Errorf("parse got file %q: %w", relPath, err)
 	}
 
+	for i := range goldenDocs {
+		goldenDocs[i] = normalizeWithPath(goldenDocs[i], nil)
+	}
+	for i := range gotDocs {
+		gotDocs[i] = normalizeWithPath(gotDocs[i], nil)
+	}
+
 	if !cmp.Equal(goldenDocs, gotDocs) {
 		return fmt.Errorf("YAML differs in %q:\n%s", relPath, cmp.Diff(goldenDocs, gotDocs))
 	}
