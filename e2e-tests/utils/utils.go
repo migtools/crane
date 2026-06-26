@@ -522,6 +522,13 @@ func compareYAMLFileBytes(relPath string, golden, got []byte) error {
 		return fmt.Errorf("parse got file %q: %w", relPath, err)
 	}
 
+	for i := range goldenDocs {
+		goldenDocs[i] = normalizeWithPath(goldenDocs[i], nil)
+	}
+	for i := range gotDocs {
+		gotDocs[i] = normalizeWithPath(gotDocs[i], nil)
+	}
+
 	if !cmp.Equal(goldenDocs, gotDocs) {
 		return fmt.Errorf("YAML differs in %q:\n%s", relPath, cmp.Diff(goldenDocs, gotDocs))
 	}
@@ -814,7 +821,15 @@ func normalizeWithPath(value any, path []string) any {
 				continue
 			}
 			nextPath := append(append([]string{}, path...), k)
-			out[k] = normalizeWithPath(child, nextPath)
+			normalized := normalizeWithPath(child, nextPath)
+			// An empty securityContext: {} is semantically identical to absent.
+			// Some plugins strip it, others preserve it — treat both as equal.
+			if k == "securityContext" {
+				if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
+					continue
+				}
+			}
+			out[k] = normalized
 		}
 		return out
 	case []any:
