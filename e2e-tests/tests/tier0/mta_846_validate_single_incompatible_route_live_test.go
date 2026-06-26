@@ -24,6 +24,9 @@ var _ = Describe("Validate single incompatible Route [Live Mode]", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
+		if scenario.KubectlTgt.IsOpenShift() {
+			Skip("Route is supported on OpenShift targets; this minikube-only incompatibility check is not applicable")
+		}
 
 		if scenario.KubectlTgtNonAdmin.Context == "" {
 			Skip("target-nonadmin-context is required")
