@@ -51,6 +51,35 @@ func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 	return nil
 }
 
+// Returns the cluster context string based on the method used to target
+// the cluster, following the priority order documented in issue #430.
+func determineClusterContext(cf *genericclioptions.ConfigFlags) (string, error) {
+	// Priority (from highest to lowest):
+	// 1. Explicit --context flag
+	// 2. --server flag (direct API endpoint)
+	// 3. --cluster flag (cluster name from kubeconfig)
+	// 4. --user flag (auth info from kubeconfig)
+	// 5. Current context from kubeconfig (default fallback)
+	if cf.Context != nil && *cf.Context != "" {
+		return *cf.Context, nil
+	}
+	if cf.APIServer != nil && *cf.APIServer != "" {
+		return fmt.Sprintf("server=%s", *cf.APIServer), nil
+	}
+	if cf.ClusterName != nil && *cf.ClusterName != "" {
+		return fmt.Sprintf("cluster=%s", *cf.ClusterName), nil
+	}
+	if cf.AuthInfoName != nil && *cf.AuthInfoName != "" {
+		return fmt.Sprintf("user=%s", *cf.AuthInfoName), nil
+	}
+	// Default: use current context from kubeconfig
+	rawConfig, err := cf.ToRawKubeConfigLoader().RawConfig()
+	if err != nil {
+		return "", fmt.Errorf("loading kubeconfig: %w", err)
+	}
+	return rawConfig.CurrentContext, nil
+}
+
 // Validate checks that flags have valid values.
 func (o *ValidateOptions) Validate(cmd *cobra.Command) error {
 	info, err := os.Stat(o.inputDir)
@@ -143,17 +172,14 @@ func (o *ValidateOptions) Run() error {
 			return fmt.Errorf("matching against target cluster: %w", err)
 		}
 		report.Mode = "live"
-		// Get the actual context being used (either from flag or current-context)
-		rawConfig, err := o.configFlags.ToRawKubeConfigLoader().RawConfig()
-		if err == nil {
-			report.ClusterContext = rawConfig.CurrentContext
-		}
-		// Override with explicit --context flag if provided
-		if o.configFlags.Context != nil && *o.configFlags.Context != "" {
-			report.ClusterContext = *o.configFlags.Context
-			log.Infof("Validating in live mode against context %q", *o.configFlags.Context)
+		clusterContext, err := determineClusterContext(o.configFlags)
+		if err != nil {
+			log.Warnf("Could not determine cluster context from kubeconfig: %v", err)
+		} else if clusterContext != "" {
+			report.ClusterContext = clusterContext
+			log.Infof("Validating in live mode against context %q", clusterContext)
 		} else {
-			log.Infof("Validating in live mode against current kubeconfig context")
+			log.Warn("No current context set in kubeconfig; ClusterContext will be empty")
 		}
 	}
 
