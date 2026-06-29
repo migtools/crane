@@ -491,6 +491,9 @@ current-context: existing-context
 	}
 
 	cmd := &cobra.Command{}
+	// Add kubeconfig flag and mark it as changed so Complete() preserves the fixture
+	cmd.Flags().String("kubeconfig", "", "")
+	cmd.Flags().Set("kubeconfig", kc)
 	err := o.Complete(cmd, nil)
 
 	if err == nil {
@@ -515,5 +518,119 @@ func TestComplete_SkippedInOfflineMode(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("Complete() should skip in offline mode, got: %v", err)
+	}
+}
+
+// TestClusterContextPopulation_AllScenarios verifies that ClusterContext is populated
+// correctly for all cluster targeting methods from issue #430.
+// This test exercises the actual cluster-context selection logic and verifies
+// report.ClusterContext is set correctly based on the branch in validate.go:145-178.
+func TestClusterContextPopulation_AllScenarios(t *testing.T) {
+	// Create a temporary kubeconfig with a known current-context for fallback test
+	kcDir := t.TempDir()
+	kc := filepath.Join(kcDir, "config")
+	kubeconfig := `
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:6443
+  name: test-cluster
+users:
+- name: test-user
+  user:
+    token: test-token
+contexts:
+- name: test-context
+  context:
+    cluster: test-cluster
+    user: test-user
+current-context: test-context
+`
+	if err := os.WriteFile(kc, []byte(kubeconfig), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name                 string
+		setupConfigFlags     func() *genericclioptions.ConfigFlags
+		expectedContextMatch string // exact match for report.ClusterContext
+		description          string
+	}{
+		{
+			name: "Scenario 1: Explicit --context flag",
+			setupConfigFlags: func() *genericclioptions.ConfigFlags {
+				cf := genericclioptions.NewConfigFlags(true)
+				ctx := "my-explicit-context"
+				cf.Context = &ctx
+				cf.KubeConfig = &kc
+				return cf
+			},
+			expectedContextMatch: "my-explicit-context",
+			description:          "Should use explicit --context value",
+		},
+		{
+			name: "Scenario 2: --server flag",
+			setupConfigFlags: func() *genericclioptions.ConfigFlags {
+				cf := genericclioptions.NewConfigFlags(true)
+				server := "https://api.example.com:6443"
+				cf.APIServer = &server
+				cf.KubeConfig = &kc
+				return cf
+			},
+			expectedContextMatch: "server=https://api.example.com:6443",
+			description:          "Should record server URL when --server is used",
+		},
+		{
+			name: "Scenario 3: --cluster flag",
+			setupConfigFlags: func() *genericclioptions.ConfigFlags {
+				cf := genericclioptions.NewConfigFlags(true)
+				cluster := "production-cluster"
+				cf.ClusterName = &cluster
+				cf.KubeConfig = &kc
+				return cf
+			},
+			expectedContextMatch: "cluster=production-cluster",
+			description:          "Should record cluster name when --cluster is used",
+		},
+		{
+			name: "Scenario 4: --user flag",
+			setupConfigFlags: func() *genericclioptions.ConfigFlags {
+				cf := genericclioptions.NewConfigFlags(true)
+				user := "admin-user"
+				cf.AuthInfoName = &user
+				cf.KubeConfig = &kc
+				return cf
+			},
+			expectedContextMatch: "user=admin-user",
+			description:          "Should record user name when --user is used",
+		},
+		{
+			name: "Scenario 5: No flags (current-context fallback)",
+			setupConfigFlags: func() *genericclioptions.ConfigFlags {
+				cf := genericclioptions.NewConfigFlags(true)
+				cf.KubeConfig = &kc
+				return cf
+			},
+			expectedContextMatch: "test-context",
+			description:          "Should use current-context from kubeconfig when no flags set",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test the production cluster context selection logic by calling
+			// the shared helper used by Run().
+			cf := tt.setupConfigFlags()
+
+			actualContext, err := determineClusterContext(cf)
+			if err != nil {
+				t.Fatalf("determineClusterContext() failed: %v", err)
+			}
+
+			if actualContext != tt.expectedContextMatch {
+				t.Errorf("ClusterContext = %q, want %q", actualContext, tt.expectedContextMatch)
+			}
+		})
 	}
 }
