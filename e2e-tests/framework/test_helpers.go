@@ -2,7 +2,9 @@ package framework
 
 import (
 	"fmt"
+	"log"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
@@ -37,4 +39,49 @@ func RegisterMTAResultReporter() {
 			fmt.Printf("\n[CRANE-RESULT] SKIPPED %s\n", id)
 		}
 	})
+}
+
+type ExpectedClusterRoleBinding struct {
+	ClusterRoleBindingName string
+	ClusterRoleName        string
+	SubjectName            string
+}
+
+func ValidateClusterRBAC(kubectl KubectlRunner, bindings []ExpectedClusterRoleBinding) error {
+	clusterRoles := map[string]bool{}
+	for _, b := range bindings {
+		clusterRoles[b.ClusterRoleName] = true
+	}
+	for cr := range clusterRoles {
+		if _, err := kubectl.Run("get", "clusterrole", cr); err != nil {
+			return fmt.Errorf("ClusterRole %s not found: %w", cr, err)
+		}
+		log.Printf("ClusterRole %s exists", cr)
+	}
+
+	for _, b := range bindings {
+		if _, err := kubectl.Run("get", "clusterrolebinding", b.ClusterRoleBindingName); err != nil {
+			return fmt.Errorf("ClusterRoleBinding %s not found: %w", b.ClusterRoleBindingName, err)
+		}
+
+		roleRef, err := kubectl.Run("get", "clusterrolebinding", b.ClusterRoleBindingName, "-o", "jsonpath={.roleRef.name}")
+		if err != nil {
+			return fmt.Errorf("failed to get roleRef for CRB %s: %w", b.ClusterRoleBindingName, err)
+		}
+		if roleRef != b.ClusterRoleName {
+			return fmt.Errorf("CRB %s references %s, expected %s", b.ClusterRoleBindingName, roleRef, b.ClusterRoleName)
+		}
+
+		subjectOutput, err := kubectl.Run("get", "clusterrolebinding", b.ClusterRoleBindingName, "-o", "jsonpath={.subjects[*].name}")
+		if err != nil {
+			return fmt.Errorf("failed to get subject for CRB %s: %w", b.ClusterRoleBindingName, err)
+		}
+		subjects := strings.Fields(subjectOutput)
+
+		if !slices.Contains(subjects, b.SubjectName) {
+			return fmt.Errorf("CRB %s subject is %s, expected %s", b.ClusterRoleBindingName, subjectOutput, b.SubjectName)
+		}
+		log.Printf("CRB %s -> CR %s (subject: %s) verified", b.ClusterRoleBindingName, b.ClusterRoleName, b.SubjectName)
+	}
+	return nil
 }
