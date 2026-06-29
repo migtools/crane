@@ -36,8 +36,8 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		subjectName := sa.Name
 		subject := "--serviceaccount=" + namespace + ":" + sa.Name
 
-		cr := ClusterRole{Name: "crane-cr", Verb: "get,list,watch,create,update,delete", Resource: "pods"}
-		crb := ClusterRoleBinding{Name: "crane-crb", ClusterRoleName: cr.Name, Subject: subject}
+		cr := ClusterRole{Name: "crane-cr-subject-sa", Verb: "get,list,watch,create,update,delete", Resource: "pods"}
+		crb := ClusterRoleBinding{Name: "crane-crb-subject-sa", ClusterRoleName: cr.Name, Subject: subject}
 		tgtNamespace := Namespace{Name: namespace}
 
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
