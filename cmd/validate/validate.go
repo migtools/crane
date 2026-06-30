@@ -259,7 +259,6 @@ the validate-dir for auditability.
 Exit code 0 means all checks pass; exit code 1 means one or more checks
 failed (or another error occurred).`,
 		Args:         cobra.NoArgs,
-		SilenceUsage: true,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
@@ -267,6 +266,7 @@ failed (or another error occurred).`,
 			if err := o.Validate(c); err != nil {
 				return err
 			}
+			c.SilenceUsage = true
 			if err := o.Run(); err != nil {
 				return err
 			}
