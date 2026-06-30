@@ -185,8 +185,17 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
-	// user/group impersonation is handled from genericclioptions.ConfigFlags
-	restConfig.Impersonate.Extra = o.extras
+	// Merge o.extras into restConfig.Impersonate.Extra instead of overwriting,
+	// so --as-user-extra values from ToRESTConfig() are preserved alongside --as-extras.
+	if o.extras != nil {
+		if restConfig.Impersonate.Extra == nil {
+			restConfig.Impersonate.Extra = o.extras
+		} else {
+			for k, v := range o.extras {
+				restConfig.Impersonate.Extra[k] = append(restConfig.Impersonate.Extra[k], v...)
+			}
+		}
+	}
 	restConfig.Burst = o.Burst
 	restConfig.QPS = o.QPS
 
