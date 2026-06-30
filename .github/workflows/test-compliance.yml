@@ -1,0 +1,58 @@
+name: Test Compliance
+
+on:
+  pull_request:
+    paths:
+      - 'e2e-tests/tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  run-as-admin-compliance:
+    name: run-as-admin compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for non-compliant test patterns
+        run: |
+          set +e
+          FAILED=0
+
+          # Check all test files in the repo
+          CHANGED=$(find e2e-tests/tests -name '*_test.go')
+
+          echo "Checking files:"
+          echo "$CHANGED"
+          echo ""
+
+          for FILE in $CHANGED; do
+            [ -f "$FILE" ] || continue
+
+            # Skip admin tests — only non-admin tests call SetupActiveKubectlRunners
+            if ! grep -q "SetupActiveKubectlRunners\|SetupNamespaceAdminUsersForScenario" "$FILE"; then
+              echo "SKIP $FILE: admin test, skipping compliance check"
+              continue
+            fi
+
+            echo "CHECK $FILE: non-admin test, checking compliance..."
+
+            # 1. Must not call SetupNamespaceAdminUsersForScenario — use SetupActiveKubectlRunners instead
+            if grep -n "SetupNamespaceAdminUsersForScenario" "$FILE"; then
+              echo "FAIL $FILE: use SetupActiveKubectlRunners instead of SetupNamespaceAdminUsersForScenario"
+              FAILED=1
+            fi
+
+            # 2. Must not guard on empty non-admin context (Skip guards prevent RUN_AS_ADMIN override from working)
+            if grep -n 'NonAdmin\.Context == ""' "$FILE"; then
+              echo "FAIL $FILE: remove empty-context Skip guards — they block the RUN_AS_ADMIN override in Jenkins"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -eq 0 ]; then
+            echo "PASS: all test files are compliant."
+          fi
+
+          exit $FAILED
