@@ -172,6 +172,21 @@ func allResourceListsForbidden(resources []*groupResource, resourceErrs []*group
 	return true
 }
 
+// mergeImpersonationExtras merges src into dest, appending values for shared keys.
+// This preserves extras already set by ToRESTConfig() alongside --as-extras flag values.
+func mergeImpersonationExtras(dest, src map[string][]string) map[string][]string {
+	if len(src) == 0 {
+		return dest
+	}
+	if dest == nil {
+		return src
+	}
+	for k, v := range src {
+		dest[k] = append(dest[k], v...)
+	}
+	return dest
+}
+
 // Run performs discovery, lists resources, filters cluster-scoped RBAC to related
 // ServiceAccounts, writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
 func (o *ExportOptions) Run() error {
@@ -185,17 +200,7 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
-	// Merge o.extras into restConfig.Impersonate.Extra instead of overwriting,
-	// so --as-user-extra values from ToRESTConfig() are preserved alongside --as-extras.
-	if o.extras != nil {
-		if restConfig.Impersonate.Extra == nil {
-			restConfig.Impersonate.Extra = o.extras
-		} else {
-			for k, v := range o.extras {
-				restConfig.Impersonate.Extra[k] = append(restConfig.Impersonate.Extra[k], v...)
-			}
-		}
-	}
+	restConfig.Impersonate.Extra = mergeImpersonationExtras(restConfig.Impersonate.Extra, o.extras)
 	restConfig.Burst = o.Burst
 	restConfig.QPS = o.QPS
 
