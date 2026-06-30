@@ -204,8 +204,8 @@ Example output snippet (abbreviated):
 
 ```text
 INFO[0000] Scanned 3 distinct GVK+namespace tuples
-INFO[0000] Validating in live mode against context "tgt"
-Mode: live (context: tgt)
+INFO[0000] Validating in live mode against context "tgt-cluster"
+Mode: live (context: tgt-cluster)
 ...
 Summary: 3 scanned, 3 compatible, 0 incompatible
 Result: PASSED — all resources compatible with target cluster
