@@ -18,41 +18,45 @@ jobs:
       - name: Check for non-compliant test patterns
         run: |
           set +e
-          FAILED=0
+          VIOLATIONS=()
 
-          # Check all test files in the repo
-          CHANGED=$(find e2e-tests/tests -name '*_test.go')
-
-          echo "Checking files:"
-          echo "$CHANGED"
-          echo ""
-
-          for FILE in $CHANGED; do
+          for FILE in $(find e2e-tests/tests -name '*_test.go'); do
             [ -f "$FILE" ] || continue
 
             # Skip admin tests — only non-admin tests call SetupActiveKubectlRunners
             if ! grep -q "SetupActiveKubectlRunners\|SetupNamespaceAdminUsersForScenario" "$FILE"; then
-              echo "SKIP $FILE: admin test, skipping compliance check"
               continue
             fi
 
-            echo "CHECK $FILE: non-admin test, checking compliance..."
+            ISSUES=""
 
-            # 1. Must not call SetupNamespaceAdminUsersForScenario — use SetupActiveKubectlRunners instead
-            if grep -n "SetupNamespaceAdminUsersForScenario" "$FILE"; then
-              echo "FAIL $FILE: use SetupActiveKubectlRunners instead of SetupNamespaceAdminUsersForScenario"
-              FAILED=1
+            if grep -q "SetupNamespaceAdminUsersForScenario" "$FILE"; then
+              ISSUES="${ISSUES}\n    - use SetupActiveKubectlRunners instead of SetupNamespaceAdminUsersForScenario"
             fi
 
-            # 2. Must not guard on empty non-admin context (Skip guards prevent RUN_AS_ADMIN override from working)
-            if grep -n 'NonAdmin\.Context == ""' "$FILE"; then
-              echo "FAIL $FILE: remove empty-context Skip guards — they block the RUN_AS_ADMIN override in Jenkins"
-              FAILED=1
+            if grep -q 'NonAdmin\.Context == ""' "$FILE"; then
+              ISSUES="${ISSUES}\n    - remove empty-context Skip guards (they block RUN_AS_ADMIN override)"
+            fi
+
+            if [ -n "$ISSUES" ]; then
+              VIOLATIONS+=("$FILE:$ISSUES")
             fi
           done
 
-          if [ "$FAILED" -eq 0 ]; then
-            echo "PASS: all test files are compliant."
+          echo ""
+          if [ ${#VIOLATIONS[@]} -eq 0 ]; then
+            echo "PASS: all non-admin test files are compliant."
+            exit 0
           fi
 
-          exit $FAILED
+          echo "FAIL: the following non-admin test files are not compliant with RUN_AS_ADMIN:"
+          echo ""
+          for V in "${VIOLATIONS[@]}"; do
+            FILE="${V%%:*}"
+            ISSUES="${V#*:}"
+            echo "  $FILE"
+            echo -e "$ISSUES"
+            echo ""
+          done
+
+          exit 1
