@@ -46,6 +46,14 @@ var _ = Describe("NetworkPolicy migration", func() {
 		By("Grant namespace-admin permissions to non-admin user on source and target")
 		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			By("Delete test namespace on source and target (wait for completion)")
+			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
+					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
+				}
+			}
+		})
 		DeferCleanup(cleanup)
 
 		By("Prepare source app as namespace-admin")
