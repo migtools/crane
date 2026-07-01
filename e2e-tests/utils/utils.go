@@ -426,8 +426,8 @@ func extractResourceIdentity(doc any) (string, error) {
 	}
 	namespace, _ := metadata["namespace"].(string)
 
-	// Pod names have generated suffixes; use stable owning controller name when present.
-	if kind == "Pod" {
+	// Pod and ReplicaSet names have generated suffixes; use stable owning controller name when present.
+	if kind == "Pod" || kind == "ReplicaSet" {
 		ownerReferences, _ := metadata["ownerReferences"].([]any)
 		var firstOwnerName string
 		for _, ref := range ownerReferences {
@@ -707,6 +707,24 @@ func normalizeUnstableFields(doc any) any {
 		return normalized
 	}
 
+	if kind == "ReplicaSet" {
+		delete(metadata, "name")
+		stripPodTemplateHash(metadata)
+		if spec, ok := root["spec"].(map[string]any); ok {
+			if selector, ok := spec["selector"].(map[string]any); ok {
+				if ml, ok := selector["matchLabels"].(map[string]any); ok {
+					delete(ml, "pod-template-hash")
+				}
+			}
+			if tmpl, ok := spec["template"].(map[string]any); ok {
+				if tmplMeta, ok := tmpl["metadata"].(map[string]any); ok {
+					stripPodTemplateHash(tmplMeta)
+				}
+			}
+		}
+		return normalized
+	}
+
 	if kind != "Pod" && kind != "EndpointSlice" {
 		return normalized
 	}
@@ -717,6 +735,13 @@ func normalizeUnstableFields(doc any) any {
 		normalizePodServiceAccountVolumeNames(root)
 	}
 	return normalized
+}
+
+// stripPodTemplateHash removes the pod-template-hash label from a metadata block.
+func stripPodTemplateHash(metadata map[string]any) {
+	if labels, ok := metadata["labels"].(map[string]any); ok {
+		delete(labels, "pod-template-hash")
+	}
 }
 
 // normalizePodServiceAccountVolumeNames canonicalizes generated
