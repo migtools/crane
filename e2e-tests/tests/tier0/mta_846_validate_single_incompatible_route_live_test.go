@@ -29,6 +29,8 @@ var _ = Describe("Validate single incompatible Route [Live Mode]", func() {
 		}
 
 
+		Expect(scenario.KubectlTgtNonAdmin.Context).NotTo(BeEmpty(), "target-nonadmin-context is required for this test")
+
 		runner := scenario.CraneNonAdmin
 		paths, err := NewScenarioPaths("crane-validate-single-route-live-*")
 		Expect(err).NotTo(HaveOccurred())
