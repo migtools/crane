@@ -255,21 +255,33 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
+	// Pass restConfig.Timeout to child functions for per-request timeout enforcement
+	requestTimeout := restConfig.Timeout
+
+	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
 
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 
-	crdResources, crdErrs := collectRelatedCRDs(resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
+	crdResources, crdErrs := collectRelatedCRDs(requestTimeout, resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
-	if hasClusterScopedManifests(resources) {
-		if err = os.MkdirAll(clusterResourceDir, 0700); err != nil {
-			log.Errorf("error creating cluster resources directory: %#v", err)
-			return err
+	// Check if any resource errors are timeout errors and fail fast with exit code 1
+	// Do this before writing any files to avoid partial exports
+	for _, resErr := range resourceErrs {
+		if resErr != nil && resErr.Error != nil {
+			if apierrors.IsTimeout(resErr.Error) || strings.Contains(resErr.Error.Error(), "context deadline exceeded") {
+				return resErr.Error
+			}
 		}
+	}
+
+	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
+	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
+		log.Errorf("error preparing cluster resources directory: %#v", err)
+		return err
 	}
 
 	//count and log the no of crds
@@ -320,6 +332,10 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 			}
 			c.SilenceUsage = true
 			if err := o.Run(); err != nil {
+				// Silence usage on timeout errors (network errors, not user input errors)
+				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
+					c.SilenceUsage = true
+				}
 				return err
 			}
 
