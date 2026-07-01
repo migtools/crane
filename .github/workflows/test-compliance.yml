@@ -23,8 +23,8 @@ jobs:
           for FILE in $(find e2e-tests/tests -name '*_test.go'); do
             [ -f "$FILE" ] || continue
 
-            # Skip admin tests — only non-admin tests call SetupActiveKubectlRunners
-            if ! grep -q "SetupActiveKubectlRunners\|SetupNamespaceAdminUsersForScenario" "$FILE"; then
+            # Skip admin tests — non-admin tests either call SetupActiveKubectlRunners or use NonAdmin fields directly
+            if ! grep -q "SetupActiveKubectlRunners\|SetupNamespaceAdminUsersForScenario\|CraneNonAdmin\|KubectlSrcNonAdmin\|KubectlTgtNonAdmin\|SrcAppNonAdmin\|TgtAppNonAdmin" "$FILE"; then
               continue
             fi
 
