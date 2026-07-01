@@ -10,6 +10,7 @@ import (
 	. "github.com/konveyor/crane/e2e-tests/framework"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 )
 
 var _ = Describe("Crane validate offline mode: malformed API surface file handling", func() {
@@ -27,13 +28,6 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 			config.TargetContext,
 		)
 
-		if scenario.SrcAppNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin offline validation test")
-		}
-		if scenario.TgtAppNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin offline validation test")
-		}
-
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
@@ -43,7 +37,7 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 		tgtApp.ExtraVars = srcApp.ExtraVars
 
 		By("Grant ns admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, _, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, _, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")
@@ -90,273 +84,147 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
-		By("Test Case 1: Invalid JSON syntax")
-		malformedFile := filepath.Join(paths.TempDir, "malformed-syntax.json")
-		malformedContent := `{
+		// Define test cases for malformed JSON scenarios
+		type malformedJSONTestCase struct {
+			name              string
+			fileContent       interface{} // string for raw content, []byte for binary, or map for marshaled JSON
+			validateDirSuffix string
+			expectError       bool
+			errorSubstrings   []string
+		}
+
+		testCases := []malformedJSONTestCase{
+			{
+				name: "Invalid JSON syntax",
+				fileContent: `{
 			"resources": [
 				{"apiVersion": "v1", "kind": "Pod"
 			]
-		}` // Missing closing brace for Pod object
-		Expect(os.WriteFile(malformedFile, []byte(malformedContent), 0644)).To(Succeed())
-
-		By("Run crane validate with malformed JSON file")
-		validateDir := filepath.Join(paths.TempDir, "validate-malformed-syntax")
-		stdout, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir,
-			APIResourcesFile: malformedFile,
-		})
-
-		By("Verify that crane validate returns an error")
-		Expect(err).To(HaveOccurred(), "crane validate should fail with malformed JSON")
-		log.Printf("Validate output: %s", stdout)
-		log.Printf("Validate error: %v", err)
-
-		By("Verify error message indicates JSON parsing issue")
-		errMsg := err.Error()
-		Expect(errMsg).To(Or(
-			ContainSubstring("json"),
-			ContainSubstring("JSON"),
-			ContainSubstring("parse"),
-			ContainSubstring("unmarshal"),
-			ContainSubstring("invalid"),
-			ContainSubstring("syntax"),
-		), "error message should indicate JSON parsing issue")
-
-		By("Verify validation report was not created for malformed JSON")
-		reportPath := filepath.Join(validateDir, "report.json")
-		Expect(reportPath).NotTo(BeAnExistingFile(), "report.json should not be created with malformed JSON")
-
-		log.Printf("✅ Test Case 1: Successfully validated error handling for malformed JSON syntax")
-
-		By("Test Case 2: Empty JSON file")
-		emptyFile := filepath.Join(paths.TempDir, "empty-api-surface.json")
-		Expect(os.WriteFile(emptyFile, []byte(""), 0644)).To(Succeed())
-
-		By("Run crane validate with empty JSON file")
-		validateDir2 := filepath.Join(paths.TempDir, "validate-empty-json")
-		stdout2, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir2,
-			APIResourcesFile: emptyFile,
-		})
-
-		By("Verify that crane validate returns an error")
-		Expect(err).To(HaveOccurred(), "crane validate should fail with empty JSON file")
-		log.Printf("Validate output: %s", stdout2)
-		log.Printf("Validate error: %v", err)
-
-		By("Verify error message indicates JSON parsing or empty file issue")
-		errMsg2 := err.Error()
-		Expect(errMsg2).To(Or(
-			ContainSubstring("json"),
-			ContainSubstring("JSON"),
-			ContainSubstring("parse"),
-			ContainSubstring("unmarshal"),
-			ContainSubstring("empty"),
-			ContainSubstring("EOF"),
-		), "error message should indicate JSON parsing or empty file issue")
-
-		log.Printf("✅ Test Case 2: Successfully validated error handling for empty JSON file")
-
-		By("Test Case 3: Valid JSON but incorrect structure")
-		wrongStructureFile := filepath.Join(paths.TempDir, "wrong-structure.json")
-		wrongStructure := map[string]interface{}{
-			"wrong_field": "value",
-			"resources":   "should_be_array_not_string",
-		}
-		wrongJSON, err := json.Marshal(wrongStructure)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(os.WriteFile(wrongStructureFile, wrongJSON, 0644)).To(Succeed())
-
-		By("Run crane validate with wrong structure JSON file")
-		validateDir3 := filepath.Join(paths.TempDir, "validate-wrong-structure")
-		stdout3, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir3,
-			APIResourcesFile: wrongStructureFile,
-		})
-
-		if err != nil {
-			log.Printf("Validate returned error (expected): %v", err)
-			log.Printf("Validate output: %s", stdout3)
-		} else {
-			log.Printf("Validate succeeded (checking report content)")
-			// If it doesn't error, check if the report exists
-			reportPath3 := filepath.Join(validateDir3, "report.json")
-			if _, statErr := os.Stat(reportPath3); statErr == nil {
-				log.Printf("Report was created despite wrong structure")
-			}
-		}
-
-		log.Printf("✅ Test Case 3: Validated behavior with wrong JSON structure")
-
-		By("Test Case 4: Non-JSON content")
-		nonJSONFile := filepath.Join(paths.TempDir, "non-json.json")
-		nonJSONContent := "This is plain text, not JSON"
-		Expect(os.WriteFile(nonJSONFile, []byte(nonJSONContent), 0644)).To(Succeed())
-
-		By("Run crane validate with non-JSON file")
-		validateDir4 := filepath.Join(paths.TempDir, "validate-non-json")
-		stdout4, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir4,
-			APIResourcesFile: nonJSONFile,
-		})
-
-		By("Verify that crane validate returns an error")
-		Expect(err).To(HaveOccurred(), "crane validate should fail with non-JSON content")
-		log.Printf("Validate output: %s", stdout4)
-		log.Printf("Validate error: %v", err)
-
-		By("Verify error message indicates JSON parsing issue")
-		errMsg4 := err.Error()
-		Expect(errMsg4).To(Or(
-			ContainSubstring("json"),
-			ContainSubstring("JSON"),
-			ContainSubstring("parse"),
-			ContainSubstring("unmarshal"),
-			ContainSubstring("invalid"),
-		), "error message should indicate JSON parsing issue")
-
-		log.Printf("✅ Test Case 4: Successfully validated error handling for non-JSON content")
-
-		By("Test Case 5: Truncated/incomplete JSON")
-		By("Create truncated JSON file (incomplete)")
-		truncatedFile := filepath.Join(paths.TempDir, "truncated.json")
-		truncatedContent := `{
+		}`, // Missing closing brace for Pod object
+				validateDirSuffix: "malformed-syntax",
+				expectError:       true,
+				errorSubstrings:   []string{"json", "JSON", "parse", "unmarshal", "invalid", "syntax"},
+			},
+			{
+				name:              "Empty JSON file",
+				fileContent:       "",
+				validateDirSuffix: "empty-json",
+				expectError:       true,
+				errorSubstrings:   []string{"json", "JSON", "parse", "unmarshal", "empty", "EOF"},
+			},
+			{
+				name: "Valid JSON but incorrect structure",
+				fileContent: map[string]interface{}{
+					"wrong_field": "value",
+					"resources":   "should_be_array_not_string",
+				},
+				validateDirSuffix: "wrong-structure",
+				expectError:       true,
+				errorSubstrings:   []string{"api-resources", "contains no API resource lists"},
+			},
+			{
+				name:              "Non-JSON content",
+				fileContent:       "This is plain text, not JSON",
+				validateDirSuffix: "non-json",
+				expectError:       true,
+				errorSubstrings:   []string{"json", "JSON", "parse", "unmarshal", "invalid"},
+			},
+			{
+				name: "Truncated/incomplete JSON",
+				fileContent: `{
 			"resources": [
-				{"apiVersion": "v1", "kind": "Pod", "name": "test"`
-		// Missing closing brackets - simulates interrupted write
-		Expect(os.WriteFile(truncatedFile, []byte(truncatedContent), 0644)).To(Succeed())
-
-		By("Run crane validate with truncated JSON file")
-		validateDir5 := filepath.Join(paths.TempDir, "validate-truncated")
-		stdout5, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir5,
-			APIResourcesFile: truncatedFile,
-		})
-
-		By("Verify that crane validate returns an error")
-		Expect(err).To(HaveOccurred(), "crane validate should fail with truncated JSON")
-		log.Printf("Validate output: %s", stdout5)
-		log.Printf("Validate error: %v", err)
-
-		By("Verify error message indicates JSON parsing issue")
-		errMsg5 := err.Error()
-		Expect(errMsg5).To(Or(
-			ContainSubstring("json"),
-			ContainSubstring("JSON"),
-			ContainSubstring("parse"),
-			ContainSubstring("unmarshal"),
-			ContainSubstring("unexpected"),
-			ContainSubstring("EOF"),
-		), "error message should indicate JSON parsing issue")
-
-		log.Printf("✅ Test Case 5: Successfully validated error handling for truncated JSON")
-
-		By("Test Case 6: Array at root instead of object")
-		arrayRootFile := filepath.Join(paths.TempDir, "array-root.json")
-		arrayRootContent := `[
+				{"apiVersion": "v1", "kind": "Pod", "name": "test"`,
+				validateDirSuffix: "truncated",
+				expectError:       true,
+				errorSubstrings:   []string{"json", "JSON", "parse", "unmarshal", "unexpected", "EOF"},
+			},
+			{
+				name: "Array at root instead of object",
+				fileContent: `[
 			{"apiVersion": "v1", "kind": "Pod"},
 			{"apiVersion": "apps/v1", "kind": "Deployment"}
-		]`
-		Expect(os.WriteFile(arrayRootFile, []byte(arrayRootContent), 0644)).To(Succeed())
-
-		By("Run crane validate with array-root JSON file")
-		validateDir6 := filepath.Join(paths.TempDir, "validate-array-root")
-		stdout6, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir6,
-			APIResourcesFile: arrayRootFile,
-		})
-
-		if err != nil {
-			log.Printf("Validate returned error: %v", err)
-			log.Printf("Validate output: %s", stdout6)
-			By("Verify error indicates type/structure issue")
-			errMsg6 := err.Error()
-			Expect(errMsg6).To(Or(
-				ContainSubstring("json"),
-				ContainSubstring("JSON"),
-				ContainSubstring("unmarshal"),
-				ContainSubstring("type"),
-				ContainSubstring("object"),
-			), "error should indicate structure/type issue")
-		} else {
-			log.Printf("Validate succeeded - checking behavior")
-		}
-
-		log.Printf("✅ Test Case 6: Validated behavior with array at root")
-
-		By("Test Case 7: Mixed valid and invalid entries")
-		mixedFile := filepath.Join(paths.TempDir, "mixed-entries.json")
-		mixedContent := `{
+		]`,
+				validateDirSuffix: "array-root",
+				expectError:       true,
+				errorSubstrings:   []string{"json", "JSON", "unmarshal", "type", "cannot"},
+			},
+			{
+				name: "Mixed valid and invalid entries",
+				fileContent: `{
 			"resources": [
 				{"apiVersion": "v1", "kind": "Pod"},
 				{"apiVersion": "broken, "kind": "Deployment"},
 				{"apiVersion": "v1", "kind": "Service"}
 			]
-		}`
-		Expect(os.WriteFile(mixedFile, []byte(mixedContent), 0644)).To(Succeed())
+		}`,
+				validateDirSuffix: "mixed",
+				expectError:       true,
+				errorSubstrings:   []string{"json", "JSON", "parse", "unmarshal", "syntax"},
+			},
+			{
+				name:              "Binary data with non-UTF8 bytes",
+				fileContent:       []byte{0x7B, 0x22, 0x72, 0x65, 0xFF, 0xFE, 0x00, 0x01, 0x80, 0x90},
+				validateDirSuffix: "binary",
+				expectError:       true,
+				errorSubstrings:   []string{"json", "JSON", "parse", "unmarshal", "invalid", "character"},
+			},
+		}
 
-		By("Run crane validate with mixed entries")
-		validateDir7 := filepath.Join(paths.TempDir, "validate-mixed")
-		stdout7, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir7,
-			APIResourcesFile: mixedFile,
-		})
+		// Execute test cases in a loop
+		for i, tc := range testCases {
+			testNum := i + 1
+			By("Test Case " + tc.name)
 
-		By("Verify that crane validate returns an error")
-		Expect(err).To(HaveOccurred(), "crane validate should fail with invalid JSON syntax")
-		log.Printf("Validate output: %s", stdout7)
-		log.Printf("Validate error: %v", err)
+			// Create test file with appropriate content
+			testFile := filepath.Join(paths.TempDir, tc.validateDirSuffix+".json")
+			switch content := tc.fileContent.(type) {
+			case string:
+				Expect(os.WriteFile(testFile, []byte(content), 0644)).To(Succeed())
+			case []byte:
+				Expect(os.WriteFile(testFile, content, 0644)).To(Succeed())
+			case map[string]interface{}:
+				jsonBytes, err := json.Marshal(content)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(os.WriteFile(testFile, jsonBytes, 0644)).To(Succeed())
+			}
 
-		By("Verify error message indicates JSON parsing issue")
-		errMsg7 := err.Error()
-		Expect(errMsg7).To(Or(
-			ContainSubstring("json"),
-			ContainSubstring("JSON"),
-			ContainSubstring("parse"),
-			ContainSubstring("unmarshal"),
-			ContainSubstring("syntax"),
-		), "error message should indicate JSON parsing issue")
+			// Run crane validate
+			validateDir := filepath.Join(paths.TempDir, "validate-"+tc.validateDirSuffix)
+			stdout, err := runner.Validate(ValidateOptions{
+				InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
+				ValidateDir:      validateDir,
+				APIResourcesFile: testFile,
+			})
 
-		log.Printf("✅ Test Case 7: Successfully validated error handling for mixed valid/invalid entries")
+			// Verify error expectation
+			if tc.expectError {
+				Expect(err).To(HaveOccurred(), "crane validate should fail with "+tc.name)
+				log.Printf("Validate output: %s", stdout)
+				log.Printf("Validate error: %v", err)
 
-		By("Test Case 8: Binary data simulated with non-UTF8 bytes)")
-		binaryFile := filepath.Join(paths.TempDir, "binary.json")
-		// Create binary content - mix of valid JSON start with binary garbage
-		binaryContent := []byte{0x7B, 0x22, 0x72, 0x65, 0xFF, 0xFE, 0x00, 0x01, 0x80, 0x90}
-		Expect(os.WriteFile(binaryFile, binaryContent, 0644)).To(Succeed())
+				// Verify error message contains expected substrings
+				errMsg := err.Error()
+				matchers := make([]types.GomegaMatcher, len(tc.errorSubstrings))
+				for i, substr := range tc.errorSubstrings {
+					matchers[i] = ContainSubstring(substr)
+				}
+				Expect(errMsg).To(Or(matchers...), "error message should indicate expected issue")
 
-		By("Run crane validate with binary file")
-		validateDir8 := filepath.Join(paths.TempDir, "validate-binary")
-		stdout8, err := runner.Validate(ValidateOptions{
-			InputDir:         filepath.Join(paths.OutputDir, "resources", namespace),
-			ValidateDir:      validateDir8,
-			APIResourcesFile: binaryFile,
-		})
+				// Verify validation report was not created
+				reportPath := filepath.Join(validateDir, "report.json")
+				Expect(reportPath).NotTo(BeAnExistingFile(), "report.json should not be created with malformed JSON")
+			} else {
+				// For test cases expecting successful validation
+				Expect(err).NotTo(HaveOccurred(), "crane validate should succeed with "+tc.name)
+				log.Printf("Validate output: %s", stdout)
 
-		By("Verify that crane validate returns an error")
-		Expect(err).To(HaveOccurred(), "crane validate should fail with binary content")
-		log.Printf("Validate output: %s", stdout8)
-		log.Printf("Validate error: %v", err)
+				// Verify validation report was created successfully
+				reportPath := filepath.Join(validateDir, "report.json")
+				Expect(reportPath).To(BeAnExistingFile(), "report.json should be created for successful validation")
+			}
 
-		By("Verify error indicates parsing or encoding issue")
-		errMsg8 := err.Error()
-		Expect(errMsg8).To(Or(
-			ContainSubstring("json"),
-			ContainSubstring("JSON"),
-			ContainSubstring("parse"),
-			ContainSubstring("unmarshal"),
-			ContainSubstring("invalid"),
-			ContainSubstring("character"),
-		), "error message should indicate parsing or encoding issue")
-
-		log.Printf("✅ Test Case 8: Successfully validated error handling for binary content")
+			log.Printf("✅ Test Case %d: Successfully validated error handling for %s", testNum, tc.name)
+		}
 
 		log.Printf("✅ MTA-860: All malformed API surface file scenarios validated successfully")
 	})
