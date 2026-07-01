@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/konveyor/crane/cmd/apply"
 	"github.com/konveyor/crane/cmd/convert"
@@ -21,7 +22,7 @@ import (
 func main() {
 	f := &flags.GlobalFlags{}
 	root := cobra.Command{
-		Use: "crane",
+		Use: filepath.Base(os.Args[0]),
 	}
 	f.ApplyFlags(&root)
 	root.AddCommand(export.NewExportCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
