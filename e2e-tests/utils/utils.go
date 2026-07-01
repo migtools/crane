@@ -426,8 +426,8 @@ func extractResourceIdentity(doc any) (string, error) {
 	}
 	namespace, _ := metadata["namespace"].(string)
 
-	// Pod names have generated suffixes; use stable owning controller name when present.
-	if kind == "Pod" {
+	// Pod and ReplicaSet names have generated suffixes; use stable owning controller name when present.
+	if kind == "Pod" || kind == "ReplicaSet" {
 		ownerReferences, _ := metadata["ownerReferences"].([]any)
 		var firstOwnerName string
 		for _, ref := range ownerReferences {
