@@ -25,7 +25,7 @@ func init() {
 }
 
 var _ = BeforeSuite(func() {
-	config.ValidateAndLogRunAsFlag()
+	Expect(config.ValidateAndLogRunAsFlag()).To(Succeed())
 })
 
 // TestE2E configures Ginkgo and executes the e2e test suite.
