@@ -1,0 +1,7 @@
+apiVersion: crane-e2e.example.com/v1
+kind: Widget
+metadata:
+  name: test-widget
+spec:
+  color: blue
+  size: 5

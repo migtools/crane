@@ -27,12 +27,6 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 			config.TargetContext,
 		)
 
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin instructions file migration test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin instructions file migration test")
-		}
 
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
@@ -43,7 +37,7 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		tgtApp.ExtraVars = srcApp.ExtraVars
 
 		By("Grant ns admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")

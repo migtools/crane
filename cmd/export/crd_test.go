@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic/fake"
+	kubetesting "k8s.io/client-go/testing"
 )
 
 func TestShouldSkipCRDGroup_DefaultsAndOverrides(t *testing.T) {
@@ -87,7 +88,7 @@ func TestCollectRelatedCRDs_customResourceOneCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crdUnstructured("widgets.example.com"))
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -120,7 +121,7 @@ func TestCollectRelatedCRDs_builtinGroupNoFetch(t *testing.T) {
 			Items: []unstructured.Unstructured{{}},
 		},
 	}
-	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -138,7 +139,7 @@ func TestCollectRelatedCRDs_dedupePluralGroup(t *testing.T) {
 	w2 := widgetGroupResource()
 	w2.objects.Items[0].SetName("w2")
 
-	got, errs := collectRelatedCRDs([]*groupResource{w1, w2}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{w1, w2}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -155,7 +156,7 @@ func TestCollectRelatedCRDs_skipsSubresourceName(t *testing.T) {
 	gr := widgetGroupResource()
 	gr.APIResource.Name = "widgets/status"
 
-	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -186,7 +187,7 @@ func TestCollectRelatedCRDs_multipleDistinctCRDs(t *testing.T) {
 		},
 	}
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource(), gadget}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource(), gadget}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -205,7 +206,7 @@ func TestCollectRelatedCRDs_getFailureReturnsGroupResourceError(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(got) != 0 {
 		t.Fatalf("expected no CRD rows, got %d", len(got))
 	}
@@ -242,7 +243,7 @@ func TestCollectRelatedCRDs_IncludeOverridesBuiltinGroup(t *testing.T) {
 		},
 	}
 
-	got, errs := collectRelatedCRDs([]*groupResource{gr}, client, log, nil, []string{"route.openshift.io"})
+	got, errs := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, []string{"route.openshift.io"})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -260,7 +261,7 @@ func TestCollectRelatedCRDs_skipsOLMManagedCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -275,7 +276,7 @@ func TestCollectRelatedCRDs_skipsManagedByLabel(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -292,7 +293,7 @@ func TestCollectRelatedCRDs_skipsOperatorFrameworkAnnotation(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -307,7 +308,7 @@ func TestCollectRelatedCRDs_skipsOwnerReferenceCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -322,12 +323,41 @@ func TestCollectRelatedCRDs_exportsUnmanagedCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs([]*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if len(got) != 1 {
 		t.Fatalf("expected unmanaged CRD to be exported, got %d", len(got))
+	}
+}
+
+func TestCollectRelatedCRDs_timeoutError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClient(scheme)
+
+	// Simulate timeout error on CRD Get
+	client.PrependReactor("get", "customresourcedefinitions", func(action kubetesting.Action) (handled bool, ret runtime.Object, err error) {
+		return true, nil, apierrors.NewTimeoutError("CRD get timeout", 1)
+	})
+
+	log := testLogger()
+	gr := widgetGroupResource()
+
+	// Pass non-zero timeout
+	got, errs := collectRelatedCRDs(100, []*groupResource{gr}, client, log, nil, nil)
+
+	if len(got) != 0 {
+		t.Fatalf("expected 0 CRDs on timeout, got %d", len(got))
+	}
+	if len(errs) != 1 {
+		t.Fatalf("expected exactly 1 error, got %d: %v", len(errs), errs)
+	}
+	if !apierrors.IsTimeout(errs[0].Error) {
+		t.Fatalf("expected timeout error, got: %v", errs[0].Error)
+	}
+	if errs[0].APIResource.Kind != "CustomResourceDefinition" {
+		t.Fatalf("expected CRD kind in error, got: %s", errs[0].APIResource.Kind)
 	}
 }
 

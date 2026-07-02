@@ -23,12 +23,6 @@ var _ = Describe("InitContainer Migration", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin stateless migration test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin stateless migration test")
-		}
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
@@ -43,7 +37,7 @@ var _ = Describe("InitContainer Migration", func() {
 		}
 
 		By("Grant ns admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")

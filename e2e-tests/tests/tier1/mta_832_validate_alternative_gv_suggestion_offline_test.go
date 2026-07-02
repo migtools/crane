@@ -29,12 +29,6 @@ var _ = Describe("Validate alternative GV suggestion [Offline Mode]", func() {
 			config.TargetContext,
 		)
 
-		if scenario.SrcAppNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin stateless migration test")
-		}
-		if scenario.TgtAppNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin stateless migration test")
-		}
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
@@ -43,7 +37,7 @@ var _ = Describe("Validate alternative GV suggestion [Offline Mode]", func() {
 		}
 		tgtApp.ExtraVars = srcApp.ExtraVars
 		By("Grant ns admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, _, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, _, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")

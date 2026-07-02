@@ -28,12 +28,6 @@ var _ = Describe("Instructions-file migration", func() {
 			config.TargetContext,
 		)
 
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin instructions file migration test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin instructions file migration test")
-		}
 
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
@@ -44,7 +38,7 @@ var _ = Describe("Instructions-file migration", func() {
 		tgtApp.ExtraVars = srcApp.ExtraVars
 
 		By("Grant ns admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, _, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, _, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")

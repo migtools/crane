@@ -1,0 +1,62 @@
+name: Test Compliance
+
+on:
+  pull_request:
+    paths:
+      - 'e2e-tests/tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  run-as-admin-compliance:
+    name: run-as-admin compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for non-compliant test patterns
+        run: |
+          set +e
+          VIOLATIONS=()
+
+          for FILE in $(find e2e-tests/tests -name '*_test.go'); do
+            [ -f "$FILE" ] || continue
+
+            # Skip admin tests — non-admin tests either call SetupActiveKubectlRunners or use NonAdmin fields directly
+            if ! grep -q "SetupActiveKubectlRunners\|SetupNamespaceAdminUsersForScenario\|CraneNonAdmin\|KubectlSrcNonAdmin\|KubectlTgtNonAdmin\|SrcAppNonAdmin\|TgtAppNonAdmin" "$FILE"; then
+              continue
+            fi
+
+            ISSUES=""
+
+            if grep -q "SetupNamespaceAdminUsersForScenario" "$FILE"; then
+              ISSUES="${ISSUES}\n    - use SetupActiveKubectlRunners instead of SetupNamespaceAdminUsersForScenario"
+            fi
+
+            if grep -q 'NonAdmin\.Context == ""' "$FILE"; then
+              ISSUES="${ISSUES}\n    - remove empty-context Skip guards (they block RUN_AS_ADMIN override)"
+            fi
+
+            if [ -n "$ISSUES" ]; then
+              VIOLATIONS+=("$FILE:$ISSUES")
+            fi
+          done
+
+          echo ""
+          if [ ${#VIOLATIONS[@]} -eq 0 ]; then
+            echo "PASS: all non-admin test files are compliant."
+            exit 0
+          fi
+
+          echo "FAIL: the following non-admin test files are not compliant with RUN_AS_ADMIN:"
+          echo ""
+          for V in "${VIOLATIONS[@]}"; do
+            FILE="${V%%:*}"
+            ISSUES="${V#*:}"
+            echo "  $FILE"
+            echo -e "$ISSUES"
+            echo ""
+          done
+
+          exit 1
