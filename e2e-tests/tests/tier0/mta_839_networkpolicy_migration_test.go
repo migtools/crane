@@ -28,12 +28,6 @@ var _ = Describe("NetworkPolicy migration", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for namespace-admin NetworkPolicy migration test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for namespace-admin NetworkPolicy migration test")
-		}
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		srcApp.ExtraVars = map[string]any{
@@ -43,8 +37,8 @@ var _ = Describe("NetworkPolicy migration", func() {
 			"non_admin_user": "true",
 		}
 
-		By("Grant namespace-admin permissions to non-admin user on source and target")
-		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		By("Set up active kubectl runners for source and target")
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")
