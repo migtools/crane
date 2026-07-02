@@ -93,8 +93,7 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 			name              string
 			fileContent       interface{} // string for raw content, []byte for binary, or map for marshaled JSON
 			validateDirSuffix string
-			expectError       bool
-			errorSubstrings   []string
+			errorSubstrings   []string     // Expected substrings in the root error message
 		}
 
 		testCases := []malformedJSONTestCase{
@@ -106,14 +105,12 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 			]
 		}`, // Missing closing brace for Pod object
 				validateDirSuffix: "malformed-syntax",
-				expectError:       true,
 				errorSubstrings:   []string{"invalid character"},
 			},
 			{
 				name:              "Empty JSON file",
 				fileContent:       "",
 				validateDirSuffix: "empty-json",
-				expectError:       true,
 				errorSubstrings:   []string{"unexpected end of JSON input"},
 			},
 			{
@@ -123,14 +120,12 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 					"resources":   "should_be_array_not_string",
 				},
 				validateDirSuffix: "wrong-structure",
-				expectError:       true,
 				errorSubstrings:   []string{"contains no API resource lists"},
 			},
 			{
 				name:              "Non-JSON content",
 				fileContent:       "This is plain text, not JSON",
 				validateDirSuffix: "non-json",
-				expectError:       true,
 				errorSubstrings:   []string{"invalid character"},
 			},
 			{
@@ -139,7 +134,6 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 			"resources": [
 				{"apiVersion": "v1", "kind": "Pod", "name": "test"`,
 				validateDirSuffix: "truncated",
-				expectError:       true,
 				errorSubstrings:   []string{"unexpected end of JSON input"},
 			},
 			{
@@ -149,7 +143,6 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 			{"apiVersion": "apps/v1", "kind": "Deployment"}
 		]`,
 				validateDirSuffix: "array-root",
-				expectError:       true,
 				errorSubstrings:   []string{"cannot unmarshal array"},
 			},
 			{
@@ -162,14 +155,12 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 			]
 		}`,
 				validateDirSuffix: "mixed",
-				expectError:       true,
 				errorSubstrings:   []string{"invalid character"},
 			},
 			{
 				name:              "Binary data with non-UTF8 bytes",
 				fileContent:       []byte{0x7B, 0x22, 0x72, 0x65, 0xFF, 0xFE, 0x00, 0x01, 0x80, 0x90},
 				validateDirSuffix: "binary",
-				expectError:       true,
 				errorSubstrings:   []string{"invalid character"},
 			},
 		}
@@ -207,41 +198,31 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 					APIResourcesFile: testFile,
 				})
 
-				// Verify error expectation
-				if tc.expectError {
-					Expect(err).To(HaveOccurred(), "crane validate should fail with "+tc.name)
-					log.Printf("Validate output: %s", stdout)
-					log.Printf("Validate error: %v", err)
+				// All test cases expect crane validate to fail with malformed JSON
+				Expect(err).To(HaveOccurred(), "crane validate should fail with "+tc.name)
+				log.Printf("Validate output: %s", stdout)
+				log.Printf("Validate error: %v", err)
 
-					// Verify error message contains expected substrings
-					// Unwrap to get the root cause error, not just the wrapper
-					rootErr := err
-					for {
-						unwrapped := errors.Unwrap(rootErr)
-						if unwrapped == nil {
-							break
-						}
-						rootErr = unwrapped
+				// Verify error message contains expected substrings
+				// Unwrap to get the root cause error, not just the wrapper
+				rootErr := err
+				for {
+					unwrapped := errors.Unwrap(rootErr)
+					if unwrapped == nil {
+						break
 					}
-					rootErrMsg := rootErr.Error()
-					matchers := make([]types.GomegaMatcher, len(tc.errorSubstrings))
-					for idx, substr := range tc.errorSubstrings {
-						matchers[idx] = ContainSubstring(substr)
-					}
-					Expect(rootErrMsg).To(Or(matchers...), "root error message should indicate expected issue")
-
-					// Verify validation report was not created
-					reportPath := filepath.Join(validateDir, "report.json")
-					Expect(reportPath).NotTo(BeAnExistingFile(), "report.json should not be created with malformed JSON")
-				} else {
-					// For test cases expecting successful validation
-					Expect(err).NotTo(HaveOccurred(), "crane validate should succeed with "+tc.name)
-					log.Printf("Validate output: %s", stdout)
-
-					// Verify validation report was created successfully
-					reportPath := filepath.Join(validateDir, "report.json")
-					Expect(reportPath).To(BeAnExistingFile(), "report.json should be created for successful validation")
+					rootErr = unwrapped
 				}
+				rootErrMsg := rootErr.Error()
+				matchers := make([]types.GomegaMatcher, len(tc.errorSubstrings))
+				for idx, substr := range tc.errorSubstrings {
+					matchers[idx] = ContainSubstring(substr)
+				}
+				Expect(rootErrMsg).To(Or(matchers...), "root error message should indicate expected issue")
+
+				// Verify validation report was not created
+				reportPath := filepath.Join(validateDir, "report.json")
+				Expect(reportPath).NotTo(BeAnExistingFile(), "report.json should not be created with malformed JSON")
 
 				log.Printf("✅ Test Case %d: Successfully validated error handling for %s", testNum, tc.name)
 			}()
