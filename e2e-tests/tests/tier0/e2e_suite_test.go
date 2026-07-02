@@ -24,6 +24,10 @@ func init() {
 	flag.StringVar(&config.RunAs, "run-as", "", "Override user context: set to 'admin' to run all tests with cluster-admin credentials")
 }
 
+var _ = BeforeSuite(func() {
+	config.ValidateAndLogRunAsFlag()
+})
+
 // TestE2E configures Ginkgo and executes the e2e test suite.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
