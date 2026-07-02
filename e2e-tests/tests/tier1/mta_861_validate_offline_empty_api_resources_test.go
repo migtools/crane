@@ -14,77 +14,82 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Validate offline mode with empty API resources", func() {
-	It("[MTA-861] should fail early when apiResourceLists is empty in offline mode", Label("tier1", "validate"), func() {
-		tempDir, err := os.MkdirTemp("", "crane-validate-offline-mta-861-empty-lists-*")
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			Expect(os.RemoveAll(tempDir)).To(Succeed())
-		})
+type offlineValidateFixture struct {
+	tempDir          string
+	inputDir         string
+	validateDir      string
+	apiResourcesFile string
+	runner           CraneRunner
+}
 
-		inputDir := filepath.Join(tempDir, "input")
-		validateDir := filepath.Join(tempDir, "validate")
-		Expect(os.MkdirAll(inputDir, 0o755)).NotTo(HaveOccurred())
+// setupOfflineValidateFixture prepares a reusable offline validate test workspace:
+// temp dirs, copied golden input manifest, scenario-specific api-resources file,
+// and a CraneRunner rooted in the scenario temp directory.
+func setupOfflineValidateFixture(tempPrefix, apiResourcesFileName, apiResourcesContent string) offlineValidateFixture {
+	tempDir, err := os.MkdirTemp("", tempPrefix)
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func() {
+		Expect(os.RemoveAll(tempDir)).To(Succeed())
+	})
 
-		goldenOutputDir, err := utils.GoldenManifestsDir("simple-nginx-nopv", "output")
-		Expect(err).NotTo(HaveOccurred())
-		sourceManifestPath := filepath.Join(goldenOutputDir, "output.yaml")
-		Expect(sourceManifestPath).To(BeAnExistingFile())
+	inputDir := filepath.Join(tempDir, "input")
+	validateDir := filepath.Join(tempDir, "validate")
+	Expect(os.MkdirAll(inputDir, 0o755)).NotTo(HaveOccurred())
 
-		manifestData, err := os.ReadFile(sourceManifestPath)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(os.WriteFile(filepath.Join(inputDir, "output.yaml"), manifestData, 0o644)).NotTo(HaveOccurred())
+	goldenOutputDir, err := utils.GoldenManifestsDir("simple-nginx-nopv", "output")
+	Expect(err).NotTo(HaveOccurred())
+	sourceManifestPath := filepath.Join(goldenOutputDir, "output.yaml")
+	Expect(sourceManifestPath).To(BeAnExistingFile())
 
-		apiResourcesFile := filepath.Join(tempDir, "target-api-empty_resources-v2.json")
-		Expect(os.WriteFile(apiResourcesFile, []byte(`{"apiResourceLists":[]}`), 0o644)).NotTo(HaveOccurred())
+	manifestData, err := os.ReadFile(sourceManifestPath)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(os.WriteFile(filepath.Join(inputDir, "output.yaml"), manifestData, 0o644)).NotTo(HaveOccurred())
 
-		runner := CraneRunner{
+	apiResourcesFile := filepath.Join(tempDir, apiResourcesFileName)
+	Expect(os.WriteFile(apiResourcesFile, []byte(apiResourcesContent), 0o644)).NotTo(HaveOccurred())
+
+	return offlineValidateFixture{
+		tempDir:          tempDir,
+		inputDir:         inputDir,
+		validateDir:      validateDir,
+		apiResourcesFile: apiResourcesFile,
+		runner: CraneRunner{
 			Bin:     config.CraneBin,
 			WorkDir: tempDir,
-		}
+		},
+	}
+}
 
-		stdout, err := runner.Validate(ValidateOptions{
-			InputDir:         inputDir,
-			ValidateDir:      validateDir,
+var _ = Describe("Validate offline mode with empty API resources", func() {
+	It("[MTA-861] should fail early when apiResourceLists is empty in offline mode", Label("tier1", "validate"), func() {
+		fixture := setupOfflineValidateFixture(
+			"crane-validate-offline-mta-861-empty-lists-*",
+			"target-api-empty_resources-v2.json",
+			`{"apiResourceLists":[]}`,
+		)
+
+		stdout, err := fixture.runner.Validate(ValidateOptions{
+			InputDir:         fixture.inputDir,
+			ValidateDir:      fixture.validateDir,
 			OutputFormat:     "json",
-			APIResourcesFile: apiResourcesFile,
+			APIResourcesFile: fixture.apiResourcesFile,
 		})
 		Expect(err).To(HaveOccurred(), "validate should fail when apiResourceLists is empty")
 		Expect(err.Error()).To(ContainSubstring("loading api-resources"))
-		Expect(err.Error()).To(ContainSubstring(apiResourcesFile))
+		Expect(err.Error()).To(ContainSubstring(fixture.apiResourcesFile))
 		Expect(err.Error()).To(ContainSubstring("contains no API resource lists"))
 		Expect(stdout).NotTo(BeEmpty())
 
-		reportPath := filepath.Join(validateDir, "report.json")
+		reportPath := filepath.Join(fixture.validateDir, "report.json")
 		_, reportErr := os.Stat(reportPath)
 		Expect(os.IsNotExist(reportErr)).To(BeTrue(), "report.json should not exist for parse/load failure")
 
-		failuresDir := filepath.Join(validateDir, "failures")
+		failuresDir := filepath.Join(fixture.validateDir, "failures")
 		_, failuresErr := os.Stat(failuresDir)
 		Expect(os.IsNotExist(failuresErr)).To(BeTrue(), "failures directory should not exist for parse/load failure")
 	})
 
 	It("[MTA-861] should mark all scanned resources incompatible when API lists are present but resources are empty", Label("tier1", "validate"), func() {
-		tempDir, err := os.MkdirTemp("", "crane-validate-offline-mta-861-empty-resources-*")
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			Expect(os.RemoveAll(tempDir)).To(Succeed())
-		})
-
-		inputDir := filepath.Join(tempDir, "input")
-		validateDir := filepath.Join(tempDir, "validate")
-		Expect(os.MkdirAll(inputDir, 0o755)).NotTo(HaveOccurred())
-
-		goldenOutputDir, err := utils.GoldenManifestsDir("simple-nginx-nopv", "output")
-		Expect(err).NotTo(HaveOccurred())
-		sourceManifestPath := filepath.Join(goldenOutputDir, "output.yaml")
-		Expect(sourceManifestPath).To(BeAnExistingFile())
-
-		manifestData, err := os.ReadFile(sourceManifestPath)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(os.WriteFile(filepath.Join(inputDir, "output.yaml"), manifestData, 0o644)).NotTo(HaveOccurred())
-
-		apiResourcesFile := filepath.Join(tempDir, "target-api-empty_resources.json")
 		apiSurface := `{
   "apiResourceLists": [
     {
@@ -95,25 +100,24 @@ var _ = Describe("Validate offline mode with empty API resources", func() {
     }
   ]
 }`
-		Expect(os.WriteFile(apiResourcesFile, []byte(apiSurface), 0o644)).NotTo(HaveOccurred())
+		fixture := setupOfflineValidateFixture(
+			"crane-validate-offline-mta-861-empty-resources-*",
+			"target-api-empty_resources.json",
+			apiSurface,
+		)
 
-		runner := CraneRunner{
-			Bin:     config.CraneBin,
-			WorkDir: tempDir,
-		}
-
-		stdout, err := runner.Validate(ValidateOptions{
-			InputDir:         inputDir,
-			ValidateDir:      validateDir,
+		stdout, err := fixture.runner.Validate(ValidateOptions{
+			InputDir:         fixture.inputDir,
+			ValidateDir:      fixture.validateDir,
 			OutputFormat:     "json",
-			APIResourcesFile: apiResourcesFile,
+			APIResourcesFile: fixture.apiResourcesFile,
 		})
 		Expect(err).To(HaveOccurred(), "validate should fail when scanned resources are incompatible")
 		Expect(err.Error()).To(ContainSubstring("validation failed"))
 		Expect(stdout).To(ContainSubstring("Mode: offline"))
 		Expect(stdout).To(ContainSubstring("Result: FAILED"))
 
-		reportPath := filepath.Join(validateDir, "report.json")
+		reportPath := filepath.Join(fixture.validateDir, "report.json")
 		Expect(reportPath).To(BeAnExistingFile())
 		reportBytes, err := os.ReadFile(reportPath)
 		Expect(err).NotTo(HaveOccurred())
@@ -122,7 +126,7 @@ var _ = Describe("Validate offline mode with empty API resources", func() {
 		Expect(json.Unmarshal(reportBytes, &report)).To(Succeed())
 
 		Expect(report.Mode).To(Equal("offline"))
-		Expect(report.APIResourcesSource).To(Equal(apiResourcesFile))
+		Expect(report.APIResourcesSource).To(Equal(fixture.apiResourcesFile))
 		Expect(report.ClusterContext).To(BeEmpty(), "offline validation should not carry cluster context")
 		Expect(report.TotalScanned).To(BeNumerically(">", 0))
 		Expect(report.Compatible).To(Equal(0))
@@ -139,7 +143,7 @@ var _ = Describe("Validate offline mode with empty API resources", func() {
 		Expect(foundKinds["Service"]).To(BeTrue(), "expected Service to be present in validation results")
 		Expect(foundKinds["Deployment"]).To(BeTrue(), "expected Deployment to be present in validation results")
 
-		failuresDir := filepath.Join(validateDir, "failures")
+		failuresDir := filepath.Join(fixture.validateDir, "failures")
 		Expect(failuresDir).To(BeADirectory())
 		failureFiles, err := filepath.Glob(filepath.Join(failuresDir, "*.yaml"))
 		Expect(err).NotTo(HaveOccurred())
