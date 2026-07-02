@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/konveyor/crane-lib/apigroups"
 	"github.com/sirupsen/logrus"
@@ -85,7 +86,7 @@ func getOperatorManager(obj *unstructured.Unstructured) string {
 // API types that appear in resources (deduplicated by plural.group). Built-in API
 // groups are skipped. Failed GETs are returned as groupResourceError entries for
 // the same failures directory as list errors.
-func collectRelatedCRDs(resources []*groupResource, dynamicClient dynamic.Interface, log logrus.FieldLogger, userSkipGroups, userIncludeGroups []string) ([]*groupResource, []*groupResourceError) {
+func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource, dynamicClient dynamic.Interface, log logrus.FieldLogger, userSkipGroups, userIncludeGroups []string) ([]*groupResource, []*groupResourceError) {
 	skipSet := normalizeGroupSet(userSkipGroups)
 	includeSet := normalizeGroupSet(userIncludeGroups)
 
@@ -112,7 +113,16 @@ func collectRelatedCRDs(resources []*groupResource, dynamicClient dynamic.Interf
 	out := make([]*groupResource, 0, len(seen))
 	var outErrs []*groupResourceError
 	for crdName := range seen {
-		obj, err := crdClient.Get(context.Background(), crdName, metav1.GetOptions{})
+		// Create fresh context with timeout for each CRD Get request
+		ctx := context.Background()
+		var cancel context.CancelFunc
+		if requestTimeout > 0 {
+			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
+		}
+		obj, err := crdClient.Get(ctx, crdName, metav1.GetOptions{})
+		if cancel != nil {
+			cancel()
+		}
 		if err != nil {
 			switch {
 			case apierrors.IsForbidden(err):
@@ -134,7 +144,7 @@ func collectRelatedCRDs(resources []*groupResource, dynamicClient dynamic.Interf
 			})
 			continue
 		}
-		
+
 		if manager := getOperatorManager(obj); manager != "" {
 			log.Warnf("Skipping CRD %q — managed by %s; install the operator on the target cluster instead", crdName, manager)
 			continue

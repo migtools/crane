@@ -28,12 +28,6 @@ var _ = Describe("Custom transformation stage", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin custom transformation stage test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin custom transformation stage test")
-		}
 
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
@@ -48,10 +42,10 @@ var _ = Describe("Custom transformation stage", func() {
 		}
 
 		By("Grant namespace admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, kubectlTgtNonAdmin, scenarioCleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, scenarioCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		By("Grant namespace admin permissions to nonadmin user on migrated target namespace")
-		_, migratedNamespaceCleanup, err := SetupNamespaceAdminUser(
+		_, migratedNamespaceCleanup, err := SetupActiveNamespaceAdmin(
 			scenario.KubectlTgt,
 			scenario.KubectlTgtNonAdmin.Context,
 			targetNamespace,

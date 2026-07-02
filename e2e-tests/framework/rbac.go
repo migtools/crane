@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/konveyor/crane/e2e-tests/config"
 	"github.com/konveyor/crane/e2e-tests/utils"
 )
 
@@ -106,6 +107,46 @@ func SetupNamespaceAdminUser(adminKubectl KubectlRunner, nonAdminContext, namesp
 	}
 
 	return userKubectl, cleanup, nil
+}
+
+// SetupActiveNamespaceAdmin sets up namespace-scoped access on a single cluster.
+// When config.RunAs == "admin", it creates the namespace with the admin runner and returns
+// a no-op cleanup. Otherwise it delegates to SetupNamespaceAdminUser.
+func SetupActiveNamespaceAdmin(adminKubectl KubectlRunner, nonAdminContext, namespace string) (KubectlRunner, func(), error) {
+	if config.RunAs == "admin" {
+		if err := adminKubectl.CreateNamespace(namespace); err != nil {
+			return KubectlRunner{}, nil, fmt.Errorf("failed to create namespace %q: %w", namespace, err)
+		}
+		return adminKubectl, func() {}, nil
+	}
+	return SetupNamespaceAdminUser(adminKubectl, nonAdminContext, namespace)
+}
+
+// SetupActiveKubectlRunners returns kubectl runners appropriate for the current RunAs mode.
+// When config.RunAs == "admin", it creates the namespace with admin credentials and returns
+// admin runners directly (bypassing RBAC setup). Otherwise it delegates to
+// SetupNamespaceAdminUsersForScenario to grant namespace-scoped permissions to the non-admin user.
+func SetupActiveKubectlRunners(scenario MigrationScenario, namespace string) (KubectlRunner, KubectlRunner, func(), error) {
+	if config.RunAs == "admin" {
+		if srcUser, err := ResolveUsernameForContext(scenario.KubectlSrc.Context); err != nil {
+			log.Printf("[run-as=admin] source context=%q: could not resolve username: %v", scenario.KubectlSrc.Context, err)
+		} else {
+			log.Printf("[run-as=admin] source context=%q running as user=%q", scenario.KubectlSrc.Context, srcUser)
+		}
+		if tgtUser, err := ResolveUsernameForContext(scenario.KubectlTgt.Context); err != nil {
+			log.Printf("[run-as=admin] target context=%q: could not resolve username: %v", scenario.KubectlTgt.Context, err)
+		} else {
+			log.Printf("[run-as=admin] target context=%q running as user=%q", scenario.KubectlTgt.Context, tgtUser)
+		}
+		if err := scenario.KubectlSrc.CreateNamespace(namespace); err != nil {
+			return KubectlRunner{}, KubectlRunner{}, nil, fmt.Errorf("failed to create namespace %q on source: %w", namespace, err)
+		}
+		if err := scenario.KubectlTgt.CreateNamespace(namespace); err != nil {
+			return KubectlRunner{}, KubectlRunner{}, nil, fmt.Errorf("failed to create namespace %q on target: %w", namespace, err)
+		}
+		return scenario.KubectlSrc, scenario.KubectlTgt, func() {}, nil
+	}
+	return SetupNamespaceAdminUsersForScenario(scenario, namespace)
 }
 
 // SetupNamespaceAdminUsersForScenario grants namespace-scoped admin permissions

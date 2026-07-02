@@ -21,6 +21,7 @@ func init() {
 	flag.StringVar(&config.SourceNonAdminContext, "source-nonadmin-context", "", "Source cluster non-admin context for RBAC scenarios")
 	flag.StringVar(&config.TargetNonAdminContext, "target-nonadmin-context", "", "Target cluster non-admin context for RBAC scenarios")
 	flag.BoolVar(&config.InsecureSkipTLSVerify, "insecure-skip-tls-verify", false, "Skip TLS certificate verification for k8sdeploy connections (use for OCP clusters with self-signed certs)")
+	flag.StringVar(&config.RunAs, "run-as", "", "Override user context: set to 'admin' to run all tests with cluster-admin credentials")
 }
 
 // TestE2E configures Ginkgo and executes the e2e test suite.

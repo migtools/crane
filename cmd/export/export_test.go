@@ -470,6 +470,79 @@ func TestExport_HelpGroupsFlags(t *testing.T) {
 	}
 }
 
+func TestMergeImpersonationExtras(t *testing.T) {
+	tests := []struct {
+		name string
+		dest map[string][]string
+		src  map[string][]string
+		want map[string][]string
+	}{
+		{
+			name: "both nil",
+			dest: nil,
+			src:  nil,
+			want: nil,
+		},
+		{
+			name: "src nil dest non-nil",
+			dest: map[string][]string{"k1": {"v1"}},
+			src:  nil,
+			want: map[string][]string{"k1": {"v1"}},
+		},
+		{
+			name: "dest nil src non-nil",
+			dest: nil,
+			src:  map[string][]string{"k1": {"v1"}},
+			want: map[string][]string{"k1": {"v1"}},
+		},
+		{
+			name: "distinct keys both preserved",
+			dest: map[string][]string{"from-config": {"a"}},
+			src:  map[string][]string{"from-flag": {"b"}},
+			want: map[string][]string{"from-config": {"a"}, "from-flag": {"b"}},
+		},
+		{
+			name: "overlapping key values appended not overwritten",
+			dest: map[string][]string{"key": {"existing"}},
+			src:  map[string][]string{"key": {"new"}},
+			want: map[string][]string{"key": {"existing", "new"}},
+		},
+		{
+			name: "overlapping and distinct keys",
+			dest: map[string][]string{"shared": {"from-config"}, "config-only": {"val1"}},
+			src:  map[string][]string{"shared": {"from-extras"}, "extras-only": {"val2"}},
+			want: map[string][]string{
+				"shared":      {"from-config", "from-extras"},
+				"config-only": {"val1"},
+				"extras-only": {"val2"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeImpersonationExtras(tt.dest, tt.src)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for k, wantV := range tt.want {
+				gotV, ok := got[k]
+				if !ok {
+					t.Fatalf("missing key %q in result", k)
+				}
+				if len(gotV) != len(wantV) {
+					t.Fatalf("got[%q] = %v, want %v", k, gotV, wantV)
+				}
+				for i := range wantV {
+					if gotV[i] != wantV[i] {
+						t.Fatalf("got[%q][%d] = %q, want %q", k, i, gotV[i], wantV[i])
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestAllResourceListsForbidden(t *testing.T) {
 	forbiddenErr := apierrors.NewForbidden(
 		schema.GroupResource{Resource: "configmaps"},

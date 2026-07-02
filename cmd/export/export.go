@@ -172,6 +172,21 @@ func allResourceListsForbidden(resources []*groupResource, resourceErrs []*group
 	return true
 }
 
+// mergeImpersonationExtras merges src into dest, appending values for shared keys.
+// This preserves extras already set by ToRESTConfig() alongside --as-extras flag values.
+func mergeImpersonationExtras(dest, src map[string][]string) map[string][]string {
+	if len(src) == 0 {
+		return dest
+	}
+	if dest == nil {
+		return src
+	}
+	for k, v := range src {
+		dest[k] = append(dest[k], v...)
+	}
+	return dest
+}
+
 // Run performs discovery, lists resources, filters cluster-scoped RBAC to related
 // ServiceAccounts, writes YAML under exportDir, and returns an aggregate of non-fatal write errors.
 func (o *ExportOptions) Run() error {
@@ -185,8 +200,7 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
-	// user/group impersonation is handled from genericclioptions.ConfigFlags
-	restConfig.Impersonate.Extra = o.extras
+	restConfig.Impersonate.Extra = mergeImpersonationExtras(restConfig.Impersonate.Extra, o.extras)
 	restConfig.Burst = o.Burst
 	restConfig.QPS = o.QPS
 
@@ -241,21 +255,33 @@ func (o *ExportOptions) Run() error {
 
 	var errs []error
 
-	resources, resourceErrs := resourceToExtract(o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
+	// Pass restConfig.Timeout to child functions for per-request timeout enforcement
+	requestTimeout := restConfig.Timeout
+
+	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
 
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 
-	crdResources, crdErrs := collectRelatedCRDs(resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
+	crdResources, crdErrs := collectRelatedCRDs(requestTimeout, resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
-	if hasClusterScopedManifests(resources) {
-		if err = os.MkdirAll(clusterResourceDir, 0700); err != nil {
-			log.Errorf("error creating cluster resources directory: %#v", err)
-			return err
+	// Check if any resource errors are timeout errors and fail fast with exit code 1
+	// Do this before writing any files to avoid partial exports
+	for _, resErr := range resourceErrs {
+		if resErr != nil && resErr.Error != nil {
+			if apierrors.IsTimeout(resErr.Error) || strings.Contains(resErr.Error.Error(), "context deadline exceeded") {
+				return resErr.Error
+			}
 		}
+	}
+
+	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
+	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
+		log.Errorf("error preparing cluster resources directory: %#v", err)
+		return err
 	}
 
 	//count and log the no of crds
@@ -304,7 +330,12 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 			if err := o.Validate(); err != nil {
 				return err
 			}
+			c.SilenceUsage = true
 			if err := o.Run(); err != nil {
+				// Silence usage on timeout errors (network errors, not user input errors)
+				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
+					c.SilenceUsage = true
+				}
 				return err
 			}
 

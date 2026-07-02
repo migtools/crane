@@ -26,12 +26,6 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 			config.TargetContext,
 		)
 
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for this test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for this test")
-		}
 
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
@@ -51,7 +45,7 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 		}
 
 		By("Grant namespace-admin permissions to non-admin user on source and target")
-		kubectlSrcNonAdmin, _, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, _, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")
