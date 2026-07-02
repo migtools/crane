@@ -27,12 +27,6 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		clusterRoleBindingName := "crane-e2e-pod-reader-binding"
 		clusterRoleName := "crane-e2e-pod-reader"
 		deniedResources := []string{"clusterroles.yaml", "clusterrolebindings.yaml"}
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin role migration test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin role migration test")
-		}
 		srcAppNonAdmin := scenario.SrcAppNonAdmin
 		tgtAppNonAdmin := scenario.TgtAppNonAdmin
 
@@ -58,7 +52,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		cr := ClusterRole{Name: clusterRoleName, Verb: "get,list,watch", Resource: "pods"}
 
 		By("Granting namespace-admin permissions to non-admin user on source and target")
-		kubectlSrcNonAdmin, kubectlTgtNonAdmin, rbacCleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 
 		DeferCleanup(rbacCleanup)

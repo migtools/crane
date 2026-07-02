@@ -108,12 +108,6 @@ var _ = Describe("MongoDB Migration", func() {
 			config.TargetContext,
 		)
 
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin stateful migration test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin stateful migration test")
-		}
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
@@ -126,7 +120,7 @@ var _ = Describe("MongoDB Migration", func() {
 		}
 
 		By("Grant namespace admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 
 		DeferCleanup(func() {

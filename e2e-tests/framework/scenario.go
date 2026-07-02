@@ -26,7 +26,16 @@ type MigrationScenario struct {
 }
 
 // NewMigrationScenario builds shared runners and app objects for a migration test.
+// When config.RunAs == "admin", the NonAdmin fields are populated with admin contexts
+// so all test code using those fields automatically runs with cluster-admin credentials.
 func NewMigrationScenario(appName, namespace, k8sDeployBin, craneBin, srcCtx, tgtCtx string) MigrationScenario {
+	srcNonAdminCtx := config.SourceNonAdminContext
+	tgtNonAdminCtx := config.TargetNonAdminContext
+	if config.RunAs == "admin" {
+		srcNonAdminCtx = srcCtx
+		tgtNonAdminCtx = tgtCtx
+	}
+
 	return MigrationScenario{
 		AppName:   appName,
 		Namespace: namespace,
@@ -48,27 +57,27 @@ func NewMigrationScenario(appName, namespace, k8sDeployBin, craneBin, srcCtx, tg
 			Name:            appName,
 			Namespace:       namespace,
 			Bin:             k8sDeployBin,
-			Context:         config.SourceNonAdminContext,
+			Context:         srcNonAdminCtx,
 			InsecureSkipTLS: config.InsecureSkipTLSVerify,
 		},
 		TgtAppNonAdmin: K8sDeployApp{
 			Name:            appName,
 			Namespace:       namespace,
 			Bin:             k8sDeployBin,
-			Context:         config.TargetNonAdminContext,
+			Context:         tgtNonAdminCtx,
 			InsecureSkipTLS: config.InsecureSkipTLSVerify,
 		},
 		KubectlSrc:         KubectlRunner{Bin: "kubectl", Context: srcCtx},
 		KubectlTgt:         KubectlRunner{Bin: "kubectl", Context: tgtCtx},
-		KubectlSrcNonAdmin: KubectlRunner{Bin: "kubectl", Context: config.SourceNonAdminContext},
-		KubectlTgtNonAdmin: KubectlRunner{Bin: "kubectl", Context: config.TargetNonAdminContext},
+		KubectlSrcNonAdmin: KubectlRunner{Bin: "kubectl", Context: srcNonAdminCtx},
+		KubectlTgtNonAdmin: KubectlRunner{Bin: "kubectl", Context: tgtNonAdminCtx},
 		Crane: CraneRunner{
 			Bin:           craneBin,
 			SourceContext: srcCtx,
 		},
 		CraneNonAdmin: CraneRunner{
 			Bin:           craneBin,
-			SourceContext: config.SourceNonAdminContext,
+			SourceContext: srcNonAdminCtx,
 		},
 	}
 }
