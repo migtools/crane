@@ -12,70 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// fixPVCPermissionsViaJob spawns a temporary busybox pod to make mountPath
-// world-readable/executable so that crane's rsync pod (uid 1000) can traverse
-// directories written by MongoDB (uid 999, mode 0700).
-//
-// This must run AFTER the MongoDB deployment is scaled to zero — the MongoDB
-// pod must not be running when this executes, because WiredTiger will write new
-// checkpoint files (e.g. WiredTiger.turtle) with mode 700 after the chmod if
-// MongoDB is still active, and rsync will silently skip those files.
-//
-// TODO: Remove once crane rsync pods support supplemental groups.
-// See https://github.com/migtools/crane/issues/213.
-func fixPVCPermissionsViaJob(k KubectlRunner, namespace, pvcName, mountPath string) error {
-	podSpec := fmt.Sprintf(`
-apiVersion: v1
-kind: Pod
-metadata:
-  name: fix-pvc-perms
-  namespace: %s
-spec:
-  restartPolicy: Never
-  containers:
-  - name: fix
-    image: busybox
-    command: ["chmod", "-R", "o+rx", "%s"]
-    volumeMounts:
-    - name: data
-      mountPath: %s
-    securityContext:
-      runAsUser: 0
-  volumes:
-  - name: data
-    persistentVolumeClaim:
-      claimName: %s
-`, namespace, mountPath, mountPath, pvcName)
-
-	if err := k.ApplyYAMLSpec(podSpec, namespace); err != nil {
-		return fmt.Errorf("failed to create fix-pvc-perms pod: %w", err)
-	}
-	if _, err := k.Run(
-		"wait", "pod", "fix-pvc-perms",
-		"-n", namespace,
-		"--for=jsonpath={.status.phase}=Succeeded",
-		"--timeout=60s",
-	); err != nil {
-		return fmt.Errorf("fix-pvc-perms pod did not succeed: %w", err)
-	}
-	// Verify it actually succeeded and didn't just time out in a non-Failed state
-	phase, err := k.Run(
-		"get", "pod", "fix-pvc-perms",
-		"-n", namespace,
-		"-o", "jsonpath={.status.phase}",
-	)
-	if err != nil {
-		return fmt.Errorf("failed to get fix-pvc-perms pod phase: %w", err)
-	}
-	if strings.TrimSpace(phase) != "Succeeded" {
-		return fmt.Errorf("fix-pvc-perms pod ended in phase %q, expected Succeeded", phase)
-	}
-	if _, err := k.Run("delete", "pod", "fix-pvc-perms", "-n", namespace); err != nil {
-		return fmt.Errorf("failed to delete fix-pvc-perms pod: %w", err)
-	}
-	return nil
-}
-
 // mongoDocumentCount returns the number of documents in sampledb.test_db via
 // mongosh exec into the given pod.
 func mongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error) {
@@ -175,10 +111,6 @@ var _ = Describe("MongoDB Migration", func() {
 		log.Printf("Source document count: %d", srcCount)
 
 		By("Scale down source MongoDB deployment")
-		// Must scale down BEFORE fixing permissions — if MongoDB is still running
-		// after chmod, WiredTiger will write new checkpoint files (e.g.
-		// WiredTiger.turtle) with mode 700, which rsync (uid 1000) cannot read,
-		// causing a silent empty transfer.
 		Expect(kubectlSrcNonAdmin.ScaleDeploymentIfPresent(namespace, appName, 0)).NotTo(HaveOccurred())
 
 		_, err = scenario.KubectlSrc.Run(
@@ -190,11 +122,6 @@ var _ = Describe("MongoDB Migration", func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Source deployment scaled down and pod terminated")
-
-		// todo: remove this once crane rsync pods support supplemental groups.
-		By("[BUG #213] Fix source PVC permissions after scale-down")
-		Expect(fixPVCPermissionsViaJob(scenario.KubectlSrc, namespace, "mongodb-data", "/data/db")).NotTo(HaveOccurred())
-		log.Printf("Source PVC permissions fixed")
 
 		By("Run crane export/transform/apply pipeline")
 		runner.WorkDir = paths.TempDir

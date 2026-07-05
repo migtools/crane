@@ -3,6 +3,7 @@ package transfer_pvc
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
@@ -536,7 +537,7 @@ func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*cor
 	if annotationVal, found := ns.Annotations[securityv1.UIDRangeAnnotation]; found {
 		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
 		if err != nil {
-			return nil, nil
+			return ps, fmt.Errorf("parsing UID range annotation: %w", err)
 		}
 		min := int64(uidBlock.Start)
 		ps.RunAsUser = &min
@@ -544,7 +545,7 @@ func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*cor
 	if annotationVal, found := ns.Annotations[securityv1.SupplementalGroupsAnnotation]; found {
 		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
 		if err != nil {
-			return nil, nil
+			return ps, fmt.Errorf("parsing supplemental groups annotation: %w", err)
 		}
 		min := int64(uidBlock.Start)
 		ps.RunAsGroup = &min
@@ -588,7 +589,11 @@ func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*cor
 func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
 	// Deployments
 	var deployments appsv1.DeploymentList
-	if err := c.List(context.TODO(), &deployments, client.InNamespace(namespace)); err == nil {
+	if err := c.List(context.TODO(), &deployments, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing deployments: %w", err)
+		}
+	} else {
 		for _, d := range deployments.Items {
 			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
 				return extractPodSecurityContext(d.Spec.Template.Spec), nil
@@ -598,13 +603,17 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 
 	// StatefulSets
 	var statefulSets appsv1.StatefulSetList
-	if err := c.List(context.TODO(), &statefulSets, client.InNamespace(namespace)); err == nil {
+	if err := c.List(context.TODO(), &statefulSets, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing statefulsets: %w", err)
+		}
+	} else {
 		for _, s := range statefulSets.Items {
 			if podSpecReferencesPVC(s.Spec.Template.Spec, pvcName) {
 				return extractPodSecurityContext(s.Spec.Template.Spec), nil
 			}
 			for _, vct := range s.Spec.VolumeClaimTemplates {
-				if pvcName == fmt.Sprintf("%s-%s-", vct.Name, s.Name) || strings.HasPrefix(pvcName, fmt.Sprintf("%s-%s-", vct.Name, s.Name)) {
+				if strings.HasPrefix(pvcName, fmt.Sprintf("%s-%s-", vct.Name, s.Name)) {
 					return extractPodSecurityContext(s.Spec.Template.Spec), nil
 				}
 			}
@@ -613,7 +622,11 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 
 	// DaemonSets
 	var daemonSets appsv1.DaemonSetList
-	if err := c.List(context.TODO(), &daemonSets, client.InNamespace(namespace)); err == nil {
+	if err := c.List(context.TODO(), &daemonSets, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing daemonsets: %w", err)
+		}
+	} else {
 		for _, d := range daemonSets.Items {
 			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
 				return extractPodSecurityContext(d.Spec.Template.Spec), nil
@@ -623,7 +636,11 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 
 	// ReplicaSets
 	var replicaSets appsv1.ReplicaSetList
-	if err := c.List(context.TODO(), &replicaSets, client.InNamespace(namespace)); err == nil {
+	if err := c.List(context.TODO(), &replicaSets, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing replicasets: %w", err)
+		}
+	} else {
 		for _, r := range replicaSets.Items {
 			if len(r.OwnerReferences) > 0 {
 				continue
@@ -636,7 +653,11 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 
 	// Jobs
 	var jobs batchv1.JobList
-	if err := c.List(context.TODO(), &jobs, client.InNamespace(namespace)); err == nil {
+	if err := c.List(context.TODO(), &jobs, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing jobs: %w", err)
+		}
+	} else {
 		for _, j := range jobs.Items {
 			if podSpecReferencesPVC(j.Spec.Template.Spec, pvcName) {
 				return extractPodSecurityContext(j.Spec.Template.Spec), nil
@@ -646,7 +667,11 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 
 	// CronJobs
 	var cronJobs batchv1.CronJobList
-	if err := c.List(context.TODO(), &cronJobs, client.InNamespace(namespace)); err == nil {
+	if err := c.List(context.TODO(), &cronJobs, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing cronjobs: %w", err)
+		}
+	} else {
 		for _, cj := range cronJobs.Items {
 			if podSpecReferencesPVC(cj.Spec.JobTemplate.Spec.Template.Spec, pvcName) {
 				return extractPodSecurityContext(cj.Spec.JobTemplate.Spec.Template.Spec), nil
@@ -691,7 +716,7 @@ func extractPodSecurityContext(spec corev1.PodSpec) *corev1.PodSecurityContext {
 // reads file ownership using stat. Returns the UID of the first non-root
 // file owner found, or nil if no non-root owner is detected.
 func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) (*int64, error) {
-	podName := fmt.Sprintf("crane-inspect-%x", md5.Sum([]byte(pvcName)))
+	podName := fmt.Sprintf("crane-inspect-%x", sha256.Sum256([]byte(pvcName)))
 	if len(podName) > 63 {
 		podName = podName[:63]
 	}
@@ -707,11 +732,27 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) 
 				{
 					Name:  "inspect",
 					Image: "busybox",
+					SecurityContext: func() *corev1.SecurityContext {
+						t, f := true, false
+						return &corev1.SecurityContext{
+							RunAsNonRoot:             &t,
+							AllowPrivilegeEscalation: &f,
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{"ALL"},
+							},
+							SeccompProfile: &corev1.SeccompProfile{
+								Type: corev1.SeccompProfileTypeRuntimeDefault,
+							},
+						}
+					}(),
 					Command: []string{"sh", "-c",
 						`ROOT_UID=$(stat -c '%u' /mnt/pvc); ` +
 							`if [ "$ROOT_UID" != "0" ]; then echo -n "$ROOT_UID" > /dev/termination-log; exit 0; fi; ` +
-							`FOUND=$(find /mnt/pvc -mindepth 1 -maxdepth 1 ! -user root -printf '%U\n' -quit 2>/dev/null); ` +
-							`if [ -n "$FOUND" ]; then echo -n "$FOUND" > /dev/termination-log; exit 0; fi; ` +
+							`for f in /mnt/pvc/* /mnt/pvc/.*; do ` +
+							`  [ -e "$f" ] || continue; ` +
+							`  OWNER=$(stat -c '%u' "$f" 2>/dev/null); ` +
+							`  if [ -n "$OWNER" ] && [ "$OWNER" != "0" ]; then echo -n "$OWNER" > /dev/termination-log; exit 0; fi; ` +
+							`done; ` +
 							`exit 0`,
 					},
 					VolumeMounts: []corev1.VolumeMount{
