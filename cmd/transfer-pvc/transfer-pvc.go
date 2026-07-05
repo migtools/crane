@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -391,9 +394,22 @@ func (t *TransferPVCCommand) run() error {
 	destPVCList := transfer.NewSingletonPVC(destPVC)
 	srcPVCList := transfer.NewSingletonPVC(srcPVC)
 
-	serverPodSecContext, err := getRsyncServerPodSecurityContext(destClient, destPVC.Namespace)
+	// Compute source security context first — used for rsync client, and
+	// as fallback for rsync server on K8s (where target may not have the
+	// workload deployed yet).
+	clientPodSecCtx, err := getRsyncClientPodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name)
+	if err != nil {
+		log.Fatal(err, "error creating security context for rsync client")
+	}
+
+	serverPodSecContext, err := getRsyncServerPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name)
 	if err != nil {
 		log.Fatal(err, "error creating security context for rsync server")
+	}
+	// On K8s, if the target has no OCP annotation and no workload deployed
+	// yet, fall back to the source-discovered UID.
+	if serverPodSecContext.RunAsUser == nil && clientPodSecCtx.RunAsUser != nil {
+		serverPodSecContext = clientPodSecCtx
 	}
 
 	trueBool := bool(true)
@@ -414,7 +430,9 @@ func (t *TransferPVCCommand) run() error {
 				},
 			},
 			PodSecurityContext: corev1.PodSecurityContext{
-				FSGroup: serverPodSecContext.FSGroup,
+				RunAsUser:  serverPodSecContext.RunAsUser,
+				RunAsGroup: serverPodSecContext.RunAsGroup,
+				FSGroup:    serverPodSecContext.FSGroup,
 			},
 			Image: t.Flags.DestinationImage,
 		},
@@ -437,11 +455,6 @@ func (t *TransferPVCCommand) run() error {
 		log.Fatal(err, "failed to find node name")
 	}
 
-	clientPodSecCtx, err := getRsyncClientPodSecurityContext(srcClient, srcPVC.Namespace)
-	if err != nil {
-		log.Fatal(err, "error creating security context for rsync server")
-	}
-
 	_, err = rsynctransfer.NewClient(
 		context.TODO(),
 		srcClient, srcPVCList, stunnelClient, logger, "rsync-client", labels, nil,
@@ -458,11 +471,12 @@ func (t *TransferPVCCommand) run() error {
 					Drop: []corev1.Capability{"ALL"},
 				},
 				RunAsNonRoot:             &trueBool,
-				RunAsUser:                clientPodSecCtx.RunAsUser,
 				AllowPrivilegeEscalation: &falseBool,
 			},
 			PodSecurityContext: corev1.PodSecurityContext{
-				FSGroup: clientPodSecCtx.FSGroup,
+				RunAsUser:  clientPodSecCtx.RunAsUser,
+				RunAsGroup: clientPodSecCtx.RunAsGroup,
+				FSGroup:    clientPodSecCtx.FSGroup,
 			},
 			Image: t.Flags.SourceImage,
 		},
@@ -512,10 +526,10 @@ func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string
 	return "", nil
 }
 
-func getIDsForNamespace(client client.Client, namespace string) (*corev1.SecurityContext, error) {
-	ctx := &corev1.SecurityContext{}
+func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+	ps := &corev1.PodSecurityContext{}
 	ns := &corev1.Namespace{}
-	err := client.Get(context.TODO(), types.NamespacedName{Name: namespace}, ns)
+	err := c.Get(context.TODO(), types.NamespacedName{Name: namespace}, ns)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +539,7 @@ func getIDsForNamespace(client client.Client, namespace string) (*corev1.Securit
 			return nil, nil
 		}
 		min := int64(uidBlock.Start)
-		ctx.RunAsUser = &min
+		ps.RunAsUser = &min
 	}
 	if annotationVal, found := ns.Annotations[securityv1.SupplementalGroupsAnnotation]; found {
 		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
@@ -533,33 +547,238 @@ func getIDsForNamespace(client client.Client, namespace string) (*corev1.Securit
 			return nil, nil
 		}
 		min := int64(uidBlock.Start)
-		ctx.RunAsGroup = &min
+		ps.RunAsGroup = &min
+		ps.FSGroup = &min
 	}
-	return ctx, nil
-}
 
-func getRsyncClientPodSecurityContext(client client.Client, namespace string) (*corev1.PodSecurityContext, error) {
-	ps := &corev1.PodSecurityContext{}
-	ctx, err := getIDsForNamespace(client, namespace)
-	if err != nil {
-		return ps, err
+	if ps.RunAsUser != nil {
+		return ps, nil
 	}
-	ps.RunAsUser = ctx.RunAsUser
-	ps.RunAsGroup = ctx.RunAsGroup
-	ps.FSGroup = ctx.RunAsGroup
+
+	// Fallback 1: no OCP namespace annotation found (vanilla K8s).
+	// Read securityContext from the workload that owns this PVC.
+	wps, err := getSecurityContextFromWorkload(c, namespace, pvcName)
+	if err != nil {
+		return ps, nil
+	}
+	if wps != nil && wps.RunAsUser != nil {
+		return wps, nil
+	}
+
+	// Fallback 2: workload has no explicit runAsUser (app relies on
+	// Dockerfile USER). Inspect file ownership on the PVC to discover
+	// the UID that wrote the data.
+	uid, err := inspectPVCFileOwnership(c, namespace, pvcName)
+	if err != nil {
+		return ps, nil
+	}
+	if uid != nil {
+		ps.RunAsUser = uid
+		ps.RunAsGroup = uid
+		ps.FSGroup = uid
+		return ps, nil
+	}
 	return ps, nil
 }
 
-func getRsyncServerPodSecurityContext(client client.Client, namespace string) (*corev1.PodSecurityContext, error) {
-	ps := &corev1.PodSecurityContext{}
-	ctx, err := getIDsForNamespace(client, namespace)
-	if err != nil {
-		return ps, err
+// getSecurityContextFromWorkload finds the workload (Deployment, StatefulSet,
+// DaemonSet, ReplicaSet, Job, or CronJob) that mounts the given PVC and
+// returns its pod-level securityContext. This is the fallback path for vanilla
+// K8s clusters that lack the OCP namespace UID annotation.
+func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+	// Deployments
+	var deployments appsv1.DeploymentList
+	if err := c.List(context.TODO(), &deployments, client.InNamespace(namespace)); err == nil {
+		for _, d := range deployments.Items {
+			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(d.Spec.Template.Spec), nil
+			}
+		}
 	}
-	ps.RunAsUser = ctx.RunAsUser
-	ps.RunAsGroup = ctx.RunAsGroup
-	ps.FSGroup = ctx.RunAsGroup
-	return ps, nil
+
+	// StatefulSets
+	var statefulSets appsv1.StatefulSetList
+	if err := c.List(context.TODO(), &statefulSets, client.InNamespace(namespace)); err == nil {
+		for _, s := range statefulSets.Items {
+			if podSpecReferencesPVC(s.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(s.Spec.Template.Spec), nil
+			}
+			for _, vct := range s.Spec.VolumeClaimTemplates {
+				if pvcName == fmt.Sprintf("%s-%s-", vct.Name, s.Name) || strings.HasPrefix(pvcName, fmt.Sprintf("%s-%s-", vct.Name, s.Name)) {
+					return extractPodSecurityContext(s.Spec.Template.Spec), nil
+				}
+			}
+		}
+	}
+
+	// DaemonSets
+	var daemonSets appsv1.DaemonSetList
+	if err := c.List(context.TODO(), &daemonSets, client.InNamespace(namespace)); err == nil {
+		for _, d := range daemonSets.Items {
+			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(d.Spec.Template.Spec), nil
+			}
+		}
+	}
+
+	// ReplicaSets
+	var replicaSets appsv1.ReplicaSetList
+	if err := c.List(context.TODO(), &replicaSets, client.InNamespace(namespace)); err == nil {
+		for _, r := range replicaSets.Items {
+			if len(r.OwnerReferences) > 0 {
+				continue
+			}
+			if podSpecReferencesPVC(r.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(r.Spec.Template.Spec), nil
+			}
+		}
+	}
+
+	// Jobs
+	var jobs batchv1.JobList
+	if err := c.List(context.TODO(), &jobs, client.InNamespace(namespace)); err == nil {
+		for _, j := range jobs.Items {
+			if podSpecReferencesPVC(j.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(j.Spec.Template.Spec), nil
+			}
+		}
+	}
+
+	// CronJobs
+	var cronJobs batchv1.CronJobList
+	if err := c.List(context.TODO(), &cronJobs, client.InNamespace(namespace)); err == nil {
+		for _, cj := range cronJobs.Items {
+			if podSpecReferencesPVC(cj.Spec.JobTemplate.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(cj.Spec.JobTemplate.Spec.Template.Spec), nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+func podSpecReferencesPVC(spec corev1.PodSpec, pvcName string) bool {
+	for _, vol := range spec.Volumes {
+		if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == pvcName {
+			return true
+		}
+	}
+	return false
+}
+
+func extractPodSecurityContext(spec corev1.PodSpec) *corev1.PodSecurityContext {
+	ps := &corev1.PodSecurityContext{}
+
+	if spec.SecurityContext != nil {
+		ps.RunAsUser = spec.SecurityContext.RunAsUser
+		ps.RunAsGroup = spec.SecurityContext.RunAsGroup
+		ps.FSGroup = spec.SecurityContext.FSGroup
+		ps.SupplementalGroups = spec.SecurityContext.SupplementalGroups
+	}
+
+	// Container-level runAsUser overrides pod-level
+	for _, c := range spec.Containers {
+		if c.SecurityContext != nil && c.SecurityContext.RunAsUser != nil {
+			ps.RunAsUser = c.SecurityContext.RunAsUser
+			break
+		}
+	}
+
+	return ps
+}
+
+// inspectPVCFileOwnership creates a temporary pod that mounts the PVC and
+// reads file ownership using stat. Returns the UID of the first non-root
+// file owner found, or nil if no non-root owner is detected.
+func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) (*int64, error) {
+	podName := fmt.Sprintf("crane-inspect-%x", md5.Sum([]byte(pvcName)))
+	if len(podName) > 63 {
+		podName = podName[:63]
+	}
+
+	inspectPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:  "inspect",
+					Image: "busybox",
+					Command: []string{"sh", "-c",
+						`ROOT_UID=$(stat -c '%u' /mnt/pvc); ` +
+							`if [ "$ROOT_UID" != "0" ]; then echo -n "$ROOT_UID" > /dev/termination-log; exit 0; fi; ` +
+							`FOUND=$(find /mnt/pvc -mindepth 1 -maxdepth 1 ! -user root -printf '%U\n' -quit 2>/dev/null); ` +
+							`if [ -n "$FOUND" ]; then echo -n "$FOUND" > /dev/termination-log; exit 0; fi; ` +
+							`exit 0`,
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: "pvc", MountPath: "/mnt/pvc"},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "pvc",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := c.Create(context.TODO(), inspectPod); err != nil {
+		return nil, fmt.Errorf("creating inspect pod: %w", err)
+	}
+
+	defer func() {
+		_ = c.Delete(context.TODO(), inspectPod)
+	}()
+
+	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 60*time.Second, true, func(ctx context.Context) (bool, error) {
+		pod := &corev1.Pod{}
+		if err := c.Get(ctx, types.NamespacedName{Name: podName, Namespace: namespace}, pod); err != nil {
+			return false, nil
+		}
+		return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("waiting for inspect pod: %w", err)
+	}
+
+	pod := &corev1.Pod{}
+	if err := c.Get(context.TODO(), types.NamespacedName{Name: podName, Namespace: namespace}, pod); err != nil {
+		return nil, fmt.Errorf("getting inspect pod status: %w", err)
+	}
+
+	if len(pod.Status.ContainerStatuses) == 0 ||
+		pod.Status.ContainerStatuses[0].State.Terminated == nil {
+		return nil, nil
+	}
+
+	msg := strings.TrimSpace(pod.Status.ContainerStatuses[0].State.Terminated.Message)
+	if msg == "" {
+		return nil, nil
+	}
+
+	uid, err := strconv.ParseInt(msg, 10, 64)
+	if err != nil {
+		return nil, nil
+	}
+	return &uid, nil
+}
+
+func getRsyncClientPodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+	return getIDsForNamespace(c, namespace, pvcName)
+}
+
+func getRsyncServerPodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+	return getIDsForNamespace(c, namespace, pvcName)
 }
 
 func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint endpointType, namespace mappedNameVar) error {
