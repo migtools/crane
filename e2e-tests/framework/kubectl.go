@@ -27,7 +27,11 @@ func (k KubectlRunner) Run(args ...string) (string, error) {
 func (k KubectlRunner) RunWithStdin(stdin string, args ...string) (string, error) {
 	return k.executeWithStdin(stdin, args...)
 }
-
+// ApplyStdin applies a YAML manifest provided as a string via stdin.
+  func (k KubectlRunner) ApplyStdin(content string) error {
+      _, err := k.RunWithStdin(content, "apply", "-f", "-")
+      return err
+  }
 // executeWithStdin executes an arbitrary kubectl command using stdin content.
 func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, error) {
 	finalArgs := append([]string{}, normalizeKubectlArgs(args...)...)

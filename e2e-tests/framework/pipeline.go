@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+    "os"
+    "path/filepath"
 
 	"github.com/konveyor/crane/e2e-tests/utils"
 	"github.com/onsi/gomega"
@@ -135,6 +137,19 @@ func ApplyOutputToTarget(kubectlTgt KubectlRunner, namespace string, outputDir s
 // ApplyOutputToTargetNonAdmin validates and applies rendered manifests without creating namespace.
 func ApplyOutputToTargetNonAdmin(kubectlTgt KubectlRunner, outputDir string) error {
 	return applyOutputManifests(kubectlTgt, outputDir)
+}
+
+// ApplyOutputToTargetWithNamespaceRemap reads output.yaml, replaces all occurrences
+func ApplyOutputToTargetWithNamespaceRemap(kubectl KubectlRunner, srcNamespace, tgtNamespace, outputDir string) error {
+      content, err := os.ReadFile(filepath.Join(outputDir, "output.yaml"))
+      if err != nil {
+          return fmt.Errorf("reading output.yaml: %w", err)
+      }
+      remapped := strings.ReplaceAll(string(content), "namespace: "+srcNamespace, "namespace: "+tgtNamespace)
+      if err := kubectl.CreateNamespace(tgtNamespace); err != nil {
+          return err
+      }
+      return kubectl.ApplyStdin(remapped)
 }
 
 func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
