@@ -124,9 +124,10 @@ var _ = Describe("Ordered apply for Role and RoleBinding migration", func() {
 		Expect(rbMatches).NotTo(BeEmpty(), "expected ordered RoleBinding manifest (310_RoleBinding_*) in output dir")
 		log.Printf("Ordered RoleBinding manifests in output: %v\n", rbMatches)
 
+		namespaceResourcesDir := filepath.Join(paths.OutputDir, "resources", namespace)
 		By("Apply rendered manifests to target in a single pass (ordering must resolve the dependency)")
-		log.Printf("Single apply pass for namespace %s using ordered output\n", namespace)
-		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
+		log.Printf("Single apply pass for namespace %s using ordered output dir %s\n", namespace, namespaceResourcesDir)
+		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, namespaceResourcesDir)).NotTo(HaveOccurred())
 
 		By("Scale target deployment and validate app is running")
 		log.Printf("Scaling target deployment(s) with label app=%s to 1\n", appName)
