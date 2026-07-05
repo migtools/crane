@@ -47,7 +47,7 @@ var _ = Describe("Same-cluster namespace migration", func() {
 			}
 			By("Delete source and target namespaces")
 			for _, ns := range []string{srcNamespace, tgtNamespace} {
-               if _, err := kubectlSrc.Run("delete", "namespace", ns, "--ignore-not-found=true", "--wait=true"); err != nil {
+               if _, err := kubectlSrc.Run("delete", "namespace", ns, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {
 				log.Printf("cleanup: %v", err)
 			 } 
             }

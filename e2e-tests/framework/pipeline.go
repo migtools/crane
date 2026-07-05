@@ -145,7 +145,7 @@ func ApplyOutputToTargetWithNamespaceRemap(kubectl KubectlRunner, srcNamespace, 
       if err != nil {
           return fmt.Errorf("reading output.yaml: %w", err)
       }
-      remapped := strings.ReplaceAll(string(content), "namespace: "+srcNamespace, "namespace: "+tgtNamespace)
+      remapped := strings.ReplaceAll(string(content), "namespace: "+srcNamespace+"\n", "namespace: "+tgtNamespace+"\n")
       if err := kubectl.CreateNamespace(tgtNamespace); err != nil {
           return err
       }
