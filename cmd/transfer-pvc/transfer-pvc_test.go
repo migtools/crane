@@ -31,6 +31,15 @@ func fmtInt64Ptr(p *int64) string {
 	return fmt.Sprintf("%d", *p)
 }
 
+func newTestScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = corev1.AddToScheme(s)
+	_ = appsv1.AddToScheme(s)
+	_ = batchv1.AddToScheme(s)
+	return s
+}
+
+
 func Test_parseSourceDestinationMapping(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -292,10 +301,7 @@ func TestExtractPodSecurityContext(t *testing.T) {
 }
 
 func TestGetSecurityContextFromWorkload(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-	_ = batchv1.AddToScheme(scheme)
+	scheme := newTestScheme()
 
 	tests := []struct {
 		name          string
@@ -562,10 +568,7 @@ func TestGetSecurityContextFromWorkload(t *testing.T) {
 }
 
 func TestGetIDsForNamespace_OCPAnnotation(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-	_ = batchv1.AddToScheme(scheme)
+	scheme := newTestScheme()
 
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -591,10 +594,7 @@ func TestGetIDsForNamespace_OCPAnnotation(t *testing.T) {
 }
 
 func TestGetIDsForNamespace_WorkloadFallback(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-	_ = batchv1.AddToScheme(scheme)
+	scheme := newTestScheme()
 
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "k8s-ns"},
@@ -633,10 +633,7 @@ func TestGetIDsForNamespace_WorkloadFallback(t *testing.T) {
 }
 
 func TestGetIDsForNamespace_OCPTakesPrecedence(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-	_ = batchv1.AddToScheme(scheme)
+	scheme := newTestScheme()
 
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -674,17 +671,10 @@ func TestGetIDsForNamespace_OCPTakesPrecedence(t *testing.T) {
 	}
 }
 
-func TestGetIDsForNamespace_NoAnnotationNoWorkload(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-	_ = batchv1.AddToScheme(scheme)
+func TestGetSecurityContextFromWorkload_NoWorkloads(t *testing.T) {
+	scheme := newTestScheme()
 
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: "empty-ns"},
-	}
-
-	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(ns).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
 	got, err := getSecurityContextFromWorkload(c, "empty-ns", "some-pvc")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -695,10 +685,7 @@ func TestGetIDsForNamespace_NoAnnotationNoWorkload(t *testing.T) {
 }
 
 func TestServerFallbackToSourceUID(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-	_ = appsv1.AddToScheme(scheme)
-	_ = batchv1.AddToScheme(scheme)
+	scheme := newTestScheme()
 
 	srcNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "src-ns"}}
 
