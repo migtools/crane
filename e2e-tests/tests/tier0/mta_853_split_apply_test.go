@@ -26,7 +26,6 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		)
 		clusterRoleBindingName := "crane-e2e-pod-reader-binding"
 		clusterRoleName := "crane-e2e-pod-reader"
-		deniedResources := []string{"clusterroles.yaml", "clusterrolebindings.yaml"}
 		srcAppNonAdmin := scenario.SrcAppNonAdmin
 		tgtAppNonAdmin := scenario.TgtAppNonAdmin
 
@@ -39,6 +38,10 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 
 		kubectlSrc := scenario.KubectlSrc
 		kubectlTgt := scenario.KubectlTgt
+		deniedResources := []string{"clusterrolebindings.yaml"}
+		if !kubectlSrc.IsOpenShift() {
+			deniedResources = append(deniedResources, "clusterroles.yaml")
+		}
 		paths, err := NewScenarioPaths("crane-na1-*")
 		Expect(err).NotTo(HaveOccurred())
 		runner := scenario.CraneNonAdmin
@@ -55,6 +58,14 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		kubectlSrcNonAdmin, kubectlTgtNonAdmin, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 
+		DeferCleanup(func() {
+			By("Delete test namespace on source and target (wait for completion)")
+			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
+					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
+				}
+			}
+		})
 		DeferCleanup(rbacCleanup)
 		DeferCleanup(func() {
 			if err := ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{crb, cr}); err != nil {
@@ -82,14 +93,14 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		By("Running crane export, transform, apply as namespace-admin")
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
-		By("Verifying cluster resources failed to export (expected for namespace-admin)")
+		By("Verifying expected cluster-resource failures for the current platform")
 		Expect(utils.AssertFilesExist(filepath.Join(paths.ExportDir, "failures", namespace), deniedResources)).NotTo(HaveOccurred())
 
 		By("Verifying no cluster resources in output _cluster directory")
 		Expect(utils.AssertNoKindsInOutput(paths.OutputDir, []string{"ClusterRole", "ClusterRoleBinding"})).NotTo(HaveOccurred())
 
 		By("Applying namespace resources to target as namespace-admin")
-		Expect(kubectlTgt.ApplyDir(filepath.Join(paths.OutputDir, "resources", namespace))).NotTo(HaveOccurred())
+		Expect(kubectlTgtNonAdmin.ApplyDir(filepath.Join(paths.OutputDir, "resources", namespace))).NotTo(HaveOccurred())
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
