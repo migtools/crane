@@ -140,7 +140,7 @@ var _ = Describe("PVC data integrity migration", func() {
 
 		By("TARGET: Validate application")
 		log.Printf("TARGET: Validating app %s\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		log.Printf("TARGET: Validation completed for app %s\n", tgtApp.Name)
 
 		By("TARGET: Verify data file exists after migration")

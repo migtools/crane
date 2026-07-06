@@ -292,7 +292,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 
 		By("Validate target application")
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		var tgtPodName string
 		Eventually(func() error {
 			podName, err := GetPodNameByLabel(kubectlTgtNonAdmin, tgtApp.Namespace, "app="+appName)

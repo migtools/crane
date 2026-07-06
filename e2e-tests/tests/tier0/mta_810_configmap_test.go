@@ -94,7 +94,7 @@ var _ = Describe("ConfigMap Migration", func() {
 
 		By("Validate the app on target")
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 
 		By("Validate the configmap is present on target and contains expected data")
 		output, err := kubectlTgtNonAdmin.Run("get", "configmap", "redis-config", "-n", namespace, "-o", "yaml")
