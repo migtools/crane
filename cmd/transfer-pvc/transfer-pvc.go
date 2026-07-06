@@ -560,6 +560,7 @@ func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*cor
 	// Read securityContext from the workload that owns this PVC.
 	wps, err := getSecurityContextFromWorkload(c, namespace, pvcName)
 	if err != nil {
+		log.Printf("workload security context lookup failed for PVC %s/%s: %v", namespace, pvcName, err)
 		return ps, nil
 	}
 	if wps != nil && wps.RunAsUser != nil {
@@ -571,6 +572,7 @@ func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*cor
 	// the UID that wrote the data.
 	uid, err := inspectPVCFileOwnership(c, namespace, pvcName)
 	if err != nil {
+		log.Printf("PVC file ownership inspection failed for %s/%s: %v", namespace, pvcName, err)
 		return ps, nil
 	}
 	if uid != nil {
@@ -596,7 +598,7 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 	} else {
 		for _, d := range deployments.Items {
 			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
-				return extractPodSecurityContext(d.Spec.Template.Spec), nil
+				return extractPodSecurityContext(d.Spec.Template.Spec, pvcName), nil
 			}
 		}
 	}
@@ -610,11 +612,15 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 	} else {
 		for _, s := range statefulSets.Items {
 			if podSpecReferencesPVC(s.Spec.Template.Spec, pvcName) {
-				return extractPodSecurityContext(s.Spec.Template.Spec), nil
+				return extractPodSecurityContext(s.Spec.Template.Spec, pvcName), nil
 			}
 			for _, vct := range s.Spec.VolumeClaimTemplates {
-				if strings.HasPrefix(pvcName, fmt.Sprintf("%s-%s-", vct.Name, s.Name)) {
-					return extractPodSecurityContext(s.Spec.Template.Spec), nil
+				prefix := fmt.Sprintf("%s-%s-", vct.Name, s.Name)
+				if strings.HasPrefix(pvcName, prefix) {
+					suffix := pvcName[len(prefix):]
+					if _, err := strconv.Atoi(suffix); err == nil {
+						return extractPodSecurityContext(s.Spec.Template.Spec, pvcName), nil
+					}
 				}
 			}
 		}
@@ -629,7 +635,7 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 	} else {
 		for _, d := range daemonSets.Items {
 			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
-				return extractPodSecurityContext(d.Spec.Template.Spec), nil
+				return extractPodSecurityContext(d.Spec.Template.Spec, pvcName), nil
 			}
 		}
 	}
@@ -646,7 +652,7 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 				continue
 			}
 			if podSpecReferencesPVC(r.Spec.Template.Spec, pvcName) {
-				return extractPodSecurityContext(r.Spec.Template.Spec), nil
+				return extractPodSecurityContext(r.Spec.Template.Spec, pvcName), nil
 			}
 		}
 	}
@@ -660,7 +666,7 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 	} else {
 		for _, j := range jobs.Items {
 			if podSpecReferencesPVC(j.Spec.Template.Spec, pvcName) {
-				return extractPodSecurityContext(j.Spec.Template.Spec), nil
+				return extractPodSecurityContext(j.Spec.Template.Spec, pvcName), nil
 			}
 		}
 	}
@@ -674,7 +680,7 @@ func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName s
 	} else {
 		for _, cj := range cronJobs.Items {
 			if podSpecReferencesPVC(cj.Spec.JobTemplate.Spec.Template.Spec, pvcName) {
-				return extractPodSecurityContext(cj.Spec.JobTemplate.Spec.Template.Spec), nil
+				return extractPodSecurityContext(cj.Spec.JobTemplate.Spec.Template.Spec, pvcName), nil
 			}
 		}
 	}
@@ -691,7 +697,7 @@ func podSpecReferencesPVC(spec corev1.PodSpec, pvcName string) bool {
 	return false
 }
 
-func extractPodSecurityContext(spec corev1.PodSpec) *corev1.PodSecurityContext {
+func extractPodSecurityContext(spec corev1.PodSpec, pvcName ...string) *corev1.PodSecurityContext {
 	ps := &corev1.PodSecurityContext{}
 
 	if spec.SecurityContext != nil {
@@ -701,11 +707,30 @@ func extractPodSecurityContext(spec corev1.PodSpec) *corev1.PodSecurityContext {
 		ps.SupplementalGroups = spec.SecurityContext.SupplementalGroups
 	}
 
-	// Container-level runAsUser overrides pod-level
+	// Find which containers mount the PVC to pick the right runAsUser
+	pvcMounters := make(map[string]bool)
+	if len(pvcName) > 0 && pvcName[0] != "" {
+		for _, vol := range spec.Volumes {
+			if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == pvcName[0] {
+				for _, c := range spec.Containers {
+					for _, vm := range c.VolumeMounts {
+						if vm.Name == vol.Name {
+							pvcMounters[c.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Container-level runAsUser overrides pod-level — prefer the
+	// container that mounts the PVC, fall back to first with runAsUser
 	for _, c := range spec.Containers {
 		if c.SecurityContext != nil && c.SecurityContext.RunAsUser != nil {
-			ps.RunAsUser = c.SecurityContext.RunAsUser
-			break
+			if len(pvcMounters) == 0 || pvcMounters[c.Name] {
+				ps.RunAsUser = c.SecurityContext.RunAsUser
+				break
+			}
 		}
 	}
 
@@ -715,6 +740,13 @@ func extractPodSecurityContext(spec corev1.PodSpec) *corev1.PodSecurityContext {
 // inspectPVCFileOwnership creates a temporary pod that mounts the PVC and
 // reads file ownership using stat. Returns the UID of the first non-root
 // file owner found, or nil if no non-root owner is detected.
+//
+// The pod runs as UID 65534 (nobody). It first stats the PVC mount point
+// itself — this works even if the directory is 0700 because stat reads
+// from the parent. If the mount point is root-owned, it iterates entries
+// inside (requires the mount point to be listable, which is the common
+// case for PVC roots provisioned as 0755/0777). If the mount point is
+// 0700 root-owned, the glob will fail and the function returns nil.
 func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) (*int64, error) {
 	podName := fmt.Sprintf("crane-inspect-%x", sha256.Sum256([]byte(pvcName)))
 	if len(podName) > 63 {
@@ -731,7 +763,7 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) 
 			Containers: []corev1.Container{
 				{
 					Name:  "inspect",
-					Image: "busybox",
+					Image: "busybox:1.37",
 					SecurityContext: func() *corev1.SecurityContext {
 						t, f := true, false
 						nobodyUID := int64(65534)
