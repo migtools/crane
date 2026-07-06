@@ -184,7 +184,7 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 // If Endpoint is empty, it auto-detects: "route" on OpenShift, "nginx-ingress" on vanilla K8s.
 func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 	if opts.Endpoint == "" {
-		tgt := KubectlRunner{Context: opts.TargetContext}
+		tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
 		if tgt.IsOpenShift() {
 			opts.Endpoint = "route"
 		} else {
