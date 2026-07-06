@@ -177,8 +177,6 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 				TargetContext:   scenario.TgtApp.Context,
 				PVCName:         pvc.Name,
 				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Endpoint:        "nginx-ingress",
-				IngressClass:    "nginx",
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s -> namespace %s on target\n", pvc.Name, tgtApp.Namespace)
