@@ -1202,10 +1202,10 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
       }
 
       var parts []string
-      for _, doc := range docs {
+      for i, doc := range docs {
           obj, ok := doc.(map[string]any)
           if !ok {
-              continue
+              return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
           }
           if meta, ok := obj["metadata"].(map[string]any); ok {
               if meta["namespace"] == srcNamespace {
