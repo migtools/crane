@@ -537,19 +537,21 @@ func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*cor
 	if annotationVal, found := ns.Annotations[securityv1.UIDRangeAnnotation]; found {
 		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
 		if err != nil {
-			return ps, fmt.Errorf("parsing UID range annotation: %w", err)
+			log.Printf("malformed UID range annotation %q in namespace %s: %v, falling back to workload discovery", annotationVal, namespace, err)
+		} else {
+			min := int64(uidBlock.Start)
+			ps.RunAsUser = &min
 		}
-		min := int64(uidBlock.Start)
-		ps.RunAsUser = &min
 	}
 	if annotationVal, found := ns.Annotations[securityv1.SupplementalGroupsAnnotation]; found {
 		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
 		if err != nil {
-			return ps, fmt.Errorf("parsing supplemental groups annotation: %w", err)
+			log.Printf("malformed supplemental groups annotation %q in namespace %s: %v", annotationVal, namespace, err)
+		} else {
+			min := int64(uidBlock.Start)
+			ps.RunAsGroup = &min
+			ps.FSGroup = &min
 		}
-		min := int64(uidBlock.Start)
-		ps.RunAsGroup = &min
-		ps.FSGroup = &min
 	}
 
 	if ps.RunAsUser != nil {
@@ -831,10 +833,15 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) 
 
 	if len(pod.Status.ContainerStatuses) == 0 ||
 		pod.Status.ContainerStatuses[0].State.Terminated == nil {
-		return nil, nil
+		return nil, fmt.Errorf("inspect pod %s/%s did not terminate normally", namespace, podName)
 	}
 
-	msg := strings.TrimSpace(pod.Status.ContainerStatuses[0].State.Terminated.Message)
+	terminated := pod.Status.ContainerStatuses[0].State.Terminated
+	if terminated.ExitCode != 0 {
+		return nil, fmt.Errorf("inspect pod %s/%s failed with exit code %d: %s", namespace, podName, terminated.ExitCode, terminated.Reason)
+	}
+
+	msg := strings.TrimSpace(terminated.Message)
 	if msg == "" {
 		return nil, nil
 	}
