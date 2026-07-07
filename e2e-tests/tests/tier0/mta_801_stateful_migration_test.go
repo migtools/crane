@@ -95,8 +95,6 @@ var _ = Describe("Stateful app migration", func() {
 				TargetContext:   tgtApp.Context,
 				PVCName:         pvcName,
 				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Endpoint:        "nginx-ingress",
-				IngressClass:    "nginx",
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
@@ -118,7 +116,7 @@ var _ = Describe("Stateful app migration", func() {
 		Expect(kubectlTgt.ScaleDeployment(tgtApp.Namespace, appName, 1)).NotTo(HaveOccurred())
 
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
 
 	})

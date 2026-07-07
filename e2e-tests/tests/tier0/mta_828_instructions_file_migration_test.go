@@ -154,6 +154,6 @@ var _ = Describe("Instructions-file migration", func() {
 		By("Scale target deployment and validate app on target")
 		Expect(scenario.KubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 	})
 })

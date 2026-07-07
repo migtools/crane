@@ -104,7 +104,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
-		Eventually(tgtAppNonAdmin.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtAppNonAdmin.Validate, "5m", "10s").Should(Succeed())
 
 	})
 

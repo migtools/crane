@@ -181,7 +181,20 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 }
 
 // TransferPVC runs crane transfer-pvc with the provided transfer options.
+// If Endpoint is empty, it auto-detects: "route" on OpenShift, "nginx-ingress" on vanilla K8s.
 func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
+	if opts.Endpoint == "" {
+		tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
+		if tgt.IsOpenShift() {
+			opts.Endpoint = "route"
+		} else {
+			opts.Endpoint = "nginx-ingress"
+			if opts.IngressClass == "" {
+				opts.IngressClass = "nginx"
+			}
+		}
+	}
+
 	args := []string{"transfer-pvc",
 		"--source-context",
 		opts.SourceContext,
@@ -189,8 +202,10 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 		"--pvc-name", opts.PVCName,
 		"--pvc-namespace", opts.PVCNamespaceMap,
 		"--endpoint", opts.Endpoint,
-		"--ingress-class", opts.IngressClass,
-		"--subdomain", opts.Subdomain,
+	}
+	if opts.Endpoint != "route" {
+		args = append(args, "--ingress-class", opts.IngressClass)
+		args = append(args, "--subdomain", opts.Subdomain)
 	}
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)

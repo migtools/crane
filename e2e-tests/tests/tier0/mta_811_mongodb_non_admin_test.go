@@ -220,8 +220,6 @@ var _ = Describe("MongoDB Migration", func() {
 				TargetContext:   tgtApp.Context,
 				PVCName:         pvc.Name,
 				PVCNamespaceMap: fmt.Sprintf("%s:%s", namespace, namespace),
-				Endpoint:        "nginx-ingress",
-				IngressClass:    "nginx",
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, namespace, tgtIP),
 			}
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
