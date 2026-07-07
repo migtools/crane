@@ -763,13 +763,11 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) 
 			Containers: []corev1.Container{
 				{
 					Name:  "inspect",
-					Image: "busybox:1.37",
+					Image: "quay.io/konveyor/rsync-transfer:latest",
 					SecurityContext: func() *corev1.SecurityContext {
 						t, f := true, false
-						nobodyUID := int64(65534)
 						return &corev1.SecurityContext{
 							RunAsNonRoot:             &t,
-							RunAsUser:                &nobodyUID,
 							AllowPrivilegeEscalation: &f,
 							Capabilities: &corev1.Capabilities{
 								Drop: []corev1.Capability{"ALL"},
