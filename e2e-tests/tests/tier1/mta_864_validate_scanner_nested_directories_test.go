@@ -15,7 +15,7 @@ import (
 )
 
 var _ = Describe("Validate scanner nested directory behavior [Live Mode]", func() {
-	It("[MTA-XXX] should scan nested output/resources/ns1, output/resources/ns2, and output/resources/_cluster directories", Label("tier1", "validate", "admin"), func() {
+	It("[MTA-864] should scan nested output/resources/ns1, output/resources/ns2, and output/resources/_cluster directories", Label("tier1", "validate", "admin"), func() {
 		testName := "validate-scanner-nested-dirs"
 		scenario := NewMigrationScenario(
 			"scanner-nested-validate-live",
@@ -170,32 +170,53 @@ roleRef:
 		Expect(stdout).To(ContainSubstring("Result: PASSED"))
 
 		By("Verify CLI table output namespace column for each expected row")
-		assertNamespaceRow := func(apiVersion, kind, namespace, resourcePlural string) {
-			var row string
-			for _, line := range strings.Split(stdout, "\n") {
-				if strings.Contains(line, apiVersion) && strings.Contains(line, kind) {
-					row = line
-					break
-				}
-			}
-			Expect(row).NotTo(BeEmpty(), "expected stdout row for %s %s", apiVersion, kind)
-
-			fields := strings.Fields(row)
-			if namespace == "" {
-				Expect(fields).To(HaveLen(4), "expected empty namespace row shape [apiVersion kind resource status] for %s", kind)
-				Expect(fields[0]).To(Equal(apiVersion))
-				Expect(fields[1]).To(Equal(kind))
-				Expect(fields[2]).To(Equal(resourcePlural))
-				Expect(fields[3]).To(Equal(string(cranevalidate.StatusOK)))
-				return
-			}
-			Expect(fields).To(HaveLen(5), "expected namespaced row shape [apiVersion kind namespace resource status] for %s", kind)
-			Expect(fields[0]).To(Equal(apiVersion))
-			Expect(fields[1]).To(Equal(kind))
-			Expect(fields[2]).To(Equal(namespace))
-			Expect(fields[3]).To(Equal(resourcePlural))
-			Expect(fields[4]).To(Equal(string(cranevalidate.StatusOK)))
+		type parsedStdoutRow struct {
+			apiVersion string
+			kind       string
+			namespace  string
+			resource   string
+			status     string
 		}
+		parseValidateRows := func(out string) map[string]parsedStdoutRow {
+			rows := map[string]parsedStdoutRow{}
+			for _, line := range strings.Split(out, "\n") {
+				fields := strings.Fields(line)
+				if len(fields) < 4 {
+					continue
+				}
+				if strings.HasPrefix(line, "APIVERSION") ||
+					strings.HasPrefix(line, "Mode:") ||
+					strings.HasPrefix(line, "Summary:") ||
+					strings.HasPrefix(line, "Result:") {
+					continue
+				}
+
+				// namespaced row shape: [apiVersion kind namespace resource status]
+				if len(fields) >= 5 {
+					row := parsedStdoutRow{
+						apiVersion: fields[0],
+						kind:       fields[1],
+						namespace:  fields[2],
+						resource:   fields[3],
+						status:     fields[4],
+					}
+					rows[row.apiVersion+"|"+row.kind] = row
+					continue
+				}
+
+				// cluster-scoped row shape: [apiVersion kind resource status]
+				row := parsedStdoutRow{
+					apiVersion: fields[0],
+					kind:       fields[1],
+					namespace:  "",
+					resource:   fields[2],
+					status:     fields[3],
+				}
+				rows[row.apiVersion+"|"+row.kind] = row
+			}
+			return rows
+		}
+		parsedRows := parseValidateRows(stdout)
 
 		type expectedStdoutRow struct {
 			apiVersion     string
@@ -213,7 +234,12 @@ roleRef:
 			{apiVersion: "rbac.authorization.k8s.io/v1", kind: "ClusterRoleBinding", namespace: "", resourcePlural: "clusterrolebindings"},
 		}
 		for _, expectedRow := range expectedRows {
-			assertNamespaceRow(expectedRow.apiVersion, expectedRow.kind, expectedRow.namespace, expectedRow.resourcePlural)
+			key := expectedRow.apiVersion + "|" + expectedRow.kind
+			actualRow, ok := parsedRows[key]
+			Expect(ok).To(BeTrue(), "expected stdout row for %s", key)
+			Expect(actualRow.namespace).To(Equal(expectedRow.namespace), "unexpected namespace for %s", key)
+			Expect(actualRow.resource).To(Equal(expectedRow.resourcePlural), "unexpected resource plural for %s", key)
+			Expect(actualRow.status).To(Equal(string(cranevalidate.StatusOK)), "unexpected status for %s", key)
 		}
 
 		reportPath := filepath.Join(paths.ValidateDir, "report.json")
