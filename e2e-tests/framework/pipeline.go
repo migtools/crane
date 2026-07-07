@@ -145,11 +145,17 @@ func ApplyOutputToTargetWithNamespaceRemap(kubectl KubectlRunner, srcNamespace, 
       if err != nil {
           return fmt.Errorf("reading output.yaml: %w", err)
       }
-      remapped := strings.ReplaceAll(string(content), "namespace: "+srcNamespace+"\n", "namespace: "+tgtNamespace+"\n")
-      if err := kubectl.CreateNamespace(tgtNamespace); err != nil {
-          return err
+      remapped ,err := utils.RemapNamespaceInYAML(content, srcNamespace, tgtNamespace)
+	  if err != nil {
+          return fmt.Errorf("remapping namespace in output: %w", err)
       }
-      return kubectl.ApplyStdin(remapped)
+      if err := kubectl.CreateNamespace(tgtNamespace); err != nil {
+        return fmt.Errorf("creating target namespace %q: %w", tgtNamespace, err)
+      }
+      if err := kubectl.ApplyYAMLSpec(remapped, tgtNamespace); err != nil {
+        return fmt.Errorf("applying remapped manifests to namespace %q: %w", tgtNamespace, err)
+      }
+return nil
 }
 
 func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
