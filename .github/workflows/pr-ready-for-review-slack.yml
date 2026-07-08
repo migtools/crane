@@ -132,7 +132,7 @@ jobs:
             :pr-open-1: PR Ready for Review
             ${{ steps.guard.outputs.pr_title }}
             ${{ steps.guard.outputs.pr_url }} | @${{ steps.guard.outputs.pr_author }}
-
+ 
       - name: Mark PR as notified
         if: steps.guard.outputs.should_notify == 'true'
         env:
