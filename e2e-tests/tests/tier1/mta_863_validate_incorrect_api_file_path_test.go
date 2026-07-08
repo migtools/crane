@@ -2,7 +2,9 @@ package e2e
 
 import (
 	"log"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -10,110 +12,111 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Crane validate: Verify behavior with incorrect API file path", func() {
-	It("[MTA-863] Should fail gracefully when API resources file path does not exist (tier1)", Label("tier1", "validate"), func() {
-		appName := "validate-incorrect-api-path"
-		namespace := appName
-		scenario := NewMigrationScenario(
-			appName,
-			namespace,
-			config.K8sDeployBin,
-			config.CraneBin,
-			config.SourceContext,
-			config.TargetContext,
-		)
+var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file path", Label("tier1", "validate"), func() {
+	var (
+		namespace   string
+		kubectlSrc  KubectlRunner
+		runner      CraneRunner
+		paths       ScenarioPaths
+		cleanupDone bool
+	)
 
-		srcApp := scenario.SrcAppNonAdmin
-		tgtApp := scenario.TgtAppNonAdmin
-		runner := scenario.CraneNonAdmin
-		srcApp.ExtraVars = map[string]any{
-			"non_admin_user": "true",
+	BeforeEach(func() {
+		namespace = "test-validate-incorrect-api"
+		kubectlSrc = KubectlRunner{Context: config.SourceContext}
+		runner = CraneRunner{
+			Bin:           config.CraneBin,
+			SourceContext: config.SourceContext,
 		}
-		tgtApp.ExtraVars = srcApp.ExtraVars
+		cleanupDone = false
 
-		By("Grant ns admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, _, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
+		By("Create test namespace")
+		Expect(kubectlSrc.CreateNamespace(namespace)).NotTo(HaveOccurred())
+
+		By("Apply static test manifest to namespace")
+		staticManifest := filepath.Join("e2e-tests", "testdata", "test-850-duplicate-deployment-1.yaml")
+		manifestContent, err := os.ReadFile(staticManifest)
+		Expect(err).NotTo(HaveOccurred(), "should read static manifest file")
+
+		// Replace test-namespace with our actual namespace
+		manifestYAML := strings.ReplaceAll(string(manifestContent), "namespace: test-namespace", "namespace: "+namespace)
+		Expect(kubectlSrc.ApplyYAMLSpec(manifestYAML, namespace)).NotTo(HaveOccurred())
+		log.Printf("Applied static test manifest to namespace %s", namespace)
+
+		By("Setup temporary directories for crane pipeline")
+		paths, err = NewScenarioPaths("crane-validate-incorrect-api-*")
 		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			By("Delete test namespace on source and target (wait for completion)")
-			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
-				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
-					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
-				}
-			}
-		})
-		DeferCleanup(cleanup) // Cleanup rolebindings
 
-		By("Prepare source app")
-		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
-		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
-
-		paths, err := NewScenarioPaths("crane-validate-incorrect-api-*")
-		Expect(err).NotTo(HaveOccurred())
-		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
-		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
-			OutputDir: paths.OutputDir}
-		DeferCleanup(func() {
-			By("Cleanup source and target resources")
-			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
-				log.Printf("cleanup: %v", err)
-			}
-		})
-
-		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline")
-		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
+		runner.WorkDir = paths.TempDir
+		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{
+			ExportDir:    paths.ExportDir,
+			TransformDir: paths.TransformDir,
+			OutputDir:    paths.OutputDir,
+		}
+
+		log.Printf("Running crane pipeline for namespace %s", namespace)
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
-		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
-
-		By("Attempt to run crane validate with non-existent API resources file")
-		nonExistentAPIFile := filepath.Join(paths.TempDir, "non-existent-api-surface.json")
-		validateDir := filepath.Join(paths.TempDir, "validate")
-
-		// Expect crane validate to fail when API resources file doesn't exist
-		stdout, err := runner.Validate(ValidateOptions{
-			InputDir:         paths.OutputDir,
-			ValidateDir:      validateDir,
-			APIResourcesFile: nonExistentAPIFile,
-		})
-
-		Expect(err).To(HaveOccurred(), "crane validate should fail when API resources file does not exist")
-		log.Printf("Expected failure occurred: %v", err)
-		log.Printf("Validate output: %s", stdout)
-
-		By("Verify error message indicates file not found")
-		errMsg := err.Error()
-		Expect(errMsg).To(ContainSubstring(nonExistentAPIFile),
-			"error message should mention the non-existent file path")
-		Expect(errMsg).To(ContainSubstring("no such file or directory"),
-			"error message should contain 'no such file or directory'")
-		log.Printf("Error message correctly references missing file: %s", errMsg)
-
-		By("Test with directory path instead of file - should fail gracefully")
-		dirPathValidateDir := filepath.Join(paths.TempDir, "validate-dir-path")
-		dirPath := paths.TempDir // Use existing directory as the API file path
-
-		stdout3, err3 := runner.Validate(ValidateOptions{
-			InputDir:         paths.OutputDir,
-			ValidateDir:      dirPathValidateDir,
-			APIResourcesFile: dirPath,
-		})
-
-		Expect(err3).To(HaveOccurred(), "crane validate should fail when API resources file is a directory")
-		log.Printf("Directory path test - expected failure: %v", err3)
-		log.Printf("Directory path test output: %s", stdout3)
-
-		By("Verify error message indicates directory instead of file")
-		errMsg3 := err3.Error()
-		Expect(errMsg3).To(ContainSubstring(dirPath),
-			"error message should mention the directory path")
-		Expect(errMsg3).To(ContainSubstring("is a directory"),
-			"error message should contain 'is a directory'")
-		log.Printf("Error message correctly indicates directory issue: %s", errMsg3)
-
-		By("All negative test cases verified successfully")
-		log.Printf("Issue #374 test completed: crane validate correctly handles incorrect API file paths")
+		log.Printf("Crane pipeline completed - output ready for validation tests")
 	})
+
+	AfterEach(func() {
+		if !cleanupDone {
+			By("Delete test namespace")
+			if _, err := kubectlSrc.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
+				log.Printf("cleanup: failed to delete namespace %q: %v", namespace, err)
+			}
+
+			By("Cleanup temporary directories")
+			if err := os.RemoveAll(paths.TempDir); err != nil {
+				log.Printf("cleanup: failed to remove temp dir %q: %v", paths.TempDir, err)
+			}
+			cleanupDone = true
+		}
+	})
+
+	DescribeTable("should fail gracefully with incorrect API resources file path",
+		func(testCase string, getAPIFilePath func(ScenarioPaths) string, expectedErrorSubstrings []string) {
+			By("Attempt to run crane validate with " + testCase)
+			apiFilePath := getAPIFilePath(paths)
+			validateDir := filepath.Join(paths.TempDir, "validate-"+testCase)
+
+			stdout, err := runner.Validate(ValidateOptions{
+				InputDir:         paths.OutputDir,
+				ValidateDir:      validateDir,
+				APIResourcesFile: apiFilePath,
+			})
+
+			By("Verify crane validate fails with expected error")
+			Expect(err).To(HaveOccurred(), "crane validate should fail when "+testCase)
+			log.Printf("Test case '%s' - Expected failure: %v", testCase, err)
+			log.Printf("Test case '%s' - Output: %s", testCase, stdout)
+
+			By("Verify error message contains expected substrings")
+			errMsg := err.Error()
+			for _, expectedSubstring := range expectedErrorSubstrings {
+				Expect(errMsg).To(ContainSubstring(expectedSubstring),
+					"error message should contain '%s'", expectedSubstring)
+			}
+			log.Printf("Test case '%s' - All expected error substrings verified", testCase)
+		},
+
+		Entry("[MTA-863] non-existent file path",
+			"non-existent-file",
+			func(p ScenarioPaths) string {
+				return filepath.Join(p.TempDir, "non-existent-api-surface.json")
+			},
+			[]string{"no such file or directory"},
+		),
+
+		Entry("[MTA-863] directory path instead of file",
+			"directory-path",
+			func(p ScenarioPaths) string {
+				return p.TempDir // Return directory path
+			},
+			[]string{"is a directory"},
+		),
+	)
 })
