@@ -230,17 +230,18 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 }
 
 // sortTopLevelArray returns a sorted copy of arr by canonical JSON representation of
-  // each element, enabling order-independent comparison of top-level YAML sequences
- func sortTopLevelArray(arr []any) []any {
-      sorted := make([]any, len(arr))
-      copy(sorted, arr)
-      sort.Slice(sorted, func(i, j int) bool {
-          a, _ := json.Marshal(sorted[i])
-          b, _ := json.Marshal(sorted[j])
-          return string(a) < string(b)
-      })
-      return sorted
-  }
+// each element, enabling order-independent comparison of top-level YAML sequences
+func sortTopLevelArray(arr []any) []any {
+	sorted := make([]any, len(arr))
+	copy(sorted, arr)
+	sort.Slice(sorted, func(i, j int) bool {
+		a, _ := json.Marshal(sorted[i])
+		b, _ := json.Marshal(sorted[j])
+		return string(a) < string(b)
+	})
+	return sorted
+}
+
 // compareYAMLFileBytesUnordered parses two YAML inputs and compares their decoded
 // document streams treating arrays as unordered sets. relPath is used only for error context.
 func compareYAMLFileBytesUnordered(relPath string, golden, got []byte) error {
@@ -257,14 +258,14 @@ func compareYAMLFileBytesUnordered(relPath string, golden, got []byte) error {
 	for i := range goldenDocs {
 		goldenDocs[i] = normalizeWithPath(goldenDocs[i], nil)
 		if arr, ok := goldenDocs[i].([]any); ok {
-            goldenDocs[i] = sortTopLevelArray(arr)
-        }
+			goldenDocs[i] = sortTopLevelArray(arr)
+		}
 	}
 	for i := range gotDocs {
 		gotDocs[i] = normalizeWithPath(gotDocs[i], nil)
 		if arr, ok := gotDocs[i].([]any); ok {
-            gotDocs[i] = sortTopLevelArray(arr)
-        }
+			gotDocs[i] = sortTopLevelArray(arr)
+		}
 	}
 
 	if !cmp.Equal(goldenDocs, gotDocs) {
@@ -273,7 +274,7 @@ func compareYAMLFileBytesUnordered(relPath string, golden, got []byte) error {
 
 	return nil
 }
- 
+
 // CompareDirectoryYAMLSemanticsUnordered compares YAML semantics for all matching
 // files in two directories treating arrays as unordered sets, so patch ordering
 // differences between runs do not cause false failures.
@@ -305,6 +306,7 @@ func CompareDirectoryYAMLSemanticsUnordered(goldenDir, gotDir string) error {
 	return nil
 
 }
+
 // CompareDirectoryYAMLSemanticsExport compares export YAML semantics using
 // normalization and resource-identity grouping instead of strict filename matching.
 // This avoids false diffs caused by unstable export filenames (for example, Pod or
