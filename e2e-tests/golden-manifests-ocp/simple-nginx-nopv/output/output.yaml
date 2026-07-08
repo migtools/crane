@@ -1,91 +1,4 @@
 apiVersion: v1
-imagePullSecrets:
-- name: builder-dockercfg-n5zzt
-kind: ServiceAccount
-metadata:
-  annotations:
-    openshift.io/internal-registry-pull-secret-ref: builder-dockercfg-n5zzt
-  name: builder
-  namespace: simple-nginx-nopv
-secrets:
-- name: builder-dockercfg-n5zzt
----
-apiVersion: v1
-imagePullSecrets:
-- name: deployer-dockercfg-rgp2c
-kind: ServiceAccount
-metadata:
-  annotations:
-    openshift.io/internal-registry-pull-secret-ref: deployer-dockercfg-rgp2c
-  name: deployer
-  namespace: simple-nginx-nopv
-secrets:
-- name: deployer-dockercfg-rgp2c
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  annotations:
-    openshift.io/description: Allows deploymentconfigs in this namespace to rollout
-      pods in this namespace.  It is auto-managed by a controller; remove subjects
-      to disable.
-  name: system:deployers
-  namespace: simple-nginx-nopv
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:deployer
-subjects:
-- kind: ServiceAccount
-  name: deployer
-  namespace: simple-nginx-nopv
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  annotations:
-    openshift.io/description: Allows builds in this namespace to push images to this
-      namespace.  It is auto-managed by a controller; remove subjects to disable.
-  name: system:image-builders
-  namespace: simple-nginx-nopv
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:image-builder
-subjects:
-- kind: ServiceAccount
-  name: builder
-  namespace: simple-nginx-nopv
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  annotations:
-    openshift.io/description: Allows all pods in this namespace to pull images from
-      this namespace.  It is auto-managed by a controller; remove subjects to disable.
-  name: system:image-pullers
-  namespace: simple-nginx-nopv
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:image-puller
-subjects:
-- apiGroup: rbac.authorization.k8s.io
-  kind: Group
-  name: system:serviceaccounts:simple-nginx-nopv
----
-apiVersion: v1
-data:
-  service-ca.crt: |
-    REDACTED
-kind: ConfigMap
-metadata:
-  annotations:
-    service.beta.openshift.io/inject-cabundle: "true"
-  name: openshift-service-ca.crt
-  namespace: simple-nginx-nopv
----
-apiVersion: v1
 kind: Service
 metadata:
   labels:
@@ -148,3 +61,36 @@ spec:
       schedulerName: default-scheduler
       securityContext: {}
       terminationGracePeriodSeconds: 30
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  creationTimestamp: "2026-07-08T11:53:19Z"
+  generation: 1
+  labels:
+    app: simple-nginx-nopv
+  name: my-simple-nginx-nopv
+  namespace: simple-nginx-nopv
+  resourceVersion: "140464"
+  uid: 845eb523-3590-4071-9161-16e13b294be1
+spec:
+  host: my-simple-nginx-nopv-simple-nginx-nopv.apps.migqe-57431.qe.devcluster.openshift.com
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: my-simple-nginx-nopv
+    weight: 100
+  wildcardPolicy: None
+status:
+  ingress:
+  - conditions:
+    - lastTransitionTime: "2026-07-08T11:53:19Z"
+      status: "True"
+      type: Admitted
+    host: my-simple-nginx-nopv-simple-nginx-nopv.apps.migqe-57431.qe.devcluster.openshift.com
+    routerCanonicalHostname: router-default.apps.migqe-57431.qe.devcluster.openshift.com
+    routerName: default
+    wildcardPolicy: None

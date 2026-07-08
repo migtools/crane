@@ -1,0 +1,32 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  creationTimestamp: "2026-07-08T11:53:19Z"
+  generation: 1
+  labels:
+    app: simple-nginx-nopv
+  name: my-simple-nginx-nopv
+  namespace: simple-nginx-nopv
+  resourceVersion: "140464"
+  uid: 845eb523-3590-4071-9161-16e13b294be1
+spec:
+  host: my-simple-nginx-nopv-simple-nginx-nopv.apps.migqe-57431.qe.devcluster.openshift.com
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: my-simple-nginx-nopv
+    weight: 100
+  wildcardPolicy: None
+status:
+  ingress:
+  - conditions:
+    - lastTransitionTime: "2026-07-08T11:53:19Z"
+      status: "True"
+      type: Admitted
+    host: my-simple-nginx-nopv-simple-nginx-nopv.apps.migqe-57431.qe.devcluster.openshift.com
+    routerCanonicalHostname: router-default.apps.migqe-57431.qe.devcluster.openshift.com
+    routerName: default
+    wildcardPolicy: None
