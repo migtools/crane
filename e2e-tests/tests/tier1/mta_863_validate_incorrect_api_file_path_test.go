@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -14,77 +13,56 @@ import (
 
 var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file path", Label("tier1", "validate"), func() {
 	var (
-		namespace   string
-		kubectlSrc  KubectlRunner
-		runner      CraneRunner
-		paths       ScenarioPaths
-		cleanupDone bool
+		tempDir  string
+		runner   CraneRunner
+		inputDir string
 	)
 
 	BeforeEach(func() {
-		namespace = "test-validate-incorrect-api"
-		kubectlSrc = KubectlRunner{Context: config.SourceContext}
+		var err error
+
+		By("Create temporary directory for test")
+		tempDir, err = os.MkdirTemp("", "crane-validate-incorrect-api-*")
+		Expect(err).NotTo(HaveOccurred())
+
 		runner = CraneRunner{
 			Bin:           config.CraneBin,
 			SourceContext: config.SourceContext,
 		}
-		cleanupDone = false
+		runner.WorkDir = tempDir
 
-		By("Create test namespace")
-		Expect(kubectlSrc.CreateNamespace(namespace)).NotTo(HaveOccurred())
+		By("Create input directory and copy static manifest")
+		inputDir = filepath.Join(tempDir, "input")
+		Expect(os.MkdirAll(inputDir, 0o755)).NotTo(HaveOccurred())
 
-		By("Apply static test manifest to namespace")
-		staticManifest := filepath.Join("e2e-tests", "testdata", "test-850-duplicate-deployment-1.yaml")
-		manifestContent, err := os.ReadFile(staticManifest)
-		Expect(err).NotTo(HaveOccurred(), "should read static manifest file")
+		// From tier1 directory, go up to testdata (../../testdata)
+		sourcePath, err := filepath.Abs(filepath.Join("../../testdata", "test-850-duplicate-deployment-1.yaml"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sourcePath).To(BeAnExistingFile(), "static manifest should exist in testdata")
 
-		// Replace test-namespace with our actual namespace
-		manifestYAML := strings.ReplaceAll(string(manifestContent), "namespace: test-namespace", "namespace: "+namespace)
-		Expect(kubectlSrc.ApplyYAMLSpec(manifestYAML, namespace)).NotTo(HaveOccurred())
-		log.Printf("Applied static test manifest to namespace %s", namespace)
-
-		By("Setup temporary directories for crane pipeline")
-		paths, err = NewScenarioPaths("crane-validate-incorrect-api-*")
+		manifestData, err := os.ReadFile(sourcePath)
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Run crane export/transform/apply pipeline")
-		runner.WorkDir = paths.TempDir
-		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
-		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{
-			ExportDir:    paths.ExportDir,
-			TransformDir: paths.TransformDir,
-			OutputDir:    paths.OutputDir,
-		}
-
-		log.Printf("Running crane pipeline for namespace %s", namespace)
-		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
-		log.Printf("Crane pipeline completed - output ready for validation tests")
+		destPath := filepath.Join(inputDir, "deployment.yaml")
+		Expect(os.WriteFile(destPath, manifestData, 0o644)).NotTo(HaveOccurred())
+		log.Printf("Copied static manifest to %s", inputDir)
 	})
 
 	AfterEach(func() {
-		if !cleanupDone {
-			By("Delete test namespace")
-			if _, err := kubectlSrc.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
-				log.Printf("cleanup: failed to delete namespace %q: %v", namespace, err)
-			}
-
-			By("Cleanup temporary directories")
-			if err := os.RemoveAll(paths.TempDir); err != nil {
-				log.Printf("cleanup: failed to remove temp dir %q: %v", paths.TempDir, err)
-			}
-			cleanupDone = true
+		By("Cleanup temporary directory")
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Printf("cleanup: failed to remove temp dir %q: %v", tempDir, err)
 		}
 	})
 
 	DescribeTable("should fail gracefully with incorrect API resources file path",
-		func(testCase string, getAPIFilePath func(ScenarioPaths) string, expectedErrorSubstrings []string) {
+		func(testCase string, getAPIFilePath func(string) string, expectedErrorSubstrings []string) {
 			By("Attempt to run crane validate with " + testCase)
-			apiFilePath := getAPIFilePath(paths)
-			validateDir := filepath.Join(paths.TempDir, "validate-"+testCase)
+			apiFilePath := getAPIFilePath(tempDir)
+			validateDir := filepath.Join(tempDir, "validate-"+testCase)
 
 			stdout, err := runner.Validate(ValidateOptions{
-				InputDir:         paths.OutputDir,
+				InputDir:         inputDir,
 				ValidateDir:      validateDir,
 				APIResourcesFile: apiFilePath,
 			})
@@ -105,16 +83,16 @@ var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file
 
 		Entry("[MTA-863] non-existent file path",
 			"non-existent-file",
-			func(p ScenarioPaths) string {
-				return filepath.Join(p.TempDir, "non-existent-api-surface.json")
+			func(tmpDir string) string {
+				return filepath.Join(tmpDir, "non-existent-api-surface.json")
 			},
 			[]string{"no such file or directory"},
 		),
 
-		Entry("[MTA-863] directory path instead of file",
+		Entry("[MTA-863] provide directory path instead of file",
 			"directory-path",
-			func(p ScenarioPaths) string {
-				return p.TempDir // Return directory path
+			func(tmpDir string) string {
+				return tmpDir // Return directory path
 			},
 			[]string{"is a directory"},
 		),
