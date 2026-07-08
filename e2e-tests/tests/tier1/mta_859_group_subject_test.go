@@ -64,7 +64,7 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		By("Creating ClusterRole with pod read permissions")
 		Expect(cr.Create(kubectlSrc)).NotTo(HaveOccurred())
 
-		By("Creating ClusterRoleBinding with Group subject for namespace ServiceAccounts")
+		By("Creating ClusterRoleBinding with Group subject")
 		Expect(crb.Create(kubectlSrc)).NotTo(HaveOccurred())
 
 		By("Waiting for source pods and endpoints to drain")

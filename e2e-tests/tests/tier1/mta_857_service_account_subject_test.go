@@ -57,13 +57,13 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		By("Deploying app on source cluster")
 		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
 
-		By("Creating Creating first Service-account source")
+		By("Creating first Service-account source")
 		Expect(sa.Create(kubectlSrc)).NotTo(HaveOccurred())
 
 		By("Creating ClusterRole on source Clusster")
 		Expect(cr.Create(kubectlSrc)).NotTo(HaveOccurred())
 
-		By("Creating ClusterRoleBinding with User subject referencing ServiceAccount")
+		By("Creating ClusterRoleBinding with Service account subject")
 		Expect(crb.Create(kubectlSrc)).NotTo(HaveOccurred())
 
 		By("Waiting for source pods and endpoints to drain")
@@ -86,6 +86,10 @@ var _ = Describe("Cluster-level RBAC export", func() {
 
 		By("Applying migrated manifests to target cluster")
 		Expect(ApplyOutputToTarget(kubectlTgt, tgtNamespace.Name, paths.OutputDir)).NotTo(HaveOccurred())
+
+		By("Verify the referenced SA exists on target")
+		_, err = kubectlTgt.Run("get", "serviceaccount", sa.Name, "-n", namespace)
+		Expect(err).NotTo(HaveOccurred())
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgt.ScaleDeployment(tgtNamespace.Name, appName, 1)).NotTo(HaveOccurred())
