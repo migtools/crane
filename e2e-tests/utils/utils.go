@@ -707,6 +707,15 @@ func normalizeUnstableFields(doc any) any {
 		return normalized
 	}
 
+	if kind == "Route" {
+		// OpenShift route host includes ephemeral cluster domain and can vary
+		// across test environments/runs.
+		if spec, ok := root["spec"].(map[string]any); ok {
+			delete(spec, "host")
+		}
+		return normalized
+	}
+
 	if kind == "ReplicaSet" {
 		delete(metadata, "name")
 		stripPodTemplateHash(metadata)
@@ -1190,4 +1199,33 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
 		return fmt.Errorf("missing files: %v", missing)
 	}
 	return nil
+}
+
+// RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
+// replaces srcNamespace with tgtNamespace in metadata.namespace,
+// and returns the re-serialized YAML string.
+func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
+	docs, err := parseYAMLDocuments(content)
+	if err != nil {
+		return "", fmt.Errorf("parsing YAML documents: %w", err)
+	}
+
+	var parts []string
+	for i, doc := range docs {
+		obj, ok := doc.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
+		}
+		if meta, ok := obj["metadata"].(map[string]any); ok {
+			if meta["namespace"] == srcNamespace {
+				meta["namespace"] = tgtNamespace
+			}
+		}
+		out, err := yaml.Marshal(obj)
+		if err != nil {
+			return "", fmt.Errorf("marshaling YAML document: %w", err)
+		}
+		parts = append(parts, string(out))
+	}
+	return strings.Join(parts, "---\n"), nil
 }

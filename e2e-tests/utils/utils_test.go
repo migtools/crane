@@ -1110,6 +1110,39 @@ func TestNormalizeUnstableFields(t *testing.T) {
 			},
 		},
 		{
+			name: "drops_route_host_but_keeps_stable_route_fields",
+			in: map[string]any{
+				"apiVersion": "route.openshift.io/v1",
+				"kind":       "Route",
+				"metadata": map[string]any{
+					"name":      "my-route",
+					"namespace": "ns",
+				},
+				"spec": map[string]any{
+					"host": "my-route-ns.apps.cluster-a.example.com",
+					"to": map[string]any{
+						"kind": "Service",
+						"name": "my-svc",
+					},
+					"port": map[string]any{
+						"targetPort": 8080,
+					},
+				},
+			},
+			validate: func(t *testing.T, got any) {
+				t.Helper()
+				m := got.(map[string]any)
+				spec := m["spec"].(map[string]any)
+				if _, exists := spec["host"]; exists {
+					t.Fatal("expected route spec.host to be removed")
+				}
+				to := spec["to"].(map[string]any)
+				if to["name"] != "my-svc" {
+					t.Fatalf("expected route spec.to fields to remain, got: %#v", to)
+				}
+			},
+		},
+		{
 			name: "drops_nested_template_metadata_creation_timestamp",
 			in: map[string]any{
 				"apiVersion": "apps/v1",
