@@ -101,11 +101,12 @@ func (r *rsyncLogStream) Init() error {
 			logString = fmt.Sprintf("%s%s", logString, string(buf[:n]))
 			if readErr == io.EOF {
 				err = readErr
-				// attempt to get a final status of terminated pod
-				code, finalLogs, e := getFinalPodStatus(clientset, podName, r.pvc.Namespace)
-				if e == nil {
-					r.progress.ExitCode = code
-					logString = finalLogs
+				if r.progress.ExitCode == nil {
+					code, finalLogs, e := getFinalPodStatus(clientset, podName, r.pvc.Namespace)
+					if e == nil {
+						r.progress.ExitCode = code
+						logString = finalLogs
+					}
 				}
 			}
 			parsedProgress, unparsed := parseRsyncLogs(logString)
@@ -519,7 +520,7 @@ func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (
 	for i := 0; i < 10; i++ {
 		pod, err := c.CoreV1().Pods(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("failed to get pod %s/%s for final status: %w", namespace, name, err)
 		}
 
 		for _, container := range pod.Status.ContainerStatuses {

@@ -2,7 +2,9 @@ package transfer_pvc
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 )
 
 func intEqual(a, b *int64) (string, string, bool) {
@@ -174,6 +176,145 @@ total size is 8.67G  speedup is 1.00`,
 			}
 			if unprocessed != tt.wantUnProcessed {
 				t.Errorf("parseRsyncLogs() unprocessed = %v, want %v", unprocessed, tt.wantUnProcessed)
+			}
+		})
+	}
+}
+
+func TestStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		progress   Progress
+		wantStatus status
+	}{
+		{
+			name: "exit code 0 returns succeeded",
+			progress: Progress{
+				ExitCode: func() *int32 { c := int32(0); return &c }(),
+			},
+			wantStatus: succeeded,
+		},
+		{
+			name: "exit code 23 with transferred files returns partially failed",
+			progress: Progress{
+				ExitCode:         func() *int32 { c := int32(23); return &c }(),
+				TransferredFiles: 1,
+				TransferredData:  &dataSize{val: 9, unit: "bytes"},
+				TotalFiles:       func() *int64 { v := int64(1); return &v }(),
+			},
+			wantStatus: partiallyFailed,
+		},
+		{
+			name: "exit code 23 with no data returns failed",
+			progress: Progress{
+				ExitCode:        func() *int32 { c := int32(23); return &c }(),
+				TransferredData: &dataSize{val: 0, unit: "bytes"},
+			},
+			wantStatus: failed,
+		},
+		{
+			name:       "nil exit code returns preparing",
+			progress:   Progress{},
+			wantStatus: preparing,
+		},
+		{
+			name: "nil exit code with 100% returns finishing up",
+			progress: Progress{
+				TransferPercentage: func() *int64 { v := int64(100); return &v }(),
+			},
+			wantStatus: finishingUp,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.progress.Status()
+			if got != tt.wantStatus {
+				t.Errorf("Status() = %q, want %q", got, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestAsString_ErrorsDisplayed(t *testing.T) {
+	tests := []struct {
+		name           string
+		progress       Progress
+		wantContains   []string
+		wantNotContain []string
+	}{
+		{
+			name: "succeeded with no errors shows no error section",
+			progress: Progress{
+				ExitCode:  func() *int32 { c := int32(0); return &c }(),
+				startedAt: time.Now(),
+			},
+			wantContains:   []string{"Succeeded"},
+			wantNotContain: []string{"Failed files", "Errors"},
+		},
+		{
+			name: "partially failed shows failed files",
+			progress: Progress{
+				ExitCode:         func() *int32 { c := int32(23); return &c }(),
+				TransferredFiles: 1,
+				TransferredData:  &dataSize{val: 9, unit: "bytes"},
+				TotalFiles:       func() *int64 { v := int64(1); return &v }(),
+				FailedFiles: []FailedFile{
+					{Name: "/mnt/data/secret", Err: "Permission denied (13)"},
+				},
+				startedAt: time.Now(),
+			},
+			wantContains: []string{"Partially failed", "Failed files", "/mnt/data/secret", "Permission denied (13)"},
+		},
+		{
+			name: "failed shows failed files",
+			progress: Progress{
+				ExitCode:        func() *int32 { c := int32(23); return &c }(),
+				TransferredData: &dataSize{val: 0, unit: "bytes"},
+				FailedFiles: []FailedFile{
+					{Name: "/mnt/data/dir1", Err: "Permission denied (13)"},
+					{Name: "/mnt/data/dir2", Err: "Permission denied (13)"},
+				},
+				startedAt: time.Now(),
+			},
+			wantContains: []string{"Failed", "Failed files", "/mnt/data/dir1", "/mnt/data/dir2"},
+		},
+		{
+			name: "errors field displayed when completed (regression test for #286 shadowing fix)",
+			progress: Progress{
+				ExitCode:        func() *int32 { c := int32(1); return &c }(),
+				TransferredData: &dataSize{val: 0, unit: "bytes"},
+				Errors:          []string{"connection reset by peer"},
+				startedAt:       time.Now(),
+			},
+			wantContains: []string{"Errors", "connection reset by peer"},
+		},
+		{
+			name: "preparing status hides errors",
+			progress: Progress{
+				FailedFiles: []FailedFile{
+					{Name: "/mnt/data/secret", Err: "Permission denied (13)"},
+				},
+				Errors:    []string{"some error"},
+				startedAt: time.Now(),
+			},
+			wantContains:   []string{"Preparing"},
+			wantNotContain: []string{"Failed files", "Errors"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outString, errString := tt.progress.AsString()
+			combined := outString + errString
+
+			for _, want := range tt.wantContains {
+				if !strings.Contains(combined, want) {
+					t.Errorf("output should contain %q, got:\n%s", want, combined)
+				}
+			}
+			for _, notWant := range tt.wantNotContain {
+				if strings.Contains(combined, notWant) {
+					t.Errorf("output should NOT contain %q, got:\n%s", notWant, combined)
+				}
 			}
 		})
 	}
