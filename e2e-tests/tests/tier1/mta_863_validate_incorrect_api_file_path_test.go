@@ -26,8 +26,7 @@ var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file
 		Expect(err).NotTo(HaveOccurred())
 
 		runner = CraneRunner{
-			Bin:           config.CraneBin,
-			SourceContext: config.SourceContext,
+			Bin: config.CraneBin,
 		}
 		runner.WorkDir = tempDir
 
