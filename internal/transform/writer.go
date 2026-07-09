@@ -402,7 +402,7 @@ func (w *KustomizeWriter) checkStageDirectory(stageDir string) error {
 	}
 
 	if len(entries) > 0 {
-		return fmt.Errorf("stage directory %s is not empty (use --force to overwrite)", stageDir)
+		return fmt.Errorf("stage directory %s is not empty (use --overwrite to overwrite)", stageDir)
 	}
 
 	return nil
