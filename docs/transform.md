@@ -66,7 +66,7 @@ kubectl apply -k transform/10_KubernetesPlugin/
 
 **Important**: 
 - **Plugin stages** (ending with `Plugin`): Automatically regenerate on rerun - your manual edits will be overwritten
-- **Custom stages** (not ending with `Plugin`): Refuse to overwrite without `--force` flag to protect your edits
+- **Custom stages** (not ending with `Plugin`): Refuse to overwrite without `--overwrite` flag to protect your edits
 
 ## Multi-Stage Pipelines
 
@@ -127,15 +127,15 @@ transform/*/output/
 crane transform
 
 # Run specific stage only (creates it if doesn't exist)
-crane transform --stage 10_KubernetesPlugin
+crane transform 10_KubernetesPlugin
 
 # Create a new plugin-based stage automatically
 # Stage name ending with "Plugin" will use that plugin
-crane transform --stage 35_OpenshiftPlugin
+crane transform 35_OpenshiftPlugin
 
 # Create a new pass-through stage for manual editing
 # Stage name NOT ending with "Plugin" creates empty pass-through
-crane transform --stage 40_CustomManualEdits
+crane transform 40_CustomManualEdits
 ```
 
 ### Applying Transforms
@@ -168,7 +168,7 @@ output/
 
 ## Automatic Stage Creation
 
-Crane automatically creates new stages when you reference them with `--stage`. The stage name determines whether a plugin will be used or if it's a pass-through stage for manual editing.
+Crane automatically creates new stages when you reference them as positional arguments. The stage name determines whether a plugin will be used or if it's a pass-through stage for manual editing.
 
 ### Stage Naming Convention
 
@@ -190,7 +190,7 @@ Stage names ending with `Plugin` **must** have a corresponding plugin installed.
 
 ```bash
 # Creates a stage using OpenshiftPlugin
-crane transform --stage 20_OpenshiftPlugin
+crane transform 20_OpenshiftPlugin
 
 # Output:
 # - resources/ (from previous stage or export)
@@ -201,7 +201,7 @@ crane transform --stage 20_OpenshiftPlugin
 **If the plugin doesn't exist, you'll get an error:**
 
 ```bash
-crane transform --stage 20_NonexistentPlugin
+crane transform 20_NonexistentPlugin
 # Error: stage 20_NonexistentPlugin requires plugin 'NonexistentPlugin' 
 #        but it was not found (available plugins: KubernetesPlugin, NamespaceCleanup)
 ```
@@ -212,7 +212,7 @@ Stage names **not** ending with `Plugin` create pass-through stages where resour
 
 ```bash
 # Creates a pass-through stage for manual editing
-crane transform --stage 30_CustomEdits
+crane transform 30_CustomEdits
 
 # Output:
 # - resources/ (copied unchanged from previous stage)
@@ -232,18 +232,18 @@ EOF
 
 # Update kustomization.yaml to reference the patch
 # Then run transform to apply it
-# Note: Custom stage requires --force to overwrite (protects your edits)
-crane transform --force
+# Note: Custom stage requires --overwrite to overwrite (protects your edits)
+crane transform --overwrite
 ```
 
-**Important**: Custom stages (not ending with `Plugin`) are protected from accidental overwrites. You must use `--force` to regenerate them.
+**Important**: Custom stages (not ending with `Plugin`) are protected from accidental overwrites. You must use `--overwrite` to regenerate them.
 
 **Best Practice**: Always add custom stages as the **last stage** in your pipeline. This ensures that:
 - The `resources/` directory contains the most up-to-date output from all previous stages
 - You're editing the final state of resources after all plugin transformations
 - Re-running earlier plugin stages won't leave your custom stage with stale data
 
-If you add a custom stage in the middle of the pipeline and later update an earlier stage, you'll need to use `--force` to refresh the custom stage's `resources/` directory with the updated output. **Warning**: Using `--force` will delete the entire stage directory including any manual changes you made to `resources/`, `patches/`, and `kustomization.yaml`.
+If you add a custom stage in the middle of the pipeline and later update an earlier stage, you'll need to use `--overwrite` to refresh the custom stage's `resources/` directory with the updated output. **Warning**: Using `--overwrite` will delete the entire stage directory including any manual changes you made to `resources/`, `patches/`, and `kustomization.yaml`.
 
 ## Directory Contents Explained
 
@@ -324,7 +324,7 @@ kubectl kustomize transform/10_KubernetesPlugin/ > review.yaml
 
 ```bash
 # Create a custom stage for manual edits
-crane transform --stage 40_CustomEdits
+crane transform 40_CustomEdits
 
 # Edit resources
 vi transform/40_CustomEdits/resources/Deployment_apps_v1_default_wordpress.yaml
@@ -347,14 +347,14 @@ vi transform/40_CustomEdits/kustomization.yaml
 crane transform
 
 # Plugin stages (ending with "Plugin") regenerate automatically
-# Custom stages (not ending with "Plugin") require --force to overwrite
-crane transform --force
+# Custom stages (not ending with "Plugin") require --overwrite to overwrite
+crane transform --overwrite
 
 # Run specific plugin stage (regenerates automatically)
-crane transform --stage 10_KubernetesPlugin
+crane transform 10_KubernetesPlugin
 
-# Run specific custom stage (requires --force if directory not empty)
-crane transform --stage 40_CustomEdits --force
+# Run specific custom stage (requires --overwrite if directory not empty)
+crane transform 40_CustomEdits --overwrite
 ```
 
 ### 4. Working with Multiple Stages
@@ -364,18 +364,18 @@ crane transform --stage 40_CustomEdits --force
 crane transform
 
 # Automatically add more plugin stages
-crane transform --stage 20_OpenshiftPlugin
-crane transform --stage 30_ImagestreamPlugin
+crane transform 20_OpenshiftPlugin
+crane transform 30_ImagestreamPlugin
 
 # Add a manual editing stage
-crane transform --stage 40_CustomEdits
+crane transform 40_CustomEdits
 
 # Edit the manual stage (example: edit a specific deployment)
 vi transform/40_CustomEdits/resources/Deployment_apps_v1_default_wordpress.yaml
 
 # Run all stages sequentially
-# Note: requires --force for custom stages
-crane transform --force
+# Note: requires --overwrite for custom stages
+crane transform --overwrite
 
 # Apply all stages
 crane apply --transform-dir transform --output-dir output
@@ -392,11 +392,11 @@ crane transform
 # Creates: 10_KubernetesPlugin/
 
 # 3. Add OpenShift-specific transformations
-crane transform --stage 20_OpenshiftPlugin
+crane transform 20_OpenshiftPlugin
 # Creates: 20_OpenshiftPlugin/ using OpenshiftPlugin
 
 # 4. Add a manual customization stage
-crane transform --stage 50_CustomLabels
+crane transform 50_CustomLabels
 # Creates: 50_CustomLabels/ as pass-through (resources copied from previous stage)
 
 # 5. Manually add custom labels
@@ -411,8 +411,8 @@ vi transform/50_CustomLabels/kustomization.yaml
 
 # 6. Run the entire pipeline
 # Note: 10_KubernetesPlugin and 20_OpenshiftPlugin regenerate automatically
-# 50_CustomLabels will fail unless --force is used (protects manual edits)
-crane transform --force
+# 50_CustomLabels will fail unless --overwrite is used (protects manual edits)
+crane transform --overwrite
 
 # 7. Verify the output
 kubectl kustomize transform/50_CustomLabels/
@@ -460,23 +460,23 @@ git diff --staged transform/10_KubernetesPlugin/patches/
 
 ## Troubleshooting
 
-### "Stage directory is not empty (use --force to overwrite)"
+### "Stage directory is not empty (use --overwrite to overwrite)"
 
 **Problem**: Crane detects a custom stage already exists and refuses to overwrite to protect manual edits.
 
 **Solution**:
 ```bash
-# Option 1: Use force flag to overwrite
-crane transform --force
+# Option 1: Use overwrite flag to overwrite
+crane transform --overwrite
 
 # Option 2: Check what changed
 git diff transform/
 
 # Option 3: Only regenerate plugin stages (they auto-regenerate)
-crane transform --stage 10_KubernetesPlugin
+crane transform 10_KubernetesPlugin
 
-# Note: Plugin stages (ending with "Plugin") regenerate automatically without --force
-# Custom stages (not ending with "Plugin") require --force to protect manual edits
+# Note: Plugin stages (ending with "Plugin") regenerate automatically without --overwrite
+# Custom stages (not ending with "Plugin") require --overwrite to protect manual edits
 ```
 
 ### "kustomization.yaml validation failed"

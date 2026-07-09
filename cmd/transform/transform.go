@@ -348,8 +348,8 @@ func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrat
 
 // reconcileInstructionStages compares discovered stage directories in transform/
 // against the desired stage names generated from --instructions-file.
-// Without --force, it fails if extra stage directories are found.
-// With --force, it deletes those extra stage directories so transform/
+// Without --overwrite, it fails if extra stage directories are found.
+// With --overwrite, it deletes those extra stage directories so transform/
 // matches the instructions-defined stage set.
 func (o *Options) reconcileInstructionStages(transformDir string, desiredStages []string, log *logrus.Logger) error {
 	existingStages, err := internalTransform.DiscoverStages(transformDir)

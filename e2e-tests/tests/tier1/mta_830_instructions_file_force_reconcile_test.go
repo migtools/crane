@@ -13,8 +13,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Instructions-file force reconcile migration", func() {
-	It("[MTA-830] should reconcile pre-existing transform stages with --force and complete end-to-end migration", Label("tier1"), func() {
+var _ = Describe("Instructions-file overwrite reconcile migration", func() {
+	It("[MTA-830] should reconcile pre-existing transform stages with --overwrite and complete end-to-end migration", Label("tier1"), func() {
 
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-force-reconcile"
@@ -71,15 +71,15 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		By("Create transform dir with orphan stage and existing stage present in instructions-file")
 		err = os.MkdirAll(paths.TransformDir, 0o755)
 		Expect(err).NotTo(HaveOccurred())
-		//Create orphan stage directory for extra stage that should be deleted with --force
+		//Create orphan stage directory for extra stage that should be deleted with --overwrite
 		orphanStagePath := filepath.Join(paths.TransformDir, "99_OrphanStage")
 		err = os.MkdirAll(orphanStagePath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
-		// Create orphan output directory within stage that should also be deleted with --force
+		// Create orphan output directory within stage that should also be deleted with --overwrite
 		orphanOutputPath := filepath.Join(paths.TransformDir, "99_OrphanStage", "output")
 		err = os.MkdirAll(orphanOutputPath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
-		//Create path for CustomStage that should be overwritten with --force
+		//Create path for CustomStage that should be overwritten with --overwrite
 		customStagePath := filepath.Join(paths.TransformDir, "20_CustomStage")
 		err = os.MkdirAll(customStagePath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
@@ -111,20 +111,20 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
-			InstructionsFile: instructionsFile, Force: true})).NotTo(HaveOccurred())
+			InstructionsFile: instructionsFile, Overwrite: true})).NotTo(HaveOccurred())
 
 		By("Assert post transform orphan stage is removed and existing CustomStage is overwritten ")
-		By("Assert orphan stage dir is removed by --force")
+		By("Assert orphan stage dir is removed by --overwrite")
 		_, err = os.Stat(orphanStagePath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage to be removed by --force")
+		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage to be removed by --overwrite")
 
-		By("Assert orphan stage (including output dir) is removed by --force")
+		By("Assert orphan stage (including output dir) is removed by --overwrite")
 		_, err = os.Stat(orphanOutputPath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage output dir to be removed by --force")
+		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage output dir to be removed by --overwrite")
 
-		By("Assert preexisting custom stage file is removed by --force")
+		By("Assert preexisting custom stage file is removed by --overwrite")
 		_, err = os.Stat(customStageExistingFilePath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), "expected preexisting custom stage file to be removed by --force")
+		Expect(os.IsNotExist(err)).To(BeTrue(), "expected preexisting custom stage file to be removed by --overwrite")
 
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
 		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}

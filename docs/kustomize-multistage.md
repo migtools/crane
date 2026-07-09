@@ -117,17 +117,16 @@ This creates a `10_KubernetesPlugin` stage directory and runs all plugins (inclu
 
 **Plugin Filtering** (optional):
 
-To run only specific plugins:
+To run only specific stages:
 
 ```bash
 crane transform \
   --export-dir export \
   --transform-dir transform \
-  --stage-name 10_KubernetesPlugin \
-  --plugin-name kubernetes
+  10_KubernetesPlugin
 ```
 
-**Note**: When `--plugin-name` is omitted (default), ALL available plugins are used. This is recommended to ensure proper resource cleanup.
+**Note**: When no stages are specified, ALL discovered stages are run. This is recommended to ensure proper resource cleanup.
 
 #### Multi-Stage Mode
 
@@ -135,15 +134,15 @@ Execute specific stages:
 
 ```bash
 # Run a specific stage
-crane transform --stage 20_OpenshiftPlugin
+crane transform 20_OpenshiftPlugin
 ```
 
-#### Force Overwrite
+#### Overwrite Existing Stages
 
 Override dirty check protection:
 
 ```bash
-crane transform --force --stage-name 10_KubernetesPlugin
+crane transform --overwrite 10_KubernetesPlugin
 ```
 
 ### Apply Command
@@ -244,20 +243,17 @@ crane export --kubeconfig source.yaml --export-dir export
 crane transform \
   --export-dir export \
   --transform-dir transform \
-  --stage-name 10_KubernetesPlugin \
-  --plugin-name kubernetes
+  10_KubernetesPlugin
 
 # Create OpenShift-specific transformations
 crane transform \
   --transform-dir transform \
-  --stage-name 20_OpenshiftPlugin \
-  --plugin-name openshift
+  20_OpenshiftPlugin
 
 # Create ImageStream transformations
 crane transform \
   --transform-dir transform \
-  --stage-name 30_ImagestreamPlugin \
-  --plugin-name imagestream
+  30_ImagestreamPlugin
 
 # Apply final stage
 crane apply --transform-dir transform --output-dir output
@@ -277,10 +273,10 @@ crane transform --export-dir export --transform-dir transform
 # Error: contains user modifications
 
 # Force overwrite if needed
-crane transform --export-dir export --transform-dir transform --force
+crane transform --export-dir export --transform-dir transform --overwrite
 
 # Or preserve changes by using a different stage name
-crane transform --stage-name 20_custom
+crane transform 20_custom
 ```
 
 ## Migration from JSONPatch Workflow
@@ -371,8 +367,8 @@ if err != nil {
 **Cause**: Stage directory has been manually edited after creation.
 
 **Solution**:
-1. Use `--force` to overwrite changes
-2. Use a different `--stage-name` to preserve changes
+1. Use `--overwrite` to overwrite changes
+2. Use a different stage name to preserve changes
 3. Commit changes to Git before re-running transform
 
 ### Issue: Apply fails with "kustomization.yaml validation failed"
@@ -487,9 +483,9 @@ Stages don't have to correspond to a plugin. If a stage directory name doesn't m
 
 ```bash
 # Create a multi-stage pipeline
-crane transform --stage-name 10_KubernetesPlugin   # Plugin-backed
-crane transform --stage-name 50_ManualEdits        # No matching plugin
-crane transform --stage-name 90_FinalCleanup       # No matching plugin
+crane transform 10_KubernetesPlugin   # Plugin-backed
+crane transform 50_ManualEdits        # No matching plugin
+crane transform 90_FinalCleanup       # No matching plugin
 ```
 
 **What happens:**
