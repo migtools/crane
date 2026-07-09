@@ -9,6 +9,7 @@ import (
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	cranevalidate "github.com/konveyor/crane/internal/validate"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -47,114 +48,23 @@ var _ = Describe("Validate scanner nested directory behavior [Live Mode]", func(
 		Expect(os.MkdirAll(ns2Dir, 0o755)).NotTo(HaveOccurred())
 		Expect(os.MkdirAll(clusterDir, 0o755)).NotTo(HaveOccurred())
 
-		type manifestFile struct {
-			relativePath string
-			content      string
+		manifests := []string{
+			"resources/ns1/deployment.yaml",
+			"resources/ns1/service.yaml",
+			"resources/ns1/configmap.yaml",
+			"resources/ns2/secret.yaml",
+			"resources/ns2/serviceaccount.yaml",
+			"resources/_cluster/clusterrole.yaml",
+			"resources/_cluster/clusterrolebinding.yaml",
 		}
 
-		manifests := []manifestFile{
-			{
-				relativePath: "resources/ns1/deployment.yaml",
-				content: `apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: web
-  namespace: ns1
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: web
-  template:
-    metadata:
-      labels:
-        app: web
-    spec:
-      containers:
-        - name: web
-          image: nginx
-`,
-			},
-			{
-				relativePath: "resources/ns1/service.yaml",
-				content: `apiVersion: v1
-kind: Service
-metadata:
-  name: web
-  namespace: ns1
-spec:
-  selector:
-    app: web
-  ports:
-    - port: 80
-      targetPort: 80
-`,
-			},
-			{
-				relativePath: "resources/ns1/configmap.yaml",
-				content: `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: app-config
-  namespace: ns1
-data:
-  key: value
-`,
-			},
-			{
-				relativePath: "resources/ns2/secret.yaml",
-				content: `apiVersion: v1
-kind: Secret
-metadata:
-  name: app-secret
-  namespace: ns2
-type: Opaque
-stringData:
-  token: test-token
-`,
-			},
-			{
-				relativePath: "resources/ns2/serviceaccount.yaml",
-				content: `apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: app-sa
-  namespace: ns2
-`,
-			},
-			{
-				relativePath: "resources/_cluster/clusterrole.yaml",
-				content: `apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: scanner-nested-reader
-rules:
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get", "list"]
-`,
-			},
-			{
-				relativePath: "resources/_cluster/clusterrolebinding.yaml",
-				content: `apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: scanner-nested-reader-binding
-subjects:
-  - kind: ServiceAccount
-    name: app-sa
-    namespace: ns2
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: scanner-nested-reader
-`,
-			},
-		}
+		for _, relativePath := range manifests {
+			fixturePath := filepath.Join("validate-scanner-nested", relativePath)
+			manifestContent, err := utils.ReadTestdataFile(fixturePath)
+			Expect(err).NotTo(HaveOccurred(), "read fixture %s", fixturePath)
 
-		for _, mf := range manifests {
-			destPath := filepath.Join(inputDir, mf.relativePath)
-			Expect(os.WriteFile(destPath, []byte(mf.content), 0o644)).NotTo(HaveOccurred(), "write fixture %s", mf.relativePath)
+			destPath := filepath.Join(inputDir, relativePath)
+			Expect(os.WriteFile(destPath, []byte(manifestContent), 0o644)).NotTo(HaveOccurred(), "write fixture %s", relativePath)
 		}
 
 		stdout, err := runner.Validate(
