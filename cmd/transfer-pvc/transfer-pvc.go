@@ -1043,10 +1043,14 @@ func getRouteHostName(client client.Client, namespacedName types.NamespacedName)
 	if err != nil {
 		return nil, err
 	}
-	hash := fmt.Sprintf("%x", md5.Sum([]byte(routeNamePrefix)))[:8]
-	truncated := routeNamePrefix[:62-9] + "-" + hash
+	truncated := truncateWithHash(routeNamePrefix)
 	hostname := fmt.Sprintf("%s.%s", truncated, ingressConfig.Spec.Domain)
 	return &hostname, nil
+}
+
+func truncateWithHash(name string) string {
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(name)))[:8]
+	return name[:62-9] + "-" + hash
 }
 
 // buildDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster

@@ -723,3 +723,58 @@ func TestServerFallbackToSourceUID(t *testing.T) {
 		t.Errorf("server should fallback to source UID: got %v, want 27", fmtInt64Ptr(serverCtx.RunAsUser))
 	}
 }
+
+func TestTruncateWithHash(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantLen    int
+		wantUnique bool
+		otherInput string
+	}{
+		{
+			name:    "result is exactly 62 chars",
+			input:   "my-very-long-pvc-name-that-exceeds-sixty-two-characters-in-the-namespace-production",
+			wantLen: 62,
+		},
+		{
+			name:       "different long names produce different results",
+			input:      "my-very-long-application-name-with-lots-of-details-pvc-data-volume1-production",
+			otherInput: "my-very-long-application-name-with-lots-of-details-pvc-data-volume2-production",
+			wantUnique: true,
+		},
+		{
+			name:       "names sharing first 62 chars produce different results",
+			input:      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-suffix1",
+			otherInput: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-suffix2",
+			wantUnique: true,
+		},
+		{
+			name:    "same input produces same result (deterministic)",
+			input:   "my-very-long-pvc-name-that-exceeds-sixty-two-characters-in-the-namespace-production",
+			wantLen: 62,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateWithHash(tt.input)
+
+			if tt.wantLen > 0 && len(result) != tt.wantLen {
+				t.Errorf("truncateWithHash() length = %d, want %d, result = %q", len(result), tt.wantLen, result)
+			}
+
+			if tt.wantUnique {
+				other := truncateWithHash(tt.otherInput)
+				if result == other {
+					t.Errorf("truncateWithHash() collision: %q and %q both produced %q", tt.input, tt.otherInput, result)
+				}
+			}
+
+			// Verify deterministic
+			again := truncateWithHash(tt.input)
+			if result != again {
+				t.Errorf("truncateWithHash() not deterministic: got %q then %q", result, again)
+			}
+		})
+	}
+}
