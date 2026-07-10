@@ -46,7 +46,7 @@ type Flags struct {
 	IgnoredPatchesDir string   `mapstructure:"ignored-patches-dir"`
 	SkipPlugins       []string `mapstructure:"skip-plugins"`
 	OptionalFlags     string   `mapstructure:"optional-flags"`
-	Force             bool     `mapstructure:"force"`
+	Overwrite         bool     `mapstructure:"overwrite"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
 	// Instructions file
@@ -159,7 +159,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
 	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.InstructionsFile, "instructions-file", "", "Path to the transform instructions file")
-	cmd.Flags().BoolVar(&o.Force, "force", false, "Force overwrite of existing stage directories even if they contain user modifications")
+	cmd.Flags().BoolVar(&o.Overwrite, "overwrite", false, "Overwrite existing stage directories even if they contain user modifications")
 
 	// Deprecated: optional-flags will be removed in a future version
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "(DEPRECATED) JSON string holding flag value pairs to be passed to all plugins. Use custom stages with kustomization instead. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
@@ -231,7 +231,7 @@ func (o *Options) run() error {
 		PluginDir:          pluginDir,
 		SkipPlugins:        o.SkipPlugins,
 		OptionalFlags:      optionalFlags,
-		Force:              o.Force,
+		Overwrite:          o.Overwrite,
 		CraneVersion:       "v1.0.0", // TODO: Get from build version
 		NewlyCreatedStages: make(map[string]bool),
 		KustomizeArgs:      kustomizeArgs,
@@ -348,8 +348,8 @@ func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrat
 
 // reconcileInstructionStages compares discovered stage directories in transform/
 // against the desired stage names generated from --instructions-file.
-// Without --force, it fails if extra stage directories are found.
-// With --force, it deletes those extra stage directories so transform/
+// Without --overwrite, it fails if extra stage directories are found.
+// With --overwrite, it deletes those extra stage directories so transform/
 // matches the instructions-defined stage set.
 func (o *Options) reconcileInstructionStages(transformDir string, desiredStages []string, log *logrus.Logger) error {
 	existingStages, err := internalTransform.DiscoverStages(transformDir)
@@ -375,9 +375,9 @@ func (o *Options) reconcileInstructionStages(transformDir string, desiredStages 
 
 	sort.Strings(extras)
 
-	if !o.Force {
+	if !o.Overwrite {
 		return fmt.Errorf(
-			"stages in transform/ do not match --instructions-file: extra stage directories: %s. Re-run with --force to reconcile",
+			"stages in transform/ do not match --instructions-file: extra stage directories: %s. Re-run with --overwrite to reconcile",
 			strings.Join(extras, ", "),
 		)
 	}
@@ -431,9 +431,8 @@ func (o *Options) ensureStagesHaveOutput(orchestrator *internalTransform.Orchest
 			// Stage hasn't been run yet, run it
 			log.Infof("Stage %s hasn't been run yet, running it...", stage.DirName)
 
-			// Run the stage - it will regenerate based on its type:
-			// - Plugin stages: auto-regenerate (no --force needed)
-			// - Custom stages: fail if directory not empty (require --force)
+			// Run the stage - it will regenerate if needed
+			// All stages respect --overwrite flag when rewriting existing content
 			selector := internalTransform.StageSelector{Stages: []string{stage.DirName}}
 			if err := orchestrator.RunMultiStage(selector); err != nil {
 				return fmt.Errorf("failed to run stage %s: %w", stage.DirName, err)

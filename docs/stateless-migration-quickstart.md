@@ -145,10 +145,10 @@ In most pipelines, your custom stage is the last stage under `transform/`, so re
 
 For a deeper explanation of stage ordering, stage structure, and multi-stage behavior, see [Multi-Stage Kustomize Transform Pipeline](./multistage-pipeline.md).
 
-If a custom stage already contains edits, rerun with `--force` to regenerate the custom stage directories and custom stage artifacts under `transform/` (for example: `input/`, `output/`, `kustomization.yaml`):
+If a custom stage already contains edits, rerun with `--overwrite` to regenerate the custom stage directories and custom stage artifacts under `transform/` (for example: `input/`, `output/`, `kustomization.yaml`):
 
 ```bash
-crane transform -e export -t transform --force
+crane transform -e export -t transform --overwrite
 ```
 
 ## 5) Apply (Render Final Manifests)
@@ -311,7 +311,7 @@ Use `--overwrite` with `crane apply` or `crane validate`.
 
 ### Existing custom stage blocks rerun
 
-Use `crane transform --force` to regenerate stage directories.
+Use `crane transform --overwrite` to regenerate stage directories.
 
 ### Validation shows incompatibilities
 

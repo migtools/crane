@@ -162,7 +162,7 @@ resources: []
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent", // Won't be used in this test
-		Force:        true,             // Use force to overwrite existing directories
+		Overwrite:        true,             // Use overwrite to overwrite existing directories
 	}
 
 	tests := []struct {
@@ -277,7 +277,7 @@ resources:
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent",
-		Force:        false,
+		Overwrite:        false,
 	}
 
 	// Test: Try to run stage 20 which should depend on stage 10
@@ -702,7 +702,7 @@ resources: []
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent", // No plugins
-		Force:        true,
+		Overwrite:        true,
 	}
 
 	// Execute multi-stage pipeline
@@ -1533,7 +1533,7 @@ data:
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent",
-		Force:        true,
+		Overwrite:        true,
 	}
 
 	// Test 1: No stages found
@@ -1726,7 +1726,7 @@ resources:
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent",
-		Force:        true,
+		Overwrite:        true,
 	}
 
 	selector := StageSelector{} // Run all stages
