@@ -5,13 +5,8 @@ import (
 	"path/filepath"
 
 	"github.com/konveyor/crane/cmd/apply"
-	"github.com/konveyor/crane/cmd/convert"
 	export "github.com/konveyor/crane/cmd/export"
-	plugin_manager "github.com/konveyor/crane/cmd/plugin-manager"
-	skopeo_sync_gen "github.com/konveyor/crane/cmd/skopeo-sync-gen"
-	transfer_pvc "github.com/konveyor/crane/cmd/transfer-pvc"
 	"github.com/konveyor/crane/cmd/transform"
-	tunnel_api "github.com/konveyor/crane/cmd/tunnel-api"
 	"github.com/konveyor/crane/cmd/validate"
 	"github.com/konveyor/crane/cmd/version"
 	"github.com/konveyor/crane/internal/flags"
@@ -26,13 +21,8 @@ func main() {
 	}
 	f.ApplyFlags(&root)
 	root.AddCommand(export.NewExportCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
-	root.AddCommand(transfer_pvc.NewTransferPVCCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
-	root.AddCommand(tunnel_api.NewTunnelAPIOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
-	root.AddCommand(convert.NewConvertOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
 	root.AddCommand(transform.NewTransformCommand(f))
-	root.AddCommand(skopeo_sync_gen.NewSkopeoSyncGenCommand(f))
 	root.AddCommand(apply.NewApplyCommand(f))
-	root.AddCommand(plugin_manager.NewPluginManagerCommand(f))
 	root.AddCommand(version.NewVersionCommand(f))
 	root.AddCommand(validate.NewValidateCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
 	if err := root.Execute(); err != nil {
