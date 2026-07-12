@@ -41,6 +41,7 @@ type ExportOptions struct {
 	AsExtras         string
 	QPS              float32
 	Burst            int
+	Overwrite        bool
 }
 
 type TransformOptions struct {
@@ -64,6 +65,7 @@ type ApplyOptions struct {
 	SkipClusterScoped bool
 	Ordered           bool
 	Stages            []string
+	Overwrite         bool
 }
 
 // Export runs crane export for a namespace into the given export directory.
@@ -93,6 +95,9 @@ func (c CraneRunner) Export(opts ExportOptions) error {
 	}
 	if opts.Burst > 0 {
 		args = append(args, "--burst", fmt.Sprintf("%d", opts.Burst))
+	}
+	if opts.Overwrite {
+		args = append(args, "--overwrite")
 	}
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
@@ -170,6 +175,9 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 	}
 	if opts.Ordered {
 		args = append(args, "--ordered")
+	}
+	if opts.Overwrite {
+		args = append(args, "--overwrite")
 	}
 	args = append(args, opts.Stages...)
 
