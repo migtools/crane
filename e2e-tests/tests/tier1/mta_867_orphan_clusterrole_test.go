@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Cluster-level export filtering", func() {
-	It("[CA-6] Should not export orphan ClusterRole with no CRB linking it to exported SAs", Label("tier1"), func() {
+	It("[MTA-867] Should not export orphan ClusterRole with no CRB linking it to exported SAs", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName
@@ -60,7 +60,7 @@ var _ = Describe("Cluster-level export filtering", func() {
 		By("Running crane export, transform, apply")
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
-		By("Verifying orphan ClusterRole Didnot migrate")
+		By("Verifying orphan ClusterRole Did not migrate")
 		clusterDir := filepath.Join(paths.OutputDir, "resources", "_cluster")
 		_, _, err = utils.HasFilesRecursively(clusterDir)
 		//we dont expct orphan cr's to be migrated,so _cluster dir should not be created.
