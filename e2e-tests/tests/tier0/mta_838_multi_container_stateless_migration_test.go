@@ -38,11 +38,6 @@ var _ = Describe("Multi-container pod migration", func() {
 		kubectlSrc := scenario.KubectlSrc
 		kubectlTgt := scenario.KubectlTgt
 
-		By("Prepare source app")
-		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
-		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
-
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
@@ -55,6 +50,11 @@ var _ = Describe("Multi-container pod migration", func() {
 				log.Printf("cleanup: %v", err)
 			}
 		})
+
+		By("Prepare source app")
+		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
+		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
 		By("Verify both containers exist on source before export")
 		deploymentOut, err := kubectlSrc.Run("get", "deployment", deploymentName, "-n", namespace, "-o", "json")
@@ -110,13 +110,13 @@ var _ = Describe("Multi-container pod migration", func() {
 
 		var deploymentTgt map[string]any
 		Expect(json.Unmarshal([]byte(deploymentJson), &deploymentTgt)).NotTo(HaveOccurred())
-		tgtspec, ok := deploymentTgt["spec"].(map[string]any)
+		tgtSpec, ok := deploymentTgt["spec"].(map[string]any)
 		Expect(ok).To(BeTrue(), "spec should be a map")
-		tgttemplate, ok := tgtspec["template"].(map[string]any)
+		tgtTemplate, ok := tgtSpec["template"].(map[string]any)
 		Expect(ok).To(BeTrue(), "template should be a map")
-		tgtpodSpec, ok := tgttemplate["spec"].(map[string]any)
+		tgtPodSpec, ok := tgtTemplate["spec"].(map[string]any)
 		Expect(ok).To(BeTrue(), "podSpec should be a map")
-		tgtContainers, ok := tgtpodSpec["containers"].([]any)
+		tgtContainers, ok := tgtPodSpec["containers"].([]any)
 		Expect(ok).To(BeTrue(), "containers should be a slice")
 		Expect(tgtContainers).To(HaveLen(2), "target deployment should have 2 containers")
 		log.Printf("target deployment has %d containers\n", len(tgtContainers))
