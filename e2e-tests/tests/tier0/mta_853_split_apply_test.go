@@ -92,7 +92,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		By("Creating ClusterRoleBinding")
 		Expect(crb.Create(kubectlSrc)).NotTo(HaveOccurred())
 
-		By("Bind Relevent Service-Account to cluster role")
+		By("Bind Relevant Service-Account to cluster role")
 		Expect(crb.AddSubject(kubectlSrc, sa)).NotTo(HaveOccurred())
 
 		By("Waiting for source pods and endpoints to drain")
@@ -110,7 +110,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		By("Namespace admin phase: Applying namespace resources to target as namespace-admin")
 		Expect(kubectlTgtNonAdmin.ApplyDir(filepath.Join(paths.OutputDir, "resources", namespace))).NotTo(HaveOccurred())
 
-		By("Cluster admin phase: Running crane export, transform, apply as namespace-admin")
+		By("Cluster admin phase: Running crane export, transform, apply as cluster-admin")
 		//we reuse the same setup so we need to override for the second pipeline run
 		exportOpts.Overwrite = true
 		transformOpts.Overwrite = true
