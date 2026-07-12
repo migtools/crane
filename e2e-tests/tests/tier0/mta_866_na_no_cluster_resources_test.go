@@ -6,7 +6,6 @@ import (
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
-	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -67,9 +66,8 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 
 		By("Verifying no cluster resources was migrated")
 		clusterDir := filepath.Join(paths.OutputDir, "resources", "_cluster")
-		_, _, err = utils.HasFilesRecursively(clusterDir)
 		//no cluster resurces-> no _cluster folder created ->we expect an error.
-		Expect(err).To(HaveOccurred())
+		Expect(clusterDir).NotTo(BeADirectory())
 
 		By("Applying namespace resources to target as namespace-admin")
 		Expect(kubectlTgtNonAdmin.ApplyDir(filepath.Join(paths.OutputDir))).NotTo(HaveOccurred())
