@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Namespace-admin cluster-level migration", func() {
-	It("[NA-4] Should migrate namespace-only workload as namespace-admin without split apply", Label("tier0"), func() {
+	It("[MTA-866] Should migrate namespace-only workload as namespace-admin without split apply", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName
@@ -24,12 +24,6 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		if scenario.KubectlSrcNonAdmin.Context == "" {
-			Skip("source-nonadmin-context is required for non-admin role migration test")
-		}
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required for non-admin role migration test")
-		}
 		srcAppNonAdmin := scenario.SrcAppNonAdmin
 		tgtAppNonAdmin := scenario.TgtAppNonAdmin
 
@@ -41,7 +35,6 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		}
 
 		runner := scenario.CraneNonAdmin
-		kubectlTgt := scenario.KubectlTgt
 		paths, err := NewScenarioPaths("crane-*")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -51,10 +44,8 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 			OutputDir: paths.OutputDir}
 
 		By("Granting namespace-admin permissions to non-admin user on source and target")
-		kubectlSrcNonAdmin, kubectlTgtNonAdmin, rbacCleanup, err := SetupNamespaceAdminUsersForScenario(scenario, namespace)
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
-
-		DeferCleanup(rbacCleanup)
 		DeferCleanup(func() {
 			rbacCleanup()
 
@@ -77,11 +68,11 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		By("Verifying no cluster resources was migrated")
 		clusterDir := filepath.Join(paths.OutputDir, "resources", "_cluster")
 		_, _, err = utils.HasFilesRecursively(clusterDir)
-		//we dont expct orphan cr's to be migrated,so _cluster dir should not be created.
+		//no cluster resurces-> no _cluster folder created ->we expect an error.
 		Expect(err).To(HaveOccurred())
 
 		By("Applying namespace resources to target as namespace-admin")
-		Expect(kubectlTgt.ApplyDir(filepath.Join(paths.OutputDir))).NotTo(HaveOccurred())
+		Expect(kubectlTgtNonAdmin.ApplyDir(filepath.Join(paths.OutputDir))).NotTo(HaveOccurred())
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())

@@ -59,10 +59,10 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		By("Deploying app on source cluster")
 		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
 
-		By("Creating Creating first Service-account on src namespace")
+		By("Creating first Service-account on src namespace")
 		Expect(firstSa.Create(kubectlSrc)).NotTo(HaveOccurred())
 
-		By("Creating Creating second Service-account on src namespace")
+		By("Creating second Service-account on src namespace")
 		Expect(secondSa.Create(kubectlSrc)).NotTo(HaveOccurred())
 
 		By("Creating ClusterRole on source cluster")
