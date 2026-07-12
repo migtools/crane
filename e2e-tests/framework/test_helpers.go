@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"regexp"
@@ -83,5 +84,35 @@ func ValidateClusterRBAC(kubectl KubectlRunner, bindings []ExpectedClusterRoleBi
 		}
 		log.Printf("CRB %s -> CR %s (subject: %s) verified", b.ClusterRoleBindingName, b.ClusterRoleName, b.SubjectName)
 	}
+	return nil
+}
+
+// Fetches a secret by name from the given namespace and cluster, parses the JSON response, and verifies the type
+// field matches the expected value. Returns a descriptive error if the secret cannot be fetched, the JSON cannot
+// be parsed, or the type does not match.
+func VerifySecret(kubectl KubectlRunner, namespace, secretName, expectedType string) error {
+	secretJson, err := kubectl.Run("get", "secret", secretName, "-n", namespace, "-o", "json")
+	if err != nil {
+		return fmt.Errorf("failed to get secret %s: %w", secretName, err)
+	}
+
+	var secretObj map[string]any
+	if err := json.Unmarshal([]byte(secretJson), &secretObj); err != nil {
+		return fmt.Errorf("failed to parse secret %s JSON: %w", secretName, err)
+	}
+
+	actualType, ok := secretObj["type"].(string)
+	if !ok {
+		return fmt.Errorf("secret %s has no type field", secretName)
+	}
+	if actualType != expectedType {
+		return fmt.Errorf("secret %s: expected type %q but got %q", secretName, expectedType, actualType)
+	}
+	data, ok := secretObj["data"].(map[string]any)
+	if !ok || len(data) == 0 {
+		return fmt.Errorf("secret %s has missing or empty data field", secretName)
+	}
+
+	log.Printf("Secret verified: name=%s type=%s\n", secretName, actualType)
 	return nil
 }
