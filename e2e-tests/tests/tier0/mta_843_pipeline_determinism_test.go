@@ -42,8 +42,12 @@ var _ = Describe("Pipeline determinism", func() {
 
 		DeferCleanup(func() {
 			By("Cleanup temporary directories")
-			os.RemoveAll(paths1.TempDir)
-			os.RemoveAll(paths2.TempDir)
+			if err := os.RemoveAll(paths1.TempDir); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
+			if err := os.RemoveAll(paths2.TempDir); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
 			By("Cleanup app resources")
 			if err := srcApp.Cleanup(); err != nil {
 				log.Printf("cleanup: %v", err)
