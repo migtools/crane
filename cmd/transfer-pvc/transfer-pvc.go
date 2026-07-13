@@ -1037,14 +1037,20 @@ func getRouteHostName(client client.Client, namespacedName types.NamespacedName)
 	if len(routeNamePrefix) <= 62 {
 		return nil, nil
 	}
-	// if route prefix exceeds limits, a custom hostname will be provided
+	// if route prefix exceeds limits, truncate and append a hash suffix for uniqueness
 	ingressConfig := &configv1.Ingress{}
 	err := client.Get(context.TODO(), types.NamespacedName{Name: "cluster"}, ingressConfig)
 	if err != nil {
 		return nil, err
 	}
-	hostname := fmt.Sprintf("%s.%s", routeNamePrefix[:62], ingressConfig.Spec.Domain)
+	truncated := truncateWithHash(routeNamePrefix)
+	hostname := fmt.Sprintf("%s.%s", truncated, ingressConfig.Spec.Domain)
 	return &hostname, nil
+}
+
+func truncateWithHash(name string) string {
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(name)))[:8]
+	return name[:62-9] + "-" + hash
 }
 
 // buildDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster
