@@ -1668,7 +1668,7 @@ func TestCompareDirectoryYAMLSemanticsUnordered(t *testing.T) {
 	}
 }
 
-func TestAssertClusterResourcesExist(t *testing.T) {
+func TestAssertResourcesExist(t *testing.T) {
 	// Helper to create dummy cluster resource files in a temp directory
 	createClusterResourceFiles := func(t *testing.T, dir string, files []string) {
 		t.Helper()
@@ -1686,7 +1686,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 	cases := []struct {
 		name      string
 		files     []string
-		resources []ClusterResourceMatch
+		resources []ResourceMatch
 		wantFound bool
 		wantErr   bool
 	}{
@@ -1695,7 +1695,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 			files: []string{
 				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_my-crb.yaml",
 			},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRoleBinding", Name: "my-crb"},
 			},
 			wantFound: true,
@@ -1705,7 +1705,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 			files: []string{
 				"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_my-role.yaml",
 			},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRole", Name: "my-role", Group: "rbac.authorization.k8s.io"},
 			},
 			wantFound: true,
@@ -1715,7 +1715,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 			files: []string{
 				"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_my-role.yaml",
 			},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRole", Name: "my-role", Group: "rbac.authorization.k8s.io", Version: "v1"},
 			},
 			wantFound: true,
@@ -1726,7 +1726,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_crb-one.yaml",
 				"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_role-one.yaml",
 			},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRoleBinding", Name: "crb-one"},
 				{Kind: "ClusterRole", Name: "role-one"},
 			},
@@ -1737,7 +1737,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 			files: []string{
 				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_other-crb.yaml",
 			},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRoleBinding", Name: "my-crb"},
 			},
 			wantFound: false,
@@ -1747,7 +1747,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 			files: []string{
 				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_crb-one.yaml",
 			},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRoleBinding", Name: "crb-one"},
 				{Kind: "ClusterRole", Name: "role-missing"},
 			},
@@ -1756,7 +1756,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 		{
 			name:  "returns_false_for_empty_directory",
 			files: []string{},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRoleBinding", Name: "my-crb"},
 			},
 			wantFound: false,
@@ -1766,8 +1766,38 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 			files: []string{
 				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_other-my-crb.yaml",
 			},
-			resources: []ClusterResourceMatch{
+			resources: []ResourceMatch{
 				{Kind: "ClusterRoleBinding", Name: "my-crb"},
+			},
+			wantFound: false,
+		},
+		{
+			name: "finds_namespace_scoped_resource",
+			files: []string{
+				"Widget_crane-e2e.example.com_v1_myns_test-widget.yaml",
+			},
+			resources: []ResourceMatch{
+				{Kind: "Widget", Name: "test-widget", Scope: "myns"},
+			},
+			wantFound: true,
+		},
+		{
+			name: "finds_namespace_scoped_with_group_and_version",
+			files: []string{
+				"Deployment_apps_v1_default_my-deploy.yaml",
+			},
+			resources: []ResourceMatch{
+				{Kind: "Deployment", Name: "my-deploy", Scope: "default", Group: "apps", Version: "v1"},
+			},
+			wantFound: true,
+		},
+		{
+			name: "does_not_match_wrong_namespace",
+			files: []string{
+				"Widget_crane-e2e.example.com_v1_other-ns_test-widget.yaml",
+			},
+			resources: []ResourceMatch{
+				{Kind: "Widget", Name: "test-widget", Scope: "myns"},
 			},
 			wantFound: false,
 		},
@@ -1779,7 +1809,7 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 			dir := t.TempDir()
 			createClusterResourceFiles(t, dir, tc.files)
 
-			found, err := AssertClusterResourcesExist(dir, tc.resources)
+			found, err := AssertResourcesExist(dir, tc.resources)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
@@ -1787,10 +1817,10 @@ func TestAssertClusterResourcesExist(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("AssertClusterResourcesExist: %v", err)
+				t.Fatalf("AssertResourcesExist: %v", err)
 			}
 			if found != tc.wantFound {
-				t.Fatalf("AssertClusterResourcesExist = %v, want %v", found, tc.wantFound)
+				t.Fatalf("AssertResourcesExist = %v, want %v", found, tc.wantFound)
 			}
 		})
 	}

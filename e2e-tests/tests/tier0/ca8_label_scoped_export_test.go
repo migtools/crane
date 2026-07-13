@@ -45,17 +45,17 @@ var _ = Describe("Cluster-level export filtering", func() {
 		inScopeCR := ClusterRole{Name: "in-scope-cr", Verb: "get,list,watch", Resource: "pods", Label: "app=" + appName}
 		outOfScopeCR := ClusterRole{Name: "out-scope-cr", Verb: "get,list,watch,create,update,delete", Resource: "pods", Label: "app=outScopedApp"}
 
-		inScopesubject := "--serviceaccount=" + namespace + ":" + inScopeSA.Name
-		outScopeubject := "--serviceaccount=" + namespace + ":" + outOfScopeSA.Name
+		inScopeSubject := "--serviceaccount=" + namespace + ":" + inScopeSA.Name
+		outScopeSubject := "--serviceaccount=" + namespace + ":" + outOfScopeSA.Name
 
-		inScopeBinding := ClusterRoleBinding{Name: "in-scope-crb", ClusterRoleName: inScopeCR.Name, Subject: inScopesubject, Label: "app=" + appName}
-		outOfScopeBinding := ClusterRoleBinding{Name: "out-scope-crb", ClusterRoleName: outOfScopeCR.Name, Subject: outScopeubject, Label: "app=outScopedApp"}
+		inScopeBinding := ClusterRoleBinding{Name: "in-scope-crb", ClusterRoleName: inScopeCR.Name, Subject: inScopeSubject, Label: "app=" + appName}
+		outOfScopeBinding := ClusterRoleBinding{Name: "out-scope-crb", ClusterRoleName: outOfScopeCR.Name, Subject: outScopeSubject, Label: "app=outScopedApp"}
 
-		outOfScopeResources := []utils.ClusterResourceMatch{
+		outOfScopeResources := []utils.ResourceMatch{
 			{Kind: "ClusterRoleBinding", Name: outOfScopeBinding.Name},
 			{Kind: "ClusterRole", Name: outOfScopeCR.Name},
 		}
-		inScopeResources := []utils.ClusterResourceMatch{
+		inScopeResources := []utils.ResourceMatch{
 			{Kind: "ClusterRoleBinding", Name: inScopeBinding.Name},
 			{Kind: "ClusterRole", Name: inScopeCR.Name},
 		}
@@ -98,12 +98,12 @@ var _ = Describe("Cluster-level export filtering", func() {
 
 		By("Verifying out-of-scope resources are not in export _cluster directory")
 		exportClusterPath := filepath.Join(paths.ExportDir, "resources", namespace, "_cluster")
-		found, err := utils.AssertClusterResourcesExist(exportClusterPath, outOfScopeResources)
+		found, err := utils.AssertResourcesExist(exportClusterPath, outOfScopeResources)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeFalse())
 
 		By("Verifying in-scope ClusterRole and ClusterRoleBinding exist in export, transform, and output")
-		found, err = utils.AssertClusterResourcesExist(exportClusterPath, inScopeResources)
+		found, err = utils.AssertResourcesExist(exportClusterPath, inScopeResources)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
 	})
