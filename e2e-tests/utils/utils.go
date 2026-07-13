@@ -1361,3 +1361,44 @@ func ParseValidationReport(validateDir string, outputFormat string, report inter
 
 	return nil
 }
+
+type ClusterResourceMatch struct {
+	Kind    string
+	Name    string
+	Version string // optional, empty means wildcard
+	Group   string // optional, empty means wildcard
+}
+
+func AssertClusterResourcesExist(dir string, resources []ClusterResourceMatch) (bool, error) {
+	existingFiles, err := ListFilesRecursivelyAsList(dir)
+	fmt.Println("=================existing files==============================")
+	fmt.Println(existingFiles)
+	fmt.Println("=============================================================")
+	if err != nil || len(existingFiles) == 0 {
+		return false, err
+	}
+
+	for _, r := range resources {
+		prefix := r.Kind
+		if len(r.Group) > 0 {
+			prefix = prefix + "_" + r.Group
+		}
+		if len(r.Version) > 0 {
+			prefix = prefix + "_" + r.Version
+		}
+		suffix := "_" + r.Name + ".yaml"
+		found := false
+		for _, file := range existingFiles {
+			// under score is for avoiding missmatch such as : my-crb.yaml could match other-my-crb.yaml.
+			if strings.HasPrefix(file, prefix) && strings.HasSuffix(file, suffix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}

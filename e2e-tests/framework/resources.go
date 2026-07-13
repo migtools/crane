@@ -124,6 +124,7 @@ func (crb ClusterRoleBinding) AddSubject(k KubectlRunner, sa ServiceAccount) err
 type ServiceAccount struct {
 	Name      string
 	Namespace string
+	Label     string
 }
 
 func (sa ServiceAccount) Create(k KubectlRunner) error {
@@ -132,6 +133,12 @@ func (sa ServiceAccount) Create(k KubectlRunner) error {
 		return fmt.Errorf("failed to create ServiceAccount %s in %s: %w", sa.Name, sa.Namespace, err)
 	}
 	log.Printf("created ServiceAccount %s in %s", sa.Name, sa.Namespace)
+	if sa.Label != "" {
+		_, err = k.Run("label", "serviceaccount", sa.Name, "-n", sa.Namespace, sa.Label)
+		if err != nil {
+			return fmt.Errorf("failed to label ServiceAccount %s: %w", sa.Name, err)
+		}
+	}
 	return nil
 }
 
