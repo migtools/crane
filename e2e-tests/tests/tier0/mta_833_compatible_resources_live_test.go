@@ -11,10 +11,100 @@ import (
 	cranevalidate "github.com/konveyor/crane/internal/validate"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/yaml"
 )
 
+func runValidateAndParseReportLive(runner CraneRunner, inputDir, validateDir, targetContext, format string) (cranevalidate.ValidationReport, error) {
+	stdout, err := runner.Validate(ValidateOptions{
+		Context:      targetContext,
+		InputDir:     inputDir,
+		ValidateDir:  validateDir,
+		OutputFormat: format,
+	})
+	if err != nil {
+		return cranevalidate.ValidationReport{}, err
+	}
+	log.Printf("Validate (%s) stdout: %s", format, stdout)
+
+	reportPath := filepath.Join(validateDir, "report."+format)
+	Expect(reportPath).To(BeAnExistingFile(), "expected report.%s at %s", format, reportPath)
+
+	reportData, err := os.ReadFile(reportPath)
+	if err != nil {
+		return cranevalidate.ValidationReport{}, err
+	}
+
+	var report cranevalidate.ValidationReport
+	if format == "yaml" {
+		err = yaml.Unmarshal(reportData, &report)
+	} else {
+		err = json.Unmarshal(reportData, &report)
+	}
+	return report, err
+}
+
+func verifyCompatibleLiveReport(report cranevalidate.ValidationReport, namespace, targetContext string) {
+	Expect(report.Mode).To(Equal("live"), "expected mode='live' in report")
+	log.Printf("Report mode: %s", report.Mode)
+
+	Expect(report.ClusterContext).NotTo(BeEmpty(), "expected clusterContext to be set in live mode")
+	Expect(report.ClusterContext).To(Equal(targetContext), "expected clusterContext to match target context")
+	log.Printf("Cluster context: %s", report.ClusterContext)
+
+	Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned")
+	log.Printf("Total scanned: %d", report.TotalScanned)
+
+	Expect(report.Compatible).To(Equal(report.TotalScanned), "expected all resources to be compatible")
+	Expect(report.Incompatible).To(Equal(0), "expected 0 incompatible resources")
+	log.Printf("Compatible: %d, Incompatible: %d", report.Compatible, report.Incompatible)
+
+	expectedResources := map[string]string{
+		"Deployment": "apps/v1",
+		"Service":    "v1",
+		"ConfigMap":  "v1",
+		"Secret":     "v1",
+	}
+	expectedPlurals := map[string]string{
+		"Deployment": "deployments",
+		"Service":    "services",
+		"ConfigMap":  "configmaps",
+		"Secret":     "secrets",
+	}
+
+	foundResources := make(map[string]bool)
+	for _, result := range report.Results {
+		log.Printf("Found resource: %s/%s (namespace: %s, status: %s, resourcePlural: %s)",
+			result.APIVersion, result.Kind, result.Namespace, result.Status, result.ResourcePlural)
+
+		if expectedAPIVersion, expected := expectedResources[result.Kind]; expected {
+			foundResources[result.Kind] = true
+			Expect(result.APIVersion).To(Equal(expectedAPIVersion),
+				"expected %s to have apiVersion %s", result.Kind, expectedAPIVersion)
+			Expect(result.Status).To(Equal(cranevalidate.StatusOK),
+				"expected %s to have status OK", result.Kind)
+			Expect(result.Namespace).To(Equal(namespace),
+				"expected %s to be in namespace %s", result.Kind, namespace)
+			Expect(result.ResourcePlural).To(Equal(expectedPlurals[result.Kind]),
+				"expected %s resourcePlural to be %s", result.Kind, expectedPlurals[result.Kind])
+		}
+	}
+
+	var missingResources []string
+	for kind := range expectedResources {
+		if !foundResources[kind] {
+			missingResources = append(missingResources, kind)
+		}
+	}
+	Expect(missingResources).To(BeEmpty(),
+		"expected to find all resources in validation results, missing: %v", missingResources)
+
+	for kind := range expectedResources {
+		log.Printf("Found %s with correct apiVersion, status, and resourcePlural", kind)
+	}
+}
+
 var _ = Describe("Crane validate: all compatible standard resources in live mode", func() {
-	It("[MTA-833] Validate final manifests after export/transform/apply pipeline (tier0)", Label("tier0", "validate"), func() {
+	It("[MTA-833][MTA-865] Validate JSON and YAML reports after export/transform/apply pipeline (tier0)", Label("tier0", "validate"), func() {
 		appName := "multi-resource-app"
 		namespace := appName
 		scenario := NewMigrationScenario(
@@ -76,7 +166,6 @@ var _ = Describe("Crane validate: all compatible standard resources in live mode
 		Expect(err).NotTo(HaveOccurred())
 		Expect(outputFiles).NotTo(BeEmpty(), "expected output resource YAML files in %s", outputResourcesDir)
 
-		// Verify each expected resource kind has at least one output file
 		expectedKinds := []string{"Deployment", "Service", "ConfigMap", "Secret"}
 		for _, kind := range expectedKinds {
 			pattern := filepath.Join(outputResourcesDir, kind+"_*.yaml")
@@ -86,124 +175,64 @@ var _ = Describe("Crane validate: all compatible standard resources in live mode
 		}
 		log.Printf("Found %d output resource files in %s (verified all 4 kinds present)", len(outputFiles), outputResourcesDir)
 
-		By("Run crane validate in live mode against target cluster")
-		validateDir := filepath.Join(paths.TempDir, "validate")
-		stdout, err := runner.Validate(ValidateOptions{
-			Context:     scenario.TgtApp.Context,
-			InputDir:    paths.OutputDir,
-			ValidateDir: validateDir,
-		})
-		Expect(err).NotTo(HaveOccurred(), "crane validate should succeed with all compatible resources")
-		log.Printf("Crane validate completed with exit code 0")
-		log.Printf("Validate stdout: %s", stdout)
-
-		By("Verify validation report exists")
-		reportPath := filepath.Join(validateDir, "report.json")
-		Expect(reportPath).To(BeAnExistingFile(), "expected report.json at %s", reportPath)
-
-		By("Parse and verify validation report")
-		reportData, err := os.ReadFile(reportPath)
-		Expect(err).NotTo(HaveOccurred())
-
-		var report cranevalidate.ValidationReport
-		err = json.Unmarshal(reportData, &report)
-		Expect(err).NotTo(HaveOccurred(), "failed to parse report.json")
-
-		By("Verify report mode is 'live'")
-		Expect(report.Mode).To(Equal("live"), "expected mode='live' in report")
-		log.Printf("Report mode: %s ✓", report.Mode)
-
-		By("Verify clusterContext is set")
-		Expect(report.ClusterContext).NotTo(BeEmpty(), "expected clusterContext to be set in live mode")
-		Expect(report.ClusterContext).To(Equal(scenario.TgtApp.Context), "expected clusterContext to match target context")
-		log.Printf("Cluster context: %s ✓", report.ClusterContext)
-
-		By("Verify all 4 resource types are scanned")
-		Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned (Deployment, Service, ConfigMap, Secret)")
-		log.Printf("Total scanned: %d ✓", report.TotalScanned)
-
-		By("Verify all resources are compatible")
-		Expect(report.Compatible).To(Equal(report.TotalScanned), "expected all resources to be compatible")
-		Expect(report.Incompatible).To(Equal(0), "expected 0 incompatible resources")
-		log.Printf("Compatible: %d, Incompatible: %d ✓", report.Compatible, report.Incompatible)
-
-		By("Verify expected resource types are present in results")
-		// Map of expected resource kinds to their API versions
-		// These are the 4 standard Kubernetes resources deployed by multi-resource-app
-		expectedResources := map[string]string{
-			"Deployment": "apps/v1",
-			"Service":    "v1",
-			"ConfigMap":  "v1",
-			"Secret":     "v1",
+		cases := []struct {
+			format      string
+			label       string
+			validateDir string
+		}{
+			{format: "json", label: "JSON", validateDir: filepath.Join(paths.TempDir, "validate")},
+			{format: "yaml", label: "YAML", validateDir: filepath.Join(paths.TempDir, "validate-yaml")},
 		}
 
-		// Track which expected resources were actually found in the report
-		foundResources := make(map[string]bool)
-		for _, result := range report.Results {
-			log.Printf("Found resource: %s/%s (namespace: %s, status: %s, resourcePlural: %s)",
-				result.APIVersion, result.Kind, result.Namespace, result.Status, result.ResourcePlural)
+		reports := make(map[string]cranevalidate.ValidationReport)
 
-			// Check if this is one of our expected resources
-			if expectedAPIVersion, expected := expectedResources[result.Kind]; expected {
-				foundResources[result.Kind] = true
+		for _, tc := range cases {
+			By("Run crane validate in live mode with output in " + tc.label + " format")
+			report, err := runValidateAndParseReportLive(runner, paths.OutputDir, tc.validateDir, scenario.TgtApp.Context, tc.format)
+			Expect(err).NotTo(HaveOccurred(), "failed to run validate or parse %s report", tc.label)
+			reports[tc.format] = report
 
-				// Verify API version matches expected
-				Expect(result.APIVersion).To(Equal(expectedAPIVersion),
-					"expected %s to have apiVersion %s", result.Kind, expectedAPIVersion)
+			By("Verify " + tc.label + " report content")
+			verifyCompatibleLiveReport(report, namespace, scenario.TgtApp.Context)
 
-				// Verify status is OK (compatible)
-				Expect(result.Status).To(Equal(cranevalidate.StatusOK),
-					"expected %s to have status OK", result.Kind)
-
-				// Verify namespace is set for namespaced resources
-				Expect(result.Namespace).To(Equal(namespace),
-					"expected %s to be in namespace %s", result.Kind, namespace)
-
-				// Verify resourcePlural is set (required field)
-				Expect(result.ResourcePlural).NotTo(BeEmpty(),
-					"expected %s to have resourcePlural set", result.Kind)
-			}
+			By("Verify no failures directory was created for " + tc.label + " run")
+			failuresDir := filepath.Join(tc.validateDir, "failures")
+			_, statErr := os.Stat(failuresDir)
+			Expect(os.IsNotExist(statErr)).To(BeTrue(),
+				"expected no failures/ directory for all compatible resources (%s)", tc.label)
+			log.Printf("No failures directory created for %s run", tc.label)
 		}
 
-		By("Verify all 4 expected resource types were found")
-		var missingResources []string
-		for kind := range expectedResources {
-			if !foundResources[kind] {
-				missingResources = append(missingResources, kind)
-			}
-		}
-		Expect(missingResources).To(BeEmpty(),
-			"expected to find all resources in validation results, missing: %v", missingResources)
+		By("Compare JSON and YAML reports for equivalence")
+		jsonReport := reports["json"]
+		yamlReport := reports["yaml"]
 
-		for kind := range expectedResources {
-			log.Printf("✓ Found %s with correct apiVersion and status", kind)
-		}
+		Expect(yamlReport.Mode).To(Equal(jsonReport.Mode), "Mode mismatch between JSON and YAML reports")
+		Expect(yamlReport.ClusterContext).To(Equal(jsonReport.ClusterContext), "ClusterContext mismatch between JSON and YAML reports")
+		Expect(yamlReport.TotalScanned).To(Equal(jsonReport.TotalScanned), "TotalScanned mismatch between JSON and YAML reports")
+		Expect(yamlReport.Compatible).To(Equal(jsonReport.Compatible), "Compatible mismatch between JSON and YAML reports")
+		Expect(yamlReport.Incompatible).To(Equal(jsonReport.Incompatible), "Incompatible mismatch between JSON and YAML reports")
+		log.Printf("Report summary fields match between JSON and YAML")
 
-		By("Verify no failures directory was created")
-		failuresDir := filepath.Join(validateDir, "failures")
-		_, err = os.Stat(failuresDir)
-		Expect(os.IsNotExist(err)).To(BeTrue(),
-			"expected no failures/ directory for all compatible resources")
-		log.Printf("No failures directory created ✓")
+		Expect(len(yamlReport.Results)).To(Equal(len(jsonReport.Results)),
+			"Results count mismatch: JSON has %d, YAML has %d", len(jsonReport.Results), len(yamlReport.Results))
 
-		By("Verify resourcePlural mappings are correct")
-		// Map of expected resource kinds to their plural forms
-		// This verifies crane validate correctly maps Kind to resourcePlural
-		expectedPlurals := map[string]string{
-			"Deployment": "deployments",
-			"Service":    "services",
-			"ConfigMap":  "configmaps",
-			"Secret":     "secrets",
+		yamlResultsByKey := make(map[string]cranevalidate.ValidationResult)
+		for _, r := range yamlReport.Results {
+			key := r.APIVersion + "/" + r.Kind + "/" + r.Namespace
+			yamlResultsByKey[key] = r
 		}
 
-		for _, result := range report.Results {
-			if expectedPlural, ok := expectedPlurals[result.Kind]; ok {
-				Expect(result.ResourcePlural).To(Equal(expectedPlural),
-					"expected %s resourcePlural to be %s, got %s",
-					result.Kind, expectedPlural, result.ResourcePlural)
-			}
+		for _, jr := range jsonReport.Results {
+			key := jr.APIVersion + "/" + jr.Kind + "/" + jr.Namespace
+			yr, found := yamlResultsByKey[key]
+			Expect(found).To(BeTrue(), "YAML report missing result for %s", key)
+			Expect(yr.Status).To(Equal(jr.Status), "Status mismatch for %s", key)
+			Expect(yr.ResourcePlural).To(Equal(jr.ResourcePlural), "ResourcePlural mismatch for %s", key)
+			Expect(yr.Reason).To(Equal(jr.Reason), "Reason mismatch for %s", key)
+			Expect(yr.Suggestion).To(Equal(jr.Suggestion), "Suggestion mismatch for %s", key)
 		}
-		log.Printf("All resourcePlural mappings correct ✓")
+		log.Printf("All %d results match between JSON and YAML reports", len(jsonReport.Results))
 
 		log.Printf("\n"+
 			"========================================\n"+
@@ -214,8 +243,10 @@ var _ = Describe("Crane validate: all compatible standard resources in live mode
 			"Total Scanned: %d\n"+
 			"Compatible: %d\n"+
 			"Incompatible: %d\n"+
+			"Results compared: %d\n"+
 			"========================================\n",
-			report.Mode, report.ClusterContext,
-			report.TotalScanned, report.Compatible, report.Incompatible)
+			jsonReport.Mode, jsonReport.ClusterContext,
+			jsonReport.TotalScanned, jsonReport.Compatible, jsonReport.Incompatible,
+			len(jsonReport.Results))
 	})
 })
