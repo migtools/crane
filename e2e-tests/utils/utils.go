@@ -1310,18 +1310,28 @@ func ParseValidationReport(validateDir string, outputFormat string, report inter
 	return nil
 }
 
-type ClusterResourceMatch struct {
+// ResourceMatch defines criteria for matching an exported resource file.
+// Crane export filenames follow the pattern:
+//
+//	Cluster-scoped: <Kind>_<group>_<version>_clusterscoped_<name>.yaml
+//	Namespace-scoped: <Kind>_<group>_<version>_<namespace>_<name>.yaml
+//
+// Only Kind and Name are required. Group and Version narrow the match
+// but must be specified together in order (Group before Version).
+type ResourceMatch struct {
 	Kind    string
 	Name    string
+	Scope   string // optional, empty means clusterscoped
 	Version string // optional, empty means wildcard
 	Group   string // optional, empty means wildcard
 }
 
-func AssertClusterResourcesExist(dir string, resources []ClusterResourceMatch) (bool, error) {
+// AssertResourcesExist checks if all specified resources exist in the directory.
+// Pass the directory containing the YAML files directly (e.g., the _cluster dir
+// for cluster-scoped, or the namespace dir for namespace-scoped resources).
+// Returns (true, nil) if all match, (false, nil) if any missing, or (false, err) on error.
+func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 	existingFiles, err := ListFilesRecursivelyAsList(dir)
-	fmt.Println("=================existing files==============================")
-	fmt.Println(existingFiles)
-	fmt.Println("=============================================================")
 	if err != nil || len(existingFiles) == 0 {
 		return false, err
 	}
@@ -1334,10 +1344,16 @@ func AssertClusterResourcesExist(dir string, resources []ClusterResourceMatch) (
 		if len(r.Version) > 0 {
 			prefix = prefix + "_" + r.Version
 		}
-		suffix := "_" + r.Name + ".yaml"
+
+		scope := "clusterscoped"
+		if r.Scope != "" {
+			scope = r.Scope
+		}
+		// under score is for avoiding missmatch such as:
+		//  ns1_my-crb.yaml could match other-ns_my-crb.yaml.
+		suffix := "_" + scope + "_" + r.Name + ".yaml"
 		found := false
 		for _, file := range existingFiles {
-			// under score is for avoiding missmatch such as : my-crb.yaml could match other-my-crb.yaml.
 			if strings.HasPrefix(file, prefix) && strings.HasSuffix(file, suffix) {
 				found = true
 				break

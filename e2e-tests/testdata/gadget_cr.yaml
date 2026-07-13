@@ -1,0 +1,7 @@
+apiVersion: crane-e2e.openshift.io/v1
+kind: Gadget
+metadata:
+  name: test-gadget
+spec:
+  color: red
+  size: 3
