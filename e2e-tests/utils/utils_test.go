@@ -1637,3 +1637,131 @@ func TestCompareDirectoryYAMLSemanticsUnordered(t *testing.T) {
 		})
 	}
 }
+
+func TestAssertClusterResourcesExist(t *testing.T) {
+	// Helper to create dummy cluster resource files in a temp directory
+	createClusterResourceFiles := func(t *testing.T, dir string, files []string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			path := filepath.Join(dir, f)
+			if err := os.WriteFile(path, []byte("dummy"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	cases := []struct {
+		name      string
+		files     []string
+		resources []ClusterResourceMatch
+		wantFound bool
+		wantErr   bool
+	}{
+		{
+			name: "finds_single_cluster_role_binding",
+			files: []string{
+				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_my-crb.yaml",
+			},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "my-crb"},
+			},
+			wantFound: true,
+		},
+		{
+			name: "finds_cluster_role_with_group",
+			files: []string{
+				"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_my-role.yaml",
+			},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRole", Name: "my-role", Group: "rbac.authorization.k8s.io"},
+			},
+			wantFound: true,
+		},
+		{
+			name: "finds_cluster_role_with_group_and_version",
+			files: []string{
+				"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_my-role.yaml",
+			},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRole", Name: "my-role", Group: "rbac.authorization.k8s.io", Version: "v1"},
+			},
+			wantFound: true,
+		},
+		{
+			name: "finds_multiple_resources",
+			files: []string{
+				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_crb-one.yaml",
+				"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_role-one.yaml",
+			},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "crb-one"},
+				{Kind: "ClusterRole", Name: "role-one"},
+			},
+			wantFound: true,
+		},
+		{
+			name: "returns_false_when_resource_not_found",
+			files: []string{
+				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_other-crb.yaml",
+			},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "my-crb"},
+			},
+			wantFound: false,
+		},
+		{
+			name: "returns_false_when_one_of_multiple_not_found",
+			files: []string{
+				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_crb-one.yaml",
+			},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "crb-one"},
+				{Kind: "ClusterRole", Name: "role-missing"},
+			},
+			wantFound: false,
+		},
+		{
+			name:  "returns_false_for_empty_directory",
+			files: []string{},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "my-crb"},
+			},
+			wantFound: false,
+		},
+		{
+			name: "does_not_match_partial_name",
+			files: []string{
+				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_other-my-crb.yaml",
+			},
+			resources: []ClusterResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "my-crb"},
+			},
+			wantFound: false,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			createClusterResourceFiles(t, dir, tc.files)
+
+			found, err := AssertClusterResourcesExist(dir, tc.resources)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("AssertClusterResourcesExist: %v", err)
+			}
+			if found != tc.wantFound {
+				t.Fatalf("AssertClusterResourcesExist = %v, want %v", found, tc.wantFound)
+			}
+		})
+	}
+}
