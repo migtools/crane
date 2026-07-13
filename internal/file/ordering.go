@@ -26,6 +26,8 @@ var resourceOrder = map[string]int{
 	"VolumeSnapshotClass":         100,
 	"CSIDriver":                   110,
 	"CSINode":                     120,
+	"SecurityContextConstraints":  130,
+
 
 	// Namespace-scoped configuration resources
 	"ResourceQuota":      200,
@@ -34,7 +36,6 @@ var resourceOrder = map[string]int{
 	"Secret":             230,
 	"ConfigMap":          240,
 	"PersistentVolumeClaim": 250,
-	"SecurityContextConstraints": 260,
 
 	// RBAC resources (must come after ServiceAccount)
 	"Role":        300,
