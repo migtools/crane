@@ -52,3 +52,21 @@ jobs:
             :warning: Crane E2E · TIER-0 Tests Failed (push to main)
             Commit: ${{ github.sha }}
             Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  notify-on-manual-failure-temp:
+    needs: run-e2e
+    if: ${{ always() && needs.run-e2e.result == 'failure' && github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Notify Slack on E2E failure (manual temp test)
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        uses: ./.github/actions/slack-incoming-webhook
+        with:
+          text: |
+            :warning: Crane E2E · TIER-0 Tests Failed (manual temp test)
+            Commit: ${{ github.sha }}
+            Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
