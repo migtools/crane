@@ -98,13 +98,13 @@ var _ = Describe("Cluster-level export filtering", func() {
 
 		By("Verifying out-of-scope resources are not in export _cluster directory")
 		exportClusterPath := filepath.Join(paths.ExportDir, "resources", namespace, "_cluster")
-		found, err := utils.AssertResourcesExist(exportClusterPath, outOfScopeResources)
+		allExcluded, err := utils.AssertResourcesDontExist(exportClusterPath, outOfScopeResources)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeFalse())
+		Expect(allExcluded).To(BeTrue())
 
 		By("Verifying in-scope ClusterRole and ClusterRoleBinding exist in export, transform, and output")
-		found, err = utils.AssertResourcesExist(exportClusterPath, inScopeResources)
+		allFound, err := utils.AssertResourcesExist(exportClusterPath, inScopeResources)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeTrue())
+		Expect(allFound).To(BeTrue())
 	})
 })
