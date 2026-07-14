@@ -136,7 +136,8 @@ func (sa ServiceAccount) Create(k KubectlRunner) error {
 	if sa.Label != "" {
 		_, err = k.Run("label", "serviceaccount", sa.Name, "-n", sa.Namespace, sa.Label)
 		if err != nil {
-			return fmt.Errorf("failed to label ServiceAccount %s: %w", sa.Name, err)
+			return fmt.Errorf("failed to label ServiceAccount %q in namespace %q with label %q: %w",
+				sa.Name, sa.Namespace, sa.Label, err)
 		}
 	}
 	return nil

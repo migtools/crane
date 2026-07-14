@@ -1326,6 +1326,29 @@ type ResourceMatch struct {
 	Group   string // optional, empty means wildcard
 }
 
+func getPrefixAndSuffix(r ResourceMatch) (string, string) {
+	prefix := r.Kind + "_"
+	if len(r.Group) > 0 {
+		prefix = prefix + r.Group + "_"
+	}
+
+	scope := "clusterscoped"
+	if r.Scope != "" {
+		scope = r.Scope
+	}
+	// under score is for avoiding missmatch such as:
+	//  ns1_my-crb.yaml could match other-ns_my-crb.yaml.
+	suffix := "_" + scope + "_" + r.Name + ".yaml"
+	if len(r.Version) > 0 {
+		suffix = r.Version + suffix
+	}
+	return prefix, suffix
+}
+
+func fileHasPrefixAndSuffix(file, prefix, suffix string) bool {
+	return strings.HasPrefix(file, prefix) && strings.HasSuffix(file, suffix)
+}
+
 // AssertResourcesExist checks if all specified resources exist in the directory.
 // Pass the directory containing the YAML files directly (e.g., the _cluster dir
 // for cluster-scoped, or the namespace dir for namespace-scoped resources).
@@ -1337,24 +1360,10 @@ func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 	}
 
 	for _, r := range resources {
-		prefix := r.Kind
-		if len(r.Group) > 0 {
-			prefix = prefix + "_" + r.Group
-		}
-		if len(r.Version) > 0 {
-			prefix = prefix + "_" + r.Version
-		}
-
-		scope := "clusterscoped"
-		if r.Scope != "" {
-			scope = r.Scope
-		}
-		// under score is for avoiding missmatch such as:
-		//  ns1_my-crb.yaml could match other-ns_my-crb.yaml.
-		suffix := "_" + scope + "_" + r.Name + ".yaml"
+		prefix, suffix := getPrefixAndSuffix(r)
 		found := false
 		for _, file := range existingFiles {
-			if strings.HasPrefix(file, prefix) && strings.HasSuffix(file, suffix) {
+			if fileHasPrefixAndSuffix(file, prefix, suffix) {
 				found = true
 				break
 			}
@@ -1363,6 +1372,24 @@ func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 			return false, nil
 		}
 	}
+	return true, nil
+}
 
+func AssertResourcesDontExist(dir string, resources []ResourceMatch) (bool, error) {
+	existingFiles, err := ListFilesRecursivelyAsList(dir)
+	if err != nil {
+		return false, err
+	}
+	if len(existingFiles) == 0 {
+		return true, nil
+	}
+	for _, r := range resources {
+		prefix, suffix := getPrefixAndSuffix(r)
+		for _, file := range existingFiles {
+			if fileHasPrefixAndSuffix(file, prefix, suffix) {
+				return false, nil
+			}
+		}
+	}
 	return true, nil
 }
