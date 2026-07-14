@@ -25,9 +25,6 @@ jobs:
         with:
           ref: ${{ inputs.checkout_ref }}
 
-      - name: TEMP force failure for Slack test
-        run: exit 1
-
       - name: Run crane e2e tests
         uses: ./.github/actions/run-crane-e2e-tier
         with:
