@@ -27,7 +27,6 @@ func (k KubectlRunner) Run(args ...string) (string, error) {
 func (k KubectlRunner) RunWithStdin(stdin string, args ...string) (string, error) {
 	return k.executeWithStdin(stdin, args...)
 }
-
 // executeWithStdin executes an arbitrary kubectl command using stdin content.
 func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, error) {
 	finalArgs := append([]string{}, normalizeKubectlArgs(args...)...)
