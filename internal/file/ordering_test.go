@@ -53,6 +53,24 @@ func TestGetResourceOrder_ConfigMapBeforeDeployment(t *testing.T) {
 	}
 }
 
+func TestGetResourceOrder_ImageStreamBeforeDeploymentConfig(t *testing.T) {
+	imageStreamOrder := GetResourceOrder("ImageStream")
+	deploymentConfigOrder := GetResourceOrder("DeploymentConfig")
+
+	if imageStreamOrder >= deploymentConfigOrder {
+		t.Errorf("ImageStream order (%d) should be less than DeploymentConfig order (%d)", imageStreamOrder, deploymentConfigOrder)
+	}
+}
+
+func TestGetResourceOrder_SCCBeforeWorkloads(t *testing.T) {
+	securityContextConstraintsOrder := GetResourceOrder("SecurityContextConstraints")
+	podOrder := GetResourceOrder("Pod")
+
+	if securityContextConstraintsOrder >= podOrder {
+		t.Errorf("SecurityContextConstraints order (%d) should be less than Pod order (%d) — SCCs must exist before pods are scheduled", securityContextConstraintsOrder, podOrder)
+	}
+}
+
 func TestGetResourceOrder_WebhooksAfterWorkloads(t *testing.T) {
 	// Webhooks must come after workloads to avoid bootstrap deadlock
 	deploymentOrder := GetResourceOrder("Deployment")
@@ -145,11 +163,14 @@ func TestOrderValues_MaxThreeDigits(t *testing.T) {
 	// Ensure all order values are ≤ 999 to maintain 3-digit padding
 	// This prevents the sorting bug where 4-digit values (e.g., 1000) sort
 	// lexicographically before 3-digit values (e.g., 240)
-	for kind, order := range ResourceOrder {
+	for kind, order := range resourceOrder {
 		if order > 999 {
 			t.Errorf("Order value for %s is %d, but must be ≤ 999 to maintain 3-digit padding. "+
 				"Either reduce the order value or switch to 4-digit padding (%%04d)", kind, order)
 		}
+	}
+	if defaultResourceOrder > 999 {
+		t.Errorf("Default order value is %d, but must be ≤ 999 to maintain 3-digit padding", defaultResourceOrder)
 	}
 }
 
@@ -157,9 +178,9 @@ func TestOrderedFilenames_LexicographicSorting(t *testing.T) {
 	// Verify that ordered filenames sort lexicographically in the same order as numeric ordering
 	// This is critical for tools that apply resources in sorted filename order
 	testResources := []struct {
-		kind     string
-		name     string
-		order    int
+		kind  string
+		name  string
+		order int
 	}{
 		{"Namespace", "ns1", 10},
 		{"ConfigMap", "cm1", 240},
