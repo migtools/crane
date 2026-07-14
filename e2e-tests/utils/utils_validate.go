@@ -1,12 +1,9 @@
-// Package utils provides utilities for e2e tests.
-//
 // This file (utils_validate.go) contains Ginkgo/Gomega-specific test helpers
 // for validating crane validate command results. Unlike the framework-agnostic
 // utilities in utils.go (which return errors), these helpers use Ginkgo's Expect()
 // and By() for more convenient test assertions.
 //
-// These helpers are designed to be used across all test tiers (tier0, tier1, tier2+)
-// but are ONLY compatible with Ginkgo/Gomega test suites.
+// These helpers can only be called from within Ginkgo test specs (It, BeforeEach, etc.).
 package utils
 
 import (
@@ -19,12 +16,6 @@ import (
 	. "github.com/onsi/gomega"      //nolint:revive,staticcheck // Gomega conventionally uses dot imports
 )
 
-// ValidationExpectations holds the expected values for validating a crane validate report.
-//
-// It embeds validate.ValidationReport to reuse standard fields (Mode, APIResourcesSource, TotalScanned, etc.)
-// and adds test-specific fields for verification.
-//
-// NOTE: This struct is designed to be used with VerifyValidateResults(), which is a Ginkgo-specific helper.
 type ValidationExpectations struct {
 	validate.ValidationReport                 // Embedded: Mode, APIResourcesSource, TotalScanned, Compatible, Incompatible
 	ExpectedResources         map[string]string            // Map of Kind -> APIVersion for expected resources (simpler than Results)
@@ -34,38 +25,11 @@ type ValidationExpectations struct {
 }
 
 // VerifyValidateResults verifies a crane validate report against expected values using Ginkgo assertions.
-//
-// IMPORTANT: This is a Ginkgo/Gomega-specific test helper. It uses Expect() and By() internally,
-// so it can ONLY be called from within Ginkgo test specs (It, BeforeEach, etc.).
-// For framework-agnostic validation, use ParseValidationReport() instead and write your own assertions.
-//
-// This helper can be used by any validate test in any mode (offline or live mode).
-//
 // Parameters:
 //   - report: The parsed ValidationReport from crane validate
 //   - validateDir: The directory where validate output was written
 //   - outputFormat: The format label (e.g., "JSON", "YAML") for logging
 //   - expectations: ValidationExpectations struct with expected values
-//
-// Example usage:
-//
-//	expectations := utils.ValidationExpectations{
-//		ValidationReport: validate.ValidationReport{
-//			Mode:               "offline",
-//			APIResourcesSource: apiSurfaceFile,
-//			TotalScanned:       5,
-//			Compatible:         5,
-//			Incompatible:       0,
-//		},
-//		ExpectedResources: map[string]string{
-//			"Deployment": "apps/v1",
-//			"Service":    "v1",
-//		},
-//		ExpectedStatus:    validate.StatusOK,
-//		Namespace:         "my-namespace",
-//		ExpectFailuresDir: false,
-//	}
-//	utils.VerifyValidateResults(report, validateDir, "JSON", expectations)
 func VerifyValidateResults(report validate.ValidationReport, validateDir string,
 	outputFormat string, expectations ValidationExpectations) {
 	// Verify report mode
