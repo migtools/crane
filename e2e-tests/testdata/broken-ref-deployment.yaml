@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-ref-deploy
+  namespace: mta-841-missing-cm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: broken-ref-deploy
+  template:
+    metadata:
+      labels:
+        app: broken-ref-deploy
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          envFrom:
+            - configMapRef:
+                name: missing-configmap
