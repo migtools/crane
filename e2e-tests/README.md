@@ -142,6 +142,8 @@ Defined in `tests/tier0/e2e_suite_test.go` and `tests/tier1/e2e_suite_test.go`:
 - `--source-nonadmin-context` source kube context for namespace-admin (non-cluster-admin) user flows
 - `--target-nonadmin-context` target kube context for namespace-admin (non-cluster-admin) user flows
 - `--verbose-logs` enable command and output logging for framework runners
+- `--run-as` set to `admin` to run all tests with cluster-admin credentials. Omit this flag to
+run tests in their default mode (non-admin tests as non-admin, admin tests as admin).
 
 ## Adding a New Scenario
 
