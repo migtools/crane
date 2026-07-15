@@ -12,4 +12,4 @@ jobs:
   build-release-0-10:
     uses: ./.github/workflows/reusable-build-release-binaries.yml
     with:
-      checkout_ref: refs/heads/release-0.10
+      checkout_ref: release-0.10
