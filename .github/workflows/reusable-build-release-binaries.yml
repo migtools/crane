@@ -1,0 +1,99 @@
+name: Reusable Build Crane Binaries
+
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Git ref to checkout before building binaries
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      - name: Set up Go 1.25
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Resolve build metadata
+        id: buildmeta
+        shell: bash
+        run: |
+          BUILD_COMMIT="$(git rev-parse HEAD)"
+          if TAG_NAME="$(git describe --tags --exact-match 2>/dev/null)"; then
+            BUILD_VERSION="${TAG_NAME}"
+          else
+            REF_NAME="${{ inputs.checkout_ref }}"
+            REF_NAME="${REF_NAME#refs/heads/}"
+            REF_NAME="${REF_NAME#refs/tags/}"
+            REF_NAME="${REF_NAME//\//-}"
+            BUILD_VERSION="${REF_NAME}-${BUILD_COMMIT}"
+          fi
+
+          echo "build_version=${BUILD_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "build_commit=${BUILD_COMMIT}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          BUILD_VERSION: ${{ steps.buildmeta.outputs.build_version }}
+          BUILD_COMMIT: ${{ steps.buildmeta.outputs.build_commit }}
+        run: |
+          mkdir -p dist
+
+          ext=""
+          if [ "$GOOS" = "windows" ]; then
+            ext=".exe"
+          fi
+
+          binary="crane_${GOOS}_${GOARCH}${ext}"
+          go build -trimpath \
+            -ldflags "-X github.com/konveyor/crane/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/konveyor/crane/internal/buildinfo.BuildCommit=${BUILD_COMMIT}" \
+            -o "dist/${binary}" .
+
+          # Validate version injection for each built artifact.
+          if ! strings "dist/${binary}" | grep -Fq "${BUILD_VERSION}"; then
+            echo "Injected version ${BUILD_VERSION} not found in ${binary}"
+            exit 1
+          fi
+
+          (
+            cd dist
+            sha256sum "${binary}" > "${binary}.sha256"
+          )
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crane-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/crane_${{ matrix.goos }}_${{ matrix.goarch }}*
+          retention-days: 30

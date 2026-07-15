@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - release-0.*
     tags:
       - "*"
   schedule:
@@ -15,70 +16,9 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go 1.25
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.25"
-
-      - name: Build binary
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-          BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('main-{0}', github.sha) }}
-          BUILD_COMMIT: ${{ github.sha }}
-        run: |
-          mkdir -p dist
-
-          ext=""
-          if [ "$GOOS" = "windows" ]; then
-            ext=".exe"
-          fi
-
-          binary="crane_${GOOS}_${GOARCH}${ext}"
-          go build -trimpath \
-            -ldflags "-X github.com/konveyor/crane/internal/buildinfo.Version=${BUILD_VERSION} -X github.com/konveyor/crane/internal/buildinfo.BuildCommit=${BUILD_COMMIT}" \
-            -o "dist/${binary}" .
-
-          # Validate version injection for each built artifact.
-          if ! strings "dist/${binary}" | grep -Fq "${BUILD_VERSION}"; then
-            echo "Injected version ${BUILD_VERSION} not found in ${binary}"
-            exit 1
-          fi
-
-          (
-            cd dist
-            sha256sum "${binary}" > "${binary}.sha256"
-          )
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: crane-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            dist/crane_${{ matrix.goos }}_${{ matrix.goarch }}*
-          retention-days: 30
+    uses: ./.github/workflows/reusable-build-release-binaries.yml
+    with:
+      checkout_ref: ${{ github.ref }}
 
   release:
     name: Draft release for tag
