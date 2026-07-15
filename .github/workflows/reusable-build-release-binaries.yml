@@ -44,12 +44,14 @@ jobs:
       - name: Resolve build metadata
         id: buildmeta
         shell: bash
+        env:
+          CHECKOUT_REF: ${{ inputs.checkout_ref }}
         run: |
           BUILD_COMMIT="$(git rev-parse HEAD)"
           if TAG_NAME="$(git describe --tags --exact-match 2>/dev/null)"; then
             BUILD_VERSION="${TAG_NAME}"
           else
-            REF_NAME="${{ inputs.checkout_ref }}"
+            REF_NAME="${CHECKOUT_REF}"
             REF_NAME="${REF_NAME#refs/heads/}"
             REF_NAME="${REF_NAME#refs/tags/}"
             REF_NAME="${REF_NAME//\//-}"
