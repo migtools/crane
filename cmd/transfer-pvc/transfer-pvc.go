@@ -230,10 +230,6 @@ func (t *TransferPVCCommand) Validate() error {
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
-	if t.sourceContext.Cluster == t.destinationContext.Cluster {
-		return fmt.Errorf("both source and destination cluster are the same, this is not support right now, coming soon")
-	}
-
 	err := t.PVC.Validate()
 	if err != nil {
 		return err
@@ -249,6 +245,15 @@ func (t *TransferPVCCommand) Validate() error {
 
 func (t *TransferPVCCommand) Run() error {
 	return t.run()
+}
+
+// isIntraCluster returns true when source and destination are on the same
+// cluster AND the same namespace. This requires special handling for stunnel
+// cert secrets and pod labels to avoid collisions.
+func (t *TransferPVCCommand) isIntraCluster() bool {
+	return t.sourceContext != nil && t.destinationContext != nil &&
+		t.sourceContext.Cluster == t.destinationContext.Cluster &&
+		t.PVC.Namespace.source == t.PVC.Namespace.destination
 }
 
 func (t *TransferPVCCommand) getClientFromContext(ctx string) (client.Client, error) {
@@ -324,6 +329,20 @@ func (t *TransferPVCCommand) run() error {
 		"app.konveyor.io/created-for-pvc": getValidatedResourceName(srcPVC.Name),
 	}
 
+	// For intra-cluster (same namespace), split labels so the log reader
+	// can distinguish server and client pods.
+	clientLabels := labels
+	if t.isIntraCluster() {
+		labels["app.konveyor.io/role"] = "server"
+		labels["app.konveyor.io/created-for-pvc"] = getValidatedResourceName(destPVC.Name)
+		clientLabels = map[string]string{
+			"app.kubernetes.io/name":          "crane",
+			"app.kubernetes.io/component":     "transfer-pvc",
+			"app.konveyor.io/role":            "client",
+			"app.konveyor.io/created-for-pvc": getValidatedResourceName(srcPVC.Name),
+		}
+	}
+
 	e, err := createEndpoint(t.Endpoint, destPVC, labels, logger, destClient)
 	if err != nil {
 		log.Fatal(err, "failed creating endpoint")
@@ -360,18 +379,29 @@ func (t *TransferPVCCommand) run() error {
 
 	for i := range secretList.Items {
 		destSecret := &secretList.Items[i]
+		secretName := destSecret.Name
+		// For intra-cluster: the server cert secret is named after destPVC,
+		// but the client expects one named after srcPVC. Copy with the
+		// client's expected name so both use the same CA.
+		if t.isIntraCluster() {
+			secretName = fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(srcPVC.Name))
+		}
+		secretLabels := destSecret.Labels
+		if t.isIntraCluster() {
+			secretLabels = clientLabels
+		}
 		srcSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        destSecret.Name,
+				Name:        secretName,
 				Namespace:   srcPVC.Namespace,
-				Labels:      destSecret.Labels,
+				Labels:      secretLabels,
 				Annotations: destSecret.Annotations,
 			},
 			StringData: destSecret.StringData,
 			Data:       destSecret.Data,
 		}
 		err = srcClient.Create(context.TODO(), srcSecret)
-		if err != nil {
+		if err != nil && !errors.IsAlreadyExists(err) {
 			log.Fatal(err, "failed to create certificate secret on source cluster")
 		}
 	}
@@ -384,7 +414,7 @@ func (t *TransferPVCCommand) run() error {
 			Name:      getValidatedResourceName(srcPVC.Name),
 			Namespace: srcPVC.Namespace,
 		}, e.Hostname(), e.IngressPort(), &transport.Options{
-			Labels: labels,
+			Labels: clientLabels,
 			Image:  t.Flags.DestinationImage,
 		},
 	)
@@ -458,7 +488,7 @@ func (t *TransferPVCCommand) run() error {
 
 	_, err = rsynctransfer.NewClient(
 		context.TODO(),
-		srcClient, srcPVCList, stunnelClient, logger, "rsync-client", labels, nil,
+		srcClient, srcPVCList, stunnelClient, logger, "rsync-client", clientLabels, nil,
 		transfer.PodOptions{
 			NodeName: nodeName,
 			CommandOptions: rsynctransfer.NewDefaultOptionsFrom(
@@ -487,11 +517,17 @@ func (t *TransferPVCCommand) run() error {
 	}
 
 	err = followClientLogs(
-		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, labels, t.ProgressOutput)
+		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, clientLabels, t.ProgressOutput)
 	if err != nil {
 		log.Fatal(err, "error following rsync client logs")
 	}
 
+	if t.isIntraCluster() {
+		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
+			log.Printf("WARN: server-side cleanup: %v", err)
+		}
+		return garbageCollect(srcClient, destClient, clientLabels, t.Endpoint.Type, t.PVC.Namespace)
+	}
 	return garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace)
 }
 
