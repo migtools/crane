@@ -45,6 +45,14 @@ func VerifyValidateResults(report validate.ValidationReport, validateDir string,
 		log.Printf("API resources source: %s", report.APIResourcesSource)
 	}
 
+	// Verify clusterContext (for live mode)
+	if expectations.Mode == "live" && expectations.ClusterContext != "" {
+		By(outputFormat + " report: Verify clusterContext is set to the target cluster context")
+		Expect(report.ClusterContext).NotTo(BeEmpty(), "expected clusterContext to be set in live mode")
+		Expect(report.ClusterContext).To(Equal(expectations.ClusterContext), "expected clusterContext to match target cluster context")
+		log.Printf("Cluster context: %s", report.ClusterContext)
+	}
+
 	// Verify resource counts
 	By(outputFormat + " report: Verify resource count")
 	Expect(report.TotalScanned).To(Equal(expectations.TotalScanned), "expected %d resources scanned in %s report", expectations.TotalScanned, outputFormat)
