@@ -319,3 +319,25 @@ func TestAsString_ErrorsDisplayed(t *testing.T) {
 		})
 	}
 }
+
+func TestStatus_NilTransferredData(t *testing.T) {
+	exitCode := int32(1)
+	p := Progress{
+		ExitCode:         &exitCode,
+		TransferredData:  nil,
+		TransferredFiles: 0,
+		TotalFiles:       nil,
+		startedAt:        time.Now(),
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("Status() panicked with nil TransferredData: %v", r)
+		}
+	}()
+
+	s := p.Status()
+	if s != failed {
+		t.Errorf("Status() = %q, want %q", s, failed)
+	}
+}
