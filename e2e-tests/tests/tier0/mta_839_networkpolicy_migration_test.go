@@ -55,6 +55,16 @@ var _ = Describe("NetworkPolicy migration", func() {
 		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
+		ingressFrom := `        - podSelector: {}`
+		if kubectlTgtNonAdmin.IsOpenShift() {
+			// OpenShift router pods run in openshift-ingress namespace and must be
+			// allowed to reach backend pods through this NetworkPolicy.
+			ingressFrom += `
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress`
+		}
+
 		networkPolicyManifest := fmt.Sprintf(`apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -69,7 +79,7 @@ spec:
     - Egress
   ingress:
     - from:
-        - podSelector: {}
+%s
       ports:
         - protocol: TCP
           port: 8080
@@ -81,7 +91,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-`, networkPolicyName, namespace, appName)
+`, networkPolicyName, namespace, appName, ingressFrom)
 
 		By("Create NetworkPolicy on source cluster")
 		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(networkPolicyManifest, namespace)).NotTo(HaveOccurred())
