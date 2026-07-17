@@ -708,7 +708,7 @@ func normalizeUnstableFields(doc any) any {
 	}
 
 	if kind == "Route" {
-		// OpenShift route host includes ephemeral cluster domain and can vary
+		// OpenShift Route host includes ephemeral cluster domain and can vary
 		// across test environments/runs.
 		if spec, ok := root["spec"].(map[string]any); ok {
 			delete(spec, "host")
