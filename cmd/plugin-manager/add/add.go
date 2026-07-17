@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/konveyor/crane/internal/flags"
@@ -221,9 +222,23 @@ func (o *Options) run(args []string) error {
 	return nil
 }
 
+func validateFileInput(dir, filename string) error {
+	if filename == "" || filename == "." || filename == ".." || strings.ContainsRune(filename, '\\') || filename != filepath.Base(filename) {
+		return fmt.Errorf("invalid plugin name %q: must be a bare file name without path separators or traversal sequences", filename)
+	}
+
+	existingPath := filepath.Join(dir, filename)
+	if _, err := os.Lstat(existingPath); err == nil {
+		return fmt.Errorf("a plugin named %q already exists at %s, please remove it first before installing", filename, existingPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to check destination %s: %w", existingPath, err)
+	}
+	return nil
+}
+
 func downloadBinary(pluginDir string, filename string, url string, log *logrus.Logger) error {
-	if filepath.Base(filename) != filename || filename == "." || filename == ".." {
-		return fmt.Errorf("invalid plugin filename %q", filename)
+	if err := validateFileInput(pluginDir, filename); err != nil {
+		return err
 	}
 
 	var binaryContents io.Reader
@@ -256,7 +271,7 @@ func downloadBinary(pluginDir string, filename string, url string, log *logrus.L
 	}
 
 	// Create the file
-	pluginBinary, err := os.OpenFile(filepath.Join(pluginDir, filename), syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0755)
+	pluginBinary, err := os.OpenFile(filepath.Join(pluginDir, filename), syscall.O_RDWR|syscall.O_CREAT|syscall.O_EXCL, 0755)
 	if err != nil {
 		log.Errorf("Failed to create plugin file %s/%s: %v", pluginDir, filename, err)
 		return err
