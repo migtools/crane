@@ -50,7 +50,7 @@ How does it work? Crane works by:
 | :-- | :-- | :-- |
 | **✅ Stable** | Tagged releases for production use | [GitHub Releases](https://github.com/migtools/crane/releases) |
 | **🛠️ `release-0.10`** | Latest artifacts from pushes to `release-0.10` | [Build Crane Binaries (release-0.10 push)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=branch%3Arelease-0.10+event%3Apush) |
-| **🌙 Nightly (`release-0.10`)** | Scheduled artifacts for early validation on `release-0.10` | [Build Crane Binaries (release-0.10 scheduled)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=branch%3Arelease-0.10+event%3Aschedule) |
+| **🌙 Nightly (`release-0.10`)** | Scheduled artifacts for early validation on `release-0.10` | [Nightly Build Crane Binaries (release-0.10)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-build-binaries.yml) |
 
 ## Install
 
