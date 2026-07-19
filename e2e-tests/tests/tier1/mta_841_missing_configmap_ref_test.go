@@ -43,7 +43,9 @@ var _ = Describe("Missing ConfigMap reference migration", func() {
 			}
 
 			By("Cleanup namespace and temp dir")
-			Expect(os.RemoveAll(paths.TempDir)).To(Succeed())
+			if err := os.RemoveAll(paths.TempDir); err != nil {
+				log.Printf("cleanup: failed to remove temp dir: %v", err)
+			}
 		})
 
 		By("Create source namespace")
@@ -66,6 +68,12 @@ var _ = Describe("Missing ConfigMap reference migration", func() {
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", namespace)
 
+		By("Verify no export failures")
+		failuresDir := filepath.Join(paths.ExportDir, "failures", namespace)
+		hasFiles, _, err := utils.HasFilesRecursively(failuresDir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hasFiles).To(BeFalse(), "unexpected files in export failures directory")
+
 		By("Verify Deployment manifest exists in output directory")
 		deploymentManifest := filepath.Join(paths.OutputDir, "resources", namespace, "*Deployment*.yaml")
 		matches, err := filepath.Glob(deploymentManifest)
@@ -76,8 +84,12 @@ var _ = Describe("Missing ConfigMap reference migration", func() {
 		By("Verify broken ConfigMap reference is preserved in output YAML")
 		content, err := os.ReadFile(matches[0])
 		Expect(err).NotTo(HaveOccurred())
-		Expect(string(content)).To(ContainSubstring(missingCMName))
+		Expect(string(content)).To(ContainSubstring("name: " + missingCMName))
 		log.Printf("Verified broken ConfigMap ref %s is preserved in output YAML\n", missingCMName)
+
+		By("Dry-run apply output manifests on target")
+		Expect(kubectlTgt.CreateNamespace(namespace)).NotTo(HaveOccurred())
+		Expect(kubectlTgt.ValidateApplyDir(paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
