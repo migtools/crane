@@ -56,6 +56,7 @@ var _ = Describe("Missing ConfigMap reference migration", func() {
 		By("Apply Deployment with missing ConfigMap reference to source")
 		deploymentYAML, err := utils.ReadTestdataFile("broken-ref-deployment.yaml")
 		Expect(err).NotTo(HaveOccurred())
+		deploymentYAML = strings.ReplaceAll(deploymentYAML, "__NAMESPACE__", namespace)
 		_, err = kubectlSrc.RunWithStdin(deploymentYAML, "apply", "-f", "-")
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Applied deployment with broken ConfigMap ref %s\n", missingCMName)

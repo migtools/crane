@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: broken-ref-deploy
-  namespace: mta-841-missing-cm
+  namespace: __NAMESPACE__
 spec:
   replicas: 1
   selector:
