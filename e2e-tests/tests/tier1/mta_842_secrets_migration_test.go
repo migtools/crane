@@ -76,6 +76,14 @@ var _ = Describe("Migrate namespace with multiple secret types", func() {
 		_, err = kubectlSrc.Run("create", "secret", "docker-registry", "docker-secret", "--docker-server=quay.io", "--docker-username=user", "--docker-password=pass", "-n", namespace)
 		Expect(err).NotTo(HaveOccurred())
 
+		By("Capture source secret data for exact comparison on target")
+		srcOpaqueData, err := GetSecretData(kubectlSrc, namespace, "opaque-secret")
+		Expect(err).NotTo(HaveOccurred())
+		srcTLSData, err := GetSecretData(kubectlSrc, namespace, "tls-secret")
+		Expect(err).NotTo(HaveOccurred())
+		srcDockerData, err := GetSecretData(kubectlSrc, namespace, "docker-secret")
+		Expect(err).NotTo(HaveOccurred())
+
 		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 
@@ -93,18 +101,22 @@ var _ = Describe("Migrate namespace with multiple secret types", func() {
 			log.Printf("Secret manifest found in output: %s\n", matches)
 		}
 
+		By("Verify default SA token secret is excluded from output")
+		matches, _ := filepath.Glob(filepath.Join(paths.OutputDir, "resources", namespace, "Secret__*default-token*"))
+		Expect(matches).To(BeEmpty(), "default SA token secret should be whited out")
+
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
 		Expect(ApplyOutputToTarget(kubectlTgt, namespace, paths.OutputDir)).NotTo(HaveOccurred())
 
-		By("Verify Opaque secret is present on target with correct type")
-		Expect(VerifySecret(kubectlTgt, namespace, "opaque-secret", "Opaque")).NotTo(HaveOccurred())
+		By("Verify Opaque secret is present on target with correct type and data")
+		Expect(VerifySecret(kubectlTgt, namespace, "opaque-secret", "Opaque", srcOpaqueData)).NotTo(HaveOccurred())
 
-		By("Verify tls secret is present on target with correct type")
-		Expect(VerifySecret(kubectlTgt, namespace, "tls-secret", "kubernetes.io/tls")).NotTo(HaveOccurred())
+		By("Verify tls secret is present on target with correct type and data")
+		Expect(VerifySecret(kubectlTgt, namespace, "tls-secret", "kubernetes.io/tls", srcTLSData)).NotTo(HaveOccurred())
 
-		By("Verify docker secret is present on target with correct type")
-		Expect(VerifySecret(kubectlTgt, namespace, "docker-secret", "kubernetes.io/dockerconfigjson")).NotTo(HaveOccurred())
+		By("Verify docker secret is present on target with correct type and data")
+		Expect(VerifySecret(kubectlTgt, namespace, "docker-secret", "kubernetes.io/dockerconfigjson", srcDockerData)).NotTo(HaveOccurred())
 
 	})
 })
