@@ -12,16 +12,16 @@ import (
 	"path/filepath"
 
 	"github.com/konveyor/crane/internal/validate"
-	. "github.com/onsi/ginkgo/v2"   //nolint:revive,staticcheck // Ginkgo conventionally uses dot imports
-	. "github.com/onsi/gomega"      //nolint:revive,staticcheck // Gomega conventionally uses dot imports
+	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo conventionally uses dot imports
+	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Gomega conventionally uses dot imports
 )
 
 type ValidationExpectations struct {
-	validate.ValidationReport                 // Embedded: Mode, APIResourcesSource, TotalScanned, Compatible, Incompatible
-	ExpectedResources         map[string]string            // Map of Kind -> APIVersion for expected resources (simpler than Results)
+	validate.ValidationReport                           // Embedded: Mode, APIResourcesSource, TotalScanned, Compatible, Incompatible
+	ExpectedResources         map[string]string         // Map of Kind -> APIVersion for expected resources (simpler than Results)
 	ExpectedStatus            validate.ValidationStatus // Expected status for resources (e.g., StatusOK)
-	Namespace                 string                       // Expected namespace for resources
-	ExpectFailuresDir         bool                         // Whether to expect a failures/ directory
+	Namespace                 string                    // Expected namespace for resources
+	ExpectFailuresDir         bool                      // Whether to expect a failures/ directory
 }
 
 // VerifyValidateResults verifies a crane validate report against expected values using Ginkgo assertions.
@@ -95,9 +95,10 @@ func VerifyValidateResults(report validate.ValidationReport, validateDir string,
 	// Verify failures directory
 	By(outputFormat + " output: Verify failures directory expectation")
 	failuresDir := filepath.Join(validateDir, "failures")
-	_, err := os.Stat(failuresDir)
+	info, err := os.Stat(failuresDir)
 	if expectations.ExpectFailuresDir {
 		Expect(err).NotTo(HaveOccurred(), "expected failures/ directory to exist")
+		Expect(info.IsDir()).To(BeTrue(), "expected %q to be a directory", failuresDir)
 		log.Printf("Failures directory created as expected")
 	} else {
 		Expect(os.IsNotExist(err)).To(BeTrue(), "expected no failures/ directory")
