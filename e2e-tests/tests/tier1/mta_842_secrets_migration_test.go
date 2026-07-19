@@ -41,11 +41,11 @@ var _ = Describe("Migrate namespace with multiple secret types", func() {
 					log.Printf("cleanup: failed to remove temp dir %q: %v", paths.TempDir, err)
 				}
 			}
-			By("Cleanup source namespace and temp dir")
+			By("Cleanup source namespace")
 			if _, err := kubectlSrc.Run("delete", "namespace", namespace, "--ignore-not-found=true"); err != nil {
 				log.Printf("cleanup: failed to delete source namespace: %v", err)
 			}
-			By("Cleanup target namespace and temp dir")
+			By("Cleanup target namespace")
 			if _, err := kubectlTgt.Run("delete", "namespace", namespace, "--ignore-not-found=true"); err != nil {
 				log.Printf("cleanup: failed to delete target namespace: %v", err)
 			}
@@ -55,9 +55,13 @@ var _ = Describe("Migrate namespace with multiple secret types", func() {
 		Expect(kubectlSrc.CreateNamespace(namespace)).NotTo(HaveOccurred())
 
 		By("Create Opaque secret on source")
-		Expect(kubectlSrc.Run("create", "secret", "generic", "opaque-secret", "--from-literal=key=value", "-n", namespace)).Error().NotTo(HaveOccurred())
+		_, err = kubectlSrc.Run("create", "secret", "generic", "opaque-secret", "--from-literal=key=value", "-n", namespace)
+		Expect(err).NotTo(HaveOccurred())
 
 		By("Generate TLS certificate and key")
+		if _, lookErr := exec.LookPath("openssl"); lookErr != nil {
+			Skip("openssl not found in PATH — skipping TLS secret creation")
+		}
 		certFile := filepath.Join(paths.TempDir, "tls.crt")
 		keyFile := filepath.Join(paths.TempDir, "tls.key")
 		cmd := exec.Command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", keyFile, "-out", certFile, "-days", "1", "-nodes", "-subj", "/CN=test")
@@ -65,10 +69,12 @@ var _ = Describe("Migrate namespace with multiple secret types", func() {
 		Expect(err).NotTo(HaveOccurred(), "openssl output: %s", out)
 
 		By("Create TLS secret on source")
-		Expect(kubectlSrc.Run("create", "secret", "tls", "tls-secret", "--cert="+certFile, "--key="+keyFile, "-n", namespace)).Error().NotTo(HaveOccurred())
+		_, err = kubectlSrc.Run("create", "secret", "tls", "tls-secret", "--cert="+certFile, "--key="+keyFile, "-n", namespace)
+		Expect(err).NotTo(HaveOccurred())
 
 		By("Create docker-registry secret on source")
-		Expect(kubectlSrc.Run("create", "secret", "docker-registry", "docker-secret", "--docker-server=quay.io", "--docker-username=user", "--docker-password=pass", "-n", namespace)).Error().NotTo(HaveOccurred())
+		_, err = kubectlSrc.Run("create", "secret", "docker-registry", "docker-secret", "--docker-server=quay.io", "--docker-username=user", "--docker-password=pass", "-n", namespace)
+		Expect(err).NotTo(HaveOccurred())
 
 		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir

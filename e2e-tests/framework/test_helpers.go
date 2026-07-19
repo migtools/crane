@@ -106,11 +106,11 @@ func VerifySecret(kubectl KubectlRunner, namespace, secretName, expectedType str
 		return fmt.Errorf("secret %s/%s: type field is not a string, got %T", namespace, secretName, secretObj["type"])
 	}
 	if actualType != expectedType {
-      return fmt.Errorf("secret %s/%s: expected type %q but got %q", namespace, secretName, expectedType, actualType)
+		return fmt.Errorf("secret %s/%s: expected type %q but got %q", namespace, secretName, expectedType, actualType)
 	}
 	data, ok := secretObj["data"].(map[string]any)
 	if !ok || len(data) == 0 {
-      return fmt.Errorf("secret %s/%s: data field is missing or empty, got %T", namespace, secretName, secretObj["data"])
+		return fmt.Errorf("secret %s/%s: data field is missing or empty, got %T", namespace, secretName, secretObj["data"])
 	}
 
 	log.Printf("Secret verified: name=%s type=%s\n", secretName, actualType)
