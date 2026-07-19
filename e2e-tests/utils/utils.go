@@ -199,18 +199,16 @@ func CompareDirectoryFileSets(goldenDir, gotDir string) error {
 	return nil
 }
 
-// CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
-// two directories using strict file-set equality and no export-specific normalization.
-func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
+// compareDirectoryYAMLSemanticsWithFunc is the shared implementation for directory YAML
+// comparison, parameterized by the per-file comparison function.
+func compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir string, compareFunc func(string, []byte, []byte) error) error {
 	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
 		return err
 	}
-
 	relativeFilePaths, err := ListFilesRecursivelyAsList(goldenDir)
 	if err != nil {
 		return fmt.Errorf("list files in golden directory %q: %w", goldenDir, err)
 	}
-
 	for _, relativeFilePath := range relativeFilePaths {
 		goldenPath := filepath.Join(goldenDir, relativeFilePath)
 		gotPath := filepath.Join(gotDir, relativeFilePath)
@@ -222,11 +220,17 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 		if err != nil {
 			return fmt.Errorf("read got file %q: %w", gotPath, err)
 		}
-		if err := compareYAMLFileBytes(relativeFilePath, goldenBytes, gotBytes); err != nil {
+		if err := compareFunc(relativeFilePath, goldenBytes, gotBytes); err != nil {
 			return fmt.Errorf("compare YAML file %q: %w", relativeFilePath, err)
 		}
 	}
 	return nil
+}
+
+// CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
+// two directories using strict file-set equality and no export-specific normalization.
+func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
+	return compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir, compareYAMLFileBytes)
 }
 
 // sortTopLevelArray returns a sorted copy of arr by canonical JSON representation of
@@ -279,32 +283,7 @@ func compareYAMLFileBytesUnordered(relPath string, golden, got []byte) error {
 // files in two directories treating arrays as unordered sets, so patch ordering
 // differences between runs do not cause false failures.
 func CompareDirectoryYAMLSemanticsUnordered(goldenDir, gotDir string) error {
-	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
-		return err
-	}
-
-	relativeFilePaths, err := ListFilesRecursivelyAsList(goldenDir)
-	if err != nil {
-		return fmt.Errorf("list files in golden directory %q: %w", goldenDir, err)
-	}
-
-	for _, relativeFilePath := range relativeFilePaths {
-		goldenPath := filepath.Join(goldenDir, relativeFilePath)
-		gotPath := filepath.Join(gotDir, relativeFilePath)
-		goldenBytes, err := os.ReadFile(goldenPath)
-		if err != nil {
-			return fmt.Errorf("read golden file %q: %w", goldenPath, err)
-		}
-		gotBytes, err := os.ReadFile(gotPath)
-		if err != nil {
-			return fmt.Errorf("read got file %q: %w", gotPath, err)
-		}
-		if err := compareYAMLFileBytesUnordered(relativeFilePath, goldenBytes, gotBytes); err != nil {
-			return fmt.Errorf("compare YAML file %q: %w", relativeFilePath, err)
-		}
-	}
-	return nil
-
+	return compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir, compareYAMLFileBytesUnordered)
 }
 
 // CompareDirectoryYAMLSemanticsExport compares export YAML semantics using

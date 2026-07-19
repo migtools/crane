@@ -24,9 +24,7 @@ var _ = Describe("Pipeline determinism", func() {
 			config.SourceContext,
 			config.SourceContext,
 		)
-		srcApp := scenario.SrcApp
-		kubectlSrc := scenario.KubectlSrc
-		isOpenShift := kubectlSrc.IsOpenShift()
+		srcApp := scenario.SrcAppNonAdmin
 
 		paths1, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
@@ -40,6 +38,11 @@ var _ = Describe("Pipeline determinism", func() {
 		transformOpts2 := TransformOptions{ExportDir: paths2.ExportDir, TransformDir: paths2.TransformDir}
 		applyOpts2 := ApplyOptions{ExportDir: paths2.ExportDir, TransformDir: paths2.TransformDir, OutputDir: paths2.OutputDir}
 
+		srcApp.ExtraVars = map[string]any{"non_admin_user": "true"}
+
+		By("Grant ns admin permissions to nonadmin user on source and target")
+		kubectlSrcNonAdmin, cleanup, err := SetupActiveNamespaceAdmin(scenario.KubectlSrc, config.SourceNonAdminContext, namespace)
+		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Cleanup temporary directories")
 			if err := os.RemoveAll(paths1.TempDir); err != nil {
@@ -53,25 +56,27 @@ var _ = Describe("Pipeline determinism", func() {
 				log.Printf("cleanup: %v", err)
 			}
 			By("Delete test namespace")
-			if _, err := kubectlSrc.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {
+			if _, err := scenario.KubectlSrc.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {
 				log.Printf("cleanup: %v", err)
 			}
 		})
+		DeferCleanup(cleanup)
+		isOpenShift := kubectlSrcNonAdmin.IsOpenShift()
 
 		By("Prepare source app")
 		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
+		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
 		By("Run crane export/transform/apply pipeline")
-		runner1 := scenario.Crane
+		runner1 := scenario.CraneNonAdmin
 		runner1.WorkDir = paths1.TempDir
 
-		runner2 := scenario.Crane
+		runner2 := scenario.CraneNonAdmin
 		runner2.WorkDir = paths2.TempDir
 
 		By("Wait for source quiesce to stabilize before export")
-		WaitForSourceQuiesce(kubectlSrc, namespace, "app="+appName, serviceName)
+		WaitForSourceQuiesce(kubectlSrcNonAdmin, namespace, "app="+appName, serviceName)
 
 		By("Run pipeline - first run")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
@@ -84,8 +89,7 @@ var _ = Describe("Pipeline determinism", func() {
 		By("Compare export dirs between runs")
 		compareExport := utils.CompareDirectoryYAMLSemanticsExport
 		if isOpenShift {
-			compareExport =
-				utils.CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults
+			compareExport = utils.CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults
 		}
 		Expect(compareExport(paths1.ExportDir, paths2.ExportDir)).NotTo(HaveOccurred())
 
