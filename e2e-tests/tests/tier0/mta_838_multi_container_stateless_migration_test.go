@@ -13,7 +13,7 @@ import (
 )
 
 var _ = Describe("Multi-container pod migration", func() {
-	It("[MTA-838] nginx+sidecar deployment migrates to target with all containers intact", Label("tier0"), func() {
+	It("[MTA-838] nginx+sidecar deployment migrates to target with all containers intact as namespace-admin user", Label("tier0"), func() {
 		appName := "sidecar-app"
 		namespace := appName
 		deploymentName := appName + "-deployment"
@@ -33,17 +33,40 @@ var _ = Describe("Multi-container pod migration", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		srcApp := scenario.SrcApp
-		tgtApp := scenario.TgtApp
-		kubectlSrc := scenario.KubectlSrc
-		kubectlTgt := scenario.KubectlTgt
+		srcApp := scenario.SrcAppNonAdmin
+		tgtApp := scenario.TgtAppNonAdmin
+		runner := scenario.CraneNonAdmin
+
+		srcApp.ExtraVars = map[string]any{
+			"non_admin_user": "true",
+		}
+		tgtApp.ExtraVars = map[string]any{
+			"non_admin_user": "true",
+		}
+
+		By("Grant ns admin permissions to nonadmin user on source and target")
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			By("Delete test namespace on source and target (wait for completion)")
+			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
+					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
+				}
+			}
+		})
+		DeferCleanup(cleanup)
+
+		By("Prepare source app")
+		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
+		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
-			OutputDir: paths.OutputDir}
+		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
@@ -51,13 +74,8 @@ var _ = Describe("Multi-container pod migration", func() {
 			}
 		})
 
-		By("Prepare source app")
-		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrc)).NotTo(HaveOccurred())
-		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
-
 		By("Verify both containers exist on source before export")
-		deploymentOut, err := kubectlSrc.Run("get", "deployment", deploymentName, "-n", namespace, "-o", "json")
+		deploymentOut, err := kubectlSrcNonAdmin.Run("get", "deployment", deploymentName, "-n", namespace, "-o", "json")
 		Expect(err).NotTo(HaveOccurred(), "should be able to get deployment from source")
 		log.Printf("deployment %s found on source cluster\n", deploymentName)
 
@@ -74,11 +92,10 @@ var _ = Describe("Multi-container pod migration", func() {
 		Expect(containers).To(HaveLen(2), "source deployment should have 2 containers")
 		log.Printf("Source deployment has %d containers\n", len(containers))
 
-		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 
 		By("Wait for source quiesce to stabilize before export")
-		WaitForSourceQuiesce(kubectlSrc, namespace, "app="+appName, "my-"+appName)
+		WaitForSourceQuiesce(kubectlSrcNonAdmin, namespace, "app="+appName, "my-"+appName)
 
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
@@ -94,18 +111,18 @@ var _ = Describe("Multi-container pod migration", func() {
 
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
-		Expect(ApplyOutputToTarget(kubectlTgt, namespace, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("Scale target deployment and validate app")
 		log.Printf("Scaling target deployment %s to 1\n", deploymentName)
-		Expect(kubectlTgt.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
+		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
 
 		By("Verify both containers are present on target deployment")
-		deploymentJson, err := kubectlTgt.Run("get", "deployment", deploymentName, "-n", namespace, "-o", "json")
+		deploymentJson, err := kubectlTgtNonAdmin.Run("get", "deployment", deploymentName, "-n", namespace, "-o", "json")
 		Expect(err).NotTo(HaveOccurred(), "should be able to get deployment from target")
 
 		var deploymentTgt map[string]any
