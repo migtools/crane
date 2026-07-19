@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"log"
+	"strings"
 	"os"
 	"path/filepath"
 
