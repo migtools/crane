@@ -440,6 +440,9 @@ func buildNormalizedExportIndex(dir string) (map[string][]exportIndexedDoc, erro
 		for i, doc := range docs {
 			identity, err := extractResourceIdentity(doc)
 			if err != nil {
+				if strings.Contains(relativeFilePath, "failures/") {
+					continue
+				}
 				return nil, fmt.Errorf("extract identity for %q doc #%d: %w", relativeFilePath, i+1, err)
 			}
 			normalized := normalizeUnstableFields(doc)
