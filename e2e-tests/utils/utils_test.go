@@ -1458,3 +1458,182 @@ func TestNormalizeUnstableFields(t *testing.T) {
 		})
 	}
 }
+
+func TestSortTopLevelArray(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    []any
+		expected []any
+	}{
+		{
+			name:     "already_sorted",
+			input:    []any{"a", "b", "c"},
+			expected: []any{"a", "b", "c"},
+		},
+		{
+			name:     "different_order",
+			input:    []any{"c", "a", "b"},
+			expected: []any{"a", "b", "c"},
+		},
+		{
+			name:     "empty",
+			input:    []any{},
+			expected: []any{},
+		},
+		{
+			name:     "nested_maps",
+			input:    []any{map[string]any{"z": 1}, map[string]any{"a": 1}},
+			expected: []any{map[string]any{"a": 1}, map[string]any{"z": 1}},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			result := sortTopLevelArray(tc.input)
+			if !cmp.Equal(tc.expected, result) {
+				t.Fatalf("sortTopLevelArray(%v): got %v, want %v", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+func TestCompareYAMLFileBytesUnordered(t *testing.T) {
+	cases := []struct {
+		name        string
+		relPath     string
+		golden      []byte
+		got         []byte
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name:    "identical_order",
+			relPath: "patches.yaml",
+			golden:  []byte("- a: 1\n- b: 2\n"),
+			got:     []byte("- a: 1\n- b: 2\n"),
+		},
+		{
+			name:    "different_order",
+			relPath: "patches.yaml",
+			golden:  []byte("- a: 1\n- b: 2\n"),
+			got:     []byte("- b: 2\n- a: 1\n"),
+		},
+		{
+			name:    "non_array_root",
+			relPath: "cm.yaml",
+			golden:  []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"),
+			got:     []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"),
+		},
+		{
+			name:        "semantic_mismatch",
+			relPath:     "patches.yaml",
+			golden:      []byte("- a: 1\n"),
+			got:         []byte("- a: 2\n"),
+			wantErr:     true,
+			errContains: []string{"YAML differs"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			err := compareYAMLFileBytesUnordered(tc.relPath, tc.golden, tc.got)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, s := range tc.errContains {
+					if !strings.Contains(err.Error(), s) {
+						t.Fatalf("error %q does not contain %q", err.Error(), s)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("compareYAMLFileBytesUnordered: %v", err)
+			}
+		})
+	}
+}
+func TestCompareDirectoryYAMLSemanticsUnordered(t *testing.T) {
+	write := func(t *testing.T, dir, rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cases := []struct {
+		name        string
+		build       func(t *testing.T) (string, string)
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name: "identical_content",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "patches.yaml", "- a: 1\n- b: 2\n")
+				write(t, got, "patches.yaml", "- a: 1\n- b: 2\n")
+				return golden, got
+			},
+		},
+		{
+			name: "different_array_order",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "patches.yaml", "- a: 1\n- b: 2\n")
+				write(t, got, "patches.yaml", "- b: 2\n- a: 1\n")
+				return golden, got
+			},
+		},
+		{
+			name: "semantic_mismatch",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "patches.yaml", "- a: 1\n")
+				write(t, got, "patches.yaml", "- a: 2\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"YAML differs"},
+		},
+		{
+			name: "file_set_mismatch",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "only-golden.yaml", "a: 1\n")
+				write(t, got, "only-got.yaml", "a: 1\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"file sets differ"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			goldenDir, gotDir := tc.build(t)
+			err := CompareDirectoryYAMLSemanticsUnordered(goldenDir, gotDir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, s := range tc.errContains {
+					if !strings.Contains(err.Error(), s) {
+						t.Fatalf("error %q does not contain %q", err.Error(), s)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CompareDirectoryYAMLSemanticsUnordered: %v", err)
+			}
+		})
+	}
+}

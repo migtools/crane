@@ -229,6 +229,7 @@ func compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir string, compareFunc
 
 // CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
 // two directories using strict file-set equality and no export-specific normalization.
+// This is intended for stable outputs (for example transform/output artifacts).
 func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 	return compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir, compareYAMLFileBytes)
 }
@@ -239,8 +240,11 @@ func sortTopLevelArray(arr []any) []any {
 	sorted := make([]any, len(arr))
 	copy(sorted, arr)
 	sort.Slice(sorted, func(i, j int) bool {
-		a, _ := json.Marshal(sorted[i])
-		b, _ := json.Marshal(sorted[j])
+		a, errA := json.Marshal(sorted[i])
+		b, errB := json.Marshal(sorted[j])
+		if errA != nil || errB != nil {
+			return false
+		}
 		return string(a) < string(b)
 	})
 	return sorted

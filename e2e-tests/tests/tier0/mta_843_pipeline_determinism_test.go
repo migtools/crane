@@ -68,7 +68,6 @@ var _ = Describe("Pipeline determinism", func() {
 		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
-		By("Run crane export/transform/apply pipeline")
 		runner1 := scenario.CraneNonAdmin
 		runner1.WorkDir = paths1.TempDir
 
