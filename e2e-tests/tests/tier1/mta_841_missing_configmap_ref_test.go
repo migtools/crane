@@ -49,8 +49,7 @@ var _ = Describe("Missing ConfigMap reference migration", func() {
 		})
 
 		By("Create source namespace")
-		_, err = kubectlSrc.Run("create", "namespace", namespace)
-		Expect(err).NotTo(HaveOccurred())
+		Expect(kubectlSrc.CreateNamespace(namespace)).NotTo(HaveOccurred())
 		log.Printf("Created source namespace %s\n", namespace)
 
 		By("Apply Deployment with missing ConfigMap reference to source")
