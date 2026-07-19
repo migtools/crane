@@ -27,7 +27,7 @@ type Orchestrator struct {
 	PluginDir      string
 	SkipPlugins    []string
 	OptionalFlags  map[string]string
-	Force          bool
+	Overwrite      bool
 	CraneVersion   string
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
 	// This prevents double-write errors when creating a stage and then running it
@@ -159,25 +159,20 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 	}
 
 	// Determine write behavior based on stage type
-	// Plugin stages: always allow overwrite (auto-regenerate)
-	// Custom stages: require --force flag
-	// Newly created stages: always allow overwrite
+	// Newly created stages: always allow overwrite (just created, safe to populate)
+	// All other stages: respect --overwrite flag
 	var forceWrite bool
 	if o.NewlyCreatedStages != nil && o.NewlyCreatedStages[stage.DirName] {
 		// Stage was just created in this run: safe to populate
 		forceWrite = true
 		o.Log.Debugf("Stage %s: allowing write (newly created in this run)", stage.DirName)
-	} else if strings.HasSuffix(stage.PluginName, "Plugin") {
-		// Plugin-based stage: automatically regenerate
-		forceWrite = true
-		o.Log.Debugf("Stage %s: allowing write (plugin-based stage auto-regeneration)", stage.DirName)
 	} else {
-		// Custom stage: respect --force flag
-		forceWrite = o.Force
+		// All stages (plugin and custom): respect --overwrite flag
+		forceWrite = o.Overwrite
 		if forceWrite {
-			o.Log.Debugf("Stage %s: allowing write (--force flag for custom stage)", stage.DirName)
+			o.Log.Debugf("Stage %s: allowing write (--overwrite flag set)", stage.DirName)
 		} else {
-			o.Log.Debugf("Stage %s: checking for empty directory (custom stage without --force)", stage.DirName)
+			o.Log.Debugf("Stage %s: checking for empty directory (no --overwrite flag)", stage.DirName)
 		}
 	}
 

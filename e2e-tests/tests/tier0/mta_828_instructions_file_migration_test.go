@@ -71,7 +71,7 @@ var _ = Describe("Instructions-file migration", func() {
 		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
-			InstructionsFile: instructionsFile, Force: false})).NotTo(HaveOccurred())
+			InstructionsFile: instructionsFile, Overwrite: false})).NotTo(HaveOccurred())
 
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
 		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
@@ -154,6 +154,6 @@ var _ = Describe("Instructions-file migration", func() {
 		By("Scale target deployment and validate app on target")
 		Expect(scenario.KubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 	})
 })

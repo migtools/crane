@@ -91,18 +91,23 @@ func (r *rsyncLogStream) Init() error {
 			// sometimes, a stream would end without returning an EOF gracefully
 			// we force exit the loop when we see null bytes on stream consecutively
 			if zeroBytes > 4 {
+				code, finalLogs, e := getFinalPodStatus(clientset, podName, r.pvc.Namespace)
+				if e == nil {
+					r.progress.ExitCode = code
+					logString = finalLogs
+				}
 				err = io.EOF
 			}
 			logString = fmt.Sprintf("%s%s", logString, string(buf[:n]))
 			if readErr == io.EOF {
 				err = readErr
-				// attempt to get a final status of terminated pod
-				code, finalLogs, e := getFinalPodStatus(clientset, podName, r.pvc.Namespace)
-				if e != nil {
-					err = e
+				if r.progress.ExitCode == nil {
+					code, finalLogs, e := getFinalPodStatus(clientset, podName, r.pvc.Namespace)
+					if e == nil {
+						r.progress.ExitCode = code
+						logString = finalLogs
+					}
 				}
-				r.progress.ExitCode = code
-				logString = finalLogs
 			}
 			parsedProgress, unparsed := parseRsyncLogs(logString)
 			r.progress.Merge(parsedProgress)
@@ -259,7 +264,7 @@ func (p *Progress) AsString() (out string, err string) {
 			}
 		}
 		if len(p.Errors) > 0 {
-			errors := "Errors: \n"
+			errors = "Errors: \n"
 			for _, e := range p.Errors {
 				errors = fmt.Sprintf("%s - %s\n", errors, e)
 			}
@@ -301,7 +306,7 @@ func (p *Progress) Status() status {
 			return succeeded
 		}
 		if p.TransferredFiles == 0 &&
-			p.TransferredData.val == 0 &&
+			(p.TransferredData == nil || p.TransferredData.val == 0) &&
 			p.TotalFiles == nil {
 			return failed
 		}
@@ -512,12 +517,10 @@ func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[str
 
 func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (*int32, string, error) {
 	var exitCode *int32
-	count := 0
-	for {
-		count += 1
+	for i := 0; i < 10; i++ {
 		pod, err := c.CoreV1().Pods(namespace).Get(context.Background(), name, metav1.GetOptions{})
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("failed to get pod %s/%s for final status: %w", namespace, name, err)
 		}
 
 		for _, container := range pod.Status.ContainerStatuses {
@@ -527,9 +530,10 @@ func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (
 				}
 			}
 		}
-		if count > 5 || exitCode != nil {
+		if exitCode != nil {
 			break
 		}
+		time.Sleep(time.Second)
 	}
 
 	lastLines := int64(35)

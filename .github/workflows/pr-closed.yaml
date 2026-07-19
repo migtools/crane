@@ -1,0 +1,16 @@
+name: Cherry-pick to release branches
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  cherry_pick_job:
+    if: github.event.pull_request.merged == true
+    permissions:
+      pull-requests: write
+      contents: write
+    uses: konveyor/release-tools/.github/workflows/cherry-pick.yml@main
+    secrets: inherit

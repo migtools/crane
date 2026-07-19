@@ -164,21 +164,16 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Transfer PVC from source to target")
-		// TODO(https://github.com/migtools/crane/issues/330): switch back to non-admin contexts
-		// (srcApp.Context, tgtApp.Context) once crane transfer-pvc correctly handles
-		// namespace-admin credentials on Linux.
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Target cluster IP: %s\n", tgtIP)
 
 		for _, pvc := range pvcs {
 			opts := TransferPVCOptions{
-				SourceContext:   scenario.SrcApp.Context,
-				TargetContext:   scenario.TgtApp.Context,
+				SourceContext:   srcApp.Context,
+				TargetContext:   tgtApp.Context,
 				PVCName:         pvc.Name,
 				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Endpoint:        "nginx-ingress",
-				IngressClass:    "nginx",
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s -> namespace %s on target\n", pvc.Name, tgtApp.Namespace)

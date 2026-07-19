@@ -130,16 +130,15 @@ jobs:
         with:
           text: |
             :pr-open-1: PR Ready for Review
-            PR Title: ${{ steps.guard.outputs.pr_title }}
-            PR: ${{ steps.guard.outputs.pr_url }}
-            Author: @${{ steps.guard.outputs.pr_author }}
-
+            ${{ steps.guard.outputs.pr_title }}
+            ${{ steps.guard.outputs.pr_url }} | @${{ steps.guard.outputs.pr_author }}
+ 
       - name: Mark PR as notified
         if: steps.guard.outputs.should_notify == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
+          set -euo pipefail  
           max_attempts=3
           for attempt in $(seq 1 "${max_attempts}"); do
             if gh api "repos/${GITHUB_REPOSITORY}/issues/${{ steps.guard.outputs.pr_number }}/labels" \

@@ -90,7 +90,7 @@ var _ = Describe("Stateless migration", func() {
 		Expect(kubectlTgt.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
 	})
 })

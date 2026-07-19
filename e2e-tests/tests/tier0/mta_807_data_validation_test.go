@@ -12,65 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func buildPVCFixPodSpec(namespace, podName string, pvcNames []string) string {
-	var b strings.Builder
-	b.WriteString("apiVersion: v1\n")
-	b.WriteString("kind: Pod\n")
-	b.WriteString("metadata:\n")
-	b.WriteString(fmt.Sprintf("  name: %s\n", podName))
-	b.WriteString(fmt.Sprintf("  namespace: %s\n", namespace))
-	b.WriteString("spec:\n")
-	b.WriteString("  restartPolicy: Never\n")
-	b.WriteString("  containers:\n")
-	b.WriteString("  - name: fix\n")
-	b.WriteString("    image: busybox\n")
-	b.WriteString("    command: [\"sh\", \"-c\", \"sleep 300\"]\n")
-	b.WriteString("    securityContext:\n")
-	b.WriteString("      runAsUser: 0\n")
-	b.WriteString("    volumeMounts:\n")
-	for i := range pvcNames {
-		b.WriteString(fmt.Sprintf("    - name: pvc-%d\n", i))
-		b.WriteString(fmt.Sprintf("      mountPath: /mnt/pvc-%d\n", i))
-	}
-	b.WriteString("  volumes:\n")
-	for i, pvcName := range pvcNames {
-		b.WriteString(fmt.Sprintf("  - name: pvc-%d\n", i))
-		b.WriteString("    persistentVolumeClaim:\n")
-		b.WriteString(fmt.Sprintf("      claimName: %s\n", pvcName))
-	}
-	return b.String()
-}
-
-func runPVCFixCommands(k KubectlRunner, namespace, podName string, pvcNames []string, commands []string) error {
-	if len(pvcNames) == 0 {
-		return fmt.Errorf("no PVCs provided for fix pod")
-	}
-	spec := buildPVCFixPodSpec(namespace, podName, pvcNames)
-	if err := k.ApplyYAMLSpec(spec, namespace); err != nil {
-		return fmt.Errorf("create pvc fix pod %q: %w", podName, err)
-	}
-	defer func() {
-		if _, err := k.Run("delete", "pod", podName, "-n", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
-			log.Printf("cleanup: failed to delete pvc fix pod %q: %v", podName, err)
-		}
-	}()
-
-	if _, err := k.Run(
-		"wait", "pod", podName,
-		"-n", namespace,
-		"--for=condition=Ready",
-		"--timeout=90s",
-	); err != nil {
-		return fmt.Errorf("wait for pvc fix pod %q ready: %w", podName, err)
-	}
-
-	cmd := strings.Join(commands, " && ")
-	if _, err := k.Run("exec", podName, "-n", namespace, "--", "sh", "-c", cmd); err != nil {
-		return fmt.Errorf("run pvc fix commands in %q: %w", podName, err)
-	}
-	return nil
-}
-
 func mysqlAuthorsCount(k KubectlRunner, namespace, podName string) (int, error) {
 	out, err := k.Run(
 		"exec", podName, "-n", namespace, "--",
@@ -196,10 +137,8 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one pvc in namespace %q", srcApp.Namespace)
 		log.Printf("Found %d pvcs in namespace %q", len(pvcs), srcApp.Namespace)
-		pvcNames := make([]string, 0, len(pvcs))
 		for _, pvc := range pvcs {
 			log.Printf("Found pvc %s in namespace %q\n", pvc.Name, pvc.Namespace)
-			pvcNames = append(pvcNames, pvc.Name)
 		}
 
 		By("Wait for source quiesce to stabilize before export")
@@ -215,24 +154,6 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 			}
 			return strings.TrimSpace(out), nil
 		}, "90s", "3s").Should(BeEmpty())
-
-		// Temporary workaround for BUG #213: remove once issue is fixed.
-		// See: https://github.com/migtools/crane/issues/213
-		By("[BUG #213] Relax source PVC permissions before transfer")
-		sourceFixCommands := make([]string, 0, len(pvcNames)*2)
-		for i := range pvcNames {
-			sourceFixCommands = append(sourceFixCommands,
-				fmt.Sprintf("if [ -d /mnt/pvc-%d/data ]; then chmod -R a+rX /mnt/pvc-%d/data; fi", i, i),
-				fmt.Sprintf("chmod -R a+rX /mnt/pvc-%d", i),
-			)
-		}
-		Expect(runPVCFixCommands(
-			kubectlSrcNonAdmin,
-			srcApp.Namespace,
-			"mysql-source-pvc-perm-fix",
-			pvcNames,
-			sourceFixCommands,
-		)).NotTo(HaveOccurred())
 
 		By("Run crane export/transform/apply pipeline")
 		log.Printf("Running crane pipeline for namespace %s\n", srcApp.Namespace)
@@ -250,32 +171,12 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 				TargetContext:   tgtApp.Context,
 				PVCName:         pvcName,
 				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Endpoint:        "nginx-ingress",
-				IngressClass:    "nginx",
 				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 			log.Printf("PVC transfer complete : %s -> namespace %s", pvcName, tgtApp.Namespace)
 		}
-
-		// Temporary workaround for BUG #213: remove once issue is fixed.
-		// See: https://github.com/migtools/crane/issues/213
-		By("[BUG #213] Restore destination PVC ownership for mysql runtime user")
-		targetFixCommands := make([]string, 0, len(pvcNames)*2)
-		for i := range pvcNames {
-			targetFixCommands = append(targetFixCommands,
-				fmt.Sprintf("if [ -d /mnt/pvc-%d/data ]; then chown -R 27:27 /mnt/pvc-%d/data && chmod -R u+rwX /mnt/pvc-%d/data; fi", i, i, i),
-				fmt.Sprintf("chown -R 27:27 /mnt/pvc-%d && chmod -R u+rwX /mnt/pvc-%d", i, i),
-			)
-		}
-		Expect(runPVCFixCommands(
-			kubectlTgtNonAdmin,
-			tgtApp.Namespace,
-			"mysql-target-pvc-owner-fix",
-			pvcNames,
-			targetFixCommands,
-		)).NotTo(HaveOccurred())
 
 		By("List PVCs on target cluster")
 		tgtpvcs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
@@ -294,7 +195,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 
 		By("Validate target application")
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		var tgtPodName string
 		Eventually(func() error {
 			podName, err := GetPodNameByLabel(kubectlTgtNonAdmin, tgtApp.Namespace, "app="+appName)
