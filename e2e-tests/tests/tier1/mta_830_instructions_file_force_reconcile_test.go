@@ -66,6 +66,14 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		By("Run crane export/transform/apply pipeline with instructions file")
 		log.Printf("Running crane export for namespace %s\n", srcApp.Namespace)
 		Expect(runner.Export(ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir})).NotTo(HaveOccurred())
+		instructionsFileName := "basic-instructions-file.yaml"
+		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
+		customStageDirName := "20_CustomStage"
+		if kubectlTgtNonAdmin.IsOpenShift() {
+			instructionsFileName = "basic-instructions-file-ocp.yaml"
+			stageDirectories = []string{"10_KubernetesPlugin", "20_OpenShiftPlugin", "30_CustomStage"}
+			customStageDirName = "30_CustomStage"
+		}
 
 		By("Create transform dir with orphan stage and existing stage present in instructions-file")
 		err = os.MkdirAll(paths.TransformDir, 0o755)
@@ -79,7 +87,7 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		err = os.MkdirAll(orphanOutputPath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
 		//Create path for CustomStage that should be overwritten with --overwrite
-		customStagePath := filepath.Join(paths.TransformDir, "20_CustomStage")
+		customStagePath := filepath.Join(paths.TransformDir, customStageDirName)
 		err = os.MkdirAll(customStagePath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
 		customStageExistingFilePath := filepath.Join(customStagePath, "preexisting.txt")
@@ -96,23 +104,17 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(orphanOutputDirInfo.IsDir()).To(BeTrue())
 
-		By("Assert 20_CustomStage exists before running transform")
+		By(fmt.Sprintf("Assert %s exists before running transform", customStageDirName))
 		customStageDirInfo, err := os.Stat(customStagePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(customStageDirInfo.IsDir()).To(BeTrue())
 
-		By("Assert 20_CustomStage has preexisting.txt file")
+		By(fmt.Sprintf("Assert %s has preexisting.txt file", customStageDirName))
 		customStageFileInfo, err := os.Stat(customStageExistingFilePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(customStageFileInfo.IsDir()).To(BeFalse())
 
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
-		instructionsFileName := "basic-instructions-file.yaml"
-		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
-		if kubectlTgtNonAdmin.IsOpenShift() {
-			instructionsFileName = "basic-instructions-file-ocp.yaml"
-			stageDirectories = []string{"10_KubernetesPlugin", "20_OpenShiftPlugin", "30_CustomStage"}
-		}
 		instructionsFile, err := utils.TestdataFilePath(instructionsFileName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
