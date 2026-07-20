@@ -62,6 +62,7 @@ type ApplyOptions struct {
 	OutputDir         string
 	KustomizeArgs     string
 	SkipClusterScoped bool
+	Ordered           bool
 	Stages            []string
 }
 
@@ -166,6 +167,9 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 	}
 	if opts.SkipClusterScoped {
 		args = append(args, "--skip-cluster-scoped")
+	}
+	if opts.Ordered {
+		args = append(args, "--ordered")
 	}
 	args = append(args, opts.Stages...)
 
