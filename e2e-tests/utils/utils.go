@@ -1255,6 +1255,15 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
 	return nil
 }
 
+// RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
+// replaces srcNamespace with tgtNamespace in metadata.namespace,
+// and returns the re-serialized YAML string.
+func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
+	docs, err := parseYAMLDocuments(content)
+	if err != nil {
+		return "", fmt.Errorf("parsing YAML documents: %w", err)
+	}
+
 	var parts []string
 	for i, doc := range docs {
 		obj, ok := doc.(map[string]any)
@@ -1355,7 +1364,7 @@ func fileHasPrefixAndSuffix(file, prefix, suffix string) bool {
 // Returns (true, nil) if all match, (false, nil) if any missing, or (false, err) on error.
 func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 	existingFiles, err := ListFilesRecursivelyAsList(dir)
-	if err != nil || len(existingFiles) == 0 {
+	if err != nil {
 		return false, err
 	}
 
@@ -1376,6 +1385,10 @@ func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 }
 
 func AssertResourcesDontExist(dir string, resources []ResourceMatch) (bool, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return true, nil
+	}
+
 	existingFiles, err := ListFilesRecursivelyAsList(dir)
 	if err != nil {
 		return false, err
