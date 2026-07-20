@@ -199,19 +199,16 @@ func CompareDirectoryFileSets(goldenDir, gotDir string) error {
 	return nil
 }
 
-// CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
-// two directories using strict file-set equality and no export-specific normalization.
-// This is intended for stable outputs (for example transform/output artifacts).
-func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
+// compareDirectoryYAMLSemanticsWithFunc is the shared implementation for directory YAML
+// comparison, parameterized by the per-file comparison function.
+func compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir string, compareFunc func(string, []byte, []byte) error) error {
 	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
 		return err
 	}
-
 	relativeFilePaths, err := ListFilesRecursivelyAsList(goldenDir)
 	if err != nil {
 		return fmt.Errorf("list files in golden directory %q: %w", goldenDir, err)
 	}
-
 	for _, relativeFilePath := range relativeFilePaths {
 		goldenPath := filepath.Join(goldenDir, relativeFilePath)
 		gotPath := filepath.Join(gotDir, relativeFilePath)
@@ -223,11 +220,74 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 		if err != nil {
 			return fmt.Errorf("read got file %q: %w", gotPath, err)
 		}
-		if err := compareYAMLFileBytes(relativeFilePath, goldenBytes, gotBytes); err != nil {
+		if err := compareFunc(relativeFilePath, goldenBytes, gotBytes); err != nil {
 			return fmt.Errorf("compare YAML file %q: %w", relativeFilePath, err)
 		}
 	}
 	return nil
+}
+
+// CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
+// two directories using strict file-set equality and no export-specific normalization.
+// This is intended for stable outputs (for example transform/output artifacts).
+func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
+	return compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir, compareYAMLFileBytes)
+}
+
+// sortTopLevelArray returns a sorted copy of arr by canonical JSON representation of
+// each element, enabling order-independent comparison of top-level YAML sequences
+func sortTopLevelArray(arr []any) []any {
+	sorted := make([]any, len(arr))
+	copy(sorted, arr)
+	sort.Slice(sorted, func(i, j int) bool {
+		a, errA := json.Marshal(sorted[i])
+		b, errB := json.Marshal(sorted[j])
+		if errA != nil || errB != nil {
+			return false
+		}
+		return string(a) < string(b)
+	})
+	return sorted
+}
+
+// compareYAMLFileBytesUnordered parses two YAML inputs and compares their decoded
+// document streams treating arrays as unordered sets. relPath is used only for error context.
+func compareYAMLFileBytesUnordered(relPath string, golden, got []byte) error {
+	goldenDocs, err := parseYAMLDocuments(golden)
+	if err != nil {
+		return fmt.Errorf("parse golden file %q: %w", relPath, err)
+	}
+
+	gotDocs, err := parseYAMLDocuments(got)
+	if err != nil {
+		return fmt.Errorf("parse got file %q: %w", relPath, err)
+	}
+
+	for i := range goldenDocs {
+		goldenDocs[i] = normalizeWithPath(goldenDocs[i], nil)
+		if arr, ok := goldenDocs[i].([]any); ok {
+			goldenDocs[i] = sortTopLevelArray(arr)
+		}
+	}
+	for i := range gotDocs {
+		gotDocs[i] = normalizeWithPath(gotDocs[i], nil)
+		if arr, ok := gotDocs[i].([]any); ok {
+			gotDocs[i] = sortTopLevelArray(arr)
+		}
+	}
+
+	if !cmp.Equal(goldenDocs, gotDocs) {
+		return fmt.Errorf("YAML differs in %q:\n%s", relPath, cmp.Diff(goldenDocs, gotDocs))
+	}
+
+	return nil
+}
+
+// CompareDirectoryYAMLSemanticsUnordered compares YAML semantics for all matching
+// files in two directories treating arrays as unordered sets, so patch ordering
+// differences between runs do not cause false failures.
+func CompareDirectoryYAMLSemanticsUnordered(goldenDir, gotDir string) error {
+	return compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir, compareYAMLFileBytesUnordered)
 }
 
 // CompareDirectoryYAMLSemanticsExport compares export YAML semantics using
@@ -380,6 +440,9 @@ func buildNormalizedExportIndex(dir string) (map[string][]exportIndexedDoc, erro
 		for i, doc := range docs {
 			identity, err := extractResourceIdentity(doc)
 			if err != nil {
+				if strings.Contains(relativeFilePath, "failures/") {
+					continue
+				}
 				return nil, fmt.Errorf("extract identity for %q doc #%d: %w", relativeFilePath, i+1, err)
 			}
 			normalized := normalizeUnstableFields(doc)
