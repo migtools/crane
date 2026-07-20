@@ -334,12 +334,20 @@ func isOptionalOCPOutputIdentity(identity string) bool {
 			strings.HasSuffix(identity, "|system:image-builders") ||
 			strings.HasSuffix(identity, "|system:image-pullers")):
 		return true
+	case strings.HasPrefix(identity, "authorization.openshift.io/v1|RoleBinding|") &&
+		(strings.HasSuffix(identity, "|system:deployers") ||
+			strings.HasSuffix(identity, "|system:image-builders") ||
+			strings.HasSuffix(identity, "|system:image-pullers")):
+		return true
 	case strings.HasPrefix(identity, "v1|ServiceAccount|") &&
 		(strings.HasSuffix(identity, "|builder") ||
 			strings.HasSuffix(identity, "|deployer")):
 		return true
 	case strings.HasPrefix(identity, "v1|ConfigMap|") &&
 		strings.HasSuffix(identity, "|openshift-service-ca.crt"):
+		return true
+	case strings.HasPrefix(identity, "v1|Secret|") &&
+		strings.Contains(identity, "|dockercfg:"):
 		return true
 	default:
 		return false
