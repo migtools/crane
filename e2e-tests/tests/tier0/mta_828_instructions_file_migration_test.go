@@ -28,7 +28,6 @@ var _ = Describe("Instructions-file migration", func() {
 			config.TargetContext,
 		)
 
-
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
@@ -38,7 +37,7 @@ var _ = Describe("Instructions-file migration", func() {
 		tgtApp.ExtraVars = srcApp.ExtraVars
 
 		By("Grant ns admin permissions to nonadmin user on source and target")
-		kubectlSrcNonAdmin, _, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			By("Delete test namespace on source and target (wait for completion)")
@@ -68,13 +67,18 @@ var _ = Describe("Instructions-file migration", func() {
 		log.Printf("Running crane export for namespace %s\n", srcApp.Namespace)
 		Expect(runner.Export(ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir})).NotTo(HaveOccurred())
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
-		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
+		instructionsFileName := "basic-instructions-file.yaml"
+		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
+		if kubectlTgtNonAdmin.IsOpenShift() {
+			instructionsFileName = "basic-instructions-file-ocp.yaml"
+			stageDirectories = []string{"10_KubernetesPlugin", "20_OpenShiftPlugin", "30_CustomStage"}
+		}
+		instructionsFile, err := utils.TestdataFilePath(instructionsFileName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
 			InstructionsFile: instructionsFile, Overwrite: false})).NotTo(HaveOccurred())
 
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
-		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
 		for _, stageDir := range stageDirectories {
 			dirPath := filepath.Join(paths.TransformDir, stageDir)
 			_, err = os.Stat(dirPath)

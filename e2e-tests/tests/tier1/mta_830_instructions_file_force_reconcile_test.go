@@ -27,7 +27,6 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 			config.TargetContext,
 		)
 
-
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
@@ -108,7 +107,13 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		Expect(customStageFileInfo.IsDir()).To(BeFalse())
 
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
-		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
+		instructionsFileName := "basic-instructions-file.yaml"
+		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
+		if kubectlTgtNonAdmin.IsOpenShift() {
+			instructionsFileName = "basic-instructions-file-ocp.yaml"
+			stageDirectories = []string{"10_KubernetesPlugin", "20_OpenShiftPlugin", "30_CustomStage"}
+		}
+		instructionsFile, err := utils.TestdataFilePath(instructionsFileName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
 			InstructionsFile: instructionsFile, Overwrite: true})).NotTo(HaveOccurred())
@@ -127,7 +132,6 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		Expect(os.IsNotExist(err)).To(BeTrue(), "expected preexisting custom stage file to be removed by --overwrite")
 
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
-		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
 		for _, stageDir := range stageDirectories {
 			dirPath := filepath.Join(paths.TransformDir, stageDir)
 			dirInfo, err := os.Stat(dirPath)
