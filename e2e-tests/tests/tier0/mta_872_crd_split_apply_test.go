@@ -52,10 +52,11 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 			YAML:      crYAML,
 			Resource:  "widgets",
 		}
+		tgtNameSpace := Namespace{Name: namespace}
 		paths, err := NewScenarioPaths("crane-*")
+		Expect(err).NotTo(HaveOccurred())
 
 		runner := scenario.Crane
-		Expect(err).NotTo(HaveOccurred())
 
 		exportOpts := ExportOptions{Namespace: srcAppNonAdmin.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
@@ -70,7 +71,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 
 		DeferCleanup(func() {
 			if err := ResourceCleanup(
-				[]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{cr, crd}); err != nil {
+				[]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{cr, crd, tgtNameSpace}); err != nil {
 				log.Printf("Resources cleanup: %v", err)
 			}
 			if err := CleanupScenario(paths.TempDir, srcAppNonAdmin, tgtAppNonAdmin); err != nil {
@@ -114,7 +115,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		Expect(isCrPresented).To(BeTrue())
 
 		By("Creating namespace on target cluster")
-		Expect(kubectlTgt.CreateNamespace(namespace)).NotTo(HaveOccurred())
+		Expect(tgtNameSpace.Create(kubectlTgt)).NotTo(HaveOccurred())
 
 		By("Applying CRD to target as cluster-admin")
 		Expect(kubectlTgt.ApplyDir(filepath.Join(paths.OutputDir, "resources", "_cluster"))).NotTo(HaveOccurred())
@@ -138,10 +139,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Verifying Widget CR has correct spec values on target")
-		color, err := kubectlTgtNonAdmin.Run("get", "widget", "test-widget", "-n", namespace,
-			"-o", "jsonpath={.spec.color}")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(color).To(Equal("blue"))
+		Expect(cr.AssertField(kubectlTgtNonAdmin, "{.spec.color}", "blue")).NotTo(HaveOccurred())
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())

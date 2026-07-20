@@ -1300,7 +1300,7 @@ func fileHasPrefixAndSuffix(file, prefix, suffix string) bool {
 // Returns (true, nil) if all match, (false, nil) if any missing, or (false, err) on error.
 func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 	existingFiles, err := ListFilesRecursivelyAsList(dir)
-	if err != nil || len(existingFiles) == 0 {
+	if err != nil {
 		return false, err
 	}
 
@@ -1315,25 +1315,6 @@ func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 		}
 		if !found {
 			return false, fmt.Errorf("%v not found", r.Name)
-		}
-	}
-	return true, nil
-}
-
-func AssertResourcesDontExist(dir string, resources []ResourceMatch) (bool, error) {
-	existingFiles, err := ListFilesRecursivelyAsList(dir)
-	if err != nil {
-		return false, err
-	}
-	if len(existingFiles) == 0 {
-		return true, nil
-	}
-	for _, r := range resources {
-		prefix, suffix := getPrefixAndSuffix(r)
-		for _, file := range existingFiles {
-			if fileHasPrefixAndSuffix(file, prefix, suffix) {
-				return false, fmt.Errorf("%v was found", r.Name)
-			}
 		}
 	}
 	return true, nil

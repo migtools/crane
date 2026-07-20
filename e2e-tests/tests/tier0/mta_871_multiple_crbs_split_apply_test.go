@@ -42,7 +42,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		}
 		paths, err := NewScenarioPaths("crane-na1-*")
 		Expect(err).NotTo(HaveOccurred())
-		NonAdminrunner := scenario.CraneNonAdmin
+		NonAdminRunner := scenario.CraneNonAdmin
 		adminRunner := scenario.Crane
 
 		exportOpts := ExportOptions{Namespace: srcAppNonAdmin.Namespace, ExportDir: paths.ExportDir}
@@ -111,7 +111,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		WaitForSourceQuiesce(kubectlSrcNonAdmin, namespace, "app="+appName, serviceName)
 
 		By("Namespace admin phase: Running crane export, transform, apply as namespace-admin")
-		Expect(RunCranePipelineWithChecks(NonAdminrunner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(NonAdminRunner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 		By("Namespace admin phase: Verifying expected cluster-resource failures for the current platform")
 		Expect(utils.AssertFilesExist(filepath.Join(paths.ExportDir, "failures", namespace), deniedResources)).NotTo(HaveOccurred())
@@ -130,7 +130,7 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		Expect(RunCranePipelineWithChecks(adminRunner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 		By("Cluster admin phase: Verifying cluster resources in output _cluster directory after cluster Admin phase")
-		allPresented, err := utils.AssertResourcesExist(filepath.Join(paths.ExportDir, "resources", namespace, "_cluster"), clusterResourcesMatch)
+		allPresented, err := utils.AssertResourcesExist(filepath.Join(paths.OutputDir, "resources", "_cluster"), clusterResourcesMatch)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(allPresented).To(BeTrue())
 
