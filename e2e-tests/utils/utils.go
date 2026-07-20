@@ -1361,35 +1361,6 @@ func ParseValidationReport(validateDir string, outputFormat string, report inter
 	return nil
 }
 
-// RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
-// replaces srcNamespace with tgtNamespace in metadata.namespace,
-// and returns the re-serialized YAML string.
-func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
-	docs, err := parseYAMLDocuments(content)
-	if err != nil {
-		return "", fmt.Errorf("parsing YAML documents: %w", err)
-	}
-
-	var parts []string
-	for i, doc := range docs {
-		obj, ok := doc.(map[string]any)
-		if !ok {
-			return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
-		}
-		if meta, ok := obj["metadata"].(map[string]any); ok {
-			if meta["namespace"] == srcNamespace {
-				meta["namespace"] = tgtNamespace
-			}
-		}
-		out, err := yaml.Marshal(obj)
-		if err != nil {
-			return "", fmt.Errorf("marshaling YAML document: %w", err)
-		}
-		parts = append(parts, string(out))
-	}
-	return strings.Join(parts, "---\n"), nil
-}
-
 // ResourceMatch defines criteria for matching an exported resource file.
 // Crane export filenames follow the pattern:
 //
@@ -1435,7 +1406,7 @@ func fileHasPrefixAndSuffix(file, prefix, suffix string) bool {
 // Returns (true, nil) if all match, (false, nil) if any missing, or (false, err) on error.
 func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 	existingFiles, err := ListFilesRecursivelyAsList(dir)
-	if err != nil || len(existingFiles) == 0 {
+	if err != nil {
 		return false, err
 	}
 
@@ -1450,25 +1421,6 @@ func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 		}
 		if !found {
 			return false, fmt.Errorf("%v not found", r.Name)
-		}
-	}
-	return true, nil
-}
-
-func AssertResourcesDontExist(dir string, resources []ResourceMatch) (bool, error) {
-	existingFiles, err := ListFilesRecursivelyAsList(dir)
-	if err != nil {
-		return false, err
-	}
-	if len(existingFiles) == 0 {
-		return true, nil
-	}
-	for _, r := range resources {
-		prefix, suffix := getPrefixAndSuffix(r)
-		for _, file := range existingFiles {
-			if fileHasPrefixAndSuffix(file, prefix, suffix) {
-				return false, fmt.Errorf("%v was found", r.Name)
-			}
 		}
 	}
 	return true, nil
