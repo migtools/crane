@@ -15,7 +15,7 @@ var _ = Describe("CRD group filtering during export", func() {
 	appName := "simple-nginx-nopv"
 	namespace := "simple-nginx-nopv"
 	serviceName := "my-" + appName
-	It("[CA-10a] Should skip CRD when --crd-skip-group matches", Label("tier0"), func() {
+	It("[MTA-869A] Should skip CRD when --crd-skip-group matches", Label("tier0"), func() {
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -89,9 +89,9 @@ var _ = Describe("CRD group filtering during export", func() {
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 		By("Verifying CRD is excluded from export")
-		found, err := utils.AssertResourcesExist(paths.ExportDir, excludedResource)
+		found, err := utils.AssertResourcesDontExist(filepath.Join(paths.ExportDir, "resources", namespace, "_cluster"), excludedResource)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeFalse())
+		Expect(found).To(BeTrue())
 
 		By("Verifying Widget CR exists in namespace export directory")
 		nameSpaceDir := filepath.Join(paths.ExportDir, "resources", namespace)
@@ -100,7 +100,7 @@ var _ = Describe("CRD group filtering during export", func() {
 		Expect(found).To(BeTrue())
 	})
 
-	It("[CA-10b] Should include CRD when --crd-include-group matches", Label("tier0"), func() {
+	It("[MTA-869b] Should include CRD when --crd-include-group matches", Label("tier0"), func() {
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -181,10 +181,6 @@ var _ = Describe("CRD group filtering during export", func() {
 			{Kind: cr.Kind, Name: cr.Name, Scope: namespace}})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(found).To(BeTrue())
-
-		// By("Verifying CRD exists in output _cluster directory")
-		// outputClusterPath := filepath.Join(paths.OutputDir, "resources", "_cluster")
-		// Expect(ValidateDirResources(outputClusterPath, crdPatterns)).NotTo(HaveOccurred())
 
 		By("Creating namespace on target cluster")
 		Expect(tgtNameSpace.Create(kubectlTgt)).NotTo(HaveOccurred())

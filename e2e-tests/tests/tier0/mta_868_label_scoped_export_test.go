@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Cluster-level export filtering", func() {
-	It("[CA-8] Should export only labeled workload and its RBAC with --label-selector", Label("tier0"), func() {
+	It("[MTA-868] Should export only labeled workload and its RBAC with --label-selector", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName
@@ -102,7 +102,7 @@ var _ = Describe("Cluster-level export filtering", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(allExcluded).To(BeTrue())
 
-		By("Verifying in-scope ClusterRole and ClusterRoleBinding exist in export, transform, and output")
+		By("Verifying in-scope ClusterRole and ClusterRoleBinding exist after export")
 		allFound, err := utils.AssertResourcesExist(exportClusterPath, inScopeResources)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(allFound).To(BeTrue())

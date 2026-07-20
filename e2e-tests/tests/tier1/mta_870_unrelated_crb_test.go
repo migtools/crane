@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Cluster-level export filtering", func() {
-	It("[CA-7] Should not export CRB with subject from another namespace", Label("cluster-admin"), func() {
+	It("[MTA-870] Should not export CRB with subject from another namespace", Label("cluster-admin"), func() {
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-nopv"
 		serviceName := "my-" + appName
@@ -87,13 +87,13 @@ var _ = Describe("Cluster-level export filtering", func() {
 
 		By("Verifying out-of-scope resources are not in export _cluster directory")
 		exportClusterPath := filepath.Join(paths.ExportDir, "resources", namespace, "_cluster")
-		found, err := utils.AssertResourcesExist(exportClusterPath, []utils.ResourceMatch{
+		found, err := utils.AssertResourcesDontExist(exportClusterPath, []utils.ResourceMatch{
 			{Kind: "ClusterRoleBinding", Name: unrelatedCRB.Name},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(found).To(BeFalse())
+		Expect(found).To(BeTrue())
 
-		By("Verifying linked ClusterRole and ClusterRoleBinding exist in export, transform, and output")
+		By("Verifying linked ClusterRole and ClusterRoleBinding exist after export")
 		found, err = utils.AssertResourcesExist(exportClusterPath, []utils.ResourceMatch{
 			{Kind: "ClusterRoleBinding", Name: testCRB.Name},
 			{Kind: "ClusterRole", Name: cr.Name},

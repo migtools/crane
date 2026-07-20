@@ -1407,7 +1407,7 @@ func fileHasPrefixAndSuffix(file, prefix, suffix string) bool {
 // Returns (true, nil) if all match, (false, nil) if any missing, or (false, err) on error.
 func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 	existingFiles, err := ListFilesRecursivelyAsList(dir)
-	if err != nil || len(existingFiles) == 0 {
+	if err != nil {
 		return false, err
 	}
 
@@ -1428,6 +1428,10 @@ func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 }
 
 func AssertResourcesDontExist(dir string, resources []ResourceMatch) (bool, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return true, nil
+	}
+
 	existingFiles, err := ListFilesRecursivelyAsList(dir)
 	if err != nil {
 		return false, err
