@@ -402,7 +402,7 @@ func (t *TransferPVCCommand) run() error {
 		}
 		err = srcClient.Create(context.TODO(), srcSecret)
 		if err != nil && !errors.IsAlreadyExists(err) {
-			log.Fatal(err, "failed to create certificate secret on source cluster")
+			log.Fatalf("failed to create certificate Secret %q in namespace %q on source cluster: %v", secretName, srcPVC.Namespace, err)
 		}
 	}
 

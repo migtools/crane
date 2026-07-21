@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -774,6 +775,67 @@ func TestTruncateWithHash(t *testing.T) {
 			again := truncateWithHash(tt.input)
 			if result != again {
 				t.Errorf("truncateWithHash() not deterministic: got %q then %q", result, again)
+			}
+		})
+	}
+}
+
+func TestIsIntraCluster(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  TransferPVCCommand
+		want bool
+	}{
+		{
+			name: "same cluster same namespace",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-a"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: true,
+		},
+		{
+			name: "same cluster different namespace",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-a"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns2"}}},
+			},
+			want: false,
+		},
+		{
+			name: "different cluster same namespace",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-b"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: false,
+		},
+		{
+			name: "nil source context",
+			cmd: TransferPVCCommand{
+				sourceContext:      nil,
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-a"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: false,
+		},
+		{
+			name: "nil destination context",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: nil,
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cmd.isIntraCluster(); got != tt.want {
+				t.Errorf("isIntraCluster() = %v, want %v", got, tt.want)
 			}
 		})
 	}
