@@ -120,13 +120,17 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		By("Cluster admin phase: Verifying cluster resources in output _cluster directory after cluster Admin phase")
 		Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"ClusterRole", "ClusterRoleBinding"})).NotTo(HaveOccurred())
 
-		By("Cluster admin phase: Applying namespace resources to target as namespace-admin")
+		By("Cluster admin phase: Applying cluster resources to target")
 		Expect(kubectlTgt.ApplyDir(filepath.Join(paths.OutputDir, "resources", "_cluster"))).NotTo(HaveOccurred())
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 		Eventually(tgtAppNonAdmin.Validate, "5m", "10s").Should(Succeed())
 
+		By("Verifying ClusterRoleBinding on target references correct ClusterRole and ServiceAccount")
+		Expect(ValidateClusterRBAC(kubectlTgt, []ExpectedClusterRoleBinding{
+			{ClusterRoleBindingName: clusterRoleBindingName, ClusterRoleName: clusterRoleName, SubjectName: sa.Name},
+		})).NotTo(HaveOccurred())
 	})
 
 })
