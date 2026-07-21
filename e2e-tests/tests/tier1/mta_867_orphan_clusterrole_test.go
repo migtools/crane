@@ -60,11 +60,14 @@ var _ = Describe("Cluster-level export filtering", func() {
 		By("Running crane export, transform, apply")
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
-		By("Verifying orphan ClusterRole Did not migrate")
-		clusterDir := filepath.Join(paths.OutputDir, "resources", "_cluster")
-		_, _, err = utils.HasFilesRecursively(clusterDir)
-		//we dont expct orphan cr's to be migrated,so _cluster dir should not be created.
-		Expect(err).To(HaveOccurred())
+		By("Verifying no resources failed to export")
+		failuresDir := filepath.Join(paths.ExportDir, "failures", namespace)
+		hasFiles, _, err := utils.HasFilesRecursively(failuresDir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hasFiles).To(BeFalse())
 
+		By("Verifying orphan ClusterRole Did not migrate")
+		//we don't expect orphan cr's to be migrated,so _cluster dir should not be created.
+		Expect(filepath.Join(paths.OutputDir, "resources", "_cluster")).NotTo(BeADirectory())
 	})
 })
