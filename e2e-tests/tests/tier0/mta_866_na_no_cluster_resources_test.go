@@ -46,13 +46,12 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		kubectlSrcNonAdmin, kubectlTgtNonAdmin, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			rbacCleanup()
-
 			if err := CleanupScenario(paths.TempDir, srcAppNonAdmin, tgtAppNonAdmin); err != nil {
 				log.Printf("Scenario cleanup: %v", err)
 			}
-
 		})
+
+		DeferCleanup(rbacCleanup)
 
 		By("Deploying namespace-only app as namespace-admin on source cluster")
 		err = PrepareSourceApp(srcAppNonAdmin, kubectlSrcNonAdmin)
@@ -66,11 +65,11 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 
 		By("Verifying no cluster resources was migrated")
 		clusterDir := filepath.Join(paths.OutputDir, "resources", "_cluster")
-		//no cluster resurces-> no _cluster folder created ->we expect an error.
+		//no cluster resources-> no _cluster folder created ->we expect an error.
 		Expect(clusterDir).NotTo(BeADirectory())
 
 		By("Applying namespace resources to target as namespace-admin")
-		Expect(kubectlTgtNonAdmin.ApplyDir(filepath.Join(paths.OutputDir))).NotTo(HaveOccurred())
+		Expect(kubectlTgtNonAdmin.ApplyDir(paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
