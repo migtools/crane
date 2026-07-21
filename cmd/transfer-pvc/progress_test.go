@@ -395,26 +395,6 @@ func TestProgressMerge_BasicFields(t *testing.T) {
 	}
 }
 
-func TestProgressMerge_PercentageAggregation(t *testing.T) {
-	resetGlobals()
-	pct1 := int64(50)
-	pct2 := int64(40)
-	p := &Progress{
-		TransferPercentage: &pct1,
-		FailedFiles:        []FailedFile{},
-		Errors:             []string{},
-	}
-	in := &Progress{
-		TransferPercentage: &pct2,
-		FailedFiles:        []FailedFile{},
-		Errors:             []string{},
-	}
-	p.Merge(in)
-	if p.TransferPercentage == nil {
-		t.Errorf("Merge() TransferPercentage = nil, want non-nil")
-	}
-}
-
 func TestProgressMerge_PercentageBasicUpdate(t *testing.T) {
 	resetGlobals()
 	inPct := int64(40)
@@ -826,6 +806,8 @@ func TestNewDataSize_ParseWithUnit(t *testing.T) {
 		{"with K unit", "512K", 512, "K"},
 		{"with T unit", "2T", 2, "T"},
 		{"with MB/s unit", "88.19MB/s", 88.19, "MB/s"},
+		{"leading-zero decimal", "0.5G", 0.5, "G"},
+		{"multi-digit decimal", "12.34T", 12.34, "T"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -855,34 +837,6 @@ func TestNewDataSize_ParseWithoutUnit(t *testing.T) {
 	}
 	if got.unit != "bytes" {
 		t.Errorf("newDataSize('1024').unit = %v, want 'bytes'", got.unit)
-	}
-}
-
-func TestNewDataSize_ParseDecimalValues(t *testing.T) {
-	tests := []struct {
-		name     string
-		str      string
-		wantVal  float64
-		wantUnit string
-	}{
-		{"0.5G", "0.5G", 0.5, "G"},
-		{"12.34T", "12.34T", 12.34, "T"},
-		{"88.19MB/s", "88.19MB/s", 88.19, "MB/s"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := newDataSize(tt.str)
-			if got == nil {
-				t.Errorf("newDataSize(%q) = nil, want non-nil", tt.str)
-				return
-			}
-			if got.val != tt.wantVal {
-				t.Errorf("newDataSize(%q).val = %v, want %v", tt.str, got.val, tt.wantVal)
-			}
-			if got.unit != tt.wantUnit {
-				t.Errorf("newDataSize(%q).unit = %v, want %v", tt.str, got.unit, tt.wantUnit)
-			}
-		})
 	}
 }
 
