@@ -1537,7 +1537,8 @@ func TestGetRouteHostName_LongPrefix(t *testing.T) {
 		t.Fatal("getRouteHostName() expected non-nil hostname for long prefix, got nil")
 	}
 
-	expectedHostname := prefix[:62] + ".apps.example.com"
+	truncated := truncateWithHash(prefix)
+	expectedHostname := truncated + ".apps.example.com"
 	if *hostname != expectedHostname {
 		t.Errorf("getRouteHostName() = %q, want %q", *hostname, expectedHostname)
 	}
