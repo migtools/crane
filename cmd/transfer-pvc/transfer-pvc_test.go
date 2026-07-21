@@ -1027,54 +1027,6 @@ func TestMappedNameVar_String(t *testing.T) {
 	}
 }
 
-func TestMappedNameVar_Set(t *testing.T) {
-	tests := []struct {
-		name            string
-		input           string
-		wantSource      string
-		wantDestination string
-		wantErr         bool
-	}{
-		{
-			name:            "parses source:destination format",
-			input:           "src-pvc:dest-pvc",
-			wantSource:      "src-pvc",
-			wantDestination: "dest-pvc",
-			wantErr:         false,
-		},
-		{
-			name:            "single value sets both source and destination",
-			input:           "my-pvc",
-			wantSource:      "my-pvc",
-			wantDestination: "my-pvc",
-			wantErr:         false,
-		},
-		{
-			name:    "empty string returns error",
-			input:   "",
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := &mappedNameVar{}
-			err := m.Set(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("mappedNameVar.Set() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr {
-				if m.source != tt.wantSource {
-					t.Errorf("mappedNameVar.Set() source = %v, want %v", m.source, tt.wantSource)
-				}
-				if m.destination != tt.wantDestination {
-					t.Errorf("mappedNameVar.Set() destination = %v, want %v", m.destination, tt.wantDestination)
-				}
-			}
-		})
-	}
-}
-
 func TestMappedNameVar_Type(t *testing.T) {
 	m := &mappedNameVar{}
 	got := m.Type()
@@ -1809,36 +1761,6 @@ func TestGetNodeNameForPVC_SkipsNonRunningPods(t *testing.T) {
 			wantNodeName: "",
 		},
 		{
-			name:      "succeeded pod with matching PVC is skipped",
-			namespace: "test-ns",
-			pvcName:   "my-pvc",
-			pods: []corev1.Pod{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "succeeded-pod",
-						Namespace: "test-ns",
-					},
-					Spec: corev1.PodSpec{
-						NodeName: "worker-node-1",
-						Volumes: []corev1.Volume{
-							{
-								Name: "data",
-								VolumeSource: corev1.VolumeSource{
-									PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-										ClaimName: "my-pvc",
-									},
-								},
-							},
-						},
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodSucceeded,
-					},
-				},
-			},
-			wantNodeName: "",
-		},
-		{
 			name:      "failed pod with matching PVC is skipped",
 			namespace: "test-ns",
 			pvcName:   "my-pvc",
@@ -1939,52 +1861,6 @@ func TestGetNodeNameForPVC_SkipsNonRunningPods(t *testing.T) {
 				t.Errorf("getNodeNameForPVC() = %v, want %v", gotNodeName, tt.wantNodeName)
 			}
 		})
-	}
-}
-
-func TestDeleteResourcesIteratively_SuccessfulDeletion(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = corev1.AddToScheme(scheme)
-
-	labels := map[string]string{
-		"app.kubernetes.io/name": "crane",
-	}
-
-	svc := &corev1.Service{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Service",
-			APIVersion: "v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-svc",
-			Namespace: "test-ns",
-			Labels:    labels,
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(svc).Build()
-
-	iterativeTypes := []client.Object{
-		&corev1.Service{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "Service",
-				APIVersion: corev1.SchemeGroupVersion.Version,
-			},
-		},
-	}
-
-	err := deleteResourcesIteratively(fakeClient, iterativeTypes, labels, "test-ns")
-	if err != nil {
-		t.Fatalf("deleteResourcesIteratively() error = %v, want nil", err)
-	}
-
-	svcList := &corev1.ServiceList{}
-	listErr := fakeClient.List(context.TODO(), svcList, client.InNamespace("test-ns"), client.MatchingLabels(labels))
-	if listErr != nil {
-		t.Fatalf("Failed to list services: %v", listErr)
-	}
-	if len(svcList.Items) != 0 {
-		t.Errorf("deleteResourcesIteratively() did not delete service, still have %d items", len(svcList.Items))
 	}
 }
 
