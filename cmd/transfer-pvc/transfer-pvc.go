@@ -230,6 +230,10 @@ func (t *TransferPVCCommand) Validate() error {
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
+	if t.isIntraCluster() && t.PVC.Name.source == t.PVC.Name.destination {
+		return fmt.Errorf("source and destination PVC names must differ for same-cluster same-namespace transfers")
+	}
+
 	err := t.PVC.Validate()
 	if err != nil {
 		return err
@@ -401,7 +405,19 @@ func (t *TransferPVCCommand) run() error {
 			Data:       destSecret.Data,
 		}
 		err = srcClient.Create(context.TODO(), srcSecret)
-		if err != nil && !errors.IsAlreadyExists(err) {
+		if errors.IsAlreadyExists(err) {
+			existing := &corev1.Secret{}
+			if getErr := srcClient.Get(context.TODO(), client.ObjectKey{Name: secretName, Namespace: srcPVC.Namespace}, existing); getErr != nil {
+				log.Fatalf("failed to get existing certificate Secret %q in namespace %q: %v", secretName, srcPVC.Namespace, getErr)
+			}
+			existing.Data = destSecret.Data
+			existing.StringData = destSecret.StringData
+			existing.Labels = secretLabels
+			existing.Annotations = destSecret.Annotations
+			if updateErr := srcClient.Update(context.TODO(), existing); updateErr != nil {
+				log.Fatalf("failed to update certificate Secret %q in namespace %q: %v", secretName, srcPVC.Namespace, updateErr)
+			}
+		} else if err != nil {
 			log.Fatalf("failed to create certificate Secret %q in namespace %q on source cluster: %v", secretName, srcPVC.Namespace, err)
 		}
 	}

@@ -2,6 +2,7 @@ package transfer_pvc
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -836,6 +837,77 @@ func TestIsIntraCluster(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.cmd.isIntraCluster(); got != tt.want {
 				t.Errorf("isIntraCluster() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     TransferPVCCommand
+		wantErr bool
+	}{
+		{
+			name: "same name same cluster same namespace is rejected",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c1"},
+				Flags: Flags{PVC: PvcFlags{
+					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
+					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+				}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "no colon pvc-name same cluster same namespace is rejected",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c1"},
+				Flags: Flags{PVC: PvcFlags{
+					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
+					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+				}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "different name same cluster same namespace is allowed",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c1"},
+				Flags: Flags{PVC: PvcFlags{
+					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data-new"},
+					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+				}},
+			},
+			wantErr: false,
+		},
+		{
+			name: "same name cross cluster is allowed",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c2"},
+				Flags: Flags{PVC: PvcFlags{
+					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
+					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+				}},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			if tt.wantErr && err == nil {
+				t.Error("Validate() should have returned error but didn't")
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), "must differ") {
+				t.Errorf("Validate() returned unexpected error: %v", err)
+			}
+			if !tt.wantErr && err != nil && strings.Contains(err.Error(), "must differ") {
+				t.Errorf("Validate() should not have rejected this case: %v", err)
 			}
 		})
 	}
