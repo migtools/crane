@@ -85,7 +85,6 @@ type PathOpts struct {
 	TransformDir      string
 	ExportDir         string
 	OutputDir         string
-	IgnoredPatchesDir string
 }
 
 func (opts *PathOpts) GetWhiteOutFilePath(filePath string) string {
@@ -96,19 +95,8 @@ func (opts *PathOpts) GetTransformPath(filePath string) string {
 	return opts.updateTransformDirPath("transform-", filePath)
 }
 
-func (opts *PathOpts) GetIgnoredPatchesPath(filePath string) string {
-	return opts.updateIgnoredPatchesDirPath("ignored-", filePath)
-}
-
 func (opts *PathOpts) updateTransformDirPath(prefix, filePath string) string {
 	return opts.updatePath(opts.TransformDir, prefix, filePath)
-}
-
-func (opts *PathOpts) updateIgnoredPatchesDirPath(prefix, filePath string) string {
-	if len(opts.IgnoredPatchesDir) == 0 {
-		return ""
-	}
-	return opts.updatePath(opts.IgnoredPatchesDir, prefix, filePath)
 }
 
 func (opts *PathOpts) updatePath(updateDir, prefix, filePath string) string {
