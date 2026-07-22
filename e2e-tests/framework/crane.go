@@ -50,7 +50,7 @@ type TransformOptions struct {
 	IgnoredPatchesDir string
 	SkipPlugins       []string
 	OptionalFlags     string
-	Force             bool
+	Overwrite         bool
 	KustomizeArgs     string
 	InstructionsFile  string
 	Stages            []string
@@ -126,8 +126,8 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 	if opts.OptionalFlags != "" {
 		args = append(args, "--optional-flags", opts.OptionalFlags)
 	}
-	if opts.Force {
-		args = append(args, "--force")
+	if opts.Overwrite {
+		args = append(args, "--overwrite")
 	}
 	if opts.KustomizeArgs != "" {
 		args = append(args, "--kustomize-args", opts.KustomizeArgs)

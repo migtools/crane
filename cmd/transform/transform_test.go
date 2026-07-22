@@ -430,7 +430,7 @@ func TestCreateDefaultStagesForAllPlugins_PathTraversalProtection(t *testing.T) 
 
 // Tests from upstream for instructions file functionality
 
-func TestReconcileInstructionStages_Force(t *testing.T) {
+func TestReconcileInstructionStages_Overwrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	transformDir := filepath.Join(tmpDir, "transform")
 	if err := os.MkdirAll(transformDir, 0755); err != nil {
@@ -447,7 +447,7 @@ func TestReconcileInstructionStages_Force(t *testing.T) {
 
 	o := &Options{
 		Flags: Flags{
-			Force: true,
+			Overwrite: true,
 		},
 	}
 
