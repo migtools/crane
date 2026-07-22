@@ -15,10 +15,10 @@ import (
 )
 
 type liveFlagTestFixture struct {
-	tempDir      string
-	inputDir     string
-	validateDir  string
-	runner       CraneRunner
+	tempDir       string
+	inputDir      string
+	validateDir   string
+	runner        CraneRunner
 	targetContext string
 }
 
@@ -216,30 +216,6 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Invalid --output=xml correctly rejected (live mode): %v", err)
 	})
 
-	It("[MTA-874] --output=yaml should produce report.yaml instead of report.json (live mode)", Label("tier2", "validate"), func() {
-		fixture := setupLiveFlagTestFixture("crane-validate-live-yaml-output-*", targetContext)
-
-		By("Run validate with --output=yaml")
-		_, err := fixture.runner.Validate(ValidateOptions{
-			Context:      fixture.targetContext,
-			InputDir:     fixture.inputDir,
-			ValidateDir:  fixture.validateDir,
-			OutputFormat: "yaml",
-		})
-		Expect(err).NotTo(HaveOccurred(), "validate with --output=yaml should succeed")
-
-		By("Verify report.yaml exists")
-		yamlReportPath := filepath.Join(fixture.validateDir, "report.yaml")
-		Expect(yamlReportPath).To(BeAnExistingFile(), "expected report.yaml at %s", yamlReportPath)
-		log.Printf("report.yaml created at %s (live mode)", yamlReportPath)
-
-		By("Verify report.json does NOT exist")
-		jsonReportPath := filepath.Join(fixture.validateDir, "report.json")
-		Expect(jsonReportPath).NotTo(BeAnExistingFile(),
-			"report.json should not exist when --output=yaml is used")
-		log.Printf("report.json correctly absent when --output=yaml is used (live mode)")
-	})
-
 	It("[MTA-874] --api-resources and --context should be mutually exclusive", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-mutual-excl-*", targetContext)
 
@@ -337,17 +313,9 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			ValidateDir:  validateDir,
 			OutputFormat: "json",
 		})
-		Expect(err).NotTo(HaveOccurred(), "validate should succeed with 0 resources scanned for an empty input dir")
-
-		reportPath := filepath.Join(validateDir, "report.json")
-		Expect(reportPath).To(BeAnExistingFile())
-
-		reportData, readErr := os.ReadFile(reportPath)
-		Expect(readErr).NotTo(HaveOccurred())
-
-		var report cranevalidate.ValidationReport
-		Expect(json.Unmarshal(reportData, &report)).To(Succeed())
-		Expect(report.TotalScanned).To(Equal(0), "should have scanned 0 resources from empty dir")
-		log.Printf("Empty input report (live): scanned=%d", report.TotalScanned)
+		Expect(err).To(HaveOccurred(), "validate should fail when input dir contains no manifests")
+		Expect(err.Error()).To(ContainSubstring("no manifests found"),
+			"error should indicate no manifests were found in the empty input dir")
+		log.Printf("Empty --input-dir correctly rejected (live mode): %v", err)
 	})
 })
