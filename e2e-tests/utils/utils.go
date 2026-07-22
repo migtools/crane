@@ -770,6 +770,21 @@ func normalizeUnstableFields(doc any) any {
 		return normalized
 	}
 
+	if kind == "Route" {
+		// OpenShift may auto-generate route hostnames per-cluster, which are
+		// not semantically relevant for migration fixture comparisons.
+		if spec, ok := root["spec"].(map[string]any); ok {
+			delete(spec, "host")
+		}
+		if annotations, ok := metadata["annotations"].(map[string]any); ok {
+			delete(annotations, "openshift.io/host.generated")
+			if len(annotations) == 0 {
+				delete(metadata, "annotations")
+			}
+		}
+		return normalized
+	}
+
 	if kind == "ReplicaSet" {
 		delete(metadata, "name")
 		stripPodTemplateHash(metadata)
@@ -913,6 +928,11 @@ func normalizeWithPath(value any, path []string) any {
 			// An empty securityContext: {} is semantically identical to absent.
 			// Some plugins strip it, others preserve it — treat both as equal.
 			if k == "securityContext" {
+				if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
+					continue
+				}
+			}
+			if k == "annotations" {
 				if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
 					continue
 				}
