@@ -72,7 +72,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		}
 	})
 
-	It("[MTA-396] --overwrite should fail when validate-dir already exists without the flag (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --overwrite should fail when validate-dir already exists without the flag (live mode)", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-err-*", targetContext)
 
 		By("Run validate to populate the validate directory")
@@ -99,7 +99,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Second validate run correctly failed: %v", err)
 	})
 
-	It("[MTA-396] --overwrite should succeed when validate-dir already exists (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --overwrite should succeed when validate-dir already exists (live mode)", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-ok-*", targetContext)
 
 		By("Run validate to populate the validate directory")
@@ -138,22 +138,12 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			report.Mode, report.TotalScanned, report.Compatible)
 	})
 
-	It("[MTA-396] --input-dir should default to 'output' when omitted (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should default to 'output' when omitted (live mode)", Label("tier2", "validate"), func() {
 		tempDir, err := os.MkdirTemp("", "crane-validate-live-default-input-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			Expect(os.RemoveAll(tempDir)).To(Succeed())
 		})
-
-		scenario := NewMigrationScenario(
-			"validate-flags-live",
-			"validate-flags-live",
-			config.K8sDeployBin,
-			config.CraneBin,
-			config.SourceContext,
-			config.TargetContext,
-		)
-		tgtCtx := scenario.KubectlTgt.Context
 
 		By("Create 'output' directory in workdir with golden manifests")
 		defaultInputDir := filepath.Join(tempDir, "output")
@@ -170,7 +160,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 
 		By("Run validate without specifying --input-dir (should default to 'output')")
 		_, err = runner.Validate(ValidateOptions{
-			Context:      tgtCtx,
+			Context:      targetContext,
 			ValidateDir:  validateDir,
 			OutputFormat: "json",
 		})
@@ -189,7 +179,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Default --input-dir (live): scanned %d resources from 'output' directory", report.TotalScanned)
 	})
 
-	It("[MTA-396] --validate-dir should default to 'validate' when omitted (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --validate-dir should default to 'validate' when omitted (live mode)", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-default-validatedir-*", targetContext)
 
 		By("Run validate without specifying --validate-dir (should default to 'validate')")
@@ -207,7 +197,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Default --validate-dir (live): report created at %s", defaultReportPath)
 	})
 
-	It("[MTA-396] --output should reject invalid format (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output should reject invalid format (live mode)", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-invalid-output-*", targetContext)
 
 		By("Run validate with --output=xml")
@@ -218,12 +208,15 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			OutputFormat: "xml",
 		})
 		Expect(err).To(HaveOccurred(), "validate should fail for unsupported output format")
-		Expect(err.Error()).To(ContainSubstring("must be"),
-			"error should indicate valid output format options")
+		Expect(err.Error()).To(SatisfyAll(
+			ContainSubstring("output"),
+			ContainSubstring("xml"),
+			ContainSubstring("must be"),
+		), "error should name the invalid format and list supported formats")
 		log.Printf("Invalid --output=xml correctly rejected (live mode): %v", err)
 	})
 
-	It("[MTA-396] --output=yaml should produce report.yaml instead of report.json (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output=yaml should produce report.yaml instead of report.json (live mode)", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-yaml-output-*", targetContext)
 
 		By("Run validate with --output=yaml")
@@ -242,13 +235,12 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 
 		By("Verify report.json does NOT exist")
 		jsonReportPath := filepath.Join(fixture.validateDir, "report.json")
-		_, statErr := os.Stat(jsonReportPath)
-		Expect(os.IsNotExist(statErr)).To(BeTrue(),
+		Expect(jsonReportPath).NotTo(BeAnExistingFile(),
 			"report.json should not exist when --output=yaml is used")
 		log.Printf("report.json correctly absent when --output=yaml is used (live mode)")
 	})
 
-	It("[MTA-396] --api-resources and --context should be mutually exclusive", Label("tier2", "validate"), func() {
+	It("[MTA-874] --api-resources and --context should be mutually exclusive", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-mutual-excl-*", targetContext)
 
 		apiResourcesFile := filepath.Join(fixture.tempDir, "api-resources.json")
@@ -263,15 +255,18 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			APIResourcesFile: apiResourcesFile,
 		})
 		Expect(err).To(HaveOccurred(), "validate should fail when both --context and --api-resources are provided")
-		Expect(err.Error()).To(SatisfyAny(
-			ContainSubstring("mutually exclusive"),
-			ContainSubstring("cannot be used"),
+		Expect(err.Error()).To(SatisfyAll(
+			ContainSubstring("context"),
 			ContainSubstring("api-resources"),
-		), "error should mention flag conflict")
+			SatisfyAny(
+				ContainSubstring("mutually exclusive"),
+				ContainSubstring("cannot be used"),
+			),
+		), "error should name both flags and state they are mutually exclusive")
 		log.Printf("Mutual exclusivity correctly enforced: %v", err)
 	})
 
-	It("[MTA-396] --output should default to json when omitted (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output should default to json when omitted (live mode)", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-default-output-*", targetContext)
 
 		By("Run validate without specifying --output")
@@ -297,12 +292,11 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 
 		By("Verify report.yaml does NOT exist")
 		yamlReportPath := filepath.Join(fixture.validateDir, "report.yaml")
-		_, statErr := os.Stat(yamlReportPath)
-		Expect(os.IsNotExist(statErr)).To(BeTrue(),
+		Expect(yamlReportPath).NotTo(BeAnExistingFile(),
 			"report.yaml should not exist when --output defaults to json")
 	})
 
-	It("[MTA-396] --input-dir should fail when path does not exist (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should fail when path does not exist (live mode)", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-nonexistent-input-*", targetContext)
 
 		nonExistentDir := filepath.Join(fixture.tempDir, "does-not-exist")
@@ -315,10 +309,15 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			OutputFormat: "json",
 		})
 		Expect(err).To(HaveOccurred(), "validate should fail when input-dir does not exist")
+		Expect(err.Error()).To(SatisfyAny(
+			ContainSubstring(nonExistentDir),
+			ContainSubstring("input-dir"),
+			ContainSubstring("no such file or directory"),
+		), "error should identify the missing path or flag")
 		log.Printf("Non-existent --input-dir correctly failed (live mode): %v", err)
 	})
 
-	It("[MTA-396] --input-dir should handle empty directory with no YAML files (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should handle empty directory with no YAML files (live mode)", Label("tier2", "validate"), func() {
 		tempDir, err := os.MkdirTemp("", "crane-validate-live-empty-input-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
@@ -332,28 +331,23 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		runner := CraneRunner{Bin: config.CraneBin, WorkDir: tempDir}
 
 		By("Run validate with empty --input-dir")
-		stdout, err := runner.Validate(ValidateOptions{
+		_, err = runner.Validate(ValidateOptions{
 			Context:      targetContext,
 			InputDir:     emptyInputDir,
 			ValidateDir:  validateDir,
 			OutputFormat: "json",
 		})
+		Expect(err).NotTo(HaveOccurred(), "validate should succeed with 0 resources scanned for an empty input dir")
 
-		if err != nil {
-			log.Printf("Empty --input-dir failed (acceptable) (live mode): %v", err)
-		} else {
-			log.Printf("Empty --input-dir succeeded with 0 resources scanned (live mode)")
-			reportPath := filepath.Join(validateDir, "report.json")
-			Expect(reportPath).To(BeAnExistingFile())
+		reportPath := filepath.Join(validateDir, "report.json")
+		Expect(reportPath).To(BeAnExistingFile())
 
-			reportData, readErr := os.ReadFile(reportPath)
-			Expect(readErr).NotTo(HaveOccurred())
+		reportData, readErr := os.ReadFile(reportPath)
+		Expect(readErr).NotTo(HaveOccurred())
 
-			var report cranevalidate.ValidationReport
-			Expect(json.Unmarshal(reportData, &report)).To(Succeed())
-			Expect(report.TotalScanned).To(Equal(0), "should have scanned 0 resources from empty dir")
-			log.Printf("Empty input report (live): scanned=%d", report.TotalScanned)
-		}
-		_ = stdout
+		var report cranevalidate.ValidationReport
+		Expect(json.Unmarshal(reportData, &report)).To(Succeed())
+		Expect(report.TotalScanned).To(Equal(0), "should have scanned 0 resources from empty dir")
+		log.Printf("Empty input report (live): scanned=%d", report.TotalScanned)
 	})
 })
