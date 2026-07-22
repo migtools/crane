@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/konveyor/crane/internal/flags"
@@ -201,7 +202,23 @@ func (o *Options) run(args []string) error {
 	return nil
 }
 
+func validateFileInput(filepath, filename string) error {
+	if strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
+		return fmt.Errorf("invalid plugin name %q: must not contain path separators or traversal sequences", filename)
+	}
+
+	existingPath := filepath + "/" + filename
+	if _, err := os.Stat(existingPath); err == nil {
+		return fmt.Errorf("a plugin named %q already exists at %s, please remove it first before installing", filename, existingPath)
+	}
+	return nil
+}
+
 func downloadBinary(filepath string, filename string, url string, log *logrus.Logger) error {
+	if err := validateFileInput(filepath, filename); err != nil {
+		return err
+	}
+	
 	var binaryContents io.Reader
 	isUrl, url := plugin.IsUrl(url)
 	if !isUrl {
