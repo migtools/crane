@@ -877,10 +877,13 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 			cmd: TransferPVCCommand{
 				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
 				destinationContext: &clientcmdapi.Context{Cluster: "c1"},
-				Flags: Flags{PVC: PvcFlags{
-					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data-new"},
-					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
-				}},
+				Flags: Flags{
+					PVC: PvcFlags{
+						Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data-new"},
+						Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+					},
+					Endpoint: EndpointFlags{Subdomain: "test.example.com"},
+				},
 			},
 			wantErr: false,
 		},
@@ -889,10 +892,13 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 			cmd: TransferPVCCommand{
 				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
 				destinationContext: &clientcmdapi.Context{Cluster: "c2"},
-				Flags: Flags{PVC: PvcFlags{
-					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
-					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
-				}},
+				Flags: Flags{
+					PVC: PvcFlags{
+						Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
+						Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+					},
+					Endpoint: EndpointFlags{Subdomain: "test.example.com"},
+				},
 			},
 			wantErr: false,
 		},
@@ -906,8 +912,8 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 			if tt.wantErr && err != nil && !strings.Contains(err.Error(), "must differ") {
 				t.Errorf("Validate() returned unexpected error: %v", err)
 			}
-			if !tt.wantErr && err != nil && strings.Contains(err.Error(), "must differ") {
-				t.Errorf("Validate() should not have rejected this case: %v", err)
+			if !tt.wantErr && err != nil {
+				t.Errorf("Validate() returned unexpected error: %v", err)
 			}
 		})
 	}
