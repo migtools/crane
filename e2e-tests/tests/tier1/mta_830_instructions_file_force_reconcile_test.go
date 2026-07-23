@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -31,6 +32,7 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
+		isOpenShift := scenario.KubectlSrc.IsOpenShift()
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
@@ -80,7 +82,11 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		err = os.MkdirAll(orphanOutputPath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
 		//Create path for CustomStage that should be overwritten with --overwrite
-		customStagePath := filepath.Join(paths.TransformDir, "20_CustomStage")
+		customStageDirName := "20_CustomStage"
+		if isOpenShift {
+			customStageDirName = "30_CustomStage"
+		}
+		customStagePath := filepath.Join(paths.TransformDir, customStageDirName)
 		err = os.MkdirAll(customStagePath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
 		customStageExistingFilePath := filepath.Join(customStagePath, "preexisting.txt")
@@ -97,18 +103,22 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(orphanOutputDirInfo.IsDir()).To(BeTrue())
 
-		By("Assert 20_CustomStage exists before running transform")
+		By(fmt.Sprintf("Assert %s exists before running transform", customStageDirName))
 		customStageDirInfo, err := os.Stat(customStagePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(customStageDirInfo.IsDir()).To(BeTrue())
 
-		By("Assert 20_CustomStage has preexisting.txt file")
+		By(fmt.Sprintf("Assert %s has preexisting.txt file", customStageDirName))
 		customStageFileInfo, err := os.Stat(customStageExistingFilePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(customStageFileInfo.IsDir()).To(BeFalse())
 
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
-		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
+		instructionsFilename := "basic-instructions-file.yaml"
+		if isOpenShift {
+			instructionsFilename = "basic-instructions-file-ocp.yaml"
+		}
+		instructionsFile, err := utils.TestdataFilePath(instructionsFilename)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
 			InstructionsFile: instructionsFile, Overwrite: true})).NotTo(HaveOccurred())
@@ -128,6 +138,9 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
 		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
+		if isOpenShift {
+			stageDirectories = []string{"10_KubernetesPlugin", "20_OpenShiftPlugin", "30_CustomStage"}
+		}
 		for _, stageDir := range stageDirectories {
 			dirPath := filepath.Join(paths.TransformDir, stageDir)
 			dirInfo, err := os.Stat(dirPath)
@@ -143,9 +156,26 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		By("Apply rendered manifests to target")
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
-		By("Scale target deployment and validate app on target")
+		By("Scale target deployment and wait for target pod readiness")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(func() error {
+			readyOutput, err := kubectlTgtNonAdmin.Run(
+				"get", "pods",
+				"-n", namespace,
+				"-l", "app="+appName,
+				"-o", "jsonpath={.items[0].status.containerStatuses[0].ready}",
+			)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(readyOutput) != "true" {
+				return fmt.Errorf("target pod not ready yet, ready=%q", strings.TrimSpace(readyOutput))
+			}
+			return nil
+		}, "2m", "5s").Should(Succeed())
+
+		By("Validate app on target")
+		Expect(tgtApp.Validate()).NotTo(HaveOccurred())
 	})
 })
