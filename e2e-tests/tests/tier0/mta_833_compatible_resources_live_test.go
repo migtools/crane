@@ -28,6 +28,7 @@ var _ = Describe("Crane validate: all compatible standard resources in live mode
 			srcApp := scenario.SrcAppNonAdmin
 			tgtApp := scenario.TgtAppNonAdmin
 			runner := scenario.CraneNonAdmin
+			isOpenShift := scenario.KubectlSrc.IsOpenShift()
 			srcApp.ExtraVars = map[string]any{
 				"non_admin_user": "true",
 			}
@@ -77,13 +78,16 @@ var _ = Describe("Crane validate: all compatible standard resources in live mode
 			Expect(outputFiles).NotTo(BeEmpty(), "expected output resource YAML files in %s", outputResourcesDir)
 
 			expectedKinds := []string{"Deployment", "Service", "ConfigMap", "Secret", "RoleBinding"}
+			if isOpenShift {
+				expectedKinds = append(expectedKinds, "Route")
+			}
 			for _, kind := range expectedKinds {
 				pattern := filepath.Join(outputResourcesDir, kind+"_*.yaml")
 				matches, err := filepath.Glob(pattern)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(matches).NotTo(BeEmpty(), "expected at least one %s file in %s", kind, outputResourcesDir)
 			}
-			log.Printf("Found %d output resource files in %s (verified all 5 kinds present)", len(outputFiles), outputResourcesDir)
+			log.Printf("Found %d output resource files in %s (verified expected kinds present)", len(outputFiles), outputResourcesDir)
 
 			// Table-driven validation for both JSON and YAML formats
 			type formatTest struct {
@@ -123,21 +127,28 @@ var _ = Describe("Crane validate: all compatible standard resources in live mode
 				err = utils.ParseValidationReport(validateDir, ft.format, &report)
 				Expect(err).NotTo(HaveOccurred(), "should parse %s report", ft.label)
 
+				totalScanned := 5
+				expectedResources := map[string]string{
+					"Deployment":  "apps/v1",
+					"Service":     "v1",
+					"ConfigMap":   "v1",
+					"Secret":      "v1",
+					"RoleBinding": "rbac.authorization.k8s.io/v1",
+				}
+				if isOpenShift {
+					totalScanned = 6
+					expectedResources["Route"] = "route.openshift.io/v1"
+				}
+
 				expectations := utils.ValidationExpectations{
 					ValidationReport: cranevalidate.ValidationReport{
 						Mode:           "live",
 						ClusterContext: scenario.TgtApp.Context,
-						TotalScanned:   5,
-						Compatible:     5,
+						TotalScanned:   totalScanned,
+						Compatible:     totalScanned,
 						Incompatible:   0,
 					},
-					ExpectedResources: map[string]string{
-						"Deployment":  "apps/v1",
-						"Service":     "v1",
-						"ConfigMap":   "v1",
-						"Secret":      "v1",
-						"RoleBinding": "rbac.authorization.k8s.io/v1",
-					},
+					ExpectedResources: expectedResources,
 					ExpectedStatus:    cranevalidate.StatusOK,
 					Namespace:         namespace,
 					ExpectFailuresDir: false,
