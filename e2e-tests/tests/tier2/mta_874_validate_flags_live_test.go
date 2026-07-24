@@ -54,6 +54,8 @@ func setupLiveFlagTestFixture(tempPrefix, targetContext string) liveFlagTestFixt
 	}
 }
 
+const validAPIResourcesJSON = `{"apiResourceLists":[{"groupVersion":"v1","resources":[{"name":"pods","namespaced":true,"kind":"Pod","verbs":["get","list"]}]}]}`
+
 var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 	var targetContext string
 
@@ -72,7 +74,8 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		}
 	})
 
-	It("[MTA-874] --overwrite should fail when validate-dir already exists without the flag (live mode)", Label("tier2", "validate"), func() {
+	// Automates: https://github.com/migtools/crane/issues/431
+	It("[MTA-874] --overwrite should fail when validate-dir already exists without the flag ", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-err-*", targetContext)
 
 		By("Run validate to populate the validate directory")
@@ -99,7 +102,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Second validate run correctly failed: %v", err)
 	})
 
-	It("[MTA-874] --overwrite should succeed when validate-dir already exists (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --overwrite should succeed when validate-dir already exists ", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-ok-*", targetContext)
 
 		By("Run validate to populate the validate directory")
@@ -138,7 +141,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			report.Mode, report.TotalScanned, report.Compatible)
 	})
 
-	It("[MTA-874] --input-dir should default to 'output' when omitted (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should default to 'output' when omitted ", Label("tier2", "validate"), func() {
 		tempDir, err := os.MkdirTemp("", "crane-validate-live-default-input-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
@@ -179,7 +182,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Default --input-dir (live): scanned %d resources from 'output' directory", report.TotalScanned)
 	})
 
-	It("[MTA-874] --validate-dir should default to 'validate' when omitted (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --validate-dir should default to 'validate' when omitted ", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-default-validatedir-*", targetContext)
 
 		By("Run validate without specifying --validate-dir (should default to 'validate')")
@@ -197,7 +200,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Default --validate-dir (live): report created at %s", defaultReportPath)
 	})
 
-	It("[MTA-874] --output should reject invalid format (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output should reject invalid format ", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-invalid-output-*", targetContext)
 
 		By("Run validate with --output=xml")
@@ -213,7 +216,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			ContainSubstring("xml"),
 			ContainSubstring("must be"),
 		), "error should name the invalid format and list supported formats")
-		log.Printf("Invalid --output=xml correctly rejected (live mode): %v", err)
+		log.Printf("Invalid --output=xml correctly rejected : %v", err)
 	})
 
 	It("[MTA-874] --api-resources and --context should be mutually exclusive", Label("tier2", "validate"), func() {
@@ -242,7 +245,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Mutual exclusivity correctly enforced: %v", err)
 	})
 
-	It("[MTA-874] --output should default to json when omitted (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output should default to json when omitted ", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-default-output-*", targetContext)
 
 		By("Run validate without specifying --output")
@@ -272,7 +275,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			"report.yaml should not exist when --output defaults to json")
 	})
 
-	It("[MTA-874] --input-dir should fail when path does not exist (live mode)", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should fail when path does not exist ", Label("tier2", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-nonexistent-input-*", targetContext)
 
 		nonExistentDir := filepath.Join(fixture.tempDir, "does-not-exist")
@@ -290,10 +293,11 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			ContainSubstring("input-dir"),
 			ContainSubstring("no such file or directory"),
 		), "error should identify the missing path or flag")
-		log.Printf("Non-existent --input-dir correctly failed (live mode): %v", err)
+		log.Printf("Non-existent --input-dir correctly failed : %v", err)
 	})
 
-	It("[MTA-874] --input-dir should handle empty directory with no YAML files (live mode)", Label("tier2", "validate"), func() {
+	// Automates: https://github.com/migtools/crane/issues/428
+	It("[MTA-874] --input-dir should handle empty directory with no YAML files ", Label("tier2", "validate"), func() {
 		tempDir, err := os.MkdirTemp("", "crane-validate-live-empty-input-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
@@ -316,6 +320,164 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		Expect(err).To(HaveOccurred(), "validate should fail when input dir contains no manifests")
 		Expect(err.Error()).To(ContainSubstring("no manifests found"),
 			"error should indicate no manifests were found in the empty input dir")
-		log.Printf("Empty --input-dir correctly rejected (live mode): %v", err)
+		log.Printf("Empty --input-dir correctly rejected : %v", err)
+	})
+
+	// Automates: https://github.com/migtools/crane/issues/432
+	It("[MTA-874] --output should accept uppercase format ", Label("tier2", "validate"), func() {
+		fixture := setupLiveFlagTestFixture("crane-validate-live-output-case-*", targetContext)
+
+		By("Run validate with --output=JSON (uppercase)")
+		_, err := fixture.runner.Validate(ValidateOptions{
+			Context:      fixture.targetContext,
+			InputDir:     fixture.inputDir,
+			ValidateDir:  fixture.validateDir,
+			OutputFormat: "JSON",
+		})
+		Expect(err).NotTo(HaveOccurred(), "validate should accept uppercase output format")
+
+		By("Verify report.json exists")
+		reportPath := filepath.Join(fixture.validateDir, "report.json")
+		Expect(reportPath).To(BeAnExistingFile(), "expected report.json at %s", reportPath)
+		log.Printf("Uppercase --output=JSON correctly accepted")
+	})
+
+	// Automates: https://github.com/migtools/crane/issues/429
+	It("[MTA-874] --api-resources and --kubeconfig should be mutually exclusive ", Label("tier2", "validate"), func() {
+		fixture := setupLiveFlagTestFixture("crane-validate-live-mutual-excl-kubeconfig-*", targetContext)
+
+		apiResourcesFile := filepath.Join(fixture.tempDir, "api-resources.json")
+		Expect(os.WriteFile(apiResourcesFile, []byte(validAPIResourcesJSON), 0o644)).NotTo(HaveOccurred())
+
+		By("Run validate with both --api-resources and --kubeconfig")
+		_, err := fixture.runner.Validate(ValidateOptions{
+			InputDir:         fixture.inputDir,
+			ValidateDir:      fixture.validateDir,
+			OutputFormat:     "json",
+			APIResourcesFile: apiResourcesFile,
+			ExtraArgs:        []string{"--kubeconfig", "/tmp/fake-kubeconfig"},
+		})
+		Expect(err).To(HaveOccurred(), "validate should fail when both --api-resources and --kubeconfig are provided")
+		Expect(err.Error()).To(SatisfyAll(
+			ContainSubstring("api-resources"),
+			ContainSubstring("kubeconfig"),
+			ContainSubstring("mutually exclusive"),
+		), "error should name both flags and state they are mutually exclusive")
+		log.Printf("--api-resources and --kubeconfig mutual exclusivity enforced: %v", err)
+	})
+
+	// Automates: https://github.com/migtools/crane/issues/429
+	It("[MTA-874] --api-resources and --server should be mutually exclusive ", Label("tier2", "validate"), func() {
+		fixture := setupLiveFlagTestFixture("crane-validate-live-mutual-excl-server-*", targetContext)
+
+		apiResourcesFile := filepath.Join(fixture.tempDir, "api-resources.json")
+		Expect(os.WriteFile(apiResourcesFile, []byte(validAPIResourcesJSON), 0o644)).NotTo(HaveOccurred())
+
+		By("Run validate with both --api-resources and --server")
+		_, err := fixture.runner.Validate(ValidateOptions{
+			InputDir:         fixture.inputDir,
+			ValidateDir:      fixture.validateDir,
+			OutputFormat:     "json",
+			APIResourcesFile: apiResourcesFile,
+			ExtraArgs:        []string{"--server", "https://fake-server:6443"},
+		})
+		Expect(err).To(HaveOccurred(), "validate should fail when both --api-resources and --server are provided")
+		Expect(err.Error()).To(SatisfyAll(
+			ContainSubstring("api-resources"),
+			ContainSubstring("server"),
+			ContainSubstring("mutually exclusive"),
+		), "error should name both flags and state they are mutually exclusive")
+		log.Printf("--api-resources and --server mutual exclusivity enforced: %v", err)
+	})
+
+	// Automates: https://github.com/migtools/crane/issues/429
+	It("[MTA-874] --api-resources and --token should be mutually exclusive ", Label("tier2", "validate"), func() {
+		fixture := setupLiveFlagTestFixture("crane-validate-live-mutual-excl-token-*", targetContext)
+
+		apiResourcesFile := filepath.Join(fixture.tempDir, "api-resources.json")
+		Expect(os.WriteFile(apiResourcesFile, []byte(validAPIResourcesJSON), 0o644)).NotTo(HaveOccurred())
+
+		By("Run validate with both --api-resources and --token")
+		_, err := fixture.runner.Validate(ValidateOptions{
+			InputDir:         fixture.inputDir,
+			ValidateDir:      fixture.validateDir,
+			OutputFormat:     "json",
+			APIResourcesFile: apiResourcesFile,
+			ExtraArgs:        []string{"--token", "fake-bearer-token"},
+		})
+		Expect(err).To(HaveOccurred(), "validate should fail when both --api-resources and --token are provided")
+		Expect(err.Error()).To(SatisfyAll(
+			ContainSubstring("api-resources"),
+			ContainSubstring("token"),
+			ContainSubstring("mutually exclusive"),
+		), "error should name both flags and state they are mutually exclusive")
+		log.Printf("--api-resources and --token mutual exclusivity enforced: %v", err)
+	})
+
+	// Automates: https://github.com/migtools/crane/issues/429
+	It("[MTA-874] --api-resources and --cluster should be mutually exclusive ", Label("tier2", "validate"), func() {
+		fixture := setupLiveFlagTestFixture("crane-validate-live-mutual-excl-cluster-*", targetContext)
+
+		apiResourcesFile := filepath.Join(fixture.tempDir, "api-resources.json")
+		Expect(os.WriteFile(apiResourcesFile, []byte(validAPIResourcesJSON), 0o644)).NotTo(HaveOccurred())
+
+		By("Run validate with both --api-resources and --cluster")
+		_, err := fixture.runner.Validate(ValidateOptions{
+			InputDir:         fixture.inputDir,
+			ValidateDir:      fixture.validateDir,
+			OutputFormat:     "json",
+			APIResourcesFile: apiResourcesFile,
+			ExtraArgs:        []string{"--cluster", "fake-cluster"},
+		})
+		Expect(err).To(HaveOccurred(), "validate should fail when both --api-resources and --cluster are provided")
+		Expect(err.Error()).To(SatisfyAll(
+			ContainSubstring("api-resources"),
+			ContainSubstring("cluster"),
+			ContainSubstring("mutually exclusive"),
+		), "error should name both flags and state they are mutually exclusive")
+		log.Printf("--api-resources and --cluster mutual exclusivity enforced: %v", err)
+	})
+
+	// Automates: https://github.com/migtools/crane/issues/429
+	It("[MTA-874] --api-resources and --user should be mutually exclusive ", Label("tier2", "validate"), func() {
+		fixture := setupLiveFlagTestFixture("crane-validate-live-mutual-excl-user-*", targetContext)
+
+		apiResourcesFile := filepath.Join(fixture.tempDir, "api-resources.json")
+		Expect(os.WriteFile(apiResourcesFile, []byte(validAPIResourcesJSON), 0o644)).NotTo(HaveOccurred())
+
+		By("Run validate with both --api-resources and --user")
+		_, err := fixture.runner.Validate(ValidateOptions{
+			InputDir:         fixture.inputDir,
+			ValidateDir:      fixture.validateDir,
+			OutputFormat:     "json",
+			APIResourcesFile: apiResourcesFile,
+			ExtraArgs:        []string{"--user", "fake-user"},
+		})
+		Expect(err).To(HaveOccurred(), "validate should fail when both --api-resources and --user are provided")
+		Expect(err.Error()).To(SatisfyAll(
+			ContainSubstring("api-resources"),
+			ContainSubstring("user"),
+			ContainSubstring("mutually exclusive"),
+		), "error should name both flags and state they are mutually exclusive")
+		log.Printf("--api-resources and --user mutual exclusivity enforced: %v", err)
+	})
+
+	It("[MTA-874] --overwrite should succeed on first run with no pre-existing validate-dir ", Label("tier2", "validate"), func() {
+		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-first-run-*", targetContext)
+
+		By("Run validate with --overwrite on a fresh validate-dir")
+		_, err := fixture.runner.Validate(ValidateOptions{
+			Context:      fixture.targetContext,
+			InputDir:     fixture.inputDir,
+			ValidateDir:  fixture.validateDir,
+			OutputFormat: "json",
+			ExtraArgs:    []string{"--overwrite"},
+		})
+		Expect(err).NotTo(HaveOccurred(), "validate with --overwrite should succeed even when validate-dir does not exist yet")
+
+		By("Verify report.json exists")
+		reportPath := filepath.Join(fixture.validateDir, "report.json")
+		Expect(reportPath).To(BeAnExistingFile(), "expected report.json at %s", reportPath)
+		log.Printf("--overwrite on first run succeeded ")
 	})
 })
