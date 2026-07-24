@@ -1,11 +1,21 @@
 package transfer_pvc
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"k8s.io/apimachinery/pkg/types"
 )
+
+// resetGlobals resets global variables between tests for isolation
+func resetGlobals() {
+	pastAttempts = Progress{}
+	failedFiles = nil
+}
 
 func intEqual(a, b *int64) (string, string, bool) {
 	if a != nil && b != nil && *a == *b {
@@ -181,6 +191,24 @@ total size is 8.67G  speedup is 1.00`,
 	}
 }
 
+func TestNewProgress(t *testing.T) {
+	name := types.NamespacedName{Namespace: "test-ns", Name: "test-pvc"}
+	p := NewProgress(name)
+
+	if p.PVC != name {
+		t.Errorf("NewProgress() PVC = %v, want %v", p.PVC, name)
+	}
+	if p.FailedFiles == nil || len(p.FailedFiles) != 0 {
+		t.Errorf("NewProgress() FailedFiles should be empty slice")
+	}
+	if p.Errors == nil || len(p.Errors) != 0 {
+		t.Errorf("NewProgress() Errors should be empty slice")
+	}
+	if p.startedAt.IsZero() {
+		t.Errorf("NewProgress() startedAt should not be zero")
+	}
+}
+
 func TestStatus(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -339,5 +367,298 @@ func TestStatus_NilTransferredData(t *testing.T) {
 	s := p.Status()
 	if s != failed {
 		t.Errorf("Status() = %q, want %q", s, failed)
+	}
+}
+
+func TestProgressMerge_BasicFields(t *testing.T) {
+	resetGlobals()
+	totalFiles := int64(150)
+	p := &Progress{
+		TransferredFiles: 10,
+		TotalFiles:       nil,
+		FailedFiles:      []FailedFile{},
+		Errors:           []string{},
+	}
+	in := &Progress{
+		TransferredFiles: 20,
+		TotalFiles:       &totalFiles,
+		FailedFiles:      []FailedFile{},
+		Errors:           []string{},
+	}
+	p.Merge(in)
+	if p.TransferredFiles != 30 {
+		t.Errorf("Merge() TransferredFiles = %v, want 30", p.TransferredFiles)
+	}
+	if p.TotalFiles == nil || *p.TotalFiles != 150 {
+		t.Errorf("Merge() TotalFiles = %v, want 150", p.TotalFiles)
+	}
+}
+
+func TestProgressMerge_PercentageAggregation(t *testing.T) {
+	resetGlobals()
+	pct1 := int64(50)
+	pct2 := int64(40)
+	p := &Progress{
+		TransferPercentage: &pct1,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	in := &Progress{
+		TransferPercentage: &pct2,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	p.Merge(in)
+	if p.TransferPercentage == nil {
+		t.Errorf("Merge() TransferPercentage = nil, want non-nil")
+	}
+}
+
+func TestProgressMerge_PercentageBasicUpdate(t *testing.T) {
+	resetGlobals()
+	inPct := int64(40)
+	p := &Progress{
+		TransferPercentage: nil,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	in := &Progress{
+		TransferPercentage: &inPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	p.Merge(in)
+	if p.TransferPercentage == nil {
+		t.Errorf("Merge() TransferPercentage = nil, want 40")
+		return
+	}
+	if *p.TransferPercentage != 40 {
+		t.Errorf("Merge() TransferPercentage = %d, want 40", *p.TransferPercentage)
+	}
+}
+
+func TestProgressMerge_PercentageAccumulationWithPastAttempts(t *testing.T) {
+	resetGlobals()
+	pastPct := int64(30)
+	pastAttempts = Progress{
+		TransferPercentage: &pastPct,
+	}
+	inPct := int64(20)
+	p := &Progress{
+		TransferPercentage: nil,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	in := &Progress{
+		TransferPercentage: &inPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	p.Merge(in)
+	if p.TransferPercentage == nil {
+		t.Errorf("Merge() TransferPercentage = nil, want 50")
+		return
+	}
+	if *p.TransferPercentage != 50 {
+		t.Errorf("Merge() TransferPercentage = %d, want 50 (pastAttempts 30 + in 20)", *p.TransferPercentage)
+	}
+}
+
+func TestProgressMerge_PercentageCapAt100(t *testing.T) {
+	resetGlobals()
+	pastPct := int64(80)
+	pastAttempts = Progress{
+		TransferPercentage: &pastPct,
+	}
+	pPct := int64(75)
+	inPct := int64(30)
+	p := &Progress{
+		TransferPercentage: &pPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	in := &Progress{
+		TransferPercentage: &inPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	p.Merge(in)
+	if p.TransferPercentage == nil {
+		t.Errorf("Merge() TransferPercentage = nil, want 75")
+		return
+	}
+	if *p.TransferPercentage != 75 {
+		t.Errorf("Merge() TransferPercentage = %d, want 75 (should not update when total > 100)", *p.TransferPercentage)
+	}
+}
+
+func TestProgressMerge_PercentageOnlyUpdateIfHigher(t *testing.T) {
+	resetGlobals()
+	pastPct := int64(40)
+	pastAttempts = Progress{
+		TransferPercentage: &pastPct,
+	}
+	pPct := int64(40)
+	inPct := int64(20)
+	p := &Progress{
+		TransferPercentage: &pPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	in := &Progress{
+		TransferPercentage: &inPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	p.Merge(in)
+	if p.TransferPercentage == nil {
+		t.Errorf("Merge() TransferPercentage = nil, want 60")
+		return
+	}
+	if *p.TransferPercentage != 60 {
+		t.Errorf("Merge() TransferPercentage = %d, want 60 (pastAttempts 40 + in 20)", *p.TransferPercentage)
+	}
+}
+
+func TestProgressMerge_PercentageDontUpdateIfLower(t *testing.T) {
+	resetGlobals()
+	pPct := int64(50)
+	inPct := int64(30)
+	p := &Progress{
+		TransferPercentage: &pPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	in := &Progress{
+		TransferPercentage: &inPct,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	p.Merge(in)
+	if p.TransferPercentage == nil {
+		t.Errorf("Merge() TransferPercentage = nil, want 50")
+		return
+	}
+	if *p.TransferPercentage != 50 {
+		t.Errorf("Merge() TransferPercentage = %d, want 50 (should not update when incoming is lower)", *p.TransferPercentage)
+	}
+}
+
+func TestProgressMerge_PercentageResetWithRetries(t *testing.T) {
+	resetGlobals()
+	pPct := int64(60)
+	inPct := int64(10)
+	retryCount := 1
+	p := &Progress{
+		TransferPercentage: &pPct,
+		TransferredFiles:   100,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	in := &Progress{
+		TransferPercentage: &inPct,
+		retries:            &retryCount,
+		FailedFiles:        []FailedFile{},
+		Errors:             []string{},
+	}
+	p.Merge(in)
+	if pastAttempts.TransferPercentage == nil {
+		t.Errorf("pastAttempts.TransferPercentage = nil after retry, want non-nil")
+		return
+	}
+	if *pastAttempts.TransferPercentage != 60 {
+		t.Errorf("pastAttempts.TransferPercentage = %d, want 60", *pastAttempts.TransferPercentage)
+	}
+	if pastAttempts.TransferredFiles != 100 {
+		t.Errorf("pastAttempts.TransferredFiles = %d, want 100", pastAttempts.TransferredFiles)
+	}
+	if p.retries == nil || *p.retries != 1 {
+		t.Errorf("p.retries should be 1 after merge")
+	}
+}
+
+func TestProgressMerge_DataSizeAggregation(t *testing.T) {
+	resetGlobals()
+	pastAttempts = Progress{
+		TransferredData: &dataSize{val: 100.0, unit: "M"},
+	}
+	p := &Progress{
+		TransferredData: nil,
+		FailedFiles:     []FailedFile{},
+		Errors:          []string{},
+	}
+	in := &Progress{
+		TransferredData: &dataSize{val: 50.0, unit: "M"},
+		FailedFiles:     []FailedFile{},
+		Errors:          []string{},
+	}
+	p.Merge(in)
+	if p.TransferredData == nil {
+		t.Errorf("Merge() TransferredData = nil, want non-nil")
+		return
+	}
+	if p.TransferredData.val != 150.0 {
+		t.Errorf("Merge() TransferredData.val = %v, want 150.0", p.TransferredData.val)
+	}
+}
+
+func TestProgressMerge_ErrorAndFailedFileAppending(t *testing.T) {
+	resetGlobals()
+	p := &Progress{
+		Errors:      []string{"error1"},
+		FailedFiles: []FailedFile{{Name: "file1", Err: "err1"}},
+	}
+	in := &Progress{
+		Errors:      []string{"error2", "error3"},
+		FailedFiles: []FailedFile{{Name: "file2", Err: "err2"}, {Name: "file3", Err: "err3"}},
+	}
+	p.Merge(in)
+	if len(p.Errors) != 3 {
+		t.Errorf("Merge() len(Errors) = %v, want 3", len(p.Errors))
+	}
+	if len(p.FailedFiles) != 3 {
+		t.Errorf("Merge() len(FailedFiles) = %v, want 3", len(p.FailedFiles))
+	}
+}
+
+func TestWriteProgressToFile_WriteValidFile(t *testing.T) {
+	resetGlobals()
+	tmpPath := t.TempDir() + "/test-progress.json"
+
+	pct := int64(50)
+	p := &Progress{
+		TransferPercentage: &pct,
+		TransferredFiles:   100,
+		startedAt:          time.Now(),
+	}
+
+	err := writeProgressToFile(tmpPath, p)
+	if err != nil {
+		t.Errorf("writeProgressToFile() error = %v", err)
+	}
+
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		t.Errorf("Failed to read written file: %v", err)
+	}
+
+	var readProgress Progress
+	if err := json.Unmarshal(data, &readProgress); err != nil {
+		t.Errorf("Failed to unmarshal progress: %v", err)
+	}
+
+	if readProgress.TransferredFiles != 100 {
+		t.Errorf("Written TransferredFiles = %v, want 100", readProgress.TransferredFiles)
+	}
+}
+
+func TestWriteProgressToFile_InvalidPath(t *testing.T) {
+	resetGlobals()
+	p := &Progress{
+		TransferredFiles: 100,
+	}
+	err := writeProgressToFile("/nonexistent/directory/file.json", p)
+	if err == nil {
+		t.Errorf("writeProgressToFile() with invalid path should return error")
 	}
 }
