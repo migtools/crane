@@ -1220,3 +1220,38 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
       }
       return strings.Join(parts, "---\n"), nil
   }
+
+// ParseValidationReport reads and parses a crane validate report file.
+// The report parameter should be a pointer to the structure that will hold the parsed data.
+func ParseValidationReport(validateDir string, outputFormat string, report interface{}) error {
+	if outputFormat != "json" && outputFormat != "yaml" {
+		return fmt.Errorf("unsupported output format: %s (must be 'json' or 'yaml')", outputFormat)
+	}
+
+	reportExt := "." + outputFormat
+	reportPath := filepath.Join(validateDir, "report"+reportExt)
+
+	// Check if report file exists
+	if _, err := os.Stat(reportPath); err != nil {
+		return fmt.Errorf("report file not found at %s: %w", reportPath, err)
+	}
+
+	// Read report file
+	reportData, err := os.ReadFile(reportPath)
+	if err != nil {
+		return fmt.Errorf("failed to read report file: %w", err)
+	}
+
+	// Parse based on format
+	if outputFormat == "yaml" {
+		if err := yaml.Unmarshal(reportData, report); err != nil {
+			return fmt.Errorf("failed to parse YAML report: %w", err)
+		}
+	} else {
+		if err := json.Unmarshal(reportData, report); err != nil {
+			return fmt.Errorf("failed to parse JSON report: %w", err)
+		}
+	}
+
+	return nil
+}
