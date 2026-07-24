@@ -62,7 +62,7 @@ var _ = Describe("NetworkPolicy migration", func() {
 			ingressFrom = `        - podSelector: {}
         - namespaceSelector:
             matchLabels:
-              network.openshift.io/policy-group: ingress`
+              policy-group.network.openshift.io/ingress: ""`
 		}
 
 		networkPolicyManifest := fmt.Sprintf(`apiVersion: networking.k8s.io/v1

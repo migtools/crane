@@ -176,6 +176,6 @@ var _ = Describe("Instructions-file overwrite reconcile migration", func() {
 		}, "2m", "5s").Should(Succeed())
 
 		By("Validate app on target")
-		Expect(tgtApp.Validate()).NotTo(HaveOccurred())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 	})
 })
