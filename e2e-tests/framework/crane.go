@@ -57,7 +57,6 @@ type TransformOptions struct {
 }
 
 type ApplyOptions struct {
-	ExportDir         string
 	TransformDir      string
 	OutputDir         string
 	KustomizeArgs     string
@@ -153,9 +152,6 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 func (c CraneRunner) Apply(opts ApplyOptions) error {
 	args := []string{"apply"}
 
-	if opts.ExportDir != "" {
-		args = append(args, "--export-dir", opts.ExportDir)
-	}
 	if opts.TransformDir != "" {
 		args = append(args, "--transform-dir", opts.TransformDir)
 	}

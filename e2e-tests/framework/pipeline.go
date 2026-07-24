@@ -18,8 +18,8 @@ const (
 
 // RunCranePipeline executes export, transform, and apply in sequence.
 func RunCranePipeline(runner CraneRunner, e ExportOptions, t TransformOptions, a ApplyOptions) error {
-	if (e.ExportDir != t.ExportDir) || (e.ExportDir != a.ExportDir) || (t.TransformDir != a.TransformDir) {
-		return fmt.Errorf("pipeline directory mismatch: export/transform/apply options must agree on shared directories (exportDir, transformDir)")
+	if (e.ExportDir != t.ExportDir) || (t.TransformDir != a.TransformDir) {
+		return fmt.Errorf("pipeline directory mismatch: export/transform options must agree on exportDir; transform/apply options must agree on transformDir")
 	}
 	if err := runner.Export(e); err != nil {
 		return err

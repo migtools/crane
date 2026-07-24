@@ -106,7 +106,7 @@ var _ = Describe("OLM whiteout", func() {
 			Expect(utils.AssertKindsNotInActiveKustomizeResources(paths.TransformDir, olmWhiteoutKinds)).NotTo(HaveOccurred())
 
 			By("Run crane apply")
-			Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			Expect(runner.Apply(ApplyOptions{TransformDir: paths.TransformDir,
 				OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 
 			By("Verify output does not contain OLM whiteout kinds")
@@ -139,7 +139,7 @@ var _ = Describe("OLM whiteout", func() {
 
 			paths, err := NewScenarioPaths("crane-multi-op-*")
 			Expect(err).NotTo(HaveOccurred())
-			applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 				OutputDir: paths.OutputDir}
 			exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
 			transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
@@ -249,7 +249,7 @@ var _ = Describe("OLM whiteout", func() {
 
 			paths, err := NewScenarioPaths("crane-export-*")
 			Expect(err).NotTo(HaveOccurred())
-			applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+			applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 				OutputDir: paths.OutputDir}
 			exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
 			transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
