@@ -98,7 +98,8 @@ spec:
   - IPv4
   ipFamilyPolicy: SingleStack
   ports:
-  - port: 8081
+  - name: http
+    port: 8081
     protocol: TCP
     targetPort: 8080
   selector:
@@ -148,3 +149,19 @@ spec:
       schedulerName: default-scheduler
       securityContext: {}
       terminationGracePeriodSeconds: 30
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: simple-nginx-nopv
+  name: my-simple-nginx-nopv
+  namespace: simple-nginx-nopv
+spec:
+  port:
+    targetPort: http
+  to:
+    kind: Service
+    name: my-simple-nginx-nopv
+    weight: 100
+  wildcardPolicy: None
