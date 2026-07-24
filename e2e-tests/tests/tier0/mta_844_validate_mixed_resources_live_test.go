@@ -31,6 +31,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
+		isOpenShift := scenario.KubectlSrc.IsOpenShift()
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
@@ -134,19 +135,26 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		log.Printf("Validation mode: %s", report.Mode)
 
 		By("Verify report contains mixed results: both compatible and incompatible resources")
+		expectedCompatible := 3
+		if isOpenShift {
+			expectedCompatible = 4
+		}
 		Expect(report.TotalScanned).To(BeNumerically(">=", 4), "expected at least 4 resources scanned")
-		Expect(report.Compatible).To((Equal(3)), "expected 3 compatible resources")
+		Expect(report.Compatible).To(Equal(expectedCompatible), "expected %d compatible resources", expectedCompatible)
 		Expect(report.Incompatible).To(Equal(2), "expected exactly 2 incompatible resources (Deployment and ConfigMap)")
 		Expect(report.Compatible+report.Incompatible).To(Equal(report.TotalScanned),
 			"expected Compatible + Incompatible to equal TotalScanned (found %d + %d != %d)",
 			report.Compatible, report.Incompatible, report.TotalScanned)
 		log.Printf("Total: %d, Compatible: %d, Incompatible: %d", report.TotalScanned, report.Compatible, report.Incompatible)
 
-		By("Verify compatible resources (Service, Secret, RoleBinding) have status OK")
+		By("Verify compatible resources have status OK")
 		compatibleResources := map[string]string{
 			"Service":     "v1",
 			"Secret":      "v1",
 			"RoleBinding": "rbac.authorization.k8s.io/v1",
+		}
+		if isOpenShift {
+			compatibleResources["Route"] = "route.openshift.io/v1"
 		}
 
 		foundCompatible := make(map[string]bool)
