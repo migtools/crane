@@ -835,8 +835,8 @@ func TestIsIntraCluster(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.cmd.isIntraCluster(); got != tt.want {
-				t.Errorf("isIntraCluster() = %v, want %v", got, tt.want)
+			if got := tt.cmd.isIntraClusterSameNamespace(); got != tt.want {
+				t.Errorf("isIntraClusterSameNamespace() = %v, want %v", got, tt.want)
 			}
 		})
 	}

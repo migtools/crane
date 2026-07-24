@@ -230,7 +230,7 @@ func (t *TransferPVCCommand) Validate() error {
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
-	if t.isIntraCluster() && t.PVC.Name.source == t.PVC.Name.destination {
+	if t.isIntraClusterSameNamespace() && t.PVC.Name.source == t.PVC.Name.destination {
 		return fmt.Errorf("source and destination PVC names must differ for same-cluster same-namespace transfers")
 	}
 
@@ -251,10 +251,10 @@ func (t *TransferPVCCommand) Run() error {
 	return t.run()
 }
 
-// isIntraCluster returns true when source and destination are on the same
+// isIntraClusterSameNamespace returns true when source and destination are on the same
 // cluster AND the same namespace. This requires special handling for stunnel
 // cert secrets and pod labels to avoid collisions.
-func (t *TransferPVCCommand) isIntraCluster() bool {
+func (t *TransferPVCCommand) isIntraClusterSameNamespace() bool {
 	return t.sourceContext != nil && t.destinationContext != nil &&
 		t.sourceContext.Cluster == t.destinationContext.Cluster &&
 		t.PVC.Namespace.source == t.PVC.Namespace.destination
@@ -336,7 +336,7 @@ func (t *TransferPVCCommand) run() error {
 	// For intra-cluster (same namespace), split labels so the log reader
 	// can distinguish server and client pods.
 	clientLabels := labels
-	if t.isIntraCluster() {
+	if t.isIntraClusterSameNamespace() {
 		labels["app.konveyor.io/role"] = "server"
 		labels["app.konveyor.io/created-for-pvc"] = getValidatedResourceName(destPVC.Name)
 		clientLabels = map[string]string{
@@ -387,11 +387,11 @@ func (t *TransferPVCCommand) run() error {
 		// For intra-cluster: the server cert secret is named after destPVC,
 		// but the client expects one named after srcPVC. Copy with the
 		// client's expected name so both use the same CA.
-		if t.isIntraCluster() {
+		if t.isIntraClusterSameNamespace() {
 			secretName = fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(srcPVC.Name))
 		}
 		secretLabels := destSecret.Labels
-		if t.isIntraCluster() {
+		if t.isIntraClusterSameNamespace() {
 			secretLabels = clientLabels
 		}
 		srcSecret := &corev1.Secret{
@@ -538,7 +538,7 @@ func (t *TransferPVCCommand) run() error {
 		log.Fatal(err, "error following rsync client logs")
 	}
 
-	if t.isIntraCluster() {
+	if t.isIntraClusterSameNamespace() {
 		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
 			log.Printf("WARN: server-side cleanup: %v", err)
 		}
