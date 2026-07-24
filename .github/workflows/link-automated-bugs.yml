@@ -1,0 +1,85 @@
+name: Link automated bugs
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  link-bugs:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: read
+      contents: read
+
+    steps:
+      - name: Checkout merged code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Comment on automated bugs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const prUrl = context.payload.pull_request.html_url;
+
+            // Get the diff for this PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100
+            });
+
+            // Scan added lines for "// Automates: .../issues/NNN"
+            const pattern = /\/\/\s*Automates:\s*https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/issues\/(\d+)/g;
+            const issueRefs = new Set();
+
+            for (const file of files) {
+              if (!file.patch) continue;
+              const addedLines = file.patch
+                .split('\n')
+                .filter(line => line.startsWith('+') && !line.startsWith('+++'));
+
+              for (const line of addedLines) {
+                const matches = line.matchAll(pattern);
+                for (const match of matches) {
+                  issueRefs.add(JSON.stringify({
+                    owner: match[1],
+                    repo: match[2],
+                    number: parseInt(match[3])
+                  }));
+                }
+              }
+            }
+
+            console.log(`Found ${issueRefs.size} automated bug reference(s)`);
+
+            for (const ref of issueRefs) {
+              const { owner, repo, number } = JSON.parse(ref);
+              try {
+                // Only comment on issues in the same repo
+                if (owner !== context.repo.owner || repo !== context.repo.repo) {
+                  console.log(`Skipping cross-repo issue ${owner}/${repo}#${number}`);
+                  continue;
+                }
+
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: number,
+                  body: `Automated through PR #${prNumber} (${prUrl})`
+                });
+                console.log(`Commented on issue #${number}`);
+              } catch (error) {
+                console.error(`Failed to comment on ${owner}/${repo}#${number}: ${error.message}`);
+              }
+            }
+
+            if (issueRefs.size === 0) {
+              console.log('No "// Automates:" references found in PR diff');
+            }
