@@ -32,6 +32,7 @@ var _ = Describe("Instructions-file migration", func() {
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
+		isOpenShift := scenario.KubectlSrc.IsOpenShift()
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
@@ -68,13 +69,20 @@ var _ = Describe("Instructions-file migration", func() {
 		log.Printf("Running crane export for namespace %s\n", srcApp.Namespace)
 		Expect(runner.Export(ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir})).NotTo(HaveOccurred())
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
-		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
+		instructionsFilename := "basic-instructions-file.yaml"
+		if isOpenShift {
+			instructionsFilename = "basic-instructions-file-ocp.yaml"
+		}
+		instructionsFile, err := utils.TestdataFilePath(instructionsFilename)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
 			InstructionsFile: instructionsFile, Overwrite: false})).NotTo(HaveOccurred())
 
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
 		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
+		if isOpenShift {
+			stageDirectories = []string{"10_KubernetesPlugin", "20_OpenShiftPlugin", "30_CustomStage"}
+		}
 		for _, stageDir := range stageDirectories {
 			dirPath := filepath.Join(paths.TransformDir, stageDir)
 			_, err = os.Stat(dirPath)
