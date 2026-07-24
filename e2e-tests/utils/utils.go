@@ -1275,35 +1275,35 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
 	}
 	return nil
 }
- 
-  // RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
-  // replaces srcNamespace with tgtNamespace in metadata.namespace,
-  // and returns the re-serialized YAML string.
-  func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
-      docs, err := parseYAMLDocuments(content)
-      if err != nil {
-          return "", fmt.Errorf("parsing YAML documents: %w", err)
-      }
 
-      var parts []string
-      for i, doc := range docs {
-          obj, ok := doc.(map[string]any)
-          if !ok {
-              return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
-          }
-          if meta, ok := obj["metadata"].(map[string]any); ok {
-              if meta["namespace"] == srcNamespace {
-                  meta["namespace"] = tgtNamespace
-              }
-          }
-          out, err := yaml.Marshal(obj)
-          if err != nil {
-              return "", fmt.Errorf("marshaling YAML document: %w", err)
-          }
-          parts = append(parts, string(out))
-      }
-      return strings.Join(parts, "---\n"), nil
-  }
+// RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
+// replaces srcNamespace with tgtNamespace in metadata.namespace,
+// and returns the re-serialized YAML string.
+func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
+	docs, err := parseYAMLDocuments(content)
+	if err != nil {
+		return "", fmt.Errorf("parsing YAML documents: %w", err)
+	}
+
+	var parts []string
+	for i, doc := range docs {
+		obj, ok := doc.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
+		}
+		if meta, ok := obj["metadata"].(map[string]any); ok {
+			if meta["namespace"] == srcNamespace {
+				meta["namespace"] = tgtNamespace
+			}
+		}
+		out, err := yaml.Marshal(obj)
+		if err != nil {
+			return "", fmt.Errorf("marshaling YAML document: %w", err)
+		}
+		parts = append(parts, string(out))
+	}
+	return strings.Join(parts, "---\n"), nil
+}
 
 // ParseValidationReport reads and parses a crane validate report file.
 // The report parameter should be a pointer to the structure that will hold the parsed data.
@@ -1338,4 +1338,92 @@ func ParseValidationReport(validateDir string, outputFormat string, report inter
 	}
 
 	return nil
+}
+
+// ResourceMatch defines criteria for matching an exported resource file.
+// Crane export filenames follow the pattern:
+//
+//	Cluster-scoped: <Kind>_<group>_<version>_clusterscoped_<name>.yaml
+//	Namespace-scoped: <Kind>_<group>_<version>_<namespace>_<name>.yaml
+//
+// Only Kind and Name are required. Group and Version narrow the match
+// but must be specified together in order (Group before Version).
+type ResourceMatch struct {
+	Kind    string
+	Name    string
+	Scope   string // optional, empty means clusterscoped
+	Version string // optional, empty means wildcard
+	Group   string // optional, empty means wildcard
+}
+
+func getPrefixAndSuffix(r ResourceMatch) (string, string) {
+	prefix := r.Kind + "_"
+	if len(r.Group) > 0 {
+		prefix = prefix + r.Group + "_"
+	}
+
+	scope := "clusterscoped"
+	if r.Scope != "" {
+		scope = r.Scope
+	}
+	// under score is for avoiding missmatch such as:
+	//  ns1_my-crb.yaml could match other-ns_my-crb.yaml.
+	suffix := "_" + scope + "_" + r.Name + ".yaml"
+	if len(r.Version) > 0 {
+		suffix = r.Version + suffix
+	}
+	return prefix, suffix
+}
+
+func fileHasPrefixAndSuffix(file, prefix, suffix string) bool {
+	return strings.HasPrefix(file, prefix) && strings.HasSuffix(file, suffix)
+}
+
+// AssertResourcesExist checks if all specified resources exist in the directory.
+// Pass the directory containing the YAML files directly (e.g., the _cluster dir
+// for cluster-scoped, or the namespace dir for namespace-scoped resources).
+// Returns (true, nil) if all match, (false, nil) if any missing, or (false, err) on error.
+func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
+	existingFiles, err := ListFilesRecursivelyAsList(dir)
+	if err != nil {
+		return false, err
+	}
+
+	for _, r := range resources {
+		prefix, suffix := getPrefixAndSuffix(r)
+		found := false
+		for _, file := range existingFiles {
+			if fileHasPrefixAndSuffix(file, prefix, suffix) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func AssertResourcesDontExist(dir string, resources []ResourceMatch) (bool, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return true, nil
+	}
+
+	existingFiles, err := ListFilesRecursivelyAsList(dir)
+	if err != nil {
+		return false, err
+	}
+	if len(existingFiles) == 0 {
+		return true, nil
+	}
+	for _, r := range resources {
+		prefix, suffix := getPrefixAndSuffix(r)
+		for _, file := range existingFiles {
+			if fileHasPrefixAndSuffix(file, prefix, suffix) {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
 }
