@@ -55,7 +55,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")

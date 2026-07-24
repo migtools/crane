@@ -91,7 +91,6 @@ var _ = Describe("Ordered apply for Role and RoleBinding migration", func() {
 		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 		applyOpts := ApplyOptions{
-			ExportDir:    paths.ExportDir,
 			TransformDir: paths.TransformDir,
 			OutputDir:    paths.OutputDir,
 			Ordered:      true,

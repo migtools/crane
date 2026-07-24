@@ -57,7 +57,7 @@ var _ = Describe("Crane validate: mixed compatible and incompatible resources in
 		paths, err := NewScenarioPaths("crane-validate-mixed-*")
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {

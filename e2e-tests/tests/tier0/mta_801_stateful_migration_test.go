@@ -37,7 +37,7 @@ var _ = Describe("Stateful app migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
