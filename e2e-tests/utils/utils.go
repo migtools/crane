@@ -771,13 +771,14 @@ func normalizeUnstableFields(doc any) any {
 	}
 
 	if kind == "Route" {
-		// OpenShift may auto-generate route hostnames per-cluster, which are
-		// not semantically relevant for migration fixture comparisons.
-		if spec, ok := root["spec"].(map[string]any); ok {
-			delete(spec, "host")
-		}
 		if annotations, ok := metadata["annotations"].(map[string]any); ok {
-			delete(annotations, "openshift.io/host.generated")
+			// Only normalize host when OpenShift explicitly marks it as generated.
+			if generated, _ := annotations["openshift.io/host.generated"].(string); generated == "true" {
+				if spec, ok := root["spec"].(map[string]any); ok {
+					delete(spec, "host")
+				}
+				delete(annotations, "openshift.io/host.generated")
+			}
 			if len(annotations) == 0 {
 				delete(metadata, "annotations")
 			}
