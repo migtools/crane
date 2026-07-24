@@ -47,7 +47,6 @@ type TransformOptions struct {
 	ExportDir         string
 	TransformDir      string
 	PluginDir         string
-	IgnoredPatchesDir string
 	SkipPlugins       []string
 	OptionalFlags     string
 	Overwrite         bool
@@ -117,9 +116,6 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 	}
 	if opts.PluginDir != "" {
 		args = append(args, "--plugin-dir", opts.PluginDir)
-	}
-	if opts.IgnoredPatchesDir != "" {
-		args = append(args, "--ignored-patches-dir", opts.IgnoredPatchesDir)
 	}
 	for _, p := range opts.SkipPlugins {
 		args = append(args, "--skip-plugins", p)

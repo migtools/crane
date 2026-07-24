@@ -43,7 +43,6 @@ type Flags struct {
 	ExportDir         string   `mapstructure:"export-dir"`
 	PluginDir         string   `mapstructure:"plugin-dir"`
 	TransformDir      string   `mapstructure:"transform-dir"`
-	IgnoredPatchesDir string   `mapstructure:"ignored-patches-dir"`
 	SkipPlugins       []string `mapstructure:"skip-plugins"`
 	OptionalFlags     string   `mapstructure:"optional-flags"`
 	Overwrite         bool     `mapstructure:"overwrite"`
@@ -157,7 +156,6 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	defaultPluginDir := home + plugin.DefaultLocalPluginDir
 	cmd.Flags().StringVarP(&o.ExportDir, "export-dir", "e", "export", "The path where the kubernetes resources are saved")
 	cmd.Flags().StringVarP(&o.TransformDir, "transform-dir", "t", "transform", "The path where files that contain the transformations are saved")
-	cmd.Flags().StringVar(&o.IgnoredPatchesDir, "ignored-patches-dir", "", "The path where files that contain transformations that were discarded due to conflicts are saved. If left blank, these files will not be saved.")
 	cmd.Flags().StringVar(&o.InstructionsFile, "instructions-file", "", "Path to the transform instructions file")
 	cmd.Flags().BoolVar(&o.Overwrite, "overwrite", false, "Overwrite existing stage directories even if they contain user modifications")
 
