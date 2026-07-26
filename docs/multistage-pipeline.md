@@ -143,7 +143,7 @@ crane transform 10_KubernetesPlugin 20_OpenshiftPlugin
 Override dirty check protection:
 
 ```bash
-crane transform --force 10_KubernetesPlugin
+crane transform --overwrite 10_KubernetesPlugin
 ```
 
 ### Apply Command
@@ -272,7 +272,7 @@ crane transform --export-dir export --transform-dir transform
 # Error: contains user modifications
 
 # Force overwrite if needed
-crane transform --export-dir export --transform-dir transform --force
+crane transform --export-dir export --transform-dir transform --overwrite
 
 # Or preserve changes by creating a new stage
 crane transform 20_custom
@@ -360,7 +360,7 @@ if err != nil {
 **Cause**: Stage directory has been manually edited after creation.
 
 **Solution**:
-1. Use `--force` to overwrite changes
+1. Use `--overwrite` to replace existing stage
 2. Create a new stage to preserve changes (e.g., `crane transform 20_custom`)
 3. Commit changes to Git before re-running transform
 

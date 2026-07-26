@@ -81,12 +81,14 @@ func main() {
 
     var patches []PatchOp
 
-    // Example: add a migration label (ensure parent object exists first)
-    patches = append(patches, PatchOp{
-        Op:    "add",
-        Path:  "/metadata/labels",
-        Value: map[string]interface{}{},
-    })
+    // Example: add a migration label
+    if len(resource.GetLabels()) == 0 {
+        patches = append(patches, PatchOp{
+            Op:    "add",
+            Path:  "/metadata/labels",
+            Value: map[string]interface{}{},
+        })
+    }
     patches = append(patches, PatchOp{
         Op:    "add",
         Path:  "/metadata/labels/migrated-by",
@@ -121,15 +123,23 @@ go build -o ~/.local/share/crane/plugins/MyCustomPlugin
 
 ```bash
 #!/bin/bash
-# Simple plugin that adds a label to all resources
-# Note: ensure /metadata/labels exists before adding child keys
+# Plugin that adds a label to all resources
 
-cat <<EOF
+resource=$(cat)
+has_labels=$(echo "$resource" | jq -e '.metadata.labels != null' 2>/dev/null)
+
+if [ $? -eq 0 ]; then
+  cat <<'EOF'
+[{"op": "add", "path": "/metadata/labels/environment", "value": "production"}]
+EOF
+else
+  cat <<'EOF'
 [
   {"op": "add", "path": "/metadata/labels", "value": {}},
   {"op": "add", "path": "/metadata/labels/environment", "value": "production"}
 ]
 EOF
+fi
 ```
 
 Install:

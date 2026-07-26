@@ -33,7 +33,7 @@ The above command transfers PVC (along with PV data) named `<pvc_name>` in the n
 | `--destination-image` | string | No | Custom image to use for destination rsync Pod |
 | `--source-image` | string | No | Custom image to use for source rsync Pod |
 | `--endpoint` | string | No | Kind of endpoint to create in destination cluster (see [Endpoint Options](#endpoint-options)) |
-| `--ingress-class` | string | When endpoint is nginx-ingress | Ingress class when endpoint is nginx-ingress |
+| `--ingress-class` | string | No | Ingress class when endpoint is nginx-ingress (defaults to cluster's default ingress class) |
 | `--subdomain` | string | When endpoint is nginx-ingress | Custom subdomain to use for the endpoint |
 | `--output` | string | No | Output transfer stats in the specified file |
 | `--verify` | bool | No | Verify transferred files using checksums |
@@ -67,7 +67,7 @@ crane transfer-pvc --pvc-name=source-pvc:destination-pvc \
 
 Endpoint enables a connection between the source and destination cluster for data transfer. It is created in the destination cluster. The destination cluster must support the kind of endpoint used.
 
-By default, `nginx-ingress` is used as endpoint. For nginx-ingress, `--subdomain` and `--ingress-class` are required.
+By default, `nginx-ingress` is used as endpoint. For nginx-ingress, `--subdomain` is required. `--ingress-class` is optional and defaults to the cluster's default ingress class.
 
 In an OpenShift cluster, `route` endpoint can be used. A subdomain option can be specified but is not required. By default, the cluster's subdomain will be used.
 

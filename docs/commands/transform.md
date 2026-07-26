@@ -74,7 +74,7 @@ kubectl apply -f output/output.yaml
 
 **Important**: 
 - **Plugin stages** (ending with `Plugin`): Automatically regenerate on rerun - your manual edits will be overwritten
-- **Custom stages** (not ending with `Plugin`): Refuse to overwrite without `--force` flag to protect your edits
+- **Custom stages** (not ending with `Plugin`): Refuse to overwrite without `--overwrite` flag to protect your edits
 
 ## Multi-Stage Pipelines
 
@@ -256,18 +256,18 @@ EOF
 
 # Update kustomization.yaml to reference the patch
 # Then run transform to apply it
-# Note: Custom stage requires --force to overwrite (protects your edits)
-crane transform --force
+# Note: Custom stage requires --overwrite to replace (protects your edits)
+crane transform --overwrite
 ```
 
-**Important**: Custom stages (not ending with `Plugin`) are protected from accidental overwrites. You must use `--force` to regenerate them.
+**Important**: Custom stages (not ending with `Plugin`) are protected from accidental overwrites. You must use `--overwrite` to regenerate them.
 
 **Best Practice**: Always add custom stages as the **last stage** in your pipeline. This ensures that:
 - The `input/` directory contains the most up-to-date output from all previous stages
 - You're editing the final state of resources after all plugin transformations
 - Re-running earlier plugin stages won't leave your custom stage with stale data
 
-If you add a custom stage in the middle of the pipeline and later update an earlier stage, you'll need to use `--force` to refresh the custom stage's `input/` directory with the updated output. **Warning**: Using `--force` will delete the entire stage directory including any manual changes you made to `input/`, `patches/`, and `kustomization.yaml`.
+If you add a custom stage in the middle of the pipeline and later update an earlier stage, you'll need to use `--overwrite` to refresh the custom stage's `input/` directory with the updated output. **Warning**: Using `--overwrite` will delete the entire stage directory including any manual changes you made to `input/`, `patches/`, and `kustomization.yaml`.
 
 ## Directory Contents Explained
 
@@ -373,14 +373,14 @@ vi transform/40_CustomEdits/kustomization.yaml
 crane transform
 
 # Plugin stages (ending with "Plugin") regenerate automatically
-# Custom stages (not ending with "Plugin") require --force to overwrite
-crane transform --force
+# Custom stages (not ending with "Plugin") require --overwrite to replace
+crane transform --overwrite
 
 # Run specific plugin stage (regenerates automatically)
 crane transform 10_KubernetesPlugin
 
-# Run specific custom stage (requires --force if directory not empty)
-crane transform 40_CustomEdits --force
+# Run specific custom stage (requires --overwrite if directory not empty)
+crane transform 40_CustomEdits --overwrite
 ```
 
 ### 4. Working with Multiple Stages
@@ -400,8 +400,8 @@ crane transform 40_CustomEdits
 vi transform/40_CustomEdits/input/Deployment_apps_v1_default_wordpress.yaml
 
 # Run all stages sequentially
-# Note: requires --force for custom stages
-crane transform --force
+# Note: requires --overwrite for custom stages
+crane transform --overwrite
 
 # Apply all stages
 crane apply --transform-dir transform --output-dir output
@@ -437,8 +437,8 @@ vi transform/50_CustomLabels/kustomization.yaml
 
 # 6. Run the entire pipeline
 # Note: 10_KubernetesPlugin and 20_OpenshiftPlugin regenerate automatically
-# 50_CustomLabels will fail unless --force is used (protects manual edits)
-crane transform --force
+# 50_CustomLabels will fail unless --overwrite is used (protects manual edits)
+crane transform --overwrite
 
 # 7. Apply and verify
 crane apply
@@ -486,14 +486,14 @@ git diff --staged transform/10_KubernetesPlugin/patches/
 
 ## Troubleshooting
 
-### "Stage directory is not empty (use --force to overwrite)"
+### "Stage directory is not empty (use --overwrite to replace it)"
 
 **Problem**: Crane detects a custom stage already exists and refuses to overwrite to protect manual edits.
 
 **Solution**:
 ```bash
-# Option 1: Use force flag to overwrite
-crane transform --force
+# Option 1: Use --overwrite flag
+crane transform --overwrite
 
 # Option 2: Check what changed
 git diff transform/
@@ -501,8 +501,8 @@ git diff transform/
 # Option 3: Only regenerate plugin stages (they auto-regenerate)
 crane transform 10_KubernetesPlugin
 
-# Note: Plugin stages (ending with "Plugin") regenerate automatically without --force
-# Custom stages (not ending with "Plugin") require --force to protect manual edits
+# Note: Plugin stages (ending with "Plugin") regenerate automatically without --overwrite
+# Custom stages (not ending with "Plugin") require --overwrite to protect manual edits
 ```
 
 ### "kustomization.yaml validation failed"
