@@ -114,7 +114,11 @@ matches_repo() {
       ;;
   esac
 
-  [[ "$remote_url" == */"$repo" || "$remote_url" == *:"$repo" ]]
+  return 1
+}
+
+is_shallow_repository() {
+  [[ "$(git rev-parse --is-shallow-repository 2>/dev/null || printf 'false')" == "true" ]]
 }
 
 read_version_output() {
@@ -211,26 +215,32 @@ resolve_local_branch_ref() {
 }
 
 run_local_check() {
-  local branch_ref head_sha commits_behind
+  local branch_ref head_sha commits_behind resolved_build_sha
   branch_ref="$(resolve_local_branch_ref)"
   head_sha="$(git rev-parse "${branch_ref}")"
 
-  if ! git cat-file -e "${BUILD_SHA}^{commit}" 2>/dev/null; then
+  if ! resolved_build_sha="$(git rev-parse "${BUILD_SHA}^{commit}" 2>/dev/null)"; then
+    if is_shallow_repository; then
+      die "local repository history is too shallow to validate ${BUILD_SHA}; fetch more history or use --remote"
+    fi
     report_red
     return 1
   fi
 
-  if ! git merge-base --is-ancestor "${BUILD_SHA}" "${branch_ref}"; then
+  if ! git merge-base --is-ancestor "${resolved_build_sha}" "${branch_ref}"; then
+    if is_shallow_repository; then
+      die "local repository history is too shallow to validate ${BUILD_SHA}; fetch more history or use --remote"
+    fi
     report_red
     return 1
   fi
 
-  if [[ "${BUILD_SHA}" == "${head_sha}" ]]; then
+  if [[ "${resolved_build_sha}" == "${head_sha}" ]]; then
     report_green
     return 0
   fi
 
-  commits_behind="$(git rev-list --count "${BUILD_SHA}..${branch_ref}")"
+  commits_behind="$(git rev-list --count "${resolved_build_sha}..${branch_ref}")"
   report_yellow "${commits_behind}" "${head_sha}"
   return 1
 }
@@ -332,6 +342,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --)
       shift
+      while [[ $# -gt 0 ]]; do
+        [[ -z "${BINARY_PATH}" ]] || die "only one binary path may be provided"
+        BINARY_PATH="$1"
+        shift
+      done
       break
       ;;
     -*)
