@@ -56,7 +56,7 @@ var _ = Describe("HPA migration", func() {
 		paths, err := NewScenarioPaths("crane-export-*")
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {

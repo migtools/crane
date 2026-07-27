@@ -33,7 +33,7 @@ var _ = Describe("Missing ConfigMap reference migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Delete source and target namespaces")
 			if _, err := kubectlSrc.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {

@@ -36,7 +36,7 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 
 		crb := ClusterRoleBinding{Name: clusterRoleBindingName, ClusterRoleName: clusterRoleName}

@@ -80,7 +80,6 @@ var _ = Describe("Crane validate offline mode: malformed API surface file handli
 			TransformDir: paths.TransformDir,
 		}
 		applyOpts := ApplyOptions{
-			ExportDir:    paths.ExportDir,
 			TransformDir: paths.TransformDir,
 			OutputDir:    paths.OutputDir,
 		}

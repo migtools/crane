@@ -66,7 +66,7 @@ var _ = Describe("Multi-container pod migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {

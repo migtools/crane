@@ -18,7 +18,6 @@ Kustomize is embedded directly in the Crane binary (via the krusty API), so no e
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--export-dir` | `-e` | `export` | The path where exported resources are saved (kept for consistency; not used by apply) |
 | `--transform-dir` | `-t` | `transform` | The path where transform stage directories are located |
 | `--output-dir` | `-o` | `output` | The path where final manifests are written |
 | `--kustomize-args` | | | Additional arguments for kustomize (e.g., `--enable-helm --helm-command=helm3`) |

@@ -51,7 +51,7 @@ var _ = Describe("Validate alternative GV suggestion [Live Mode]", func() {
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 		paths, err := NewScenarioPaths("crane-pipeline-*")
 		Expect(err).NotTo(HaveOccurred())
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}

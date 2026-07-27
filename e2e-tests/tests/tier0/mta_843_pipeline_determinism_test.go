@@ -30,13 +30,13 @@ var _ = Describe("Pipeline determinism", func() {
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts1 := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths1.ExportDir}
 		transformOpts1 := TransformOptions{ExportDir: paths1.ExportDir, TransformDir: paths1.TransformDir}
-		applyOpts1 := ApplyOptions{ExportDir: paths1.ExportDir, TransformDir: paths1.TransformDir, OutputDir: paths1.OutputDir}
+		applyOpts1 := ApplyOptions{TransformDir: paths1.TransformDir, OutputDir: paths1.OutputDir}
 
 		paths2, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts2 := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths2.ExportDir}
 		transformOpts2 := TransformOptions{ExportDir: paths2.ExportDir, TransformDir: paths2.TransformDir}
-		applyOpts2 := ApplyOptions{ExportDir: paths2.ExportDir, TransformDir: paths2.TransformDir, OutputDir: paths2.OutputDir}
+		applyOpts2 := ApplyOptions{TransformDir: paths2.TransformDir, OutputDir: paths2.OutputDir}
 
 		srcApp.ExtraVars = map[string]any{"non_admin_user": "true"}
 

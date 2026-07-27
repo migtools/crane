@@ -153,7 +153,7 @@ var _ = Describe("Custom transformation stage", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		log.Printf("Running crane apply for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		Expect(runner.Apply(ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
