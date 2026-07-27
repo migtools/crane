@@ -75,7 +75,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 	})
 
 	// Automates: https://github.com/migtools/crane/issues/431
-	It("[MTA-874] --overwrite should fail when validate-dir already exists without the flag ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --overwrite should fail when validate-dir already exists without the flag ", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-err-*", targetContext)
 
 		By("Run validate to populate the validate directory")
@@ -102,7 +102,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Second validate run correctly failed: %v", err)
 	})
 
-	It("[MTA-874] --overwrite should succeed when validate-dir already exists ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --overwrite should succeed when validate-dir already exists ", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-ok-*", targetContext)
 
 		By("Run validate to populate the validate directory")
@@ -141,7 +141,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			report.Mode, report.TotalScanned, report.Compatible)
 	})
 
-	It("[MTA-874] --input-dir should default to 'output' when omitted ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should default to 'output' when omitted ", Label("tier1", "validate"), func() {
 		tempDir, err := os.MkdirTemp("", "crane-validate-live-default-input-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
@@ -182,7 +182,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Default --input-dir (live): scanned %d resources from 'output' directory", report.TotalScanned)
 	})
 
-	It("[MTA-874] --validate-dir should default to 'validate' when omitted ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --validate-dir should default to 'validate' when omitted ", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-default-validatedir-*", targetContext)
 
 		By("Run validate without specifying --validate-dir (should default to 'validate')")
@@ -200,7 +200,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Default --validate-dir (live): report created at %s", defaultReportPath)
 	})
 
-	It("[MTA-874] --output should reject invalid format ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output should reject invalid format ", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-invalid-output-*", targetContext)
 
 		By("Run validate with --output=xml")
@@ -219,7 +219,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 		log.Printf("Invalid --output=xml correctly rejected : %v", err)
 	})
 
-	It("[MTA-874] --output should default to json when omitted", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output should default to json when omitted", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-default-output-*", targetContext)
 
 		By("Run validate without specifying --output")
@@ -249,7 +249,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			"report.yaml should not exist when --output defaults to json")
 	})
 
-	It("[MTA-874] --input-dir should fail when path does not exist ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should fail when path does not exist ", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-nonexistent-input-*", targetContext)
 
 		nonExistentDir := filepath.Join(fixture.tempDir, "does-not-exist")
@@ -271,7 +271,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 	})
 
 	// Automates: https://github.com/migtools/crane/issues/428
-	It("[MTA-874] --input-dir should handle empty directory with no YAML files ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --input-dir should handle empty directory with no YAML files ", Label("tier1", "validate"), func() {
 		tempDir, err := os.MkdirTemp("", "crane-validate-live-empty-input-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
@@ -298,7 +298,7 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 	})
 
 	// Automates: https://github.com/migtools/crane/issues/432
-	It("[MTA-874] --output should accept uppercase format ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --output should accept uppercase format ", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-output-case-*", targetContext)
 
 		By("Run validate with --output=JSON (uppercase)")
@@ -340,15 +340,15 @@ var _ = Describe("Crane validate: flag behavior (live mode)", func() {
 			), "error should name both flags and state they are mutually exclusive")
 			log.Printf("--api-resources and --%s mutual exclusivity enforced: %v", flagName, err)
 		},
-		Entry("[MTA-874] --context", Label("tier2", "validate"), "context", "fake-context"),
-		Entry("[MTA-874] --kubeconfig", Label("tier2", "validate"), "kubeconfig", "/tmp/fake-kubeconfig"),
-		Entry("[MTA-874] --server", Label("tier2", "validate"), "server", "https://fake-server:6443"),
-		Entry("[MTA-874] --token", Label("tier2", "validate"), "token", "fake-bearer-token"),
-		Entry("[MTA-874] --cluster", Label("tier2", "validate"), "cluster", "fake-cluster"),
-		Entry("[MTA-874] --user", Label("tier2", "validate"), "user", "fake-user"),
+		Entry("[MTA-874] --context", Label("tier1", "validate"), "context", "fake-context"),
+		Entry("[MTA-874] --kubeconfig", Label("tier1", "validate"), "kubeconfig", "/tmp/fake-kubeconfig"),
+		Entry("[MTA-874] --server", Label("tier1", "validate"), "server", "https://fake-server:6443"),
+		Entry("[MTA-874] --token", Label("tier1", "validate"), "token", "fake-bearer-token"),
+		Entry("[MTA-874] --cluster", Label("tier1", "validate"), "cluster", "fake-cluster"),
+		Entry("[MTA-874] --user", Label("tier1", "validate"), "user", "fake-user"),
 	)
 
-	It("[MTA-874] --overwrite should succeed on first run with no pre-existing validate-dir ", Label("tier2", "validate"), func() {
+	It("[MTA-874] --overwrite should succeed on first run with no pre-existing validate-dir ", Label("tier1", "validate"), func() {
 		fixture := setupLiveFlagTestFixture("crane-validate-live-overwrite-first-run-*", targetContext)
 
 		By("Run validate with --overwrite on a fresh validate-dir")
