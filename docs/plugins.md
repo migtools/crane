@@ -22,7 +22,7 @@ This plugin runs as the default first stage (`10_KubernetesPlugin`) and is alway
 
 The [konveyor/crane-plugins](https://github.com/konveyor/crane-plugins) repository contains community-contributed plugins based on experience from real-world Kubernetes migrations.
 
-> **Note:** Community plugins (e.g., OpenshiftPlugin) are not actively maintained. Verify plugin compatibility before use in production.
+> **Note:** Only the core OpenShift, Kubernetes, and Shipwright plugins are actively maintained. Other community plugins are neither officially supported nor actively maintained—please verify plugin compatibility before using them in production.
 
 ### OpenShift Plugin
 
