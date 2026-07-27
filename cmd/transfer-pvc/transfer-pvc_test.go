@@ -2,6 +2,7 @@ package transfer_pvc
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -9,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -774,6 +776,144 @@ func TestTruncateWithHash(t *testing.T) {
 			again := truncateWithHash(tt.input)
 			if result != again {
 				t.Errorf("truncateWithHash() not deterministic: got %q then %q", result, again)
+			}
+		})
+	}
+}
+
+func TestIsIntraCluster(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  TransferPVCCommand
+		want bool
+	}{
+		{
+			name: "same cluster same namespace",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-a"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: true,
+		},
+		{
+			name: "same cluster different namespace",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-a"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns2"}}},
+			},
+			want: false,
+		},
+		{
+			name: "different cluster same namespace",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-b"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: false,
+		},
+		{
+			name: "nil source context",
+			cmd: TransferPVCCommand{
+				sourceContext:      nil,
+				destinationContext: &clientcmdapi.Context{Cluster: "cluster-a"},
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: false,
+		},
+		{
+			name: "nil destination context",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+				destinationContext: nil,
+				Flags:              Flags{PVC: PvcFlags{Namespace: mappedNameVar{source: "ns1", destination: "ns1"}}},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cmd.isIntraClusterSameNamespace(); got != tt.want {
+				t.Errorf("isIntraClusterSameNamespace() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     TransferPVCCommand
+		wantErr bool
+	}{
+		{
+			name: "same name same cluster same namespace is rejected",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c1"},
+				Flags: Flags{PVC: PvcFlags{
+					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
+					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+				}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "no colon pvc-name same cluster same namespace is rejected",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c1"},
+				Flags: Flags{PVC: PvcFlags{
+					Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
+					Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+				}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "different name same cluster same namespace is allowed",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c1"},
+				Flags: Flags{
+					PVC: PvcFlags{
+						Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data-new"},
+						Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+					},
+					Endpoint: EndpointFlags{Subdomain: "test.example.com"},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "same name cross cluster is allowed",
+			cmd: TransferPVCCommand{
+				sourceContext:      &clientcmdapi.Context{Cluster: "c1"},
+				destinationContext: &clientcmdapi.Context{Cluster: "c2"},
+				Flags: Flags{
+					PVC: PvcFlags{
+						Name:      mappedNameVar{source: "mysql-data", destination: "mysql-data"},
+						Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+					},
+					Endpoint: EndpointFlags{Subdomain: "test.example.com"},
+				},
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			if tt.wantErr && err == nil {
+				t.Error("Validate() should have returned error but didn't")
+			}
+			if tt.wantErr && err != nil && !strings.Contains(err.Error(), "must differ") {
+				t.Errorf("Validate() returned unexpected error: %v", err)
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("Validate() returned unexpected error: %v", err)
 			}
 		})
 	}
