@@ -40,7 +40,8 @@ spec:
   - IPv4
   ipFamilyPolicy: SingleStack
   ports:
-  - port: 8081
+  - name: http
+    port: 8081
     protocol: TCP
     targetPort: 8080
   selector:
