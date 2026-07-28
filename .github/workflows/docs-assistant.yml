@@ -21,10 +21,10 @@ jobs:
     steps:
       - name: Get PR information
         id: pr_info
-        if: github.event.issue.pull_request
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           PR_NUMBER=${{ github.event.issue.number }}
           echo "Extracting PR information for PR #$PR_NUMBER"
           PR_DATA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER)
@@ -46,25 +46,26 @@ jobs:
           repository: ${{ steps.pr_info.outputs.head_repo || github.repository }}
           ref: ${{ steps.pr_info.outputs.head_sha || github.ref }}
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
         with:
           model-api-base: ${{ secrets.MODEL_API_BASE }}
           model-api-key: ${{ secrets.MODEL_API_KEY }}
-          model-name: ${{ secrets.MODEL_NAME }}
+          model-name: ${{ secrets.MODEL_NAME || 'gemini-2.0-flash' }}      
           docs-repo-url: ${{ secrets.DOCS_REPO_URL }}
-          github-token: ${{ secrets.GH_PAT }}
+          github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}        
           pr-number: ${{ github.event.issue.number }}
-          pr-base: origin/${{ steps.pr_info.outputs.base_sha || 'main' }}
+          pr-base: ${{ steps.pr_info.outputs.base_sha }}
           pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
-          docs-subfolder: ${{ secrets.DOCS_SUBFOLDER }}
+          docs-subfolder: 'docs' 
           comment-body: ${{ github.event.comment.body }}
           docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH || 'main' }}
-          jira-url: ${{ secrets.JIRA_URL }}
-          jira-username: ${{ secrets.JIRA_USERNAME }}
-          jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
-          google-sa-key: ${{ secrets.GOOGLE_SA_KEY }}
-          max-context-chars: ${{ secrets.MAX_CONTEXT_CHARS }}
+        #  jira-url: ${{ secrets.JIRA_URL }}
+        # jira-username: ${{ secrets.JIRA_USERNAME }}
+        # jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+        #  google-sa-key: ${{ secrets.GOOGLE_SA_KEY }}
+        # Optional: Uncomment and configure if custom context limits are needed
+        #  max-context-chars: ${{ secrets.MAX_CONTEXT_CHARS }}
           style-config-path: '.code-to-docs/style.md'
