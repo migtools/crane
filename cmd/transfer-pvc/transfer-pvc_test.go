@@ -958,10 +958,7 @@ func TestCertSecretNaming(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			secretName := tt.serverSecret
-			if tt.srcPVCName != tt.destPVCName {
-				secretName = fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(tt.srcPVCName))
-			}
+			secretName := certificateSecretName(tt.serverSecret, tt.srcPVCName, tt.destPVCName)
 			if secretName != tt.wantCopyName {
 				t.Errorf("cert secret name = %q, want %q", secretName, tt.wantCopyName)
 			}
