@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event.issue.pull_request && 
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
       (contains(github.event.comment.body, '[review-docs]') ||
        contains(github.event.comment.body, '[update-docs]') ||
        contains(github.event.comment.body, '[review-feature]'))
@@ -28,22 +29,22 @@ jobs:
           echo "Extracting PR information for PR #$PR_NUMBER"
           PR_DATA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER)
           
-          HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
+          HEAD_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
           HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
-          BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
+          BASE_SHA=$(echo "$PR_DATA" | jq -r '.base.sha')
           
-          echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
           echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
-          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+          echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           
-          echo "PR info extracted: #$PR_NUMBER, base: $BASE_REF, head: $HEAD_REF"
+          echo "PR info extracted: #$PR_NUMBER, base SHA: $BASE_SHA, head SHA: $HEAD_SHA"
 
       - name: Checkout PR Code
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.pr_info.outputs.head_repo || github.repository }}
-          ref: ${{ steps.pr_info.outputs.head_ref || github.ref }}
+          ref: ${{ steps.pr_info.outputs.head_sha || github.ref }}
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
           
@@ -56,8 +57,8 @@ jobs:
           docs-repo-url: ${{ secrets.DOCS_REPO_URL }}
           github-token: ${{ secrets.GH_PAT }}
           pr-number: ${{ github.event.issue.number }}
-          pr-base: origin/${{ steps.pr_info.outputs.base_ref || 'main' }}
-          pr-head-sha: ${{ steps.pr_info.outputs.head_ref }}
+          pr-base: origin/${{ steps.pr_info.outputs.base_sha || 'main' }}
+          pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
           docs-subfolder: ${{ secrets.DOCS_SUBFOLDER }}
           comment-body: ${{ github.event.comment.body }}
           docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH || 'main' }}
