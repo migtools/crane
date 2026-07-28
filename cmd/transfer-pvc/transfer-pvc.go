@@ -384,10 +384,10 @@ func (t *TransferPVCCommand) run() error {
 	for i := range secretList.Items {
 		destSecret := &secretList.Items[i]
 		secretName := destSecret.Name
-		// For intra-cluster: the server cert secret is named after destPVC,
-		// but the client expects one named after srcPVC. Copy with the
-		// client's expected name so both use the same CA.
-		if t.isIntraClusterSameNamespace() {
+		// The server cert secret is named after destPVC, but the client
+		// expects one named after srcPVC. When names differ, copy with
+		// the client's expected name so both use the same CA.
+		if srcPVC.Name != destPVC.Name {
 			secretName = fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(srcPVC.Name))
 		}
 		secretLabels := destSecret.Labels

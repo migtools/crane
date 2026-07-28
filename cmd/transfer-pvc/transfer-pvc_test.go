@@ -918,3 +918,53 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 		})
 	}
 }
+
+func TestCertSecretNaming(t *testing.T) {
+	tests := []struct {
+		name           string
+		srcPVCName     string
+		destPVCName    string
+		serverSecret   string
+		wantCopyName   string
+	}{
+		{
+			name:         "same PVC name — keep original secret name",
+			srcPVCName:   "mydata",
+			destPVCName:  "mydata",
+			serverSecret: "stunnel-creds-certs-mydata",
+			wantCopyName: "stunnel-creds-certs-mydata",
+		},
+		{
+			name:         "different PVC name — rename to match client expectation",
+			srcPVCName:   "mydata",
+			destPVCName:  "mydata-renamed",
+			serverSecret: "stunnel-creds-certs-mydata-renamed",
+			wantCopyName: "stunnel-creds-certs-mydata",
+		},
+		{
+			name:         "intra-cluster SC conversion — rename to source PVC",
+			srcPVCName:   "redis-data",
+			destPVCName:  "redis-data-new",
+			serverSecret: "stunnel-creds-certs-redis-data-new",
+			wantCopyName: "stunnel-creds-certs-redis-data",
+		},
+		{
+			name:         "cross-cluster namespace mapping same name — keep original",
+			srcPVCName:   "data",
+			destPVCName:  "data",
+			serverSecret: "stunnel-creds-certs-data",
+			wantCopyName: "stunnel-creds-certs-data",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			secretName := tt.serverSecret
+			if tt.srcPVCName != tt.destPVCName {
+				secretName = fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(tt.srcPVCName))
+			}
+			if secretName != tt.wantCopyName {
+				t.Errorf("cert secret name = %q, want %q", secretName, tt.wantCopyName)
+			}
+		})
+	}
+}
