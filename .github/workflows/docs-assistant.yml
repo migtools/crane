@@ -1,0 +1,69 @@
+name: Documentation Assistant
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  docs-assistant:
+    runs-on: ubuntu-latest
+    if: |
+      github.event.issue.pull_request && 
+      (contains(github.event.comment.body, '[review-docs]') ||
+       contains(github.event.comment.body, '[update-docs]') ||
+       contains(github.event.comment.body, '[review-feature]'))
+    steps:
+      - name: Get PR information
+        id: pr_info
+        if: github.event.issue.pull_request
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          echo "Extracting PR information for PR #$PR_NUMBER"
+          PR_DATA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER)
+          
+          HEAD_REF=$(echo "$PR_DATA" | jq -r '.head.ref')
+          HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
+          BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
+          
+          echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
+          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          
+          echo "PR info extracted: #$PR_NUMBER, base: $BASE_REF, head: $HEAD_REF"
+
+      - name: Checkout PR Code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr_info.outputs.head_repo || github.repository }}
+          ref: ${{ steps.pr_info.outputs.head_ref || github.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+          
+      - name: Documentation Assistant
+        uses: redhat-community-ai-tools/code-to-docs@main
+        with:
+          model-api-base: ${{ secrets.MODEL_API_BASE }}
+          model-api-key: ${{ secrets.MODEL_API_KEY }}
+          model-name: ${{ secrets.MODEL_NAME }}
+          docs-repo-url: ${{ secrets.DOCS_REPO_URL }}
+          github-token: ${{ secrets.GH_PAT }}
+          pr-number: ${{ github.event.issue.number }}
+          pr-base: origin/${{ steps.pr_info.outputs.base_ref || 'main' }}
+          pr-head-sha: ${{ steps.pr_info.outputs.head_ref }}
+          docs-subfolder: ${{ secrets.DOCS_SUBFOLDER }}
+          comment-body: ${{ github.event.comment.body }}
+          docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH || 'main' }}
+          jira-url: ${{ secrets.JIRA_URL }}
+          jira-username: ${{ secrets.JIRA_USERNAME }}
+          jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
+          google-sa-key: ${{ secrets.GOOGLE_SA_KEY }}
+          max-context-chars: ${{ secrets.MAX_CONTEXT_CHARS }}
+          style-config-path: '.code-to-docs/style.md'
