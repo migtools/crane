@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Crane validate: resourcePlural for core group resources (v1) [Live Mode]", func() {
+var _ = Describe("Crane validate: verify resourcePlural for core group resources (v1) [Live Mode]", func() {
 	It("[MTA-897] should report correct resourcePlural for Pod, Namespace, PVC, and ServiceAccount",
 		Label("tier1", "validate"), func() {
 			testName := "validate-core-v1-plural"
@@ -38,25 +38,34 @@ var _ = Describe("Crane validate: resourcePlural for core group resources (v1) [
 			})
 			runner.WorkDir = paths.TempDir
 
+			type resourceCase struct {
+				testdataFile   string
+				kind           string
+				apiVersion     string
+				resourcePlural string
+				namespace      string
+			}
+			namespace := testName
+			resources := []resourceCase{
+				{"test-897-pod.yaml", "Pod", "v1", "pods", namespace},
+				{"test-897-namespace.yaml", "Namespace", "v1", "namespaces", ""},
+				{"test-897-pvc.yaml", "PersistentVolumeClaim", "v1", "persistentvolumeclaims", namespace},
+				{"test-897-serviceaccount.yaml", "ServiceAccount", "v1", "serviceaccounts", namespace},
+			}
+
 			inputDir := filepath.Join(paths.TempDir, "input")
 			Expect(os.MkdirAll(inputDir, 0o755)).NotTo(HaveOccurred())
 
 			By("Copy testdata manifests to input directory")
-			testdataFiles := []string{
-				"test-897-pod.yaml",
-				"test-897-namespace.yaml",
-				"test-897-pvc.yaml",
-				"test-897-serviceaccount.yaml",
-			}
-			for _, filename := range testdataFiles {
-				sourcePath, err := filepath.Abs(filepath.Join("../../testdata/test-897", filename))
+			for _, rc := range resources {
+				sourcePath, err := filepath.Abs(filepath.Join("../../testdata/test-897", rc.testdataFile))
 				Expect(err).NotTo(HaveOccurred())
-				Expect(sourcePath).To(BeAnExistingFile(), "%s should exist in testdata/test-897", filename)
+				Expect(sourcePath).To(BeAnExistingFile(), "%s should exist in testdata/test-897", rc.testdataFile)
 
 				data, err := os.ReadFile(sourcePath)
 				Expect(err).NotTo(HaveOccurred())
 
-				destPath := filepath.Join(inputDir, filename)
+				destPath := filepath.Join(inputDir, rc.testdataFile)
 				Expect(os.WriteFile(destPath, data, 0o644)).NotTo(HaveOccurred())
 			}
 
@@ -74,42 +83,38 @@ var _ = Describe("Crane validate: resourcePlural for core group resources (v1) [
 			err = utils.ParseValidationReport(paths.ValidateDir, "json", &report)
 			Expect(err).NotTo(HaveOccurred(), "should parse JSON report")
 
+			expectedResources := make(map[string]string, len(resources))
+			expectedPlurals := make(map[string]string, len(resources))
+			for _, rc := range resources {
+				expectedResources[rc.kind] = rc.apiVersion
+				expectedPlurals[rc.kind] = rc.resourcePlural
+			}
+
 			By("Verify report using VerifyValidateResults")
 			expectations := utils.ValidationExpectations{
 				ValidationReport: cranevalidate.ValidationReport{
 					Mode:           "live",
 					ClusterContext: scenario.KubectlTgt.Context,
-					TotalScanned:   4,
-					Compatible:     4,
+					TotalScanned:   len(resources),
+					Compatible:     len(resources),
 					Incompatible:   0,
 				},
-				ExpectedResources: map[string]string{
-					"Pod":                   "v1",
-					"Namespace":             "v1",
-					"PersistentVolumeClaim": "v1",
-					"ServiceAccount":        "v1",
-				},
-				ExpectedResourcePlurals: map[string]string{
-					"Pod":                   "pods",
-					"Namespace":             "namespaces",
-					"PersistentVolumeClaim": "persistentvolumeclaims",
-					"ServiceAccount":        "serviceaccounts",
-				},
-				ExpectedStatus:    cranevalidate.StatusOK,
-				ExpectFailuresDir: false,
+				ExpectedResources:       expectedResources,
+				ExpectedResourcePlurals: expectedPlurals,
+				ExpectedStatus:          cranevalidate.StatusOK,
+				ExpectFailuresDir:       false,
 			}
 			utils.VerifyValidateResults(report, paths.ValidateDir, "JSON", expectations)
 
-			By("Verify namespace: empty for cluster-scoped Namespace, set for namespaced resources")
-			namespace := testName
+			By("Verify namespace: empty for cluster-scoped, set for namespaced resources")
+			expectedNamespaces := make(map[string]string, len(resources))
+			for _, rc := range resources {
+				expectedNamespaces[rc.kind] = rc.namespace
+			}
 			for _, result := range report.Results {
-				switch result.Kind {
-				case "Namespace":
-					Expect(result.Namespace).To(BeEmpty(),
-						"expected Namespace to have empty namespace (cluster-scoped)")
-				case "Pod", "PersistentVolumeClaim", "ServiceAccount":
-					Expect(result.Namespace).To(Equal(namespace),
-						"expected %s to be in namespace %s", result.Kind, namespace)
+				if expectedNs, ok := expectedNamespaces[result.Kind]; ok {
+					Expect(result.Namespace).To(Equal(expectedNs),
+						"expected %s to have namespace %q", result.Kind, expectedNs)
 				}
 			}
 		})
