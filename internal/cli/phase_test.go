@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPhaseStartEnd(t *testing.T) {
@@ -40,8 +41,9 @@ func TestPhaseFail(t *testing.T) {
 	var buf bytes.Buffer
 	p := NewPhaseTracker(&buf, 1)
 
+	origErr := errors.New("not found")
 	p.Start("Reading source PVC")
-	err := p.Fail(errors.New("not found"), "unable to get source PVC")
+	err := p.Fail(origErr, "unable to get source PVC")
 
 	output := buf.String()
 	if !strings.Contains(output, "FAILED") {
@@ -56,11 +58,8 @@ func TestPhaseFail(t *testing.T) {
 	if !strings.Contains(err.Error(), "unable to get source PVC") {
 		t.Errorf("Error should contain message, got: %v", err)
 	}
-	if !errors.Is(err, errors.New("not found")) {
-		// unwrap check
-		if !strings.Contains(err.Error(), "not found") {
-			t.Errorf("Error should wrap original, got: %v", err)
-		}
+	if !errors.Is(err, origErr) {
+		t.Errorf("Error should wrap original, got: %v", err)
 	}
 }
 
@@ -94,5 +93,65 @@ func TestElapsed(t *testing.T) {
 	elapsed := p.Elapsed()
 	if elapsed < 0 {
 		t.Errorf("Elapsed should be non-negative, got: %v", elapsed)
+	}
+}
+
+func TestPrintTransferBannerWithSubdomain(t *testing.T) {
+	var buf bytes.Buffer
+	PrintTransferBanner(&buf, "src", "tgt", "app/data → app/data", "nginx-ingress", "data.app.example.com")
+
+	output := buf.String()
+	for _, want := range []string{"crane transfer-pvc", "source context:      src", "destination context: tgt", "app/data → app/data", "nginx-ingress", "data.app.example.com"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("Banner missing %q, got: %q", want, output)
+		}
+	}
+}
+
+func TestPrintTransferBannerWithoutSubdomain(t *testing.T) {
+	var buf bytes.Buffer
+	PrintTransferBanner(&buf, "src", "tgt", "app/data → app/data", "route", "")
+
+	output := buf.String()
+	if strings.Contains(output, "subdomain") {
+		t.Errorf("Banner should not show subdomain when empty, got: %q", output)
+	}
+	if !strings.Contains(output, "route") {
+		t.Errorf("Banner missing endpoint, got: %q", output)
+	}
+}
+
+func TestPrintTransferSummarySucceeded(t *testing.T) {
+	var buf bytes.Buffer
+	PrintTransferSummary(&buf, &TransferSummary{Status: "succeeded", Duration: 45 * time.Second})
+
+	output := buf.String()
+	if !strings.Contains(output, "Summary") {
+		t.Errorf("Summary header missing, got: %q", output)
+	}
+	if !strings.Contains(output, "succeeded") {
+		t.Errorf("Status missing, got: %q", output)
+	}
+	if !strings.Contains(output, "45s") {
+		t.Errorf("Duration missing, got: %q", output)
+	}
+	if !strings.Contains(output, "Done.") {
+		t.Errorf("Done missing for succeeded, got: %q", output)
+	}
+}
+
+func TestPrintTransferSummaryFailed(t *testing.T) {
+	var buf bytes.Buffer
+	PrintTransferSummary(&buf, &TransferSummary{Status: "failed", Duration: 4 * time.Second})
+
+	output := buf.String()
+	if !strings.Contains(output, "failed") {
+		t.Errorf("Status missing, got: %q", output)
+	}
+	if !strings.Contains(output, "4s") {
+		t.Errorf("Duration missing, got: %q", output)
+	}
+	if strings.Contains(output, "Done.") {
+		t.Errorf("Done should not appear for failed, got: %q", output)
 	}
 }

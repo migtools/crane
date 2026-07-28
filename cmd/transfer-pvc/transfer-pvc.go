@@ -290,7 +290,7 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 	return t.configFlags.ToRESTConfig()
 }
 
-func (t *TransferPVCCommand) run() error {
+func (t *TransferPVCCommand) run() (retErr error) {
 	logrusLog := logrus.New()
 	logrusLog.SetFormatter(&logrus.JSONFormatter{})
 	logger := logrusr.New(logrusLog).WithName("transfer-pvc")
@@ -300,6 +300,16 @@ func (t *TransferPVCCommand) run() error {
 		totalPhases = 8
 	}
 	phases := cli.NewPhaseTracker(t.ErrOut, totalPhases)
+	defer func() {
+		status := "succeeded"
+		if retErr != nil {
+			status = "failed"
+		}
+		cli.PrintTransferSummary(t.ErrOut, &cli.TransferSummary{
+			Status:   status,
+			Duration: phases.Elapsed(),
+		})
+	}()
 
 	cli.PrintTransferBanner(t.ErrOut,
 		t.Flags.SourceContext, t.Flags.DestinationContext,
@@ -557,6 +567,9 @@ func (t *TransferPVCCommand) run() error {
 	detail := ""
 	if exitCode != nil {
 		detail = fmt.Sprintf("exit=%d", *exitCode)
+		if *exitCode != 0 {
+			return phases.Fail(fmt.Errorf("rsync exited with code %d", *exitCode), "data copy failed")
+		}
 	}
 	phases.End("finished", detail)
 
@@ -580,11 +593,6 @@ func (t *TransferPVCCommand) run() error {
 		}
 		phases.End("ok", "")
 	}
-
-	cli.PrintTransferSummary(t.ErrOut, &cli.TransferSummary{
-		Status:   "succeeded",
-		Duration: phases.Elapsed(),
-	})
 
 	return nil
 }
