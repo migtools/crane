@@ -33,7 +33,7 @@ func (p *PhaseTracker) End(status string, detail string) {
 	if detail != "" {
 		line += "  " + detail
 	}
-	fmt.Fprintf(p.w, "\x1b[1A\x1b[2K%s\n", line)
+	fmt.Fprintf(p.w, "%s\n", line)
 }
 
 func (p *PhaseTracker) Fail(err error, msg string) error {

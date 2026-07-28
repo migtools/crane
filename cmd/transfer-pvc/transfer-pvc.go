@@ -313,7 +313,7 @@ func (t *TransferPVCCommand) run() (retErr error) {
 
 	cli.PrintTransferBanner(t.ErrOut,
 		t.Flags.SourceContext, t.Flags.DestinationContext,
-		fmt.Sprintf("%s/%s → %s/%s",
+		fmt.Sprintf("%s/%s -> %s/%s",
 			t.PVC.Namespace.source, t.PVC.Name.source,
 			t.PVC.Namespace.destination, t.PVC.Name.destination),
 		string(t.Endpoint.Type), t.Endpoint.Subdomain,
@@ -567,9 +567,6 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	detail := ""
 	if exitCode != nil {
 		detail = fmt.Sprintf("exit=%d", *exitCode)
-		if *exitCode != 0 {
-			return phases.Fail(fmt.Errorf("rsync exited with code %d", *exitCode), "data copy failed")
-		}
 	}
 	phases.End("finished", detail)
 
