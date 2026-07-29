@@ -132,7 +132,9 @@ func VerifyPVCHasData(kubectl KubectlRunner, namespace, pvcName, mountPath strin
 		return fmt.Errorf("inspector pod %s/%s for PVC %s not ready: phase=%s", namespace, podName, pvcName, lastPhase)
 	}
 
-	out, err := kubectl.Run("exec", podName, "-n", namespace, "--", "find", mountPath, "-mindepth", "1", "-maxdepth", "1")
+	out, err := kubectl.Run("exec", podName, "-n", namespace, "--",
+		"find", mountPath, "-mindepth", "1", "-maxdepth", "1",
+		"!", "-name", "lost+found", "-print")
 	if err != nil {
 		return fmt.Errorf("exec into inspector pod for PVC %s: %w", pvcName, err)
 	}
