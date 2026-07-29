@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  annotations:
+    pv.kubernetes.io/bind-completed: "yes"
+    pv.kubernetes.io/bound-by-controller: "yes"
+    volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com
+    volume.kubernetes.io/selected-node: ip-10-0-25-205.us-east-2.compute.internal
+    volume.kubernetes.io/storage-provisioner: ebs.csi.aws.com
+  creationTimestamp: "2026-07-29T11:56:59Z"
+  finalizers:
+  - kubernetes.io/pvc-protection
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:spec:
+        f:accessModes: {}
+        f:resources:
+          f:requests:
+            .: {}
+            f:storage: {}
+        f:volumeMode: {}
+    manager: OpenAPI-Generator
+    operation: Update
+    time: "2026-07-29T11:56:59Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:volume.kubernetes.io/selected-node: {}
+    manager: kube-scheduler
+    operation: Update
+    time: "2026-07-29T11:57:01Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          f:pv.kubernetes.io/bind-completed: {}
+          f:pv.kubernetes.io/bound-by-controller: {}
+          f:volume.beta.kubernetes.io/storage-provisioner: {}
+          f:volume.kubernetes.io/storage-provisioner: {}
+      f:spec:
+        f:volumeName: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-07-29T11:57:03Z"
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:status:
+        f:accessModes: {}
+        f:capacity:
+          .: {}
+          f:storage: {}
+        f:phase: {}
+    manager: kube-controller-manager
+    operation: Update
+    subresource: status
+    time: "2026-07-29T11:57:03Z"
+  name: redis-data
+  namespace: redis
+  resourceVersion: "133859"
+  uid: 4551f374-2f86-4794-827a-e2475a2593df
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: gp3-csi
+  volumeMode: Filesystem
+  volumeName: pvc-4551f374-2f86-4794-827a-e2475a2593df
+status:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 1Gi
+  phase: Bound

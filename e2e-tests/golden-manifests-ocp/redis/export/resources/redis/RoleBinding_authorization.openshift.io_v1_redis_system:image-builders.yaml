@@ -1,0 +1,33 @@
+apiVersion: authorization.openshift.io/v1
+groupNames: null
+kind: RoleBinding
+metadata:
+  annotations:
+    openshift.io/description: Allows builds in this namespace to push images to this
+      namespace.  It is auto-managed by a controller; remove subjects to disable.
+  creationTimestamp: "2026-07-29T11:56:52Z"
+  managedFields:
+  - apiVersion: rbac.authorization.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:openshift.io/description: {}
+      f:roleRef: {}
+      f:subjects: {}
+    manager: openshift-controller-manager
+    operation: Update
+    time: "2026-07-29T11:56:52Z"
+  name: system:image-builders
+  namespace: redis
+  resourceVersion: "133791"
+  uid: f1f51514-0c62-45e1-8e0d-5f25c368ae39
+roleRef:
+  name: system:image-builder
+subjects:
+- kind: ServiceAccount
+  name: builder
+  namespace: redis
+userNames:
+- system:serviceaccount:redis:builder
