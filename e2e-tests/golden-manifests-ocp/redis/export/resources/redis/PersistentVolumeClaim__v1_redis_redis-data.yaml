@@ -4,9 +4,6 @@ metadata:
   annotations:
     pv.kubernetes.io/bind-completed: "yes"
     pv.kubernetes.io/bound-by-controller: "yes"
-    volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com
-    volume.kubernetes.io/selected-node: ip-10-0-25-205.us-east-2.compute.internal
-    volume.kubernetes.io/storage-provisioner: ebs.csi.aws.com
   creationTimestamp: "2026-07-29T11:56:59Z"
   finalizers:
   - kubernetes.io/pvc-protection

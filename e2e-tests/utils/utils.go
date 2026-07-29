@@ -770,6 +770,25 @@ func normalizeUnstableFields(doc any) any {
 		return normalized
 	}
 
+	if kind == "PersistentVolumeClaim" {
+		if annotations, ok := metadata["annotations"].(map[string]any); ok {
+			// Scheduler and provisioner annotations vary across OCP clusters.
+			delete(annotations, "volume.kubernetes.io/selected-node")
+			delete(annotations, "volume.kubernetes.io/storage-provisioner")
+			delete(annotations, "volume.beta.kubernetes.io/storage-provisioner")
+		}
+		return normalized
+	}
+
+	if kind == "Service" {
+		if spec, ok := root["spec"].(map[string]any); ok {
+			// Single-stack defaults can be injected differently across clusters.
+			delete(spec, "ipFamilies")
+			delete(spec, "ipFamilyPolicy")
+		}
+		return normalized
+	}
+
 	if kind == "Route" {
 		if annotations, ok := metadata["annotations"].(map[string]any); ok {
 			// Only normalize host when OpenShift explicitly marks it as generated.
@@ -1275,35 +1294,35 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
 	}
 	return nil
 }
- 
-  // RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
-  // replaces srcNamespace with tgtNamespace in metadata.namespace,
-  // and returns the re-serialized YAML string.
-  func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
-      docs, err := parseYAMLDocuments(content)
-      if err != nil {
-          return "", fmt.Errorf("parsing YAML documents: %w", err)
-      }
 
-      var parts []string
-      for i, doc := range docs {
-          obj, ok := doc.(map[string]any)
-          if !ok {
-              return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
-          }
-          if meta, ok := obj["metadata"].(map[string]any); ok {
-              if meta["namespace"] == srcNamespace {
-                  meta["namespace"] = tgtNamespace
-              }
-          }
-          out, err := yaml.Marshal(obj)
-          if err != nil {
-              return "", fmt.Errorf("marshaling YAML document: %w", err)
-          }
-          parts = append(parts, string(out))
-      }
-      return strings.Join(parts, "---\n"), nil
-  }
+// RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
+// replaces srcNamespace with tgtNamespace in metadata.namespace,
+// and returns the re-serialized YAML string.
+func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
+	docs, err := parseYAMLDocuments(content)
+	if err != nil {
+		return "", fmt.Errorf("parsing YAML documents: %w", err)
+	}
+
+	var parts []string
+	for i, doc := range docs {
+		obj, ok := doc.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
+		}
+		if meta, ok := obj["metadata"].(map[string]any); ok {
+			if meta["namespace"] == srcNamespace {
+				meta["namespace"] = tgtNamespace
+			}
+		}
+		out, err := yaml.Marshal(obj)
+		if err != nil {
+			return "", fmt.Errorf("marshaling YAML document: %w", err)
+		}
+		parts = append(parts, string(out))
+	}
+	return strings.Join(parts, "---\n"), nil
+}
 
 // ParseValidationReport reads and parses a crane validate report file.
 // The report parameter should be a pointer to the structure that will hold the parsed data.

@@ -37,9 +37,6 @@ spec:
   clusterIPs:
   - 172.30.113.13
   internalTrafficPolicy: Cluster
-  ipFamilies:
-  - IPv4
-  ipFamilyPolicy: SingleStack
   ports:
   - name: redis
     port: 6379
