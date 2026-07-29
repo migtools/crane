@@ -512,14 +512,19 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		return phases.Fail(err, "error creating rsync transfer server")
 	}
 
-	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		ready, err := rsyncServer.IsHealthy(context.TODO(), destClient)
+	healthCtx, healthCancel := context.WithTimeout(context.TODO(), 5*time.Minute)
+	defer healthCancel()
+	err = wait.PollUntilContextCancel(healthCtx, time.Second*5, false, func(ctx context.Context) (done bool, err error) {
+		ready, err := rsyncServer.IsHealthy(ctx, destClient)
 		if err != nil {
 			fmt.Fprintf(t.ErrOut, "  rsync server not ready, retrying...\n")
 			return false, nil
 		}
 		return ready, nil
-	}, make(<-chan struct{}))
+	})
+	if err != nil {
+		log.Fatal(err, "rsync server failed to become healthy")
+	}
 	phases.End("ok", "")
 
 	// ---- Phase 6: Copying data (rsync) ----

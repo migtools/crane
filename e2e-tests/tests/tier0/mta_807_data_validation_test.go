@@ -185,6 +185,15 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		Expect(VerifyPVCsExistByName(pvcs, tgtpvcs)).NotTo(HaveOccurred())
 		log.Printf("Found %d PVCs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
 
+		By("Verify transferred PVCs contain data")
+		for _, pvc := range tgtpvcs {
+			mountPath := "/var/lib/mysql"
+			if strings.Contains(pvc.Name, "data1") {
+				mountPath = "/test-data"
+			}
+			Expect(VerifyPVCHasData(kubectlTgtNonAdmin, tgtApp.Namespace, pvc.Name, mountPath)).NotTo(HaveOccurred())
+		}
+
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", tgtApp.Namespace, paths.OutputDir)
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
