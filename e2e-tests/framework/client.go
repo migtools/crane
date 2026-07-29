@@ -111,10 +111,14 @@ func VerifyPVCHasData(kubectl KubectlRunner, namespace, pvcName, mountPath strin
 		}
 	}()
 
+	var lastPhase string
+	var lastErr error
 	ready := false
 	for i := 0; i < 30; i++ {
 		out, err := kubectl.Run("get", "pod", podName, "-n", namespace,
 			"-o", "jsonpath={.status.phase}")
+		lastPhase = out
+		lastErr = err
 		if err == nil && out == "Running" {
 			ready = true
 			break
@@ -122,7 +126,10 @@ func VerifyPVCHasData(kubectl KubectlRunner, namespace, pvcName, mountPath strin
 		time.Sleep(2 * time.Second)
 	}
 	if !ready {
-		return fmt.Errorf("inspector pod for PVC %s did not become ready", pvcName)
+		if lastErr != nil {
+			return fmt.Errorf("inspector pod %s/%s for PVC %s not ready: %w", namespace, podName, pvcName, lastErr)
+		}
+		return fmt.Errorf("inspector pod %s/%s for PVC %s not ready: phase=%s", namespace, podName, pvcName, lastPhase)
 	}
 
 	out, err := kubectl.Run("exec", podName, "-n", namespace, "--", "find", mountPath, "-mindepth", "1", "-maxdepth", "1")
