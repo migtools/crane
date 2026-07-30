@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event.issue.pull_request && 
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+      contains(fromJSON('["stillalearner", "aufi", "Tamar-Dinavetsky"]'), github.event.comment.user.login) &&
       (contains(github.event.comment.body, '[review-docs]') ||
        contains(github.event.comment.body, '[update-docs]') ||
        contains(github.event.comment.body, '[review-feature]'))
