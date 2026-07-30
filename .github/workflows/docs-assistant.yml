@@ -61,11 +61,9 @@ jobs:
           git fetch canonical "$BASE_REF:$BASE_REF" || true
 
       - name: Rebind Origin to Main Repository
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/migtools/crane.git"
-
+          git remote set-url origin "https://github.com/migtools/crane.git"
+          
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
         with:
