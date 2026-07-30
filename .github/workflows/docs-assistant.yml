@@ -54,9 +54,12 @@ jobs:
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Fetch PR Base Branch
+        env:
+          BASE_REF: ${{ steps.pr_info.outputs.base_ref }}
         run: |
-          git remote add canonical https://github.com/${{ github.repository }}.git || true
-          git fetch canonical ${{ steps.pr_info.outputs.base_ref }}:${{ steps.pr_info.outputs.base_ref }} || true
+          git remote add canonical "https://github.com/${{ github.repository }}.git" || true
+          git fetch canonical "$BASE_REF:$BASE_REF" || true
+          
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
         with:
