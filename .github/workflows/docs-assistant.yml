@@ -25,7 +25,6 @@ jobs:
     steps:
       - name: Get PR information
         id: pr_info
-        if: github.event.issue.pull_request
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
@@ -65,27 +64,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/migtools/crane.git"
 
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
         with:
           model-api-base: ${{ secrets.MODEL_API_BASE }}
           model-api-key: ${{ secrets.MODEL_API_KEY }}
-          model-name: ${{ secrets.MODEL_NAME || 'gemini-2.0-flash' }}
-          docs-repo-url: ${{ secrets.DOCS_REPO_URL || format('https://github.com/{0}', github.repository) }}
+          model-name: ${{ secrets.MODEL_NAME }}
+          docs-repo-url: ${{ secrets.DOCS_REPO_URL }}
           github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          pr-number: ${{ github.event.issue.number }}
+          pr-number: ${{ steps.pr_info.outputs.pr_number }}
           pr-base: ${{ steps.pr_info.outputs.base_sha }}
           pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
           docs-subfolder: ${{ secrets.DOCS_SUBFOLDER || 'docs' }}
           comment-body: ${{ github.event.comment.body }}
           docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH || 'main' }}
-          style-config-path: '.code-to-docs/style.md'
+          style-config-path: ".code-to-docs/style.md"
           #  jira-url: ${{ secrets.JIRA_URL }}
           # jira-username: ${{ secrets.JIRA_USERNAME }}
           # jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           #  google-sa-key: ${{ secrets.GOOGLE_SA_KEY }}
           # Optional: Uncomment and configure if custom context limits are needed
           #  max-context-chars: ${{ secrets.MAX_CONTEXT_CHARS }}
-          
