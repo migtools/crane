@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       github.event.issue.pull_request && 
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
       contains(fromJSON('["stillalearner", "aufi", "Tamar-Dinavetsky"]'), github.event.comment.user.login) &&
       (contains(github.event.comment.body, '[review-docs]') ||
        contains(github.event.comment.body, '[update-docs]') ||
@@ -47,6 +48,7 @@ jobs:
           ref: ${{ steps.pr_info.outputs.head_sha || github.ref }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
           
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
