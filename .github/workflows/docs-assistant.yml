@@ -34,13 +34,13 @@ jobs:
           HEAD_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
           HEAD_REPO=$(echo "$PR_DATA" | jq -r '.head.repo.full_name')
           BASE_SHA=$(echo "$PR_DATA" | jq -r '.base.sha')
+          BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
 
           echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
           echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
           echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-
-          echo "PR info extracted: #$PR_NUMBER, base SHA: $BASE_SHA, head SHA: $HEAD_SHA, head repo: $HEAD_REPO"
 
       - name: Checkout PR Code
         uses: actions/checkout@v4
@@ -50,6 +50,10 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
+      - name: Fetch PR Base Branch
+        run: |
+          git remote add canonical https://github.com/${{ github.repository }}.git || true
+          git fetch canonical ${{ steps.pr_info.outputs.base_ref }}:${{ steps.pr_info.outputs.base_ref }} || true
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
         with:
@@ -61,7 +65,7 @@ jobs:
           pr-number: ${{ steps.pr_info.outputs.pr_number }}
           pr-base: ${{ steps.pr_info.outputs.base_sha }}
           pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
-          docs-subfolder: "docs"
+          docs-subfolder: ${{ secrets.DOCS_SUBFOLDER || 'docs' }}
           comment-body: ${{ github.event.comment.body }}
           docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH || 'main' }}
           style-config-path: ".code-to-docs/style.md"
