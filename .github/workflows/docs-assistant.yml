@@ -25,6 +25,7 @@ jobs:
     steps:
       - name: Get PR information
         id: pr_info
+        if: github.event.issue.pull_request
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
@@ -48,8 +49,8 @@ jobs:
       - name: Checkout PR Code
         uses: actions/checkout@v4
         with:
-          repository: ${{ steps.pr_info.outputs.head_repo }}
-          ref: ${{ steps.pr_info.outputs.head_sha }}
+          repository: ${{ steps.pr_info.outputs.head_repo || github.repository }}
+          ref: ${{ steps.pr_info.outputs.head_sha || github.ref }}
           fetch-depth: 0
           token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
 
@@ -59,7 +60,7 @@ jobs:
         run: |
           git remote add canonical "https://github.com/${{ github.repository }}.git" || true
           git fetch canonical "$BASE_REF:$BASE_REF" || true
-          
+
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
         with:
@@ -68,16 +69,17 @@ jobs:
           model-name: ${{ secrets.MODEL_NAME || 'gemini-2.0-flash' }}
           docs-repo-url: ${{ secrets.DOCS_REPO_URL || format('https://github.com/{0}', github.repository) }}
           github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-          pr-number: ${{ steps.pr_info.outputs.pr_number }}
+          pr-number: ${{ github.event.issue.number }}
           pr-base: ${{ steps.pr_info.outputs.base_sha }}
           pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
           docs-subfolder: ${{ secrets.DOCS_SUBFOLDER || 'docs' }}
           comment-body: ${{ github.event.comment.body }}
           docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH || 'main' }}
-          style-config-path: ".code-to-docs/style.md"
+          style-config-path: '.code-to-docs/style.md'
           #  jira-url: ${{ secrets.JIRA_URL }}
           # jira-username: ${{ secrets.JIRA_USERNAME }}
           # jira-api-token: ${{ secrets.JIRA_API_TOKEN }}
           #  google-sa-key: ${{ secrets.GOOGLE_SA_KEY }}
           # Optional: Uncomment and configure if custom context limits are needed
           #  max-context-chars: ${{ secrets.MAX_CONTEXT_CHARS }}
+      
