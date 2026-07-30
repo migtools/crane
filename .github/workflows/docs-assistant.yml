@@ -15,7 +15,7 @@ jobs:
     if: |
       github.event.issue.pull_request && 
       (
-        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) ||
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
         contains(fromJSON('["stillalearner", "aufi", "Tamar-Dinavetsky", "nachandr", "midays", "istein1", "msajidmansoori12", "RanWurmbrand"]'), github.event.comment.user.login)
       ) &&
       (contains(github.event.comment.body, '[review-docs]') ||
