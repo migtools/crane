@@ -59,21 +59,28 @@ jobs:
         run: |
           git remote add canonical "https://github.com/${{ github.repository }}.git" || true
           git fetch canonical "$BASE_REF:$BASE_REF" || true
-          
+
+      - name: Rebind Origin to Main Repository
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          git remote set-url origin "https://github.com/migtools/crane.git"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64)"
+
       - name: Documentation Assistant
         uses: redhat-community-ai-tools/code-to-docs@main
         with:
           model-api-base: ${{ secrets.MODEL_API_BASE }}
           model-api-key: ${{ secrets.MODEL_API_KEY }}
-          model-name: ${{ secrets.MODEL_NAME || 'gemini-2.0-flash' }}
-          docs-repo-url: ${{ secrets.DOCS_REPO_URL || format('https://github.com/{0}', github.repository) }}
+          model-name: ${{ secrets.MODEL_NAME }}
+          docs-repo-url: ${{ secrets.DOCS_REPO_URL }}
           github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
           pr-number: ${{ steps.pr_info.outputs.pr_number }}
           pr-base: ${{ steps.pr_info.outputs.base_sha }}
           pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
-          docs-subfolder: ${{ secrets.DOCS_SUBFOLDER || 'docs' }}
+          docs-subfolder: ${{ secrets.DOCS_SUBFOLDER }}
           comment-body: ${{ github.event.comment.body }}
-          docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH || 'main' }}
+          docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH }}
           style-config-path: ".code-to-docs/style.md"
           #  jira-url: ${{ secrets.JIRA_URL }}
           # jira-username: ${{ secrets.JIRA_USERNAME }}
