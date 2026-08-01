@@ -160,6 +160,13 @@ func (r *rsyncLogStream) Streams() (stdout chan string, stderr chan string, err 
 	return r.stdout, r.stderr, r.err
 }
 
+func (r *rsyncLogStream) ExitCode() *int32 {
+	if r.progress != nil {
+		return r.progress.ExitCode
+	}
+	return nil
+}
+
 // Progress defines transfer Progress
 type Progress struct {
 	PVC                types.NamespacedName `json:"pvc"`
