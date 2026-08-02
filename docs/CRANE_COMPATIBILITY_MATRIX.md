@@ -39,7 +39,8 @@ Cluster_Scope_Conditional -.->|Migrated if Related & Permitted| Target
 ### 3.1 Namespace-Scoped Resources (Fully Supported)
 These resources are the core of any migration and are moved automatically.
 * **Workloads:** Deployment, DeploymentConfig, StatefulSet, DaemonSet, Job, CronJob.
-* **Networking:** Service, Route, Ingress, Endpoints.
+* **Networking:** Service, Route, Ingress, Endpoints, NetworkPolicy.
+  > **Warning — Namespace renaming:** If the namespace is renamed during migration, NetworkPolicy `namespaceSelectors` that reference the old namespace name are not updated automatically. Manually update them before applying.
 * **Config & Secrets:** ConfigMap, Secret, ServiceAccount.
 * **Storage:** PersistentVolumeClaim (PVC).
 
@@ -48,6 +49,7 @@ These resources are migrated **only if they are linked to the namespace workload
 
 * **Definitions (CRDs):** Migrated if the namespace contains Custom Resources (CRs) that depend on these definitions.
 * **Global Security (ClusterRole/Binding):** Migrated if specifically referenced by a ServiceAccount within the migrating namespace.
+  > **Warning — Namespace renaming:** If the namespace is renamed during migration, ClusterRoleBinding `subjects` that reference the old namespace name are not updated automatically. Manually update them before applying.
 * **Security Context Constraints (SCCs):** Migrated if the application requires specific localized SCCs to run (common in OpenShift environments).
 * **Quota & Limits:** ResourceQuotas and LimitRanges are migrated if they are defined specifically for the source namespace.
 
@@ -71,5 +73,6 @@ For "Conditionally Supported" resources to migrate successfully, the following m
 * [ ] **Storage Mapping:** Confirm that destination StorageClasses are ready to receive moved PVCs.
 * [ ] **Operator Readiness:** All required Operators are installed via OperatorHub on the target cluster.
 * [ ] **CRD Check:** Verify if any global CRDs need to be manually applied to the target to avoid "orphan" resources.
+* [ ] **Namespace Renaming:** If renaming the namespace, manually update any ClusterRoleBinding subjects and NetworkPolicy namespaceSelectors that reference the old namespace name before applying.
 
 ---

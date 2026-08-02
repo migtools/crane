@@ -262,6 +262,12 @@ crane transform --force
 
 **Important**: Custom stages (not ending with `Plugin`) are protected from accidental overwrites. You must use `--force` to regenerate them.
 
+> **Warning — Namespace renaming:** If you rename the namespace — whether by editing resource files directly or by using a `namespace:` directive in `kustomization.yaml` — Crane does not automatically update references to the old namespace name in:
+> - **ClusterRoleBinding `subjects`** — entries that reference a ServiceAccount in the old namespace will still point to the old name.
+> - **NetworkPolicy `namespaceSelectors`** — selectors that match the old namespace by name will still reference the old name.
+>
+> Both will silently break after migration. Manually update these resources as well.
+
 **Best Practice**: Always add custom stages as the **last stage** in your pipeline. This ensures that:
 - The `input/` directory contains the most up-to-date output from all previous stages
 - You're editing the final state of resources after all plugin transformations
