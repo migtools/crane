@@ -92,7 +92,8 @@ var _ = Describe("Role and RoleBinding migration", func() {
 		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
-			OutputDir: paths.OutputDir}
+			OutputDir: paths.OutputDir,
+			Ordered:   true}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
@@ -108,31 +109,23 @@ var _ = Describe("Role and RoleBinding migration", func() {
 		log.Printf("Crane pipeline completed for namespace %s\n", namespace)
 
 		By("Verify Role manifest is present in output directory")
-		rolePattern := filepath.Join(paths.OutputDir, "resources", namespace, "Role_*.yaml")
+		// Ordered: true prefixes filenames with a dependency-aware order number (e.g.
+		// 300_Role_*.yaml), so match on the resource-kind segment rather than the prefix.
+		rolePattern := filepath.Join(paths.OutputDir, "resources", namespace, "*Role_*.yaml")
 		roleMatches, err := filepath.Glob(rolePattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(roleMatches).NotTo(BeEmpty(), "expected Role manifest in output dir")
 		log.Printf("Role manifests in output: %v\n", roleMatches)
 
 		By("Verify RoleBinding manifest is present in output directory")
-		rbPattern := filepath.Join(paths.OutputDir, "resources", namespace, "RoleBinding_*.yaml")
+		rbPattern := filepath.Join(paths.OutputDir, "resources", namespace, "*RoleBinding_*.yaml")
 		rbMatches, err := filepath.Glob(rbPattern)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rbMatches).NotTo(BeEmpty(), "expected RoleBinding manifest in output dir")
 		log.Printf("RoleBinding manifests in output: %v\n", rbMatches)
 
-		// TODO: remove once https://github.com/migtools/crane/issues/266 is fixed
-		// NOTE: kubectl apply -f processes files alphabetically. RoleBinding sorts before
-		// Role, so pod-reader-binding fails on a fresh namespace because pod-reader does
-		// not yet exist. We skip the dry-run validation on the first pass and call ApplyDir
-		// directly so the Role lands before the second pass retries the RoleBinding.
-		// See: https://github.com/migtools/crane/issues/266
-		By("Apply rendered manifests to target (first pass)")
-		log.Printf("First apply pass — skipping dry-run, ordering failure for RoleBinding expected\n")
-		_ = kubectlTgtNonAdmin.ApplyDir(paths.OutputDir)
-
-		By("Apply rendered manifests to target (second pass — resolves ordering issue)")
-		log.Printf("Second apply pass for namespace %s\n", namespace)
+		By("Apply rendered manifests to target")
+		log.Printf("Applying manifests for namespace %s\n", namespace)
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("Scale target deployment and validate app is running")
