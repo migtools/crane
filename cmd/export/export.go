@@ -290,6 +290,8 @@ func (o *ExportOptions) Run() error {
 		log.Infof("Exported %d CRDs for referenced custom resources to the _cluster resources directory\n", crdCount)
 	}
 
+	warnAboutImageResources(resources, log)
+
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
