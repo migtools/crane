@@ -48,7 +48,7 @@ func buildConfigGroupResource() *groupResource {
 			Namespaced: true,
 		},
 		objects: &unstructured.UnstructuredList{
-			Items: []unstructured.Unstructured{{Object: map[string]interface{}{"metadata": map[string]interface{}{"name": "my-build"}}}},
+			Items: []unstructured.Unstructured{{Object: map[string]interface{}{"metadata": map[string]interface{}{"name": "my-build", "namespace": "myapp"}}}},
 		},
 	}
 }
@@ -84,8 +84,8 @@ func TestWarnAboutImageResources(t *testing.T) {
 	warnAboutImageResources(resources, log)
 
 	output := buf.String()
-	if !strings.Contains(output, "my-build") || !strings.Contains(output, "BuildConfig") {
-		t.Errorf("expected warning naming BuildConfig %q, got: %s", "my-build", output)
+	if !strings.Contains(output, "myapp/my-build") || !strings.Contains(output, "BuildConfig") {
+		t.Errorf("expected warning naming namespaced BuildConfig %q, got: %s", "myapp/my-build", output)
 	}
 	if !strings.Contains(output, "my-imagestream") || !strings.Contains(output, "ImageStream") {
 		t.Errorf("expected warning naming ImageStream %q, got: %s", "my-imagestream", output)

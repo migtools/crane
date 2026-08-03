@@ -39,7 +39,11 @@ func warnAboutImageResources(resources []*groupResource, log *logrus.Logger) {
 			continue
 		}
 		for _, obj := range g.objects.Items {
-			log.Warnf("exported %s %q — %s", g.APIResource.Kind, obj.GetName(), msg)
+			name := obj.GetName()
+			if ns := obj.GetNamespace(); ns != "" {
+				name = ns + "/" + name
+			}
+			log.Warnf("exported %s %q — %s", g.APIResource.Kind, name, msg)
 		}
 	}
 }
