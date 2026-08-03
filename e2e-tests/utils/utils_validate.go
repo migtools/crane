@@ -18,8 +18,9 @@ import (
 
 type ValidationExpectations struct {
 	validate.ValidationReport                           // Embedded: Mode, APIResourcesSource, TotalScanned, Compatible, Incompatible
-	ExpectedResources         map[string]string         // Map of Kind -> APIVersion for expected resources (simpler than Results)
-	ExpectedStatus            validate.ValidationStatus // Expected status for resources (e.g., StatusOK)
+	ExpectedResources       map[string]string         // Map of Kind -> APIVersion for expected resources
+	ExpectedResourcePlurals map[string]string         // Map of Kind -> ResourcePlural (e.g., "Deployment" -> "deployments")
+	ExpectedStatus          validate.ValidationStatus // Expected status for resources (e.g., StatusOK)
 	Namespace                 string                    // Expected namespace for resources
 	ExpectFailuresDir         bool                      // Whether to expect a failures/ directory
 }
@@ -76,9 +77,13 @@ func VerifyValidateResults(report validate.ValidationReport, validateDir string,
 					Expect(result.Namespace).To(Equal(expectations.Namespace),
 						"expected %s to be in namespace %s in %s report", result.Kind, expectations.Namespace, outputFormat)
 				}
+				if expectedPlural, ok := expectations.ExpectedResourcePlurals[result.Kind]; ok {
+					Expect(result.ResourcePlural).To(Equal(expectedPlural),
+						"expected %s to have resourcePlural %s in %s report", result.Kind, expectedPlural, outputFormat)
+				}
 			}
-			log.Printf("✓ %s report: Found %s with apiVersion %s in namespace %s with status %s",
-				outputFormat, result.Kind, result.APIVersion, result.Namespace, result.Status)
+			log.Printf("✓ %s report: Found %s with apiVersion %s in namespace %s with resourcePlural %s with status %s",
+				outputFormat, result.Kind, result.APIVersion, result.Namespace, result.ResourcePlural, result.Status)
 		}
 
 		By(outputFormat + " report: Verify all expected resources were found")
