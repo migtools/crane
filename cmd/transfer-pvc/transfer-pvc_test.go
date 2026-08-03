@@ -2,9 +2,11 @@ package transfer_pvc
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
+	rsynctransfer "github.com/backube/pvc-transfer/transfer/rsync"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,7 +42,6 @@ func newTestScheme() *runtime.Scheme {
 	_ = batchv1.AddToScheme(s)
 	return s
 }
-
 
 func Test_parseSourceDestinationMapping(t *testing.T) {
 	tests := []struct {
@@ -178,6 +179,53 @@ func TestPodSpecReferencesPVC(t *testing.T) {
 			got := podSpecReferencesPVC(tt.spec, tt.pvcName)
 			if got != tt.want {
 				t.Errorf("podSpecReferencesPVC() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRestrictedContainersApplyTo(t *testing.T) {
+	tests := []struct {
+		name             string
+		restricted       bool
+		wantOmitDirTimes bool
+		wantBoolFields   bool
+	}{
+		{
+			name:             "expects --omit-dir-times in extras",
+			restricted:       true,
+			wantOmitDirTimes: true,
+			wantBoolFields:   false,
+		},
+		{
+			name:             "expects no --omit-dir-times",
+			restricted:       false,
+			wantOmitDirTimes: false,
+			wantBoolFields:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := rsynctransfer.CommandOptions{}
+			if err := restrictedContainers(tt.restricted).ApplyTo(&opts); err != nil {
+				t.Fatalf("ApplyTo() returned unexpected error: %v", err)
+			}
+			hasOmitDirTimes := slices.Contains(opts.Extras, "--omit-dir-times")
+			if hasOmitDirTimes != tt.wantOmitDirTimes {
+				t.Errorf("--omit-dir-times in extras = %v, want %v", hasOmitDirTimes, tt.wantOmitDirTimes)
+			}
+			for _, check := range []struct {
+				name string
+				got  bool
+			}{
+				{"Groups", opts.Groups},
+				{"Owners", opts.Owners},
+				{"DeviceFiles", opts.DeviceFiles},
+				{"SpecialFiles", opts.SpecialFiles},
+			} {
+				if check.got != tt.wantBoolFields {
+					t.Errorf("%s = %v, want %v", check.name, check.got, tt.wantBoolFields)
+				}
 			}
 		})
 	}
@@ -921,11 +969,11 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 
 func TestCertSecretNaming(t *testing.T) {
 	tests := []struct {
-		name           string
-		srcPVCName     string
-		destPVCName    string
-		serverSecret   string
-		wantCopyName   string
+		name         string
+		srcPVCName   string
+		destPVCName  string
+		serverSecret string
+		wantCopyName string
 	}{
 		{
 			name:         "same PVC name — keep original secret name",
