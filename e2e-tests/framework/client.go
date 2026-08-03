@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -143,6 +144,140 @@ func VerifyPVCHasData(kubectl KubectlRunner, namespace, pvcName, mountPath strin
 	}
 	log.Printf("PVC %s/%s has data at %s: %d entries", namespace, pvcName, mountPath, len(strings.Split(strings.TrimSpace(out), "\n")))
 	return nil
+}
+
+// VerifyPVCHasData mounts a PVC in a temporary pod and checks that the mount
+// path is non-empty. Returns an error if empty, which typically indicates a
+// failed rsync transfer.
+func VerifyPVCHasData(kubectl KubectlRunner, namespace, pvcName, mountPath string) error {
+	podName := fmt.Sprintf("pvc-check-%s", pvcName)
+	podSpec := map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata": map[string]any{
+			"name":      podName,
+			"namespace": namespace,
+		},
+		"spec": map[string]any{
+			"restartPolicy": "Never",
+			"containers": []map[string]any{{
+				"name":    "check",
+				"image":   "busybox",
+				"command": []string{"sleep", "60"},
+				"volumeMounts": []map[string]any{{
+					"name":      "data",
+					"mountPath": mountPath,
+				}},
+			}},
+			"volumes": []map[string]any{{
+				"name": "data",
+				"persistentVolumeClaim": map[string]any{
+					"claimName": pvcName,
+				},
+			}},
+		},
+	}
+
+	specJSON, err := json.Marshal(podSpec)
+	if err != nil {
+		return fmt.Errorf("marshal pod spec: %w", err)
+	}
+
+	_, err = kubectl.RunWithStdin(string(specJSON), "apply", "-f", "-")
+	if err != nil {
+		return fmt.Errorf("create inspector pod for PVC %s: %w", pvcName, err)
+	}
+	defer func() {
+		if _, delErr := kubectl.Run("delete", "pod", podName, "-n", namespace, "--ignore-not-found=true"); delErr != nil {
+			log.Printf("cleanup: failed to delete inspector pod %s: %v", podName, delErr)
+		}
+	}()
+
+	var lastPhase string
+	var lastErr error
+	ready := false
+	for i := 0; i < 30; i++ {
+		out, err := kubectl.Run("get", "pod", podName, "-n", namespace,
+			"-o", "jsonpath={.status.phase}")
+		lastPhase = out
+		lastErr = err
+		if err == nil && out == "Running" {
+			ready = true
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if !ready {
+		if lastErr != nil {
+			return fmt.Errorf("inspector pod %s/%s for PVC %s not ready: %w", namespace, podName, pvcName, lastErr)
+		}
+		return fmt.Errorf("inspector pod %s/%s for PVC %s not ready: phase=%s", namespace, podName, pvcName, lastPhase)
+	}
+
+	out, err := kubectl.Run("exec", podName, "-n", namespace, "--",
+		"find", mountPath, "-mindepth", "1", "-maxdepth", "1",
+		"!", "-name", "lost+found", "-print")
+	if err != nil {
+		return fmt.Errorf("exec into inspector pod for PVC %s: %w", pvcName, err)
+	}
+	if strings.TrimSpace(out) == "" {
+		return fmt.Errorf("PVC %s/%s is empty at %s after transfer — rsync may have failed silently", namespace, pvcName, mountPath)
+	}
+	log.Printf("PVC %s/%s has data at %s: %d entries", namespace, pvcName, mountPath, len(strings.Split(strings.TrimSpace(out), "\n")))
+	return nil
+}
+
+// VerifyPVCSchedulable checks that the PV bound to a PVC has node affinity
+// that at least one cluster node satisfies. Returns an error immediately if no
+// node matches, instead of waiting for a pod scheduling timeout downstream.
+func VerifyPVCSchedulable(contextName, namespace, pvcName string) error {
+	clientSet, err := NewClientSetForContext(contextName)
+	if err != nil {
+		return err
+	}
+
+	pvc, err := clientSet.CoreV1().PersistentVolumeClaims(namespace).Get(
+		context.Background(), pvcName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("get PVC %s/%s: %w", namespace, pvcName, err)
+	}
+	pvName := pvc.Spec.VolumeName
+	if pvName == "" {
+		return fmt.Errorf("PVC %s/%s is not bound to a PV", namespace, pvcName)
+	}
+
+	pv, err := clientSet.CoreV1().PersistentVolumes().Get(
+		context.Background(), pvName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("get PV %s: %w", pvName, err)
+	}
+
+	if pv.Spec.NodeAffinity == nil || pv.Spec.NodeAffinity.Required == nil {
+		return nil
+	}
+
+	nodeList, err := clientSet.CoreV1().Nodes().List(
+		context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("list nodes: %w", err)
+	}
+
+	for _, node := range nodeList.Items {
+	terms:
+		for _, term := range pv.Spec.NodeAffinity.Required.NodeSelectorTerms {
+			for _, expr := range term.MatchExpressions {
+				if expr.Operator == corev1.NodeSelectorOpIn && !slices.Contains(expr.Values, node.Labels[expr.Key]) {
+					continue terms
+				}
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf(
+		"PV %s bound to PVC %s/%s has node affinity that no cluster node satisfies — "+
+			"check node labels and topology on target cluster (context %s)",
+		pvName, namespace, pvcName, contextName)
 }
 
 // NewClientSetForContext builds a client-go clientset scoped to the provided

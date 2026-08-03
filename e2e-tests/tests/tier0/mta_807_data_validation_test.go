@@ -194,6 +194,12 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 			Expect(VerifyPVCHasData(kubectlTgtNonAdmin, tgtApp.Namespace, pvc.Name, mountPath)).NotTo(HaveOccurred())
 		}
 
+		By("Pre-flight: verify target PVCs are schedulable")
+		for _, pvc := range tgtpvcs {
+			Expect(VerifyPVCSchedulable(kubectlTgtNonAdmin.Context, tgtApp.Namespace, pvc.Name)).
+				NotTo(HaveOccurred())
+		}
+
 		By("Apply rendered manifests to target")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", tgtApp.Namespace, paths.OutputDir)
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
