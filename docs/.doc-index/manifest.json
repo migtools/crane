@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "created": "2026-08-03T13:08:46.169594",
+  "folders": {
+    "_root": {
+      "built": "2026-08-03T13:08:50.348481",
+      "doc_hashes": {
+        "kustomize-multistage.md": "8c415d04eaa67e60fde0f58bc7adddfc64181c31a9dec7ecb9cf46e86d91d581",
+        "CRANE_COMPATIBILITY_MATRIX.md": "3344f95d520f5a237f5d196b8d2d41d8314e8b9a362ce9c49d61ee36f5e7bd2b",
+        "pre-apply-validation-guide.md": "4d9ece1a2c840cb94051b519b3cbc09efc0e0b0d5937049f0800a1000737573b",
+        "transform.md": "06f12a97b8e110074cb98c3578d7a17dca2574c2e1152fa7a527ff45d668cc62",
+        "stateless-migration-quickstart.md": "7e37d54bfaad9cd08fa908cfc461a5d6a813fefd01d5adec27295f0c5347e9b8"
+      }
+    }
+  },
+  "updated": "2026-08-03T13:08:50.349316"
+}
