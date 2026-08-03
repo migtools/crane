@@ -776,6 +776,9 @@ func normalizeUnstableFields(doc any) any {
 			delete(annotations, "volume.kubernetes.io/selected-node")
 			delete(annotations, "volume.kubernetes.io/storage-provisioner")
 			delete(annotations, "volume.beta.kubernetes.io/storage-provisioner")
+			if len(annotations) == 0 {
+				delete(metadata, "annotations")
+			}
 		}
 		return normalized
 	}
