@@ -470,7 +470,7 @@ Stages don't have to correspond to a plugin. If a stage directory name doesn't m
 
 **Use case**: Manual transformation stages where you want to hand-edit resources.
 
-> **Warning — Namespace renaming:** If you manually rename the namespace in resource files within a custom stage (for example, changing `namespace: old-ns` to `namespace: new-ns`), Crane does not automatically update references to the old namespace name in **ClusterRoleBinding subjects** or **NetworkPolicy namespaceSelectors**. These will silently break after migration. Manually update them as well.
+> **Warning — Namespace renaming:** If you manually rename the namespace in resource files within a custom stage (for example, changing `namespace: old-ns` to `namespace: new-ns`), Crane does not automatically update **ClusterRoleBinding subjects** referencing the old namespace name, or **NetworkPolicy `namespaceSelector`** entries matching the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`). These will silently break after migration. Manually update them as well.
 
 ### Example
 

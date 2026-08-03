@@ -40,7 +40,7 @@ Cluster_Scope_Conditional -.->|Migrated if Related & Permitted| Target
 These resources are the core of any migration and are moved automatically.
 * **Workloads:** Deployment, DeploymentConfig, StatefulSet, DaemonSet, Job, CronJob.
 * **Networking:** Service, Route, Ingress, Endpoints, NetworkPolicy.
-  > **Warning — Namespace renaming:** If the namespace is renamed during migration, NetworkPolicy `namespaceSelectors` that reference the old namespace name are not updated automatically. Manually update them before applying.
+  > **Warning — Namespace renaming:** If the namespace is renamed during migration, NetworkPolicy `namespaceSelector` entries that match the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`) are not updated automatically. Manually update them before applying.
 * **Config & Secrets:** ConfigMap, Secret, ServiceAccount.
 * **Storage:** PersistentVolumeClaim (PVC).
 
@@ -73,6 +73,6 @@ For "Conditionally Supported" resources to migrate successfully, the following m
 * [ ] **Storage Mapping:** Confirm that destination StorageClasses are ready to receive moved PVCs.
 * [ ] **Operator Readiness:** All required Operators are installed via OperatorHub on the target cluster.
 * [ ] **CRD Check:** Verify if any global CRDs need to be manually applied to the target to avoid "orphan" resources.
-* [ ] **Namespace Renaming:** If renaming the namespace, manually update any ClusterRoleBinding subjects and NetworkPolicy namespaceSelectors that reference the old namespace name before applying.
+* [ ] **Namespace Renaming:** If renaming the namespace, manually update any ClusterRoleBinding subjects and NetworkPolicy namespaceSelector entries matching the old namespace by label before applying.
 
 ---

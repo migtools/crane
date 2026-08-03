@@ -75,7 +75,7 @@ crane transform --skip-plugins OpenshiftPlugin
 
 Pass configuration to plugins:
 
-> **Warning — Namespace renaming:** If you use `new-namespace` (or any namespace-rename flag) to rename the namespace during migration, Crane does not automatically update references to the old namespace name in **ClusterRoleBinding subjects** or **NetworkPolicy namespaceSelectors**. These will silently break after migration. Manually update them before applying.
+> **Warning — Namespace renaming:** If you use `new-namespace` (or any namespace-rename flag) to rename the namespace during migration, Crane does not automatically update **ClusterRoleBinding subjects** referencing the old namespace name, or **NetworkPolicy `namespaceSelector`** entries matching the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`). These will silently break after migration. Manually update them before applying.
 
 ```bash
 crane transform --optional-flags '{"new-namespace": "production"}'

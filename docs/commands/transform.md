@@ -264,7 +264,7 @@ crane transform --force
 
 > **Warning — Namespace renaming:** If you rename the namespace — whether by editing resource files directly or by using a `namespace:` directive in `kustomization.yaml` — Crane does not automatically update references to the old namespace name in:
 > - **ClusterRoleBinding `subjects`** — entries that reference a ServiceAccount in the old namespace will still point to the old name.
-> - **NetworkPolicy `namespaceSelectors`** — selectors that match the old namespace by name will still reference the old name.
+> - **NetworkPolicy `namespaceSelector`** — entries matching the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`) will not be updated automatically.
 >
 > Both will silently break after migration. Manually update these resources as well.
 
