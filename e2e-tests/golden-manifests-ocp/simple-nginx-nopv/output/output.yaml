@@ -66,6 +66,8 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  annotations:
+    openshift.io/host.generated: "true"
   labels:
     app: simple-nginx-nopv
   name: my-simple-nginx-nopv
