@@ -15,7 +15,7 @@ var imageRelatedGroupKinds = map[schema.GroupKind]string{
 	{Group: "image.openshift.io", Kind: "ImageStream"}: "tracks image tags that crane does not migrate — " +
 		"use `crane skopeo-sync-gen` to generate a sync manifest, then run `skopeo sync` separately to copy the underlying images to the target registry",
 	{Group: "image.openshift.io", Kind: "ImageStreamTag"}: "references image content that crane does not migrate — " +
-		"see `crane skopeo-sync-gen` to sync the underlying image separately",
+		"use `crane skopeo-sync-gen` to generate a sync manifest, then run `skopeo sync` separately to copy the underlying image to the target registry",
 }
 
 // imageResourceGuidance returns the user-facing guidance for a given

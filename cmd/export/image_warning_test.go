@@ -69,6 +69,22 @@ func imageStreamGroupResource() *groupResource {
 	}
 }
 
+func imageStreamTagGroupResource() *groupResource {
+	return &groupResource{
+		APIGroup:        "image.openshift.io",
+		APIVersion:      "v1",
+		APIGroupVersion: "image.openshift.io/v1",
+		APIResource: metav1.APIResource{
+			Name:       "imagestreamtags",
+			Kind:       "ImageStreamTag",
+			Namespaced: true,
+		},
+		objects: &unstructured.UnstructuredList{
+			Items: []unstructured.Unstructured{{Object: map[string]interface{}{"metadata": map[string]interface{}{"name": "my-imagestreamtag"}}}},
+		},
+	}
+}
+
 func TestWarnAboutImageResources(t *testing.T) {
 	var buf bytes.Buffer
 	log := logrus.New()
@@ -78,6 +94,7 @@ func TestWarnAboutImageResources(t *testing.T) {
 	resources := []*groupResource{
 		buildConfigGroupResource(),
 		imageStreamGroupResource(),
+		imageStreamTagGroupResource(),
 		widgetGroupResource(), // unrelated resource; should not produce a warning
 	}
 
@@ -90,10 +107,16 @@ func TestWarnAboutImageResources(t *testing.T) {
 	if !strings.Contains(output, "my-imagestream") || !strings.Contains(output, "ImageStream") {
 		t.Errorf("expected warning naming ImageStream %q, got: %s", "my-imagestream", output)
 	}
+	if !strings.Contains(output, "my-imagestreamtag") || !strings.Contains(output, "ImageStreamTag") {
+		t.Errorf("expected warning naming ImageStreamTag %q, got: %s", "my-imagestreamtag", output)
+	}
+	if !strings.Contains(output, "crane skopeo-sync-gen") || !strings.Contains(output, "skopeo sync") {
+		t.Errorf("expected ImageStreamTag warning to mention both crane skopeo-sync-gen and skopeo sync, got: %s", output)
+	}
 	if strings.Contains(output, "Widget") || strings.Contains(output, "w1") {
 		t.Errorf("did not expect a warning for unrelated Widget resource, got: %s", output)
 	}
-	if lines := strings.Count(strings.TrimSpace(output), "\n") + 1; lines != 2 {
-		t.Errorf("expected exactly 2 warning lines, got %d: %s", lines, output)
+	if lines := strings.Count(strings.TrimSpace(output), "\n") + 1; lines != 3 {
+		t.Errorf("expected exactly 3 warning lines, got %d: %s", lines, output)
 	}
 }
