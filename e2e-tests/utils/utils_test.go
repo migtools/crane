@@ -591,6 +591,36 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 			},
 		},
 		{
+			name: "service_ip_family_defaults_are_ignored",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  namespace: ns\n  name: s\nspec:\n  type: ClusterIP\n  ipFamilies:\n  - IPv4\n  ipFamilyPolicy: SingleStack\n")
+				write(t, got, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  namespace: ns\n  name: s\nspec:\n  type: ClusterIP\n  ipFamilies:\n  - IPv6\n  ipFamilyPolicy: PreferDualStack\n")
+				return golden, got
+			},
+		},
+		{
+			name: "pvc_provisioner_and_selected_node_annotations_are_ignored",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\n  annotations:\n    volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com\n    volume.kubernetes.io/selected-node: ip-10-0-25-205.us-east-2.compute.internal\n    volume.kubernetes.io/storage-provisioner: ebs.csi.aws.com\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				write(t, got, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\n  annotations:\n    volume.beta.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io\n    volume.kubernetes.io/selected-node: gke-worker-01\n    volume.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				return golden, got
+			},
+		},
+		{
+			name: "pvc_ignored_annotations_present_on_one_side_only",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\n  annotations:\n    volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com\n    volume.kubernetes.io/selected-node: ip-10-0-25-205.us-east-2.compute.internal\n    volume.kubernetes.io/storage-provisioner: ebs.csi.aws.com\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				write(t, got, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				return golden, got
+			},
+		},
+		{
 			name: "real_semantic_diff_detected",
 			build: func(t *testing.T) (string, string) {
 				golden := t.TempDir()

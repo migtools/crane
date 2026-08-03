@@ -6,4 +6,4 @@ metadata:
   annotations:
     service.beta.openshift.io/inject-cabundle: "true"
   name: openshift-service-ca.crt
-  namespace: simple-nginx-nopv
+  namespace: redis

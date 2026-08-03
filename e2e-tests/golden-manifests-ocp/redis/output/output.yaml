@@ -1,22 +1,31 @@
 apiVersion: v1
+data:
+  redis-password: UEFTU1dPUkQ=
+kind: Secret
+metadata:
+  name: redis
+  namespace: redis
+type: Opaque
+---
+apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: simple-nginx-nopv
-  name: my-simple-nginx-nopv
-  namespace: simple-nginx-nopv
+    name: redis
+  name: redis
+  namespace: redis
 spec:
   internalTrafficPolicy: Cluster
   ipFamilies:
   - IPv4
   ipFamilyPolicy: SingleStack
   ports:
-  - name: http
-    port: 8081
+  - name: redis
+    port: 6379
     protocol: TCP
-    targetPort: 8080
+    targetPort: 6379
   selector:
-    app: simple-nginx-nopv
+    name: redis
   sessionAffinity: None
   type: ClusterIP
 ---
@@ -26,16 +35,16 @@ metadata:
   annotations:
     deployment.kubernetes.io/revision: "1"
   labels:
-    name: simple-nginx-nopv
-  name: simple-nginx-nopv-deployment
-  namespace: simple-nginx-nopv
+    name: redis
+  name: redis
+  namespace: redis
 spec:
   progressDeadlineSeconds: 600
   replicas: 0
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: simple-nginx-nopv
+      name: redis
   strategy:
     rollingUpdate:
       maxSurge: 25%
@@ -43,40 +52,33 @@ spec:
     type: RollingUpdate
   template:
     metadata:
-      creationTimestamp: null
       labels:
-        app: simple-nginx-nopv
+        name: redis
     spec:
       containers:
-      - image: quay.io/migqe/nginx-unprivileged:1.23
-        imagePullPolicy: IfNotPresent
-        name: simple-nginx-nopv
+      - command:
+        - redis-server
+        - --requirepass
+        - PASSWORD
+        image: redis:latest
+        imagePullPolicy: Always
+        name: redis
         ports:
-        - containerPort: 8080
+        - containerPort: 6379
+          name: redis
           protocol: TCP
         resources: {}
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /data
+          name: redis-data
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
       terminationGracePeriodSeconds: 30
----
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  annotations:
-    openshift.io/host.generated: "true"
-  labels:
-    app: simple-nginx-nopv
-  name: my-simple-nginx-nopv
-  namespace: simple-nginx-nopv
-spec:
-  port:
-    targetPort: http
-  to:
-    kind: Service
-    name: my-simple-nginx-nopv
-    weight: 100
-  wildcardPolicy: None
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data
