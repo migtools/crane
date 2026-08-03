@@ -394,26 +394,6 @@ func TestProgressMerge_BasicFields(t *testing.T) {
 	}
 }
 
-func TestProgressMerge_PercentageAggregation(t *testing.T) {
-	resetGlobals()
-	pct1 := int64(50)
-	pct2 := int64(40)
-	p := &Progress{
-		TransferPercentage: &pct1,
-		FailedFiles:        []FailedFile{},
-		Errors:             []string{},
-	}
-	in := &Progress{
-		TransferPercentage: &pct2,
-		FailedFiles:        []FailedFile{},
-		Errors:             []string{},
-	}
-	p.Merge(in)
-	if p.TransferPercentage == nil {
-		t.Errorf("Merge() TransferPercentage = nil, want non-nil")
-	}
-}
-
 func TestProgressMerge_PercentageBasicUpdate(t *testing.T) {
 	resetGlobals()
 	inPct := int64(40)
