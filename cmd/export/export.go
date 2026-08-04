@@ -22,7 +22,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd/api"
-
 )
 
 // ExportOptions holds CLI flags and runtime state for a single export run.
@@ -289,8 +288,6 @@ func (o *ExportOptions) Run() error {
 	if crdCount > 0 {
 		log.Infof("Exported %d CRDs for referenced custom resources to the _cluster resources directory\n", crdCount)
 	}
-
-	warnAboutImageResources(resources, log)
 
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
