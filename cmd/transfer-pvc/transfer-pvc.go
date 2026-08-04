@@ -1213,8 +1213,9 @@ func (r restrictedContainers) ApplyTo(opts *rsynctransfer.CommandOptions) error 
 	opts.Owners = bool(!r)
 	opts.DeviceFiles = bool(!r)
 	opts.SpecialFiles = bool(!r)
-	opts.Extras = append(
-		opts.Extras, "--omit-dir-times")
+	if r {
+		opts.Extras = append(opts.Extras, "--omit-dir-times")
+	}
 	return nil
 }
 
