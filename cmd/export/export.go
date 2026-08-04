@@ -211,7 +211,7 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 	if err := validateExportNamespace(context.Background(), kubeClient, o.userSpecifiedNamespace, log); err != nil {
-		log.Errorf("namespace validation failed: %v", err)
+		log.Errorf("namespace validation failed for %q: %v", o.userSpecifiedNamespace, err)
 		return err
 	}
 
