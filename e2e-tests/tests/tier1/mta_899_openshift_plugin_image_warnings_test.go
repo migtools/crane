@@ -13,11 +13,6 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// This test verifies the officially supported answer to crane#681 (crane does not
-// migrate image content): the optional OpenShiftPlugin, once installed via
-// `crane plugin-manager add OpenShiftPlugin`, warns during `crane transform` when
-// it encounters an ImageStream. It is OpenShift-only (BuildConfig/ImageStream are
-// OCP APIs) and is skipped on non-OpenShift clusters.
 var _ = Describe("OpenShiftPlugin image resource warnings", func() {
 	It("[MTA-899] warns about an ImageStream it does not migrate (crane#681)", Label("tier1", "openshift-plugin"), func() {
 		appName := "dockerbuild"
@@ -75,10 +70,6 @@ var _ = Describe("OpenShiftPlugin image resource warnings", func() {
 			"--plugin-dir", pluginDir,
 		)
 		transformCmd.Dir = paths.TempDir
-		// Don't assert on the transform command's exit status here: the plugin emits
-		// its warning to output regardless of whether the overall pipeline later
-		// succeeds, and that warning — not end-to-end transform success, which is
-		// covered elsewhere — is what this test verifies.
 		transformOut, _ := transformCmd.CombinedOutput()
 
 		output := string(transformOut)
