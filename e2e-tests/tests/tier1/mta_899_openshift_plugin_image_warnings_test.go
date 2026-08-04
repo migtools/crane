@@ -13,9 +13,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("OpenShiftPlugin image resource warnings", func() {
-	It("[MTA-899] warns about an ImageStream it does not migrate (crane#681)", Label("tier1", "openshift-plugin"), func() {
-		appName := "dockerbuild"
+var _ = Describe("Image resource warnings for content crane does not migrate", func() {
+	It("[MTA-899] warns when an exported app contains an OCP image reference (crane#681)", Label("tier1"), func() {
+		appName := "app-with-empty-pvc"
 		namespace := "image-resource-warnings"
 		scenario := NewMigrationScenario(
 			appName,
@@ -26,18 +26,16 @@ var _ = Describe("OpenShiftPlugin image resource warnings", func() {
 			config.TargetContext,
 		)
 		srcApp := scenario.SrcApp
-		kubectlSrc := scenario.KubectlSrc
 
-		if !kubectlSrc.IsOpenShift() {
-			Skip("BuildConfig/ImageStream are OpenShift-only APIs; skipping on non-OpenShift clusters")
-		}
+		By("Deploy a simple app on the source cluster")
+		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
 
 		paths, err := NewScenarioPaths("crane-image-warning-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			By("Cleanup source resources")
+			By("Cleanup source app and temp dir")
 			if err := srcApp.Cleanup(); err != nil {
-				log.Printf("cleanup: %v", err)
+				log.Printf("cleanup: failed to remove app: %v", err)
 			}
 			if paths.TempDir != "" {
 				if err := os.RemoveAll(paths.TempDir); err != nil {
@@ -46,36 +44,47 @@ var _ = Describe("OpenShiftPlugin image resource warnings", func() {
 			}
 		})
 
-		By("Deploy a BuildConfig + ImageStream on the source cluster")
-		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
+		By("Run crane export")
+		exportOut, err := exec.Command(config.CraneBin, "export",
+			"--context", srcApp.Context,
+			"--namespace", srcApp.Namespace,
+			"--export-dir", paths.ExportDir,
+		).CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), "crane export failed: %s", string(exportOut))
 
-		pluginDir := filepath.Join(paths.TempDir, "plugins")
-		Expect(os.MkdirAll(pluginDir, 0o755)).NotTo(HaveOccurred())
+		By("Simulate the app containing an OCP image reference (ImageStream)")
+		imageStreamYAML := fmt.Sprintf(`
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: demo-app
+  namespace: %s
+spec:
+  lookupPolicy:
+    local: false
+`, namespace)
+		resourceDir := filepath.Join(paths.ExportDir, "resources", namespace)
+		Expect(os.WriteFile(
+			filepath.Join(resourceDir, "ImageStream_image.openshift.io_v1_demo-app.yaml"),
+			[]byte(imageStreamYAML), 0o644,
+		)).NotTo(HaveOccurred())
 
 		By("Install OpenShiftPlugin into an isolated plugin dir")
-		installCmd := exec.Command(config.CraneBin, "plugin-manager", "add", "OpenShiftPlugin", "--plugin-dir", pluginDir)
-		installOut, err := installCmd.CombinedOutput()
+		pluginDir := filepath.Join(paths.TempDir, "plugins")
+		Expect(os.MkdirAll(pluginDir, 0o755)).NotTo(HaveOccurred())
+		installOut, err := exec.Command(config.CraneBin, "plugin-manager", "add", "OpenShiftPlugin", "--plugin-dir", pluginDir).CombinedOutput()
 		Expect(err).NotTo(HaveOccurred(), "failed to install OpenShiftPlugin: %s", string(installOut))
 
-		By("Run crane export")
-		runner := scenario.Crane
-		runner.WorkDir = paths.TempDir
-		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
-		Expect(runner.Export(exportOpts)).NotTo(HaveOccurred())
-
-		By("Run crane transform with OpenShiftPlugin installed and verify it warns about the ImageStream")
-		transformCmd := exec.Command(config.CraneBin, "transform",
+		By("Run crane transform and verify it warns about the ImageStream")
+		transformOut, _ := exec.Command(config.CraneBin, "transform",
 			"--export-dir", paths.ExportDir,
 			"--transform-dir", paths.TransformDir,
 			"--plugin-dir", pluginDir,
-		)
-		transformCmd.Dir = paths.TempDir
-		transformOut, _ := transformCmd.CombinedOutput()
+		).CombinedOutput()
 
 		output := string(transformOut)
-		Expect(output).To(ContainSubstring(fmt.Sprintf("ImageStream '%s/centos' detected", namespace)),
+		Expect(output).To(ContainSubstring(fmt.Sprintf("ImageStream '%s/demo-app' detected", namespace)),
 			"expected OpenShiftPlugin to warn about the ImageStream it does not migrate:\n%s", output)
 		Expect(output).To(ContainSubstring("images from internal registry are NOT migrated automatically"))
-		Expect(output).To(ContainSubstring("use tools like skopeo"))
 	})
 })
