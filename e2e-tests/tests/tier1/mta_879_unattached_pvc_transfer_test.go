@@ -85,11 +85,11 @@ var _ = Describe("Unattached PVC transfer", func() {
 
 		sourceHello, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/hello.txt")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(sourceHello).To(Equal("hello-from-source\n"))
+		Expect(sourceHello).To(Equal("hello-from-source"))
 
 		sourceNested, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/testdir/nested.txt")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(sourceNested).To(Equal("unattached-pvc-check\n"))
+		Expect(sourceNested).To(Equal("unattached-pvc-check"))
 
 		sourceTimestamp, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/timestamp.txt")
 		Expect(err).NotTo(HaveOccurred())
@@ -165,7 +165,7 @@ func readFileFromPod(k KubectlRunner, namespace, podName, filePath string) (stri
 	if err != nil {
 		return "", err
 	}
-	return out, nil
+	return strings.TrimSpace(out), nil
 }
 
 func seedPodManifest(namespace, podName, pvcName string) string {
