@@ -1167,6 +1167,7 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	pvc.Namespace = t.PVC.Namespace.destination
 	pvc.Name = t.PVC.Name.destination
 	pvc.Labels = sourcePVC.Labels
+	pvc.Annotations = stripServerManagedPVCAnnotations(sourcePVC.Annotations)
 	pvc.Spec = *sourcePVC.Spec.DeepCopy()
 	if t.PVC.StorageRequests.quantity != nil {
 		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = *t.PVC.StorageRequests.quantity
@@ -1178,6 +1179,37 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	pvc.Spec.VolumeMode = nil
 	pvc.Spec.VolumeName = ""
 	return pvc
+}
+
+func stripServerManagedPVCAnnotations(annotations map[string]string) map[string]string {
+	if len(annotations) == 0 {
+		return nil
+	}
+	result := make(map[string]string)
+	for key, val := range annotations {
+		if isServerManagedPVCAnnotation(key) {
+			continue
+		}
+		result[key] = val
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func isServerManagedPVCAnnotation(key string) bool {
+	for _, prefix := range []string{
+		"pv.kubernetes.io/",
+		"volume.kubernetes.io/",
+		"volume.beta.kubernetes.io/",
+		"kubectl.kubernetes.io/",
+	} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // verify enables/disables --checksum option in Rsync
