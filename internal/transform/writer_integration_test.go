@@ -67,13 +67,13 @@ func TestWriteStageWithNonExistentRemovePath(t *testing.T) {
 	}
 
 	// Create artifact
-	artifact := cranelib.TransformArtifact{
+	artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 		Resource:     resource,
 		HaveWhiteOut: false,
 		Patches:      patches,
 		Target:       cranelib.DeriveTargetFromResource(resource),
 		PluginName:   "test-plugin",
-	}
+	}}
 
 	// Create writer
 	logger := logrus.New()
@@ -85,7 +85,7 @@ func TestWriteStageWithNonExistentRemovePath(t *testing.T) {
 	writer := NewKustomizeWriter(opts, stageName, logger)
 
 	// Write stage - this should NOT fail even though /spec/externalIPs doesn't exist
-	err = writer.WriteStage([]cranelib.TransformArtifact{artifact}, false)
+	err = writer.WriteStage([]StageArtifact{artifact}, false)
 	if err != nil {
 		t.Fatalf("WriteStage failed: %v", err)
 	}
@@ -170,19 +170,19 @@ func TestWriteStage_ClusterScopedResources(t *testing.T) {
 		},
 	}
 
-	artifacts := []cranelib.TransformArtifact{
-		{
+	artifacts := []StageArtifact{
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     clusterRole,
 			HaveWhiteOut: false,
 			Target:       cranelib.DeriveTargetFromResource(clusterRole),
 			PluginName:   "test-plugin",
-		},
-		{
+		}},
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     clusterRoleBinding,
 			HaveWhiteOut: false,
 			Target:       cranelib.DeriveTargetFromResource(clusterRoleBinding),
 			PluginName:   "test-plugin",
-		},
+		}},
 	}
 
 	logger := logrus.New()
@@ -283,21 +283,21 @@ func TestWriteStage_MixedNamespacedAndClusterScoped(t *testing.T) {
 		t.Fatalf("Failed to decode ClusterRole patch JSON: %v", err)
 	}
 
-	artifacts := []cranelib.TransformArtifact{
-		{
+	artifacts := []StageArtifact{
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     deployment,
 			HaveWhiteOut: false,
 			Patches:      deployPatches,
 			Target:       cranelib.DeriveTargetFromResource(deployment),
 			PluginName:   "test-plugin",
-		},
-		{
+		}},
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     clusterRole,
 			HaveWhiteOut: false,
 			Patches:      clusterPatches,
 			Target:       cranelib.DeriveTargetFromResource(clusterRole),
 			PluginName:   "test-plugin",
-		},
+		}},
 	}
 
 	logger := logrus.New()
@@ -393,13 +393,13 @@ func TestWriteStage_ClusterScopedWhiteout(t *testing.T) {
 		},
 	}
 
-	artifacts := []cranelib.TransformArtifact{
-		{
+	artifacts := []StageArtifact{
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     clusterRole,
 			HaveWhiteOut: true,
 			Target:       cranelib.DeriveTargetFromResource(clusterRole),
 			PluginName:   "test-plugin",
-		},
+		}},
 	}
 
 	logger := logrus.New()
@@ -487,14 +487,14 @@ func TestWriteStage_ClusterScopedWithPatch(t *testing.T) {
 		t.Fatalf("Failed to decode ClusterRole patch JSON: %v", err)
 	}
 
-	artifacts := []cranelib.TransformArtifact{
-		{
+	artifacts := []StageArtifact{
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     clusterRole,
 			HaveWhiteOut: false,
 			Patches:      patches,
 			Target:       cranelib.DeriveTargetFromResource(clusterRole),
 			PluginName:   "test-plugin",
-		},
+		}},
 	}
 
 	logger := logrus.New()
@@ -602,19 +602,19 @@ func TestWriteStage_KustomizeBuildWithMixedResources(t *testing.T) {
 		},
 	}
 
-	artifacts := []cranelib.TransformArtifact{
-		{
+	artifacts := []StageArtifact{
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     deployment,
 			HaveWhiteOut: false,
 			Target:       cranelib.DeriveTargetFromResource(deployment),
 			PluginName:   "test-plugin",
-		},
-		{
+		}},
+		{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     clusterRole,
 			HaveWhiteOut: false,
 			Target:       cranelib.DeriveTargetFromResource(clusterRole),
 			PluginName:   "test-plugin",
-		},
+		}},
 	}
 
 	logger := logrus.New()

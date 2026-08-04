@@ -75,9 +75,10 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 // Directory name constants for stage structure
 // These can be changed if different naming is preferred (e.g., "input-resources" instead of "input")
 const (
-	InputDirName   = "input"    // input resources directory within a stage
-	PatchesDirName = "patches"  // patches directory within a stage
-	OutputDirName  = "output"   // output directory within a stage
+	InputDirName        = "input"    // input resources directory within a stage
+	PatchesDirName      = "patches"  // patches directory within a stage
+	OutputDirName       = "output"   // output directory within a stage
+	NewResourcesDirName = "new"      // plugin-generated new resources directory within a stage
 )
 
 //TODO: @shawn-hurley Add errors for these methods to validate that the correct struct values are set.
@@ -124,6 +125,12 @@ func (opts *PathOpts) GetStageDir(stageName string) string {
 // Format: <transformDir>/<stageName>/input
 func (opts *PathOpts) GetInputDir(stageName string) string {
 	return filepath.Join(opts.GetStageDir(stageName), InputDirName)
+}
+
+// GetNewResourcesDir returns the path to the new resources directory within a stage
+// Format: <transformDir>/<stageName>/new
+func (opts *PathOpts) GetNewResourcesDir(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), NewResourcesDirName)
 }
 
 // GetPatchesDir returns the path to the patches directory within a stage

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
-	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/sirupsen/logrus"
@@ -34,7 +33,7 @@ func NewKustomizeWriter(opts file.PathOpts, stageName string, log *logrus.Logger
 }
 
 // WriteStage writes all artifacts for a stage to disk
-func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, force bool) error {
+func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) error {
 	stageDir := w.opts.GetStageDir(w.stageName)
 
 	// Handle directory preparation based on force flag
@@ -53,6 +52,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	// Create stage directories
 	resourcesDir := w.opts.GetInputDir(w.stageName)
 	patchesDir := w.opts.GetPatchesDir(w.stageName)
+	newResourcesDir := w.opts.GetNewResourcesDir(w.stageName)
 
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		return fmt.Errorf("failed to create resources directory: %w", err)
@@ -60,17 +60,25 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	if err := os.MkdirAll(patchesDir, 0700); err != nil {
 		return fmt.Errorf("failed to create patches directory: %w", err)
 	}
+	if err := os.MkdirAll(newResourcesDir, 0700); err != nil {
+		return fmt.Errorf("failed to create new resources directory: %w", err)
+	}
 
 	// Separate artifacts into whiteout and non-whiteout
 	// ALL artifacts will be written to resources/, but only non-whiteout will be in kustomization.yaml
 	// Use maps to deduplicate resources by canonical ID
 	allResourcesMap := make(map[string]unstructured.Unstructured)
 	whiteoutStatusMap := make(map[string]bool) // tracks whether resource is whiteout
+	newResourceIDs := make(map[string]bool)    // tracks plugin-generated new resources (routed to new/)
 	activeResourcesMap := make(map[string]unstructured.Unstructured)
 	var patches []kustomize.Patch
 
 	for _, artifact := range artifacts {
 		resourceID := getResourceID(artifact.Resource)
+
+		if artifact.IsNewResource {
+			newResourceIDs[resourceID] = true
+		}
 
 		// Check for duplicates
 		if _, exists := allResourcesMap[resourceID]; exists {
@@ -172,12 +180,23 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	var resourcePaths []string
 	var whiteoutComments []string
 
-	// Write each resource to its own file (similar to export structure)
+	// Write each resource to its own file
+	// New resources go to new/, all other resources go to input/
 	for _, resource := range allResources {
 		filename := file.GetResourceFilename(resource)
-		fullPath := filepath.Join(resourcesDir, filename)
+		resourceID := getResourceID(resource)
 
-		// Write individual resource file
+		var targetDir, dirPrefix string
+		if newResourceIDs[resourceID] {
+			targetDir = newResourcesDir
+			dirPrefix = file.NewResourcesDirName
+		} else {
+			targetDir = resourcesDir
+			dirPrefix = file.InputDirName
+		}
+
+		fullPath := filepath.Join(targetDir, filename)
+
 		yamlBytes, err := yaml.Marshal(resource.Object)
 		if err != nil {
 			return fmt.Errorf("failed to marshal resource %s to YAML: %w", filename, err)
@@ -186,13 +205,10 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 			return fmt.Errorf("failed to write resource file %s: %w", filename, err)
 		}
 
-		// Check if this resource is active or whiteout
-		resourceID := getResourceID(resource)
 		if activeResourceIDs[resourceID] {
-			resourcePaths = append(resourcePaths, filepath.Join(file.InputDirName, filename))
+			resourcePaths = append(resourcePaths, filepath.Join(dirPrefix, filename))
 		} else {
-			// This resource is whiteout - add comment
-			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - %s/%s", file.InputDirName, filename))
+			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - %s/%s", dirPrefix, filename))
 		}
 	}
 
