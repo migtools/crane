@@ -87,7 +87,7 @@ func prepareFailuresDir(failuresDir string) error {
 func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range resources {
-		log.Infof("Writing objects of resource: %s to the output directory\n", r.APIResource.Name)
+		log.Debugf("writing objects of resource: %s to the output directory", r.APIResource.Name)
 
 		kind := r.APIResource.Kind
 
@@ -135,7 +135,7 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range errors {
-		log.Debugf("Writing error for resource %s, error: %#v\n", r.APIResource.Name, r.Error)
+		log.Debugf("writing error for resource %s, error: %v", r.APIResource.Name, r.Error)
 
 		kind := r.APIResource.Kind
 
@@ -224,6 +224,7 @@ func discoverPreferredResources(
 			}
 			log.Warnf("some API groups failed discovery, continuing with available groups: %v", err)
 		} else {
+			log.Errorf("failed to discover preferred resources: %v", err)
 			return nil, err
 		}
 	}
@@ -260,16 +261,16 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 
 			// TODO: alpatel: put this behing a flag
 			if resource.Kind == "Event" {
-				log.Debugf("skipping extracting events\n")
+				log.Debugf("skipping extracting events")
 				continue
 			}
 
 			if !isAdmittedResource(gv, resource) {
-				log.Debugf("resource: %s.%s is clusterscoped or not admitted kind, skipping\n", gv.String(), resource.Kind)
+				log.Debugf("resource: %s.%s is clusterscoped or not admitted kind, skipping", gv.String(), resource.Kind)
 				continue
 			}
 
-			log.Debugf("processing resource: %s.%s\n", gv.String(), resource.Kind)
+			log.Debugf("processing resource: %s.%s", gv.String(), resource.Kind)
 
 			g := &groupResource{
 				APIGroup:        gv.Group,
@@ -282,18 +283,18 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 			if err != nil {
 				// Check if error is due to timeout/deadline exceeded - fail fast
 				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
-					log.Errorf("request timeout exceeded for groupVersion %s, kind: %s: %v\n", g.APIGroupVersion, g.APIResource.Kind, err)
+					log.Errorf("request timeout exceeded for groupVersion %s, kind: %s: %v", g.APIGroupVersion, g.APIResource.Kind, err)
 					return nil, []*groupResourceError{{resource, err}}
 				}
 				switch {
 				case apierrors.IsForbidden(err):
-					log.Debugf("access denied for groupVersion %s, kind: %s (expected for namespace-admin users)\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("access denied for groupVersion %s, kind: %s (expected for namespace-admin users)", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsMethodNotSupported(err):
-					log.Warnf("list method not supported on the groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Warnf("list method not supported on the groupVersion %s, kind: %s", g.APIGroupVersion, g.APIResource.Kind)
 				case apierrors.IsNotFound(err):
-					log.Debugf("resource not found (virtual resource), groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("resource not found (virtual resource), groupVersion %s, kind: %s", g.APIGroupVersion, g.APIResource.Kind)
 				default:
-					log.Errorf("error listing objects: %#v, groupVersion %s, kind: %s\n", err, g.APIGroupVersion, g.APIResource.Kind)
+					log.Errorf("error listing objects: %v, groupVersion %s, kind: %s", err, g.APIGroupVersion, g.APIResource.Kind)
 				}
 				errors = append(errors, &groupResourceError{resource, err})
 				continue
@@ -306,7 +307,7 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				continue
 			}
 
-			log.Debugf("0 objects found, for resource %s, skipping\n", resource.Name)
+			log.Debugf("0 objects found, for resource %s, skipping", resource.Name)
 		}
 	}
 
@@ -384,7 +385,7 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %v", object, g.APIResource.Name, object)
 			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 		}
 		// Create fresh context with timeout for each Get request
@@ -419,7 +420,7 @@ func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.Fie
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
+			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %v", object, g.APIResource.Name, object)
 			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 		}
 		unstructuredList.Items = append(unstructuredList.Items, *u)
