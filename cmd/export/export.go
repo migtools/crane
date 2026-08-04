@@ -197,7 +197,7 @@ func (o *ExportOptions) Run() error {
 
 	restConfig, err := o.configFlags.ToRESTConfig()
 	if err != nil {
-		log.Errorf("cannot create rest config: %#v", err)
+		log.Errorf("cannot create rest config: %v", err)
 		return err
 	}
 
@@ -207,7 +207,7 @@ func (o *ExportOptions) Run() error {
 
 	kubeClient, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		log.Errorf("cannot create kubernetes client: %#v", err)
+		log.Errorf("cannot create kubernetes client: %v", err)
 		return err
 	}
 	if err := validateExportNamespace(context.Background(), kubeClient, o.userSpecifiedNamespace, log); err != nil {
@@ -220,24 +220,24 @@ func (o *ExportOptions) Run() error {
 			return fmt.Errorf("export directory %q already exists; use --overwrite to replace it", o.exportDir)
 		}
 		if err = os.RemoveAll(o.exportDir); err != nil {
-			log.Errorf("error clearing export directory: %#v", err)
+			log.Errorf("error clearing export directory: %v", err)
 			return err
 		}
 	}
 	resourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace)
 	if err = os.MkdirAll(resourceDir, 0700); err != nil {
-		log.Errorf("error creating the resources directory: %#v", err)
+		log.Errorf("error creating the resources directory: %v", err)
 		return err
 	}
 	failuresDir := filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace)
 	if err = os.MkdirAll(failuresDir, 0700); err != nil {
-		log.Errorf("error creating the failures directory: %#v", err)
+		log.Errorf("error creating the failures directory: %v", err)
 		return err
 	}
 
 	discoveryClient, err := o.configFlags.ToDiscoveryClient()
 	if err != nil {
-		log.Errorf("cannot create discovery client: %#v", err)
+		log.Errorf("cannot create discovery client: %v", err)
 		return err
 	}
 
@@ -246,7 +246,7 @@ func (o *ExportOptions) Run() error {
 
 	dynamicClient, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
-		log.Errorf("cannot create dynamic client: %#v", err)
+		log.Errorf("cannot create dynamic client: %v", err)
 		return err
 	}
 
@@ -255,6 +255,7 @@ func (o *ExportOptions) Run() error {
 		log.Errorf("cannot discover preferred resources: %v", err)
 		return err
 	}
+	log.Debugf("discovered %d API resource types", len(resourceLists))
 
 	var errs []error
 
@@ -262,8 +263,10 @@ func (o *ExportOptions) Run() error {
 	requestTimeout := restConfig.Timeout
 
 	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
+	log.Debugf("extracted %d resources (%d errors)", len(resources), len(resourceErrs))
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
+	log.Debugf("resources after RBAC filter: %d", len(resources))
 
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 
@@ -284,7 +287,7 @@ func (o *ExportOptions) Run() error {
 
 	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
 	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
-		log.Errorf("error preparing cluster resources directory: %#v", err)
+		log.Errorf("error preparing cluster resources directory: %v", err)
 		return err
 	}
 
@@ -297,12 +300,12 @@ func (o *ExportOptions) Run() error {
 	log.Debugf("attempting to write resources to files\n")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
-		log.Warnf("error writing manifests to file: %#v, ignoring\n", e)
+		log.Warnf("error writing manifests to file: %v, ignoring\n", e)
 	}
 
 	writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
 	for _, e := range writeErrorsErrors {
-		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
+		log.Warnf("error writing errors to file: %v, ignoring\n", e)
 	}
 
 	errs = append(errs, writeResourcesErrors...)
