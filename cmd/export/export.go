@@ -193,6 +193,7 @@ func (o *ExportOptions) Run() error {
 	var err error
 
 	log := o.globalFlags.GetLogger()
+	log.Infof("Starting export for namespace %q", o.userSpecifiedNamespace)
 
 	restConfig, err := o.configFlags.ToRESTConfig()
 	if err != nil {
@@ -210,6 +211,7 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 	if err := validateExportNamespace(context.Background(), kubeClient, o.userSpecifiedNamespace, log); err != nil {
+		log.Errorf("namespace validation failed: %v", err)
 		return err
 	}
 
@@ -250,6 +252,7 @@ func (o *ExportOptions) Run() error {
 
 	resourceLists, err := discoverPreferredResources(discoveryClient, log)
 	if err != nil {
+		log.Errorf("cannot discover preferred resources: %v", err)
 		return err
 	}
 
@@ -273,6 +276,7 @@ func (o *ExportOptions) Run() error {
 	for _, resErr := range resourceErrs {
 		if resErr != nil && resErr.Error != nil {
 			if apierrors.IsTimeout(resErr.Error) || strings.Contains(resErr.Error.Error(), "context deadline exceeded") {
+				log.Errorf("timeout listing resource %q: %v", resErr.APIResource.Kind, resErr.Error)
 				return resErr.Error
 			}
 		}
@@ -304,11 +308,13 @@ func (o *ExportOptions) Run() error {
 	errs = append(errs, writeResourcesErrors...)
 	errs = append(errs, writeErrorsErrors...)
 	if allResourceListsForbidden(resources, resourceErrs) {
+		log.Warnf("all resource types returned Forbidden for namespace %q", o.userSpecifiedNamespace)
 		errs = append(errs, fmt.Errorf(
 			"all resource types returned Forbidden for namespace %q -- verify the namespace exists and your user has list permissions",
 			o.userSpecifiedNamespace,
 		))
 	}
+	log.Infof("Export complete for namespace %q", o.userSpecifiedNamespace)
 	return errorsutil.NewAggregate(errs)
 }
 
