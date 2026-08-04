@@ -19,7 +19,7 @@ import (
 // it encounters an ImageStream. It is OpenShift-only (BuildConfig/ImageStream are
 // OCP APIs) and is skipped on non-OpenShift clusters.
 var _ = Describe("OpenShiftPlugin image resource warnings", func() {
-	It("warns about an ImageStream it does not migrate (crane#681)", Label("tier1", "openshift-plugin"), func() {
+	It("[MTA-899] warns about an ImageStream it does not migrate (crane#681)", Label("tier1", "openshift-plugin"), func() {
 		appName := "dockerbuild"
 		namespace := "image-resource-warnings"
 		scenario := NewMigrationScenario(
