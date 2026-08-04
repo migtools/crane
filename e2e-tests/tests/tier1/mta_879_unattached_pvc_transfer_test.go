@@ -68,7 +68,7 @@ var _ = Describe("Unattached PVC transfer", func() {
 
 		By("Deploy the source pvc app from k8s-apps-deployer")
 		log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
-		Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
+		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
 		log.Printf("Source app %s prepared successfully\n", srcApp.Name)
 
 		By("List PVCs created by the source pvc app")
@@ -82,6 +82,7 @@ var _ = Describe("Unattached PVC transfer", func() {
 		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(seedPodManifest(namespace, seedPodName, pvcName), namespace)).NotTo(HaveOccurred())
 		_, err = kubectlSrcNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+seedPodName, "-n", namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
+		Expect(srcApp.Validate()).NotTo(HaveOccurred())
 
 		sourceHello, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/hello.txt")
 		Expect(err).NotTo(HaveOccurred())
@@ -163,9 +164,9 @@ var _ = Describe("Unattached PVC transfer", func() {
 func readFileFromPod(k KubectlRunner, namespace, podName, filePath string) (string, error) {
 	out, err := k.Run("exec", "-n", namespace, podName, "--", "cat", filePath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read file %q from pod %s/%s: %w", filePath, namespace, podName, err)
 	}
-	return strings.TrimSpace(out), nil
+	return strings.TrimSpace(StripKubectlWarnings(out)), nil
 }
 
 func seedPodManifest(namespace, podName, pvcName string) string {
