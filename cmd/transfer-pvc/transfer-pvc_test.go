@@ -1013,3 +1013,80 @@ func TestCertSecretNaming(t *testing.T) {
 		})
 	}
 }
+
+func TestStripServerManagedPVCAnnotations(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		want        map[string]string
+	}{
+		{
+			name:        "nil annotations",
+			annotations: nil,
+			want:        nil,
+		},
+		{
+			name:        "empty annotations",
+			annotations: map[string]string{},
+			want:        nil,
+		},
+		{
+			name: "only user annotations — all preserved",
+			annotations: map[string]string{
+				"backup.company.com/schedule":  "daily",
+				"backup.company.com/retention": "30d",
+				"storage.company.com/tier":     "premium",
+			},
+			want: map[string]string{
+				"backup.company.com/schedule":  "daily",
+				"backup.company.com/retention": "30d",
+				"storage.company.com/tier":     "premium",
+			},
+		},
+		{
+			name: "only server-managed annotations — all stripped",
+			annotations: map[string]string{
+				"pv.kubernetes.io/bind-completed":                   "yes",
+				"volume.kubernetes.io/storage-provisioner":          "ebs.csi.aws.com",
+				"volume.beta.kubernetes.io/storage-provisioner":     "kubernetes.io/gce-pd",
+				"kubectl.kubernetes.io/last-applied-configuration":  "{}",
+			},
+			want: nil,
+		},
+		{
+			name: "mixed — user preserved, server stripped",
+			annotations: map[string]string{
+				"backup.company.com/schedule":              "daily",
+				"pv.kubernetes.io/bind-completed":          "yes",
+				"volume.kubernetes.io/storage-provisioner": "ebs.csi.aws.com",
+				"app.kubernetes.io/managed-by":             "helm",
+			},
+			want: map[string]string{
+				"backup.company.com/schedule":  "daily",
+				"app.kubernetes.io/managed-by": "helm",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripServerManagedPVCAnnotations(tt.annotations)
+			if tt.want == nil && got != nil {
+				t.Errorf("want nil, got %v", got)
+				return
+			}
+			if tt.want != nil && got == nil {
+				t.Errorf("want %v, got nil", tt.want)
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("length mismatch: got %v, want %v", got, tt.want)
+				return
+			}
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("key %q: got %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
