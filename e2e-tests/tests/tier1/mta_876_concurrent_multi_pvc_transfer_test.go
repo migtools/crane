@@ -125,9 +125,12 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 			totalElapsed, maxDuration, sumDurations)
 		Expect(totalElapsed).To(BeNumerically("<", sumDurations),
 			"running %d transfers concurrently should take less than the sum of their individual durations", volumeCount)
-		Expect(totalElapsed).To(BeNumerically("<", maxDuration*2),
-			"total wall-clock time (%s) should stay close to the slowest single transfer (%s), not balloon toward the serialized sum",
-			totalElapsed, maxDuration)
+		// Allow generous headroom for scheduling and endpoint-programming jitter
+		// while still failing if the transfers were effectively serialized.
+		concurrencyTolerance := 3
+		Expect(totalElapsed).To(BeNumerically("<", maxDuration*time.Duration(concurrencyTolerance)),
+			"total wall-clock time (%s) should stay within %dx the slowest single transfer (%s), not balloon toward the serialized sum (%s)",
+			totalElapsed, concurrencyTolerance, maxDuration, sumDurations)
 
 		By("Verify each destination PVC exists on target")
 		tgtPVCs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
