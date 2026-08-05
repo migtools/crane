@@ -52,16 +52,11 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 	// Create stage directories
 	resourcesDir := w.opts.GetInputDir(w.stageName)
 	patchesDir := w.opts.GetPatchesDir(w.stageName)
-	newResourcesDir := w.opts.GetNewResourcesDir(w.stageName)
-
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		return fmt.Errorf("failed to create resources directory: %w", err)
 	}
 	if err := os.MkdirAll(patchesDir, 0700); err != nil {
 		return fmt.Errorf("failed to create patches directory: %w", err)
-	}
-	if err := os.MkdirAll(newResourcesDir, 0700); err != nil {
-		return fmt.Errorf("failed to create new resources directory: %w", err)
 	}
 
 	// Separate artifacts into whiteout and non-whiteout
@@ -182,12 +177,20 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 
 	// Write each resource to its own file
 	// New resources go to new/, all other resources go to input/
+	newResourcesDir := w.opts.GetNewResourcesDir(w.stageName)
+	newResourcesDirCreated := false
 	for _, resource := range allResources {
 		filename := file.GetResourceFilename(resource)
 		resourceID := getResourceID(resource)
 
 		var targetDir, dirPrefix string
 		if newResourceIDs[resourceID] {
+			if !newResourcesDirCreated {
+				if err := os.MkdirAll(newResourcesDir, 0700); err != nil {
+					return fmt.Errorf("failed to create new resources directory: %w", err)
+				}
+				newResourcesDirCreated = true
+			}
 			targetDir = newResourcesDir
 			dirPrefix = file.NewResourcesDirName
 		} else {

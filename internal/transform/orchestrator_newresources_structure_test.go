@@ -125,19 +125,11 @@ func TestNewResources_DirectoryStructure(t *testing.T) {
 		t.Errorf("Expected Build skeleton in new/")
 	}
 
-	// 3. Verify skeleton content is minimal (no spec, no labels, no annotation)
+	// 3. Verify skeleton content is minimal (no spec, no labels, no annotations)
 	if buildSkeletonFile != "" {
 		content, err := os.ReadFile(buildSkeletonFile)
 		if err != nil {
 			t.Fatalf("Failed to read skeleton file: %v", err)
-		}
-		contentStr := string(content)
-
-		if strings.Contains(contentStr, "crane.konveyor.io/new-resource") {
-			t.Errorf("Annotation should be stripped from written skeleton")
-		}
-		if strings.Contains(contentStr, "spec:") {
-			t.Errorf("Skeleton should not contain spec (should be in patch)")
 		}
 
 		// Parse and verify structure
@@ -151,6 +143,9 @@ func TestNewResources_DirectoryStructure(t *testing.T) {
 		meta, _ := skelObj["metadata"].(map[string]interface{})
 		if _, hasLabels := meta["labels"]; hasLabels {
 			t.Errorf("Skeleton metadata should not have labels")
+		}
+		if _, hasAnnotations := meta["annotations"]; hasAnnotations {
+			t.Errorf("Skeleton metadata should not have annotations")
 		}
 	}
 

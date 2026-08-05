@@ -68,7 +68,7 @@ func TestTransformResources_SingleNewResource(t *testing.T) {
 		t.Errorf("First artifact should be BuildConfig, got %s", artifacts[0].Resource.GetKind())
 	}
 
-	// Second: new Build skeleton with annotation and patches
+	// Second: new Build skeleton with patches
 	newArt := artifacts[1]
 	if newArt.Resource.GetKind() != "Build" {
 		t.Errorf("Second artifact should be Build, got %s", newArt.Resource.GetKind())
@@ -313,7 +313,7 @@ func TestTransformResources_SkeletonHasMinimalFields(t *testing.T) {
 	newArt := artifacts[1]
 	skel := newArt.Resource
 
-	// Skeleton: only apiVersion, kind, metadata (name, namespace) + annotation
+	// Skeleton: only apiVersion, kind, metadata (name, namespace)
 	if skel.GetAPIVersion() != "shipwright.io/v1beta1" {
 		t.Errorf("skeleton apiVersion: got %q", skel.GetAPIVersion())
 	}
