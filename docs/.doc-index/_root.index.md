@@ -1,38 +1,42 @@
 # _ROOT Documentation Index
 
 ## Overview
-This documentation provides a comprehensive guide to the **Crane** migration tool, focusing on its multi-stage Kustomize-based transformation pipeline, resource migration compatibility, and manifest validation workflows. It covers the full lifecycle of a migration from cluster export and transformation through to final deployment and target cluster compatibility checks.
+This documentation covers the operational workflow, architecture, and configuration of **Crane**, a Kubernetes migration tool. It describes the end-to-end process of exporting, transforming, validating, and applying cluster resources, including the plugin-based multi-stage pipeline and compatibility requirements.
 
 ## Files Summary
-* **kustomize-multistage.md**: Describes the architecture and usage of the multi-stage Kustomize pipeline, including directory structures, plugin priorities, and stage chaining.
-* **CRANE_COMPATIBILITY_MATRIX.md**: Defines the operational boundaries of Crane regarding namespace-scoped vs. cluster-scoped resources and outlines the prerequisites for successful migrations.
-* **pre-apply-validation-guide.md**: Provides a checklist and scripts for validating Kubernetes manifests against a target cluster API and RBAC permissions before execution.
-* **transform.md**: Details the internal structure of the `transform/` directory, including how to work with input/output, manual edits, and Git best practices.
-* **stateless-migration-quickstart.md**: Offers a step-by-step tutorial for executing a complete stateless migration workflow, from export to final application on a target cluster.
+* **kustomize-multistage.md**: Describes the sequential, plugin-driven transformation pipeline using Kustomize and directory-based staging.
+* **CRANE_COMPATIBILITY_MATRIX.md**: Outlines the support boundaries between namespace-scoped and cluster-scoped resources during migration.
+* **pre-apply-validation-guide.md**: Provides a checklist and scripts for validating manifests against cluster APIs and permissions before deployment.
+* **plugins.md**: Details how to use, write, and manage plugins for resource transformation.
+* **transform.md**: Explains the directory structure, Kustomize configuration, and manual editing workflows for the transformation pipeline.
+* **resource-compatibility.md**: A detailed reference on resource migration boundaries, RBAC requirements, and namespace-renaming warnings.
+* **multistage-pipeline.md**: A comprehensive guide to the multi-stage pipeline, including CLI usage, priority assignment, and stage chaining.
+* **stateless-migration-quickstart.md**: A step-by-step tutorial for performing a basic stateless migration from export to apply.
+* **installation.md**: Instructions for building, installing, and verifying the Crane CLI.
+* **README.md**: The top-level entry point and documentation hub for the project.
 
 ## Code Changes That Would Require Documentation Updates
-* **Pipeline Logic**: Changes to the stage discovery, ordering algorithm, or the `crane transform` execution flow.
-* **Plugin System**: Changes to how plugins are loaded, how priorities are assigned, or changes to the built-in `KubernetesPlugin`.
-* **File Structure**: Changes to the naming conventions of `transform/` subdirectories (`input/`, `patches/`, `output/`) or the `kustomization.yaml` requirements.
-* **CLI Arguments/Flags**: Addition, removal, or modification of flags for `crane transform`, `crane apply`, `crane export`, or `crane validate`.
-* **Output Formats**: Changes to the structure of the final `output/` directory or the `output.yaml` manifest generation.
-* **Validation Logic**: Updates to how `crane validate` performs live-cluster compatibility checks or how it generates reports.
-* **Whiteout/Filtering**: Changes to how resources are excluded (whiteout) or filtered during the transformation phase.
+* **Pipeline Logic**: Changes to the transformation sequence, stage directory discovery, or the `kustomization.yaml` generation logic.
+* **Plugin Interface**: Changes to how plugins interact with stdin/stdout, input/output structures, or how they are discovered in `~/.local/share/crane/plugins/`.
+* **CLI Commands**: Addition, removal, or parameter changes for `crane export`, `crane transform`, `crane apply`, or `crane validate`.
+* **Resource Support**: Updates to the `crane-lib` logic that handles resource extraction or server-managed field removal (e.g., adding new exclusions).
+* **Validation Logic**: Changes to the `kubectl` dry-run mechanisms or `kubectl auth can-i` checks performed by the validation command.
+* **Configuration/Metadata**: Changes to `.crane-metadata.json` or any requirements for the `instructions.yaml` file.
+* **Default Behaviors**: Alterations to default plugin priorities or automatic stage creation logic.
 
 ## Key Technical Concepts
-* **Multi-Stage Pipeline**: Sequential transformation process where stage output becomes next-stage input.
-* **Kustomize**: The underlying engine used for resource patching and manifest management.
-* **Stage Directory Structure**: The `<priority>_<plugin-name>` convention used to organize transformations.
-* **Plugin Priorities**: Numeric ordering (e.g., 10, 20, 30) for determining the execution order of transform plugins.
-* **Dirty Check**: A safety mechanism that prevents overwriting manual user edits to transform stages.
-* **Pass-through Stage**: A manual transformation stage that lacks a plugin and persists user-applied changes.
-* **Server-side Dry-run**: `kubectl apply --dry-run=server` validation against the target API server.
-* **RBAC Context**: The permissions required to export/import specific resource types (e.g., SCCs, CRDs).
-* **Whiteout**: The process of excluding resources from the final migration output.
+* **Multi-Stage Pipeline**: The sequential execution of transform stages based on numeric priority.
+* **Kustomize Integration**: Use of `kustomization.yaml` and patches to mutate manifests.
+* **Dirty Check**: Protection mechanism preventing the overwrite of manually edited stages without the `--overwrite` flag.
+* **Whiteout**: The process of excluding resources from the final output.
+* **Stateless Migration**: The `export` → `transform` → `apply` → `validate` workflow.
+* **Plugin Priority**: Numeric assignment (e.g., `10_`, `20_`) determining the order of transformation.
+* **Server-Managed Fields**: Metadata like `uid` and `resourceVersion` that require removal during cross-cluster migration.
+* **Live Validation**: Using `kubectl --dry-run=server` to check manifest compatibility against the target cluster.
 
 ## Related Components
-* **Crane CLI**: The primary user-facing tool for migration orchestration.
-* **crane-lib**: The library containing built-in plugins (e.g., `kubernetes` plugin).
-* **Kustomize**: Integrated directly into the `transform` and `apply` phases.
-* **Kubernetes API Server**: Target for validation and deployment.
-* **Git**: Used for version controlling the `transform/` directory configuration.
+* **Crane-lib**: The underlying library used for plugin definitions and resource cleanup logic.
+* **Kustomize**: The engine used for patching and resource materialization within stages.
+* **Crane-plugins**: The repository of community-contributed plugins (e.g., OpenshiftPlugin).
+* **Kubectl/OC**: External CLI tools required for live cluster interaction and validation.
+* **Go Runtime**: The base environment for the Crane CLI and custom plugin development.
