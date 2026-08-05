@@ -137,12 +137,17 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		By("Mount all destination PVCs in a verifier pod and confirm each has correct, uncontaminated data")
 		const verifierPod = "mta-876-pvc-verifier"
 		Expect(kubectlTgt.ApplyYAMLSpec(multiVolumePodManifest(verifierPod, tgtApp.Namespace, volumeCount, nil), tgtApp.Namespace)).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			if _, err := kubectlTgt.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true"); err != nil {
+				log.Printf("cleanup verifier pod %q: %v", verifierPod, err)
+			}
+		})
 		_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifierPod, "-n", tgtApp.Namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 
 		assertVolumesMatchSource(kubectlTgt, tgtApp.Namespace, verifierPod, volumeCount, srcMD5s,
 			"%s data on target should match source with no cross-contamination")
-		_, err = kubectlTgt.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--wait=true")
+		_, err = kubectlTgt.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true")
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Deploy the app on target using the migrated PVCs and confirm it starts with correct data")
@@ -160,11 +165,12 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 // each match the corresponding source checksum, failing with msgFormat (which takes
 // the volume name) on the first mismatch.
 func assertVolumesMatchSource(k KubectlRunner, namespace, pod string, volumeCount int, srcMD5s map[string]string, msgFormat string) {
+	GinkgoHelper()
 	for i := 1; i <= volumeCount; i++ {
 		vol := fmt.Sprintf("volume%d", i)
 		md5, err := md5sumFile(k, namespace, pod, fmt.Sprintf("/mnt/%s/random-data", vol))
-		Expect(err).NotTo(HaveOccurred())
-		Expect(md5).To(Equal(srcMD5s[vol]), msgFormat, vol)
+		Expect(err).NotTo(HaveOccurred(), "md5sum of %s in pod %q (namespace %q) failed", vol, pod, namespace)
+		Expect(md5).To(Equal(srcMD5s[vol]), msgFormat+" (pod %q)", vol, pod)
 	}
 }
 
