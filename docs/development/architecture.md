@@ -92,7 +92,7 @@ The built-in `KubernetesPlugin` (from `crane-lib`) removes server-managed fields
 
 **Package:** `cmd/transfer-pvc/`
 
-Uses the [pvc-transfer](https://github.com/backube/pvc-transfer) library:
+Uses the [pvc-transfer](https://github.com/migtools/pvc-transfer) library:
 1. Creates a PVC on the destination cluster
 2. Sets up an rsync daemon Pod with an encrypted stunnel transport
 3. Creates a public endpoint (Route or Ingress) on the destination
