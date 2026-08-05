@@ -99,7 +99,10 @@ func TestNewResources_DirectoryStructure(t *testing.T) {
 
 	// 1. input/ should contain the original BuildConfig
 	inputDir := filepath.Join(stageDir, "input")
-	inputFiles, _ := os.ReadDir(inputDir)
+	inputFiles, err := os.ReadDir(inputDir)
+	if err != nil {
+		t.Fatalf("Failed to read input directory %s: %v", inputDir, err)
+	}
 	hasOriginal := false
 	for _, f := range inputFiles {
 		if strings.Contains(f.Name(), "BuildConfig") && strings.Contains(f.Name(), "my-app") {
@@ -112,7 +115,10 @@ func TestNewResources_DirectoryStructure(t *testing.T) {
 
 	// 2. new/ should contain the Build skeleton
 	newDir := filepath.Join(stageDir, "new")
-	newFiles, _ := os.ReadDir(newDir)
+	newFiles, err := os.ReadDir(newDir)
+	if err != nil {
+		t.Fatalf("Failed to read new resources directory %s: %v", newDir, err)
+	}
 	hasBuildSkeleton := false
 	var buildSkeletonFile string
 	for _, f := range newFiles {
@@ -140,7 +146,10 @@ func TestNewResources_DirectoryStructure(t *testing.T) {
 		if _, hasSpec := skelObj["spec"]; hasSpec {
 			t.Errorf("Parsed skeleton should not have spec")
 		}
-		meta, _ := skelObj["metadata"].(map[string]interface{})
+		meta, ok := skelObj["metadata"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("Skeleton metadata is not a map, got %T", skelObj["metadata"])
+		}
 		if _, hasLabels := meta["labels"]; hasLabels {
 			t.Errorf("Skeleton metadata should not have labels")
 		}
@@ -151,14 +160,20 @@ func TestNewResources_DirectoryStructure(t *testing.T) {
 
 	// 4. patches/ should contain a patch file for the new Build
 	patchesDir := filepath.Join(stageDir, "patches")
-	patchFiles, _ := os.ReadDir(patchesDir)
+	patchFiles, err := os.ReadDir(patchesDir)
+	if err != nil {
+		t.Fatalf("Failed to read patches directory %s: %v", patchesDir, err)
+	}
 	hasBuildPatch := false
 	for _, f := range patchFiles {
 		if strings.Contains(f.Name(), "Build") && strings.Contains(f.Name(), "my-app-build") {
 			hasBuildPatch = true
 
 			// Verify patch content has add operations
-			patchContent, _ := os.ReadFile(filepath.Join(patchesDir, f.Name()))
+			patchContent, err := os.ReadFile(filepath.Join(patchesDir, f.Name()))
+			if err != nil {
+				t.Fatalf("Failed to read patch file %s: %v", f.Name(), err)
+			}
 			patchStr := string(patchContent)
 			if !strings.Contains(patchStr, "op: add") {
 				t.Errorf("Patch should contain 'op: add' operations, got:\n%s", patchStr)
@@ -195,6 +210,10 @@ func TestNewResources_DirectoryStructure(t *testing.T) {
 }
 
 func TestNewResources_KustomizeBuildProducesCompleteResource(t *testing.T) {
+	if !hasKustomizeCommand(t) {
+		t.Skip("kubectl or oc not available, skipping test that requires kustomize")
+	}
+
 	tmpDir, err := os.MkdirTemp("", "newresource-kustomize-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -283,12 +302,24 @@ func TestNewResources_KustomizeBuildProducesCompleteResource(t *testing.T) {
 		t.Errorf("Result should have label app=my-app, got %v", labels)
 	}
 
-	img, _, _ := unstructured.NestedString(result.Object, "spec", "output", "image")
+	img, found, err := unstructured.NestedString(result.Object, "spec", "output", "image")
+	if err != nil {
+		t.Fatalf("Failed to get spec.output.image: %v", err)
+	}
+	if !found {
+		t.Fatal("spec.output.image not found in result")
+	}
 	if img != "quay.io/example/my-app:latest" {
 		t.Errorf("Result spec.output.image: got %q", img)
 	}
 
-	gitURL, _, _ := unstructured.NestedString(result.Object, "spec", "source", "git", "url")
+	gitURL, found, err := unstructured.NestedString(result.Object, "spec", "source", "git", "url")
+	if err != nil {
+		t.Fatalf("Failed to get spec.source.git.url: %v", err)
+	}
+	if !found {
+		t.Fatal("spec.source.git.url not found in result")
+	}
 	if gitURL != "https://github.com/example/repo" {
 		t.Errorf("Result spec.source.git.url: got %q", gitURL)
 	}

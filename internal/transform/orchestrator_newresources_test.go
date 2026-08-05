@@ -328,7 +328,10 @@ func TestTransformResources_SkeletonHasMinimalFields(t *testing.T) {
 	}
 
 	// Labels should NOT be in skeleton (they're in the patch)
-	skelMeta, _ := skel.Object["metadata"].(map[string]interface{})
+	skelMeta, ok := skel.Object["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Skeleton metadata is not a map, got %T", skel.Object["metadata"])
+	}
 	if _, hasLabels := skelMeta["labels"]; hasLabels {
 		t.Errorf("skeleton should not have labels (should be in patch)")
 	}
@@ -339,19 +342,30 @@ func TestTransformResources_SkeletonHasMinimalFields(t *testing.T) {
 	}
 
 	// Patch should reconstruct the full resource
-	skelJSON, _ := skel.MarshalJSON()
+	skelJSON, err := skel.MarshalJSON()
+	if err != nil {
+		t.Fatalf("Failed to marshal skeleton JSON: %v", err)
+	}
 	patched, err := newArt.Patches.Apply(skelJSON)
 	if err != nil {
 		t.Fatalf("patch apply failed: %v", err)
 	}
 	var result unstructured.Unstructured
-	result.UnmarshalJSON(patched)
+	if err := result.UnmarshalJSON(patched); err != nil {
+		t.Fatalf("Failed to unmarshal patched JSON: %v", err)
+	}
 
 	labels := result.GetLabels()
 	if labels["app"] != "test" {
 		t.Errorf("patched labels missing app=test, got %v", labels)
 	}
-	img, _, _ := unstructured.NestedString(result.Object, "spec", "output", "image")
+	img, found, err := unstructured.NestedString(result.Object, "spec", "output", "image")
+	if err != nil {
+		t.Fatalf("Failed to get spec.output.image: %v", err)
+	}
+	if !found {
+		t.Fatal("spec.output.image not found in patched result")
+	}
 	if img != "quay.io/test:latest" {
 		t.Errorf("patched spec.output.image: got %q", img)
 	}

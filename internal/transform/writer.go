@@ -64,16 +64,15 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 	// Use maps to deduplicate resources by canonical ID
 	allResourcesMap := make(map[string]unstructured.Unstructured)
 	whiteoutStatusMap := make(map[string]bool) // tracks whether resource is whiteout
-	newResourceIDs := make(map[string]bool)    // tracks plugin-generated new resources (routed to new/)
 	activeResourcesMap := make(map[string]unstructured.Unstructured)
 	var patches []kustomize.Patch
+
+	isNewResourceMap := make(map[string]bool) // tracks IsNewResource per artifact for dedup resolution
 
 	for _, artifact := range artifacts {
 		resourceID := getResourceID(artifact.Resource)
 
-		if artifact.IsNewResource {
-			newResourceIDs[resourceID] = true
-		}
+		isNewResourceMap[resourceID] = artifact.IsNewResource
 
 		// Check for duplicates
 		if _, exists := allResourcesMap[resourceID]; exists {
@@ -85,6 +84,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 				w.log.Warnf("Duplicate resource %s: replacing whiteout with active resource", resourceID)
 				allResourcesMap[resourceID] = artifact.Resource
 				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+				isNewResourceMap[resourceID] = artifact.IsNewResource
 				// Update active resources map
 				delete(activeResourcesMap, resourceID) // remove old entry if any
 				activeResourcesMap[resourceID] = artifact.Resource
@@ -98,6 +98,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 					resourceID, map[bool]string{true: "whiteout", false: "active"}[artifact.HaveWhiteOut])
 				allResourcesMap[resourceID] = artifact.Resource
 				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+				isNewResourceMap[resourceID] = artifact.IsNewResource
 			}
 		} else {
 			// First occurrence - store it
@@ -184,7 +185,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 		resourceID := getResourceID(resource)
 
 		var targetDir, dirPrefix string
-		if newResourceIDs[resourceID] {
+		if isNewResourceMap[resourceID] {
 			if !newResourcesDirCreated {
 				if err := os.MkdirAll(newResourcesDir, 0700); err != nil {
 					return fmt.Errorf("failed to create new resources directory: %w", err)
