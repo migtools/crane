@@ -220,6 +220,7 @@ func discoverPreferredResources(
 	if err != nil {
 		if discovery.IsGroupDiscoveryFailedError(err) {
 			if len(lists) == 0 {
+				log.Errorf("Failed to discover any preferred resources: %v", err)
 				return nil, err
 			}
 			log.Warnf("Some API groups failed discovery, continuing with available groups: %v", err)
@@ -286,18 +287,18 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 			if err != nil {
 				// Check if error is due to timeout/deadline exceeded - fail fast
 				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
-					log.Errorf("Request timeout exceeded for groupVersion %s, kind: %s: %v", g.APIGroupVersion, g.APIResource.Kind, err)
+					log.Errorf("Request timeout exceeded for groupVersion %s, resource: %s, kind: %s: %v", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind, err)
 					return nil, []*groupResourceError{{resource, err}}
 				}
 				switch {
 				case apierrors.IsForbidden(err):
-					log.Debugf("Access denied for groupVersion %s, kind: %s (expected for namespace-admin users)", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("Access denied for groupVersion %s, resource: %s, kind: %s (expected for namespace-admin users)", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				case apierrors.IsMethodNotSupported(err):
-					log.Warnf("List method not supported on the groupVersion %s, kind: %s", g.APIGroupVersion, g.APIResource.Kind)
+					log.Warnf("List method not supported on the groupVersion %s, resource: %s, kind: %s", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				case apierrors.IsNotFound(err):
-					log.Debugf("Resource not found (virtual resource), groupVersion %s, kind: %s", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("Resource not found (virtual resource), groupVersion %s, resource: %s, kind: %s", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				default:
-					log.Errorf("Error listing objects: %v, groupVersion %s, kind: %s", err, g.APIGroupVersion, g.APIResource.Kind)
+					log.Errorf("Error listing objects: %v, groupVersion %s, resource: %s, kind: %s", err, g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				}
 				errors = append(errors, &groupResourceError{resource, err})
 				continue
@@ -388,8 +389,8 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("Expected unstructured.Unstructured but got %T for groupResource %s and object: %v", object, g.APIResource.Name, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
+			logger.Errorf("Expected unstructured.Unstructured but got %T for groupVersion %s, resource: %s, object: %v", object, g.APIGroupVersion, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T for groupVersion %s, resource: %s", object, g.APIGroupVersion, g.APIResource.Name)
 		}
 		// Create fresh context with timeout for each Get request
 		ctx := context.Background()
@@ -409,7 +410,7 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s", g.APIGroup, g.APIResource.Kind)
+		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s: %w", g.APIGroup, g.APIResource.Kind, err)
 	}
 	return unstructuredList, nil
 }
@@ -424,14 +425,14 @@ func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.Fie
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("Expected unstructured.Unstructured but got %T for groupResource %s and object: %v", object, g.APIResource.Name, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
+			logger.Errorf("Expected unstructured.Unstructured but got %T for groupVersion %s, resource: %s, object: %v", object, g.APIGroupVersion, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T for groupVersion %s, resource: %s", object, g.APIGroupVersion, g.APIResource.Name)
 		}
 		unstructuredList.Items = append(unstructuredList.Items, *u)
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s", g.APIGroup, g.APIResource.Kind)
+		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s: %w", g.APIGroup, g.APIResource.Kind, err)
 	}
 	return unstructuredList, nil
 }

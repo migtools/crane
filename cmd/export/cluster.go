@@ -226,7 +226,7 @@ func (c *ClusterScopedRbacHandler) acceptClusterRoleBinding(clusterResource unst
 	err := runtime.DefaultUnstructuredConverter.
 		FromUnstructured(clusterResource.Object, &crb)
 	if err != nil {
-		c.log.Warnf("Cannot convert to rbacv1.ClusterRoleBinding: %v", err)
+		c.log.Warnf("Cannot convert %s %q to rbacv1.ClusterRoleBinding: %v", clusterResource.GetKind(), clusterResource.GetName(), err)
 		return false
 	}
 	nsSet := c.exportedSANamespaces()
@@ -237,7 +237,7 @@ func (c *ClusterScopedRbacHandler) acceptClusterRoleBinding(clusterResource unst
 		switch s.Kind {
 		case rbacv1.ServiceAccountKind:
 			if c.anyServiceAccountInNamespace(s.Namespace, s.Name) {
-				c.log.Debugf("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+				c.log.Debugf("Accepted %s of kind %s (match via ServiceAccount %s/%s)", clusterResource.GetName(), clusterResource.GetKind(), s.Namespace, s.Name)
 				return true
 			}
 		case rbacv1.GroupKind:
@@ -263,17 +263,17 @@ func (c *ClusterScopedRbacHandler) acceptClusterRole(clusterResource unstructure
 	err := runtime.DefaultUnstructuredConverter.
 		FromUnstructured(clusterResource.Object, &cr)
 	if err != nil {
-		c.log.Warnf("Cannot convert to rbacv1.ClusterRole: %v", err)
+		c.log.Warnf("Cannot convert %s %q to rbacv1.ClusterRole: %v", clusterResource.GetKind(), clusterResource.GetName(), err)
 	} else {
 		for _, f := range c.filteredClusterRoleBindings.objects.Items {
 			var crb rbacv1.ClusterRoleBinding
 			err := runtime.DefaultUnstructuredConverter.
 				FromUnstructured(f.Object, &crb)
 			if err != nil {
-				c.log.Warnf("Cannot convert to rbacv1.ClusterRoleBinding: %v", err)
+				c.log.Warnf("Cannot convert ClusterRoleBinding %q to rbacv1.ClusterRoleBinding: %v", f.GetName(), err)
 			} else {
 				if crb.RoleRef.Kind == "ClusterRole" && crb.RoleRef.Name == cr.Name {
-					c.log.Debugf("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+					c.log.Debugf("Accepted %s of kind %s (match via ClusterRoleBinding %s)", clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
 					return true
 				}
 			}
@@ -287,7 +287,7 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 	err := runtime.DefaultUnstructuredConverter.
 		FromUnstructured(clusterResource.Object, &scc)
 	if err != nil {
-		c.log.Warnf("Cannot convert to securityv1.SecurityContextConstraints: %v", err)
+		c.log.Warnf("Cannot convert %s %q to securityv1.SecurityContextConstraints: %v", clusterResource.GetKind(), clusterResource.GetName(), err)
 		return false
 	}
 
@@ -296,12 +296,12 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 		err := runtime.DefaultUnstructuredConverter.
 			FromUnstructured(f.Object, &crb)
 		if err != nil {
-			c.log.Warnf("Cannot convert to rbacv1.ClusterRoleBinding: %v", err)
+			c.log.Warnf("Cannot convert ClusterRoleBinding %q to rbacv1.ClusterRoleBinding: %v", f.GetName(), err)
 			continue
 		}
 
 		if crb.RoleRef.Kind == "SecurityContextConstraints" && crb.RoleRef.Name == scc.Name {
-			c.log.Debugf("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+			c.log.Debugf("Accepted %s of kind %s (match via ClusterRoleBinding RoleRef %s)", clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
 			return true
 		} else {
 			sccSystemName := fmt.Sprintf("system:openshift:scc:%s", clusterResource.GetName())

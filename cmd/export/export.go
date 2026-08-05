@@ -252,7 +252,6 @@ func (o *ExportOptions) Run() error {
 
 	resourceLists, err := discoverPreferredResources(discoveryClient, log)
 	if err != nil {
-		log.Errorf("Cannot discover preferred resources: %v", err)
 		return err
 	}
 	log.Debugf("Discovered %d API resource lists", len(resourceLists))
