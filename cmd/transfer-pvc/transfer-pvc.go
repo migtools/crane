@@ -37,13 +37,13 @@ import (
 
 	"github.com/konveyor/crane/internal/cli"
 
-	"github.com/backube/pvc-transfer/endpoint"
-	ingressendpoint "github.com/backube/pvc-transfer/endpoint/ingress"
-	routeendpoint "github.com/backube/pvc-transfer/endpoint/route"
-	"github.com/backube/pvc-transfer/transfer"
-	rsynctransfer "github.com/backube/pvc-transfer/transfer/rsync"
-	"github.com/backube/pvc-transfer/transport"
-	stunneltransport "github.com/backube/pvc-transfer/transport/stunnel"
+	"github.com/migtools/pvc-transfer/endpoint"
+	ingressendpoint "github.com/migtools/pvc-transfer/endpoint/ingress"
+	routeendpoint "github.com/migtools/pvc-transfer/endpoint/route"
+	"github.com/migtools/pvc-transfer/transfer"
+	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
+	"github.com/migtools/pvc-transfer/transport"
+	stunneltransport "github.com/migtools/pvc-transfer/transport/stunnel"
 	securityv1 "github.com/openshift/api/security/v1"
 	openshiftuid "github.com/openshift/library-go/pkg/security/uid"
 )

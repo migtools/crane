@@ -54,4 +54,4 @@ crane/
 - [konveyor/crane-lib](https://github.com/konveyor/crane-lib) — Transformation logic library
 - [konveyor/crane-plugins](https://github.com/konveyor/crane-plugins) — Community plugins
 - [konveyor/crane-plugin-openshift](https://github.com/konveyor/crane-plugin-openshift) — OpenShift plugin
-- [backube/pvc-transfer](https://github.com/backube/pvc-transfer) — PV migration library
+- [migtools/pvc-transfer](https://github.com/migtools/pvc-transfer) — PV migration library

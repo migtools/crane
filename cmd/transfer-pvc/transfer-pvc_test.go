@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	rsynctransfer "github.com/backube/pvc-transfer/transfer/rsync"
+	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
