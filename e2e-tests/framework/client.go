@@ -3,10 +3,13 @@ package framework
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -58,6 +61,87 @@ func VerifyPVCsExistByName(sourcePVCs, targetPVCs []corev1.PersistentVolumeClaim
 	if len(missing) > 0 {
 		return fmt.Errorf("source PVCs not found in target: %v", missing)
 	}
+	return nil
+}
+
+// VerifyPVCHasData mounts a PVC in a temporary pod and checks that the mount
+// path is non-empty. Returns an error if empty, which typically indicates a
+// failed rsync transfer.
+func VerifyPVCHasData(kubectl KubectlRunner, namespace, pvcName, mountPath string) error {
+	podName := fmt.Sprintf("pvc-check-%s", pvcName)
+	podSpec := map[string]any{
+		"apiVersion": "v1",
+		"kind":       "Pod",
+		"metadata": map[string]any{
+			"name":      podName,
+			"namespace": namespace,
+		},
+		"spec": map[string]any{
+			"restartPolicy": "Never",
+			"containers": []map[string]any{{
+				"name":    "check",
+				"image":   "busybox",
+				"command": []string{"sleep", "60"},
+				"volumeMounts": []map[string]any{{
+					"name":      "data",
+					"mountPath": mountPath,
+				}},
+			}},
+			"volumes": []map[string]any{{
+				"name": "data",
+				"persistentVolumeClaim": map[string]any{
+					"claimName": pvcName,
+				},
+			}},
+		},
+	}
+
+	specJSON, err := json.Marshal(podSpec)
+	if err != nil {
+		return fmt.Errorf("marshal pod spec: %w", err)
+	}
+
+	_, err = kubectl.RunWithStdin(string(specJSON), "apply", "-f", "-")
+	if err != nil {
+		return fmt.Errorf("create inspector pod for PVC %s: %w", pvcName, err)
+	}
+	defer func() {
+		if _, delErr := kubectl.Run("delete", "pod", podName, "-n", namespace, "--ignore-not-found=true"); delErr != nil {
+			log.Printf("cleanup: failed to delete inspector pod %s: %v", podName, delErr)
+		}
+	}()
+
+	var lastPhase string
+	var lastErr error
+	ready := false
+	for i := 0; i < 30; i++ {
+		out, err := kubectl.Run("get", "pod", podName, "-n", namespace,
+			"-o", "jsonpath={.status.phase}")
+		lastPhase = out
+		lastErr = err
+		if err == nil && out == "Running" {
+			ready = true
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	if !ready {
+		if lastErr != nil {
+			return fmt.Errorf("inspector pod %s/%s for PVC %s not ready: %w", namespace, podName, pvcName, lastErr)
+		}
+		return fmt.Errorf("inspector pod %s/%s for PVC %s not ready: phase=%s", namespace, podName, pvcName, lastPhase)
+	}
+
+	out, err := kubectl.Run("exec", podName, "-n", namespace, "--",
+		"find", mountPath, "-mindepth", "1", "-maxdepth", "1",
+		"!", "-name", "lost+found", "-print")
+	if err != nil {
+		return fmt.Errorf("exec into inspector pod for PVC %s: %w", pvcName, err)
+	}
+	if strings.TrimSpace(out) == "" {
+		return fmt.Errorf("PVC %s/%s is empty at %s after transfer — rsync may have failed silently", namespace, pvcName, mountPath)
+	}
+	log.Printf("PVC %s/%s has data at %s: %d entries", namespace, pvcName, mountPath, len(strings.Split(strings.TrimSpace(out), "\n")))
 	return nil
 }
 

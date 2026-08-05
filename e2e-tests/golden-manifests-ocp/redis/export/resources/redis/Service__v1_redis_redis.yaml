@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2026-07-29T11:56:57Z"
+  labels:
+    name: redis
+  managedFields:
+  - apiVersion: v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:labels:
+          .: {}
+          f:name: {}
+      f:spec:
+        f:internalTrafficPolicy: {}
+        f:ports:
+          .: {}
+          k:{"port":6379,"protocol":"TCP"}:
+            .: {}
+            f:name: {}
+            f:port: {}
+            f:protocol: {}
+            f:targetPort: {}
+        f:selector: {}
+        f:sessionAffinity: {}
+        f:type: {}
+    manager: OpenAPI-Generator
+    operation: Update
+    time: "2026-07-29T11:56:57Z"
+  name: redis
+  namespace: redis
+  resourceVersion: "133808"
+  uid: 600b5f3e-a866-4acf-8bf2-256d80a4b080
+spec:
+  clusterIP: 172.30.113.13
+  clusterIPs:
+  - 172.30.113.13
+  internalTrafficPolicy: Cluster
+  ports:
+  - name: redis
+    port: 6379
+    protocol: TCP
+    targetPort: 6379
+  selector:
+    name: redis
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}

@@ -293,11 +293,13 @@ What you should see (example):
 
 After validation passes and you are satisfied with the cleaned manifests, apply them to the target cluster:
 
+> **Warning — Namespace renaming:** If you renamed the namespace during migration, Crane does not automatically update **ClusterRoleBinding subjects** referencing the old namespace name, or **NetworkPolicy `namespaceSelector`** entries matching the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`). These will silently point to a namespace that no longer exists. Manually update them before applying.
+
+Make sure the target namespace already exists before applying manifests, so namespace-scoped resources do not fail during apply.
+
 ```bash
 kubectl --context "${TARGET_CONTEXT}" apply -f output/output.yaml
 ```
-
-Make sure the target namespace already exists before applying manifests, so namespace-scoped resources do not fail during apply.
 
 ## Troubleshooting
 

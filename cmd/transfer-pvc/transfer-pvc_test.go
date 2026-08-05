@@ -2,9 +2,11 @@ package transfer_pvc
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
+	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,7 +42,6 @@ func newTestScheme() *runtime.Scheme {
 	_ = batchv1.AddToScheme(s)
 	return s
 }
-
 
 func Test_parseSourceDestinationMapping(t *testing.T) {
 	tests := []struct {
@@ -178,6 +179,53 @@ func TestPodSpecReferencesPVC(t *testing.T) {
 			got := podSpecReferencesPVC(tt.spec, tt.pvcName)
 			if got != tt.want {
 				t.Errorf("podSpecReferencesPVC() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRestrictedContainersApplyTo(t *testing.T) {
+	tests := []struct {
+		name             string
+		restricted       bool
+		wantOmitDirTimes bool
+		wantBoolFields   bool
+	}{
+		{
+			name:             "expects --omit-dir-times in extras",
+			restricted:       true,
+			wantOmitDirTimes: true,
+			wantBoolFields:   false,
+		},
+		{
+			name:             "expects no --omit-dir-times",
+			restricted:       false,
+			wantOmitDirTimes: false,
+			wantBoolFields:   true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := rsynctransfer.CommandOptions{}
+			if err := restrictedContainers(tt.restricted).ApplyTo(&opts); err != nil {
+				t.Fatalf("ApplyTo() returned unexpected error: %v", err)
+			}
+			hasOmitDirTimes := slices.Contains(opts.Extras, "--omit-dir-times")
+			if hasOmitDirTimes != tt.wantOmitDirTimes {
+				t.Errorf("--omit-dir-times in extras = %v, want %v", hasOmitDirTimes, tt.wantOmitDirTimes)
+			}
+			for _, check := range []struct {
+				name string
+				got  bool
+			}{
+				{"Groups", opts.Groups},
+				{"Owners", opts.Owners},
+				{"DeviceFiles", opts.DeviceFiles},
+				{"SpecialFiles", opts.SpecialFiles},
+			} {
+				if check.got != tt.wantBoolFields {
+					t.Errorf("%s = %v, want %v", check.name, check.got, tt.wantBoolFields)
+				}
 			}
 		})
 	}
@@ -921,11 +969,11 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 
 func TestCertSecretNaming(t *testing.T) {
 	tests := []struct {
-		name           string
-		srcPVCName     string
-		destPVCName    string
-		serverSecret   string
-		wantCopyName   string
+		name         string
+		srcPVCName   string
+		destPVCName  string
+		serverSecret string
+		wantCopyName string
 	}{
 		{
 			name:         "same PVC name — keep original secret name",
@@ -961,6 +1009,83 @@ func TestCertSecretNaming(t *testing.T) {
 			secretName := certificateSecretName(tt.serverSecret, tt.srcPVCName, tt.destPVCName)
 			if secretName != tt.wantCopyName {
 				t.Errorf("cert secret name = %q, want %q", secretName, tt.wantCopyName)
+			}
+		})
+	}
+}
+
+func TestStripServerManagedPVCAnnotations(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		want        map[string]string
+	}{
+		{
+			name:        "nil annotations",
+			annotations: nil,
+			want:        nil,
+		},
+		{
+			name:        "empty annotations",
+			annotations: map[string]string{},
+			want:        nil,
+		},
+		{
+			name: "only user annotations — all preserved",
+			annotations: map[string]string{
+				"backup.company.com/schedule":  "daily",
+				"backup.company.com/retention": "30d",
+				"storage.company.com/tier":     "premium",
+			},
+			want: map[string]string{
+				"backup.company.com/schedule":  "daily",
+				"backup.company.com/retention": "30d",
+				"storage.company.com/tier":     "premium",
+			},
+		},
+		{
+			name: "only server-managed annotations — all stripped",
+			annotations: map[string]string{
+				"pv.kubernetes.io/bind-completed":                   "yes",
+				"volume.kubernetes.io/storage-provisioner":          "ebs.csi.aws.com",
+				"volume.beta.kubernetes.io/storage-provisioner":     "kubernetes.io/gce-pd",
+				"kubectl.kubernetes.io/last-applied-configuration":  "{}",
+			},
+			want: nil,
+		},
+		{
+			name: "mixed — user preserved, server stripped",
+			annotations: map[string]string{
+				"backup.company.com/schedule":              "daily",
+				"pv.kubernetes.io/bind-completed":          "yes",
+				"volume.kubernetes.io/storage-provisioner": "ebs.csi.aws.com",
+				"app.kubernetes.io/managed-by":             "helm",
+			},
+			want: map[string]string{
+				"backup.company.com/schedule":  "daily",
+				"app.kubernetes.io/managed-by": "helm",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripServerManagedPVCAnnotations(tt.annotations)
+			if tt.want == nil && got != nil {
+				t.Errorf("want nil, got %v", got)
+				return
+			}
+			if tt.want != nil && got == nil {
+				t.Errorf("want %v, got nil", tt.want)
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("length mismatch: got %v, want %v", got, tt.want)
+				return
+			}
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("key %q: got %q, want %q", k, got[k], v)
+				}
 			}
 		})
 	}

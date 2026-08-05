@@ -1,0 +1,49 @@
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints: null
+kind: EndpointSlice
+metadata:
+  annotations:
+    endpoints.kubernetes.io/last-change-trigger-time: "2026-07-29T11:57:44Z"
+  creationTimestamp: "2026-07-29T11:56:57Z"
+  generateName: redis-
+  generation: 4
+  labels:
+    endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+    kubernetes.io/service-name: redis
+    name: redis
+  managedFields:
+  - apiVersion: discovery.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:addressType: {}
+      f:endpoints: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:endpoints.kubernetes.io/last-change-trigger-time: {}
+        f:generateName: {}
+        f:labels:
+          .: {}
+          f:endpointslice.kubernetes.io/managed-by: {}
+          f:kubernetes.io/service-name: {}
+          f:name: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"600b5f3e-a866-4acf-8bf2-256d80a4b080"}: {}
+      f:ports: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-07-29T11:57:44Z"
+  name: redis-r8vds
+  namespace: redis
+  ownerReferences:
+  - apiVersion: v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Service
+    name: redis
+    uid: 600b5f3e-a866-4acf-8bf2-256d80a4b080
+  resourceVersion: "134045"
+  uid: 965d04da-5f5d-4287-b5f9-ba10e4d84c4b
+ports: null
