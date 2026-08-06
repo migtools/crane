@@ -81,7 +81,7 @@ func (c *ClusterScopeHandler) filterRbacResources(resources []*groupResource, lo
 		for kind, count := range acceptedCounts {
 			parts = append(parts, fmt.Sprintf("%d %s", count, kind))
 		}
-		log.Infof("Cluster-scoped resources collected for _cluster/ directory: %s",
+		log.Infof("Cluster-scoped resources exported to _cluster/ directory: %s",
 			strings.Join(parts, ", "))
 	} else {
 		log.Info("No matching cluster-scoped resources found; _cluster/ directory will be empty")
