@@ -63,6 +63,14 @@ crane transfer-pvc --pvc-name=source-pvc:destination-pvc \
   --source-context=source --destination-context=destination --endpoint=route
 ```
 
+Transfer data within the same cluster to a new PVC with a different StorageClass (e.g., migrating from `standard` to `gp3`):
+
+```bash
+crane transfer-pvc --source-context=cluster-a --destination-context=cluster-a \
+  --pvc-name="mysql-data:mysql-data-new" --pvc-namespace=myapp \
+  --dest-storage-class=gp3 --endpoint=route
+```
+
 ### Endpoint Options
 
 Endpoint enables a connection between the source and destination cluster for data transfer. It is created in the destination cluster. The destination cluster must support the kind of endpoint used.
