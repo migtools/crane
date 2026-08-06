@@ -12,6 +12,8 @@ crane transfer-pvc [flags]
 
 The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its volume data to a destination cluster. It establishes a connection to the destination cluster by creating a public endpoint of the user's choice in the destination namespace. It then creates a PVC and an rsync daemon Pod in the destination namespace to receive data from the source PVC. Finally, it creates an rsync client Pod in the source namespace which transfers data to the rsync daemon using the endpoint. The connection is encrypted using self-signed certificates created automatically at the time of transfer.
 
+`transfer-pvc` supports transfers between different clusters or within the same cluster. When performing transfers within the same cluster and namespace, the source and destination PVC names must be different.
+
 ## Example
 
 ```bash
@@ -61,6 +63,14 @@ Transfer a PVC `source-pvc` in namespace `source-ns` to a destination PVC `desti
 crane transfer-pvc --pvc-name=source-pvc:destination-pvc \
   --pvc-namespace=source-ns:destination-ns \
   --source-context=source --destination-context=destination --endpoint=route
+```
+
+Transfer a PVC to a new name within the same cluster and namespace (useful for storage class conversion):
+
+```bash
+crane transfer-pvc --source-context=mycluster --destination-context=mycluster \
+  --pvc-name=mysql-data:mysql-data-new --pvc-namespace=myapp \
+  --dest-storage-class=gp3 --endpoint=route
 ```
 
 ### Endpoint Options
