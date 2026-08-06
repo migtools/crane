@@ -3,22 +3,22 @@
   "created": "2026-08-03T13:08:46.169594",
   "folders": {
     "_root": {
-      "built": "2026-08-04T13:52:57.759778",
+      "built": "2026-08-06T09:58:42.206472",
       "doc_hashes": {
-        "kustomize-multistage.md": "8c415d04eaa67e60fde0f58bc7adddfc64181c31a9dec7ecb9cf46e86d91d581",
-        "CRANE_COMPATIBILITY_MATRIX.md": "3344f95d520f5a237f5d196b8d2d41d8314e8b9a362ce9c49d61ee36f5e7bd2b",
-        "pre-apply-validation-guide.md": "4d9ece1a2c840cb94051b519b3cbc09efc0e0b0d5937049f0800a1000737573b",
+        "kustomize-multistage.md": "b262a8d29d4e7b32592db7173b34154dd015ebe5df1ba9fcd990e81e9b446126",
+        "CRANE_COMPATIBILITY_MATRIX.md": "8d144df948489144566e02adde9c0416c258420c15fc85dfc494ee1e08b3f14b",
+        "pre-apply-validation-guide.md": "4bdbc5003dc503b0d7546ad82c66126e051ca975623247f2cf5e8da48804008d",
         "plugins.md": "8a21b9e8e67fa89adb5b0c2ba5af063f0e6fc142e7c7c4c8adf21a54c8aa33c3",
         "transform.md": "06f12a97b8e110074cb98c3578d7a17dca2574c2e1152fa7a527ff45d668cc62",
         "resource-compatibility.md": "f0a3d255b125113b0166e74e3f66f48246bab81b356f55f74557cc25bdc16210",
         "multistage-pipeline.md": "1472830c2360560be41cedbb510586c1a91eb2558e8e39d77a2a9304236263f7",
-        "stateless-migration-quickstart.md": "7e37d54bfaad9cd08fa908cfc461a5d6a813fefd01d5adec27295f0c5347e9b8",
+        "stateless-migration-quickstart.md": "a7bc2d19bb4acbaf16771bd213d4078bcef66288152075e5e107587888d64157",
         "installation.md": "61f403b6eeb95a2bd92bf97478ce04f3dffd4dd491397bad10516404a0846e1c",
         "README.md": "f58e2efde76bbbe8e3e4002f72b125199940037b84d2d72e39a4b5ae5ec277e0"
       }
     },
     "commands": {
-      "built": "2026-08-04T13:53:02.254731",
+      "built": "2026-08-06T09:58:45.478067",
       "doc_hashes": {
         "commands/export.md": "18d5f3a7088cb799a8d88d34c033fd44221128ff1a72d9b7cadffc211493f3d4",
         "commands/transform.md": "2f067699ade74ba84c49fa40f12fe7253f30978a503cddb3186b7ae65d51d80e",
@@ -28,7 +28,7 @@
       }
     },
     "development": {
-      "built": "2026-08-04T13:53:05.284684",
+      "built": "2026-08-06T09:58:49.012222",
       "doc_hashes": {
         "development/setup.md": "c2064cf8412e64c2d259a121c1717fe305d9e3c6782413640a1041ed5c8e1ea4",
         "development/plugin-development.md": "18be806fa9771eda99dfd7af775ac728f2e86b647ea9280f7b4f7271b29b220e",
@@ -38,5 +38,5 @@
       }
     }
   },
-  "updated": "2026-08-04T13:53:05.285283"
+  "updated": "2026-08-06T09:58:49.012677"
 }
