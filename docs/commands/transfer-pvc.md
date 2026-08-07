@@ -10,7 +10,7 @@ crane transfer-pvc [flags]
 
 ## Description
 
-The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its volume data to a destination cluster. It establishes a connection to the destination cluster by creating a public endpoint of the user's choice in the destination namespace. It then creates a PVC and an rsync daemon Pod in the destination namespace to receive data from the source PVC. Finally, it creates an rsync client Pod in the source namespace which transfers data to the rsync daemon using the endpoint. The connection is encrypted using self-signed certificates created automatically at the time of transfer.
+The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its volume data to a destination cluster. It establishes a connection to the destination cluster by creating a public endpoint of the user's choice in the destination namespace. It then creates a PVC and an rsync daemon Pod in the destination namespace to receive data from the source PVC. Finally, it creates an rsync client Pod in the source namespace which transfers data to the rsync daemon using the endpoint. The connection is encrypted using self-signed certificates created automatically at the time of transfer. During the transfer, user-defined annotations are preserved on the destination PVC, while Kubernetes server-managed annotations (such as those related to storage provisioners or binding status) are automatically stripped to ensure compatibility with the destination environment.
 
 `transfer-pvc` supports transfers between different clusters or within the same cluster. When performing transfers within the same cluster and namespace, the source and destination PVC names must be different.
 
