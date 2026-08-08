@@ -1,0 +1,223 @@
+name: E2E Tests PR Tester (Indirect Migration)
+
+on:
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: e2e-indirect-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    permissions:
+      contents: read
+    runs-on: ubuntu-22.04
+    outputs:
+      run_tests: ${{ steps.changed_tests.outputs.run_tests }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect touched e2e test files
+        id: changed_tests
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          ALL_CHANGED="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA")"
+
+          has_outside_e2e=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              e2e-tests/*|.github/*|docs/*|README.md) ;;
+              *) has_outside_e2e=true; break ;;
+            esac
+          done <<EOF
+          $ALL_CHANGED
+          EOF
+
+          if [ "$has_outside_e2e" = "true" ]; then
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED_E2E_FILES="$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA" -- e2e-tests/)"
+
+          if [ -z "$CHANGED_E2E_FILES" ]; then
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          has_impactful=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              e2e-tests/tests/*_test.go|e2e-tests/framework/*|e2e-tests/config/*|e2e-tests/utils/*|e2e-tests/testdata/*)
+                has_impactful=true; break ;;
+            esac
+          done <<EOF
+          $CHANGED_E2E_FILES
+          EOF
+
+          echo "run_tests=$has_impactful" >> "$GITHUB_OUTPUT"
+
+  run-indirect-e2e-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_tests == 'true'
+    permissions:
+      contents: read
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      CRANE_BIN: ${{ github.workspace }}/crane
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup minikube clusters
+        uses: ./.github/actions/setup-minikube-clusters
+        with:
+          cpus: max
+          memory: "8192"
+          create_users: "true"
+          src_user: "dev"
+          tgt_user: "dev"
+
+      - name: Deploy MinIO on source cluster
+        run: |
+          kubectl --context src create namespace minio
+          cat <<'EOF' | kubectl --context src apply -f -
+          apiVersion: v1
+          kind: PersistentVolumeClaim
+          metadata:
+            name: minio-data
+            namespace: minio
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 2Gi
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: minio
+            namespace: minio
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: minio
+            template:
+              metadata:
+                labels:
+                  app: minio
+              spec:
+                containers:
+                - name: minio
+                  image: quay.io/minio/minio:latest
+                  command: ["minio", "server", "/data"]
+                  ports:
+                  - containerPort: 9000
+                  env:
+                  - name: MINIO_ROOT_USER
+                    value: minioadmin
+                  - name: MINIO_ROOT_PASSWORD
+                    value: minioadmin
+                  volumeMounts:
+                  - name: data
+                    mountPath: /data
+                volumes:
+                - name: data
+                  persistentVolumeClaim:
+                    claimName: minio-data
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: minio
+            namespace: minio
+          spec:
+            type: NodePort
+            selector:
+              app: minio
+            ports:
+            - port: 9000
+              targetPort: 9000
+          EOF
+          kubectl --context src wait --for=condition=Available deployment/minio -n minio --timeout=120s
+
+      - name: Create MinIO bucket
+        run: |
+          MINIO_IP=$(minikube ip -p src)
+          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
+          kubectl --context src run minio-setup --restart=Never \
+            --image=quay.io/minio/mc:latest \
+            --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/crane-indirect-e2e --ignore-existing"
+          sleep 15
+          kubectl --context src logs minio-setup
+          kubectl --context src delete pod minio-setup --ignore-not-found
+
+      - name: Generate rclone config
+        run: |
+          MINIO_IP=$(minikube ip -p src)
+          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
+          cat > /tmp/rclone-ci.conf <<EOF
+          [remote]
+          type = s3
+          provider = Minio
+          access_key_id = minioadmin
+          secret_access_key = minioadmin
+          endpoint = http://${MINIO_IP}:${MINIO_PORT}
+          EOF
+          echo "MinIO endpoint: http://${MINIO_IP}:${MINIO_PORT}"
+          cat /tmp/rclone-ci.conf
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Clone k8s-apps-deployer
+        run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+
+      - name: Create venv and install package
+        run: |
+          cd k8s-apps-deployer
+          python3 -m venv venv
+          echo "$PWD/venv/bin" >> $GITHUB_PATH
+          ./venv/bin/pip install --upgrade pip
+          ./venv/bin/pip install -e .
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Ginkgo CLI
+        run: |
+          GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
+          go install "github.com/onsi/ginkgo/v2/ginkgo@$GINKGO_VERSION"
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+          ginkgo version
+
+      - name: Build crane CLI
+        run: go build -o "$CRANE_BIN" .
+
+      - name: Run PVC transfer e2e tests (indirect mode)
+        run: |
+          ginkgo run -v --label-filter="pvc-transfer" -r \
+            e2e-tests/tests/tier0 -- \
+            --k8sdeploy-bin=k8sdeploy \
+            --crane-bin=$CRANE_BIN \
+            --source-context=src \
+            --target-context=tgt \
+            --source-nonadmin-context=src-dev \
+            --target-nonadmin-context=tgt-dev \
+            --verbose-logs \
+            --cloud-storage="remote:crane-indirect-e2e" \
+            --rclone-config-file=/tmp/rclone-ci.conf
