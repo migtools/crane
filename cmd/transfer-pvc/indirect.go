@@ -11,6 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/konveyor/crane-lib/state_transfer/transfer/indirect"
@@ -33,6 +35,15 @@ func (t *TransferPVCCommand) runIndirect() error {
 	destClient, err := t.getClientFromContext(t.Flags.DestinationContext)
 	if err != nil {
 		return fmt.Errorf("unable to get destination client: %w", err)
+	}
+
+	srcCfg, err := t.getRestConfigFromContext(t.Flags.SourceContext)
+	if err != nil {
+		return fmt.Errorf("unable to get source rest config: %w", err)
+	}
+	destCfg, err := t.getRestConfigFromContext(t.Flags.DestinationContext)
+	if err != nil {
+		return fmt.Errorf("unable to get destination rest config: %w", err)
 	}
 
 	// Read source PVC
@@ -108,7 +119,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 	if err != nil {
 		return fmt.Errorf("upload failed: %w", err)
 	}
-	if err := waitForPodComplete(srcClient, uploadPod.Name, uploadPod.Namespace); err != nil {
+	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone"); err != nil {
 		return fmt.Errorf("upload pod failed: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "[3/6] Uploading data to cloud storage ... ok\n")
@@ -119,7 +130,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
-	if err := waitForPodComplete(destClient, downloadPod.Name, downloadPod.Namespace); err != nil {
+	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone"); err != nil {
 		return fmt.Errorf("download pod failed: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ... ok\n")
@@ -149,21 +160,59 @@ func (t *TransferPVCCommand) runIndirect() error {
 	return nil
 }
 
-func waitForPodComplete(c client.Client, podName, namespace string) error {
-	return wait.PollUntil(time.Second*5, func() (done bool, err error) {
+func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string) error {
+	clientset, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	// Wait for pod to be running
+	if err := wait.PollUntil(time.Second*3, func() (done bool, err error) {
 		pod := &corev1.Pod{}
 		if err := c.Get(context.TODO(), client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
 			return false, nil
 		}
 		switch pod.Status.Phase {
-		case corev1.PodSucceeded:
+		case corev1.PodRunning, corev1.PodSucceeded, corev1.PodFailed:
 			return true, nil
-		case corev1.PodFailed:
-			return true, fmt.Errorf("pod %s/%s failed", namespace, podName)
 		default:
 			return false, nil
 		}
-	}, make(<-chan struct{}))
+	}, make(<-chan struct{})); err != nil {
+		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
+	}
+
+	// Follow logs
+	req := clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
+		Container: containerName,
+		Follow:    true,
+	})
+	stream, err := req.Stream(context.TODO())
+	if err != nil {
+		return fmt.Errorf("failed to stream logs for pod %s/%s: %w", namespace, podName, err)
+	}
+	defer stream.Close()
+
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := stream.Read(buf)
+		if n > 0 {
+			os.Stderr.Write(buf[:n])
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	// Check final pod status
+	pod := &corev1.Pod{}
+	if err := c.Get(context.TODO(), client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+		return fmt.Errorf("failed to get pod status: %w", err)
+	}
+	if pod.Status.Phase == corev1.PodFailed {
+		return fmt.Errorf("pod %s/%s failed", namespace, podName)
+	}
+	return nil
 }
 
 func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, configFilePath string) (string, error) {
