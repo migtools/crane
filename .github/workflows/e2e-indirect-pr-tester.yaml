@@ -208,10 +208,10 @@ jobs:
       - name: Build crane CLI
         run: go build -o "$CRANE_BIN" .
 
-      - name: Run PVC transfer e2e tests (indirect mode)
+      - name: Run all e2e tests (indirect transfer mode)
         run: |
-          ginkgo run -v --label-filter="pvc-transfer" -r \
-            e2e-tests/tests/tier0 -- \
+          ginkgo run -v -r \
+            e2e-tests/tests -- \
             --k8sdeploy-bin=k8sdeploy \
             --crane-bin=$CRANE_BIN \
             --source-context=src \
