@@ -92,8 +92,8 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		for _, keysAndString := range keysAndStrings {
 			keyString := strings.Split(keysAndString, "=")
 			if len(keyString) != 2 {
-				log.Errorf("Invalid --as-extras format: %q", o.asExtras)
-				return fmt.Errorf("extra options (%v) formatted incorrectly", o.asExtras)
+				log.Errorf("Invalid --as-extras format at entry %d", len(o.extras)+1)
+				return fmt.Errorf("extra options formatted incorrectly")
 			}
 			o.extras[keyString[0]] = strings.Split(keyString[1], ",")
 		}
