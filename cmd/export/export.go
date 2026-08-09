@@ -53,7 +53,10 @@ type ExportOptions struct {
 // Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
-	log := o.globalFlags.GetLogger()
+	log := logrus.StandardLogger()
+	if o.globalFlags != nil {
+		log = o.globalFlags.GetLogger()
+	}
 
 	if c != nil {
 		kubeconfigFlag := c.Flags().Lookup("kubeconfig")
@@ -105,7 +108,10 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
-	log := o.globalFlags.GetLogger()
+	log := logrus.StandardLogger()
+	if o.globalFlags != nil {
+		log = o.globalFlags.GetLogger()
+	}
 
 	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 		for _, f := range []struct {

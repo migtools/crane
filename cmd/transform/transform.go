@@ -53,7 +53,10 @@ type Flags struct {
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
-	log := o.globalFlags.GetLogger()
+	log := logrus.StandardLogger()
+	if o.globalFlags != nil {
+		log = o.globalFlags.GetLogger()
+	}
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
 	log.Debugf("Transform stage arguments captured: %v", args)
@@ -61,7 +64,10 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 }
 
 func (o *Options) Validate() error {
-	log := o.globalFlags.GetLogger()
+	log := logrus.StandardLogger()
+	if o.globalFlags != nil {
+		log = o.globalFlags.GetLogger()
+	}
 
 	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
