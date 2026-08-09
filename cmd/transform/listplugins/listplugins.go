@@ -87,6 +87,7 @@ func GetPluginNames(pluginDir string, skipPlugins []string, log *logrus.Logger) 
 	for i, p := range plugins {
 		pluginNames[i] = p.Metadata().Name
 	}
+	log.Debugf("Found %d plugin(s) in %q", len(pluginNames), pluginDir)
 
 	return pluginNames, nil
 }
@@ -95,6 +96,7 @@ func GetPluginNames(pluginDir string, skipPlugins []string, log *logrus.Logger) 
 func getFilteredPlugins(pluginDir string, skipPlugins []string, log *logrus.Logger) ([]cranelib.Plugin, error) {
 	absPluginDir, err := filepath.Abs(pluginDir)
 	if err != nil {
+		log.Errorf("Failed to resolve plugin directory path %q: %v", pluginDir, err)
 		return nil, err
 	}
 

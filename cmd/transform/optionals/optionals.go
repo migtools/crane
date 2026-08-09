@@ -76,14 +76,17 @@ func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (o *Options) run() error {
+	log := o.globalFlags.GetLogger()
+
 	pluginDir, err := filepath.Abs(o.PluginDir)
 	if err != nil {
+		log.Errorf("Failed to resolve plugin directory path %q: %v", o.PluginDir, err)
 		return err
 	}
-	log := o.globalFlags.GetLogger()
 
 	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
 	if err != nil {
+		log.Errorf("Failed to load plugins from %q: %v", pluginDir, err)
 		return err
 	}
 

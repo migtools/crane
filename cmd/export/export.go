@@ -53,6 +53,7 @@ type ExportOptions struct {
 // Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
+	log := o.globalFlags.GetLogger()
 
 	if c != nil {
 		kubeconfigFlag := c.Flags().Lookup("kubeconfig")
@@ -64,11 +65,13 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 	o.rawConfig, err = o.configFlags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {
+		log.Errorf("Failed to load kubeconfig: %v", err)
 		return err
 	}
 
 	o.userSpecifiedNamespace, _, err = o.configFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
+		log.Errorf("Failed to resolve namespace from kubeconfig: %v", err)
 		return err
 	}
 
@@ -77,6 +80,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	if c != nil {
 		if f := c.Flags().Lookup("namespace"); f != nil && f.Changed {
 			if o.configFlags.Namespace != nil && strings.TrimSpace(*o.configFlags.Namespace) == "" {
+				log.Errorf("Namespace flag was set to empty string")
 				return fmt.Errorf("namespace cannot be empty; omit -n/--namespace to use your kubeconfig context default")
 			}
 		}
@@ -88,17 +92,21 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		for _, keysAndString := range keysAndStrings {
 			keyString := strings.Split(keysAndString, "=")
 			if len(keyString) != 2 {
+				log.Errorf("Invalid --as-extras format: %q", o.asExtras)
 				return fmt.Errorf("extra options (%v) formatted incorrectly", o.asExtras)
 			}
 			o.extras[keyString[0]] = strings.Split(keyString[1], ",")
 		}
 	}
 
+	log.Debugf("Export configuration loaded successfully")
 	return nil
 }
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
+	log := o.globalFlags.GetLogger()
+
 	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 		for _, f := range []struct {
 			flag string
@@ -110,15 +118,18 @@ func (o *ExportOptions) Validate() error {
 			{"--token", o.configFlags.BearerToken},
 		} {
 			if f.val != nil && *f.val != "" {
+				log.Errorf("Cannot use --context with %s", f.flag)
 				return fmt.Errorf("cannot use --context with %s; it overrides the value defined in the context", f.flag)
 			}
 		}
 	}
 	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
+		log.Errorf("--as-extras requires specifying a user or group to impersonate")
 		return fmt.Errorf("extras requires specifying a user or group to impersonate")
 	}
 	if o.labelSelector != "" {
 		if _, err := labels.Parse(o.labelSelector); err != nil {
+			log.Errorf("Invalid --label-selector %q: %v", o.labelSelector, err)
 			return fmt.Errorf("invalid --label-selector: %w", err)
 		}
 	}
@@ -129,10 +140,12 @@ func (o *ExportOptions) Validate() error {
 		}
 		for _, g := range o.crdSkipGroups {
 			if includeSet[g] {
+				log.Errorf("CRD group %q appears in both --crd-skip-group and --crd-include-group", g)
 				return fmt.Errorf("CRD group %q appears in both --crd-skip-group and --crd-include-group", g)
 			}
 		}
 	}
+	log.Debugf("Export flags validated successfully")
 	return nil
 }
 
