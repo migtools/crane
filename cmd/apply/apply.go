@@ -48,7 +48,7 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 	}
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
-	log.Debugf("Apply stage arguments captured: %v", args)
+	log.Debugf("Apply stage arguments captured: %d stage(s)", len(args))
 
 	return nil
 }
@@ -61,14 +61,14 @@ func (o *Options) Validate() error {
 	info, err := os.Stat(o.TransformDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Errorf("Transform directory %q does not exist", o.TransformDir)
+			log.Debugf("Transform directory %q does not exist", o.TransformDir)
 			return fmt.Errorf("transform-dir %q does not exist", o.TransformDir)
 		}
-		log.Errorf("Transform directory %q is not accessible: %v", o.TransformDir, err)
+		log.Debugf("Transform directory %q is not accessible: %v", o.TransformDir, err)
 		return fmt.Errorf("transform-dir %q is not accessible: %v", o.TransformDir, err)
 	}
 	if !info.IsDir() {
-		log.Errorf("Transform path %q is not a directory", o.TransformDir)
+		log.Debugf("Transform path %q is not a directory", o.TransformDir)
 		return fmt.Errorf("transform-dir %q is not a directory", o.TransformDir)
 	}
 	log.Debugf("Transform directory validated successfully: %q", o.TransformDir)
@@ -148,28 +148,28 @@ func (o *Options) run() error {
 
 	transformDir, err := filepath.Abs(o.TransformDir)
 	if err != nil {
-		log.Errorf("Failed to resolve transform directory path %q: %v", o.TransformDir, err)
-		return err
+		log.Debugf("Failed to resolve transform directory path %q: %v", o.TransformDir, err)
+		return fmt.Errorf("failed to resolve transform directory path %q: %w", o.TransformDir, err)
 	}
 
 	outputDir, err := filepath.Abs(o.OutputDir)
 	if err != nil {
-		log.Errorf("Failed to resolve output directory path %q: %v", o.OutputDir, err)
-		return err
+		log.Debugf("Failed to resolve output directory path %q: %v", o.OutputDir, err)
+		return fmt.Errorf("failed to resolve output directory path %q: %w", o.OutputDir, err)
 	}
 
 	if _, err := os.Stat(outputDir); err == nil {
 		if !o.Overwrite {
-			log.Errorf("Output directory %q already exists; use --overwrite to replace it", outputDir)
+			log.Debugf("Output directory %q already exists; use --overwrite to replace it", outputDir)
 			return fmt.Errorf("output directory %q already exists; use --overwrite to replace it", outputDir)
 		}
 		if err := os.RemoveAll(outputDir); err != nil {
-			log.Errorf("Failed to clear output directory %q: %v", outputDir, err)
+			log.Debugf("Failed to clear output directory %q: %v", outputDir, err)
 			return fmt.Errorf("failed to clear output directory: %w", err)
 		}
 	}
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
-		log.Errorf("Failed to create output directory %q: %v", outputDir, err)
+		log.Debugf("Failed to create output directory %q: %v", outputDir, err)
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 	log.Debugf("Output directory ready: %q", outputDir)
@@ -177,7 +177,7 @@ func (o *Options) run() error {
 	// Parse and validate kustomize arguments
 	kustomizeArgs, err := kustomize.ParseAndValidateArgs(o.KustomizeArgs)
 	if err != nil {
-		log.Errorf("Invalid kustomize-args %q: %v", o.KustomizeArgs, err)
+		log.Debugf("Invalid kustomize-args: %v", err)
 		return fmt.Errorf("invalid kustomize-args: %w", err)
 	}
 
@@ -199,7 +199,7 @@ func (o *Options) run() error {
 		// Validate that all requested stages can be resolved
 		existingStages, err := internalTransform.DiscoverStages(transformDir)
 		if err != nil {
-			log.Errorf("Failed to discover stages in %q: %v", transformDir, err)
+			log.Debugf("Failed to discover stages in %q: %v", transformDir, err)
 			return fmt.Errorf("failed to discover stages: %w", err)
 		}
 		log.Debugf("Discovered %d existing stage(s)", len(existingStages))
@@ -231,7 +231,7 @@ func (o *Options) run() error {
 		}
 
 		if len(unresolved) > 0 {
-			log.Errorf("Requested stage(s) not found: %v. Available stages: %v", unresolved, getStageNames(existingStages))
+			log.Debugf("Requested stage(s) not found: %v. Available stages: %v", unresolved, getStageNames(existingStages))
 			return fmt.Errorf("requested stage(s) not found: %v. Available stages: %v", unresolved, getStageNames(existingStages))
 		}
 
