@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sirupsen/logrus"
 	"github.com/konveyor/crane/internal/apply"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/kustomize"
@@ -41,22 +42,36 @@ type Flags struct {
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
+	log := logrus.StandardLogger()
+	if o.globalFlags != nil {
+		log = o.globalFlags.GetLogger()
+	}
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
+	log.Debugf("Apply stage arguments captured: %v", args)
+
 	return nil
 }
 
 func (o *Options) Validate() error {
+	log := logrus.StandardLogger()
+	if o.globalFlags != nil {
+		log = o.globalFlags.GetLogger()
+	}
 	info, err := os.Stat(o.TransformDir)
 	if err != nil {
 		if os.IsNotExist(err) {
+			log.Errorf("Transform directory %q does not exist", o.TransformDir)
 			return fmt.Errorf("transform-dir %q does not exist", o.TransformDir)
 		}
+		log.Errorf("Transform directory %q is not accessible: %v", o.TransformDir, err)
 		return fmt.Errorf("transform-dir %q is not accessible: %v", o.TransformDir, err)
 	}
 	if !info.IsDir() {
+		log.Errorf("Transform path %q is not a directory", o.TransformDir)
 		return fmt.Errorf("transform-dir %q is not a directory", o.TransformDir)
 	}
+	log.Debugf("Transform directory validated successfully: %q", o.TransformDir)
 	return nil
 }
 
@@ -129,32 +144,40 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 
 func (o *Options) run() error {
 	log := o.globalFlags.GetLogger()
+	log.Infof("Starting apply")
 
 	transformDir, err := filepath.Abs(o.TransformDir)
 	if err != nil {
+		log.Errorf("Failed to resolve transform directory path %q: %v", o.TransformDir, err)
 		return err
 	}
 
 	outputDir, err := filepath.Abs(o.OutputDir)
 	if err != nil {
+		log.Errorf("Failed to resolve output directory path %q: %v", o.OutputDir, err)
 		return err
 	}
 
 	if _, err := os.Stat(outputDir); err == nil {
 		if !o.Overwrite {
+			log.Errorf("Output directory %q already exists; use --overwrite to replace it", outputDir)
 			return fmt.Errorf("output directory %q already exists; use --overwrite to replace it", outputDir)
 		}
 		if err := os.RemoveAll(outputDir); err != nil {
+			log.Errorf("Failed to clear output directory %q: %v", outputDir, err)
 			return fmt.Errorf("failed to clear output directory: %w", err)
 		}
 	}
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
+		log.Errorf("Failed to create output directory %q: %v", outputDir, err)
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
+	log.Debugf("Output directory ready: %q", outputDir)
 
 	// Parse and validate kustomize arguments
 	kustomizeArgs, err := kustomize.ParseAndValidateArgs(o.KustomizeArgs)
 	if err != nil {
+		log.Errorf("Invalid kustomize-args %q: %v", o.KustomizeArgs, err)
 		return fmt.Errorf("invalid kustomize-args: %w", err)
 	}
 
@@ -176,8 +199,10 @@ func (o *Options) run() error {
 		// Validate that all requested stages can be resolved
 		existingStages, err := internalTransform.DiscoverStages(transformDir)
 		if err != nil {
+			log.Errorf("Failed to discover stages in %q: %v", transformDir, err)
 			return fmt.Errorf("failed to discover stages: %w", err)
 		}
+		log.Debugf("Discovered %d existing stage(s)", len(existingStages))
 
 		// Track which requested stages were found
 		resolvedStages := make(map[string]bool)
@@ -186,6 +211,7 @@ func (o *Options) run() error {
 			for _, stage := range existingStages {
 				// Match by directory name OR plugin name
 				if stage.DirName == requested || stage.PluginName == requested {
+					log.Debugf("Resolved stage %q → %q", requested, stage.DirName)
 					found = true
 					resolvedStages[requested] = true
 					break
@@ -205,8 +231,8 @@ func (o *Options) run() error {
 		}
 
 		if len(unresolved) > 0 {
-			return fmt.Errorf("requested stage(s) not found: %v. Available stages: %v",
-				unresolved, getStageNames(existingStages))
+			log.Errorf("Requested stage(s) not found: %v. Available stages: %v", unresolved, getStageNames(existingStages))
+			return fmt.Errorf("requested stage(s) not found: %v. Available stages: %v", unresolved, getStageNames(existingStages))
 		}
 
 		selector = internalTransform.StageSelector{
@@ -220,5 +246,10 @@ func (o *Options) run() error {
 		// Empty selector means apply all discovered stages
 	}
 
-	return applier.ApplyMultiStage(selector)
+	if runErr := applier.ApplyMultiStage(selector); runErr != nil {
+		log.Errorf("Apply failed: %v", runErr)
+		return runErr
+	}
+	log.Infof("Apply complete")
+	return nil
 }
