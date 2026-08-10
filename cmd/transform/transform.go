@@ -71,21 +71,21 @@ func (o *Options) Validate() error {
 
 	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
-		log.Errorf("Failed to resolve export-dir %q: %v", o.ExportDir, err)
+		log.Debugf("Failed to resolve export-dir %q: %v", o.ExportDir, err)
 		return fmt.Errorf("resolving export-dir %q: %w", o.ExportDir, err)
 	}
 	o.ExportDir = exportDir
 	info, err := os.Stat(o.ExportDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Errorf("Export directory %q does not exist", o.ExportDir)
+			log.Debugf("Export directory %q does not exist", o.ExportDir)
 			return fmt.Errorf("export-dir %q does not exist", o.ExportDir)
 		}
-		log.Errorf("Export directory %q is not accessible: %v", o.ExportDir, err)
+		log.Debugf("Export directory %q is not accessible: %v", o.ExportDir, err)
 		return fmt.Errorf("export-dir %q is not accessible: %v", o.ExportDir, err)
 	}
 	if !info.IsDir() {
-		log.Errorf("Export path %q is not a directory", o.ExportDir)
+		log.Debugf("Export path %q is not a directory", o.ExportDir)
 		return fmt.Errorf("export-dir %q is not a directory", o.ExportDir)
 	}
 	log.Debugf("Export directory validated successfully: %q", o.ExportDir)
@@ -210,14 +210,14 @@ func (o *Options) run() error {
 	}
 
 	if o.InstructionsFile != "" && len(o.RequestedStages) > 0 { // instructions file and positional args are mutually exclusive
-		log.Errorf("Cannot use --instructions-file together with positional stage arguments")
+		log.Debugf("Cannot use --instructions-file together with positional stage arguments")
 		return fmt.Errorf("use either --instructions-file or positional stage arguments, not both")
 	}
 	var instructionStages []string
 	if o.InstructionsFile != "" {
 		instructionsFilePath, err := filepath.Abs(o.InstructionsFile)
 		if err != nil {
-			log.Errorf("Failed to resolve instructions file path %q: %v", o.InstructionsFile, err)
+			log.Debugf("Failed to resolve instructions file path %q: %v", o.InstructionsFile, err)
 			return fmt.Errorf("failed to resolve instructions file path %q: %w", o.InstructionsFile, err)
 		}
 		cfg, err := internalTransform.LoadInstructions(instructionsFilePath)
@@ -241,7 +241,7 @@ func (o *Options) run() error {
 	// Parse and validate kustomize arguments
 	kustomizeArgs, err := kustomize.ParseAndValidateArgs(o.KustomizeArgs)
 	if err != nil {
-		log.Errorf("Invalid kustomize-args %q: %v", o.KustomizeArgs, err)
+		log.Debugf("Invalid kustomize-args %q: %v", o.KustomizeArgs, err)
 		return fmt.Errorf("invalid kustomize-args: %w", err)
 	}
 
@@ -272,7 +272,7 @@ func (o *Options) run() error {
 			_, err := os.Stat(stageDir)
 			stageExists := err == nil
 			if err != nil && !os.IsNotExist(err) {
-				log.Errorf("Failed to inspect stage directory %q: %v", stageDir, err)
+				log.Debugf("Failed to inspect stage directory %q: %v", stageDir, err)
 				return fmt.Errorf("failed to inspect stage directory %s: %w", stageDir, err)
 			}
 
@@ -319,7 +319,7 @@ func (o *Options) run() error {
 		// No stage parameters given - discover existing stages or create default
 		existingStages, err := internalTransform.DiscoverStages(transformDir)
 		if err != nil {
-			log.Errorf("Failed to discover stages in %q: %v", transformDir, err)
+			log.Debugf("Failed to discover stages in %q: %v", transformDir, err)
 			return fmt.Errorf("failed to discover stages: %w", err)
 		}
 
@@ -327,7 +327,7 @@ func (o *Options) run() error {
 			// No stages exist - load all available plugins and create stages for each
 			allPlugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
 			if err != nil {
-				log.Errorf("Failed to load plugins from %q: %v", pluginDir, err)
+				log.Debugf("Failed to load plugins from %q: %v", pluginDir, err)
 				return fmt.Errorf("failed to load plugins: %w", err)
 			}
 
@@ -341,7 +341,7 @@ func (o *Options) run() error {
 			// Create stages for all plugins
 			stageNames, err := o.createDefaultStagesForAllPlugins(orchestrator, transformDir, allPlugins, log)
 			if err != nil {
-				log.Errorf("Failed to create default stages: %v", err)
+				log.Debugf("Failed to create default stages: %v", err)
 				return fmt.Errorf("failed to create default stages: %w", err)
 			}
 
@@ -396,7 +396,7 @@ func (o *Options) runStageWithCleanup(orchestrator *internalTransform.Orchestrat
 func (o *Options) reconcileInstructionStages(transformDir string, desiredStages []string, log *logrus.Logger) error {
 	existingStages, err := internalTransform.DiscoverStages(transformDir)
 	if err != nil {
-		log.Errorf("Failed to discover existing stages in %q for instructions reconciliation: %v", transformDir, err)
+		log.Debugf("Failed to discover existing stages in %q for instructions reconciliation: %v", transformDir, err)
 		return fmt.Errorf("failed to discover existing stages for instructions reconciliation: %w", err)
 	}
 
@@ -419,7 +419,7 @@ func (o *Options) reconcileInstructionStages(transformDir string, desiredStages 
 	sort.Strings(extras)
 
 	if !o.Overwrite {
-		log.Errorf("Extra stage directories found that do not match --instructions-file: %s", strings.Join(extras, ", "))
+		log.Debugf("Extra stage directories found that do not match --instructions-file: %s", strings.Join(extras, ", "))
 		return fmt.Errorf(
 			"stages in transform/ do not match --instructions-file: extra stage directories: %s. Re-run with --overwrite to reconcile",
 			strings.Join(extras, ", "),
@@ -429,7 +429,7 @@ func (o *Options) reconcileInstructionStages(transformDir string, desiredStages 
 	for _, extra := range extras {
 		stagePath := filepath.Join(transformDir, extra) // transform/<stageName>
 		if err := os.RemoveAll(stagePath); err != nil {
-			log.Errorf("Failed to delete extra stage directory %q: %v", stagePath, err)
+			log.Debugf("Failed to delete extra stage directory %q: %v", stagePath, err)
 			return fmt.Errorf("failed to delete extra stage directory %q at path %q: %w", extra, stagePath, err)
 		}
 		log.Infof("Deleted stage directory not present in instructions file: %s", stagePath)
@@ -443,7 +443,7 @@ func (o *Options) ensurePreviousStagesRun(orchestrator *internalTransform.Orches
 	// Discover all existing stages
 	existingStages, err := internalTransform.DiscoverStages(transformDir)
 	if err != nil {
-		log.Errorf("Failed to discover existing stages in %q: %v", transformDir, err)
+		log.Debugf("Failed to discover existing stages in %q: %v", transformDir, err)
 		return fmt.Errorf("failed to discover existing stages: %w", err)
 	}
 
@@ -481,7 +481,7 @@ func (o *Options) ensureStagesHaveOutput(orchestrator *internalTransform.Orchest
 			// All stages respect --overwrite flag when rewriting existing content
 			selector := internalTransform.StageSelector{Stages: []string{stage.DirName}}
 			if err := orchestrator.RunMultiStage(selector); err != nil {
-				log.Errorf("Failed to run stage %q: %v", stage.DirName, err)
+				log.Debugf("Failed to run stage %q: %v", stage.DirName, err)
 				return fmt.Errorf("failed to run stage %s: %w", stage.DirName, err)
 			}
 
