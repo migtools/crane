@@ -332,7 +332,7 @@ func (o *Options) run() error {
 			}
 
 			if len(allPlugins) == 0 {
-				log.Errorf("No plugins found in plugin directory %q", pluginDir)
+				log.Debugf("No plugins found in plugin directory %q", pluginDir)
 				return fmt.Errorf("no plugins found in plugin directories")
 			}
 
