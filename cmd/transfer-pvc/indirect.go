@@ -113,6 +113,17 @@ func (t *TransferPVCCommand) runIndirect() error {
 		DownloadSecurityContext: *downloadSecCtx,
 	})
 
+	defer func() {
+		fmt.Fprintf(os.Stderr, "[6/6] Cleaning up transfer pods ...\n")
+		if err := transfer.Cleanup(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name); err != nil {
+			log.Printf("WARN: source cleanup: %v", err)
+		}
+		if err := transfer.Cleanup(context.TODO(), destClient, destPVC.Namespace, destPVC.Name); err != nil {
+			log.Printf("WARN: destination cleanup: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "[6/6] Cleaning up transfer pods ... ok\n")
+	}()
+
 	// Upload
 	fmt.Fprintf(os.Stderr, "[3/6] Uploading data to cloud storage ...\n")
 	uploadPod, err := transfer.Upload(context.TODO(), srcPVC)
@@ -142,16 +153,6 @@ func (t *TransferPVCCommand) runIndirect() error {
 	} else {
 		fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
 	}
-
-	// Cleanup pods
-	fmt.Fprintf(os.Stderr, "[6/6] Cleaning up transfer pods ...\n")
-	if err := transfer.Cleanup(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name); err != nil {
-		log.Printf("WARN: source cleanup: %v", err)
-	}
-	if err := transfer.Cleanup(context.TODO(), destClient, destPVC.Namespace, destPVC.Name); err != nil {
-		log.Printf("WARN: destination cleanup: %v", err)
-	}
-	fmt.Fprintf(os.Stderr, "[6/6] Cleaning up transfer pods ... ok\n")
 
 	fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 	fmt.Fprintf(os.Stderr, "PVC data copy: succeeded (indirect via cloud storage)\n")
@@ -191,13 +192,19 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	if err != nil {
 		return fmt.Errorf("failed to stream logs for pod %s/%s: %w", namespace, podName, err)
 	}
-	defer stream.Close()
+	defer func() {
+		if closeErr := stream.Close(); closeErr != nil {
+			log.Printf("WARN: failed to close log stream for pod %s/%s: %v", namespace, podName, closeErr)
+		}
+	}()
 
 	buf := make([]byte, 4096)
 	for {
 		n, readErr := stream.Read(buf)
 		if n > 0 {
-			os.Stderr.Write(buf[:n])
+			if _, writeErr := os.Stderr.Write(buf[:n]); writeErr != nil {
+				return fmt.Errorf("failed to write logs for pod %s/%s: %w", namespace, podName, writeErr)
+			}
 		}
 		if readErr != nil {
 			break
