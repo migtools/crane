@@ -129,11 +129,11 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		rsyncLog := <-rsyncLogCh
 
 		By("Verify only the newly added data was transferred, not a full re-copy of the PVC")
-		transferredBytes, err := totalTransferredBytes(rsyncLog)
+		literalBytes, err := literalDataBytes(rsyncLog)
 		Expect(err).NotTo(HaveOccurred(), "expected to find rsync's stats summary in the client log:\n%s", rsyncLog)
-		Expect(transferredBytes).To(BeNumerically("<", int64(deltaBaselineSizeBytes)/10),
-			"second sync transferred %d bytes; expected well under the %d-byte baseline blob if only the new key was sent",
-			transferredBytes, deltaBaselineSizeBytes)
+		Expect(literalBytes).To(BeNumerically("<", float64(deltaBaselineSizeBytes)/10),
+			"second sync sent %.0f bytes of literal (new) data; expected well under the %d-byte baseline blob if only the new key was sent, not a full re-copy",
+			literalBytes, deltaBaselineSizeBytes)
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
 		Expect(deployRedisVerifier(kubectlTgt, tgtApp.Namespace, verifierPod, pvcName)).NotTo(HaveOccurred())
@@ -278,19 +278,35 @@ func deleteRedisVerifier(k KubectlRunner, namespace, podName string) error {
 	return err
 }
 
-var totalTransferredBytesRegex = regexp.MustCompile(`Total transferred file size: ([\d,]+) bytes`)
+// literalDataRegex matches rsync's "Literal data: X bytes" stats line, where X
+// may be a plain comma-grouped integer (e.g. "32,847") or a human-readable
+// value with a unit suffix (e.g. "2.66K", "4.05M").
+var literalDataRegex = regexp.MustCompile(`Literal data: ([\d,.]+)\s*([KMGT]?) bytes`)
 
-// totalTransferredBytes extracts rsync's own authoritative "Total transferred
-// file size" from a raw rsync client log. crane's own progress display
-// (cmd/transfer-pvc/progress.go) has a buffered-line parsing bug that can
-// misreport this value, so tests that need a trustworthy number should read
-// it from the client pod's raw log via captureRsyncClientLog instead.
-func totalTransferredBytes(rsyncLog string) (int64, error) {
-	matched := totalTransferredBytesRegex.FindStringSubmatch(rsyncLog)
-	if len(matched) < 2 {
-		return 0, fmt.Errorf("could not find %q in rsync client log", "Total transferred file size")
+var byteUnitMultipliers = map[string]float64{
+	"": 1, "K": 1_000, "M": 1_000_000, "G": 1_000_000_000, "T": 1_000_000_000_000,
+}
+
+// literalDataBytes extracts rsync's own authoritative "Literal data" figure
+// from a raw rsync client log — the count of bytes actually sent because they
+// were new, as opposed to "Matched data" (bytes rsync found already present
+// on the receiver and reused instead of resending). This is the correct
+// metric for verifying an incremental sync; "Total transferred file size"
+// counts every file rsync touched regardless of whether its content was new.
+// crane's own progress display (cmd/transfer-pvc/progress.go) has a buffered-
+// line parsing bug that can misreport its stats, so tests that need a
+// trustworthy number should read them from the client pod's raw log via
+// captureRsyncClientLog instead.
+func literalDataBytes(rsyncLog string) (float64, error) {
+	matched := literalDataRegex.FindStringSubmatch(rsyncLog)
+	if len(matched) < 3 {
+		return 0, fmt.Errorf("could not find %q in rsync client log", "Literal data")
 	}
-	return strconv.ParseInt(strings.ReplaceAll(matched[1], ",", ""), 10, 64)
+	val, err := strconv.ParseFloat(strings.ReplaceAll(matched[1], ",", ""), 64)
+	if err != nil {
+		return 0, err
+	}
+	return val * byteUnitMultipliers[matched[2]], nil
 }
 
 // captureRsyncClientLog polls namespace for the ephemeral "rsync-client-*" pod
