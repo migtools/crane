@@ -722,7 +722,7 @@ func LooksLikeYAMLFile(path string) bool {
 // normalizeUnstableFields removes selected unstable fields from a decoded YAML
 // document tree (maps/slices/scalars) for stable export comparisons.
 // It also performs small kind/name-specific normalization for known
-// cluster-generated values.
+// cluster-generated values. //test
 func normalizeUnstableFields(doc any) any {
 	normalized := normalizeWithPath(doc, nil)
 	root, ok := normalized.(map[string]any)
