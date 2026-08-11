@@ -723,7 +723,7 @@ func LooksLikeYAMLFile(path string) bool {
 // document tree (maps/slices/scalars) for stable export comparisons.
 // It also performs small kind/name-specific normalization for known
 // cluster-generated values.
-func normalizeUnstableFields(doc any) any { //test
+func normalizeUnstableFields(doc any) any {
 	normalized := normalizeWithPath(doc, nil)
 	root, ok := normalized.(map[string]any)
 	if !ok {
