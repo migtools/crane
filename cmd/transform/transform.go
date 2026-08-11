@@ -53,13 +53,8 @@ type Flags struct {
 }
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
-	log := logrus.StandardLogger()
-	if o.globalFlags != nil {
-		log = o.globalFlags.GetLogger()
-	}
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
-	log.Debugf("Transform stage arguments captured: %v", args)
 	return nil
 }
 
@@ -88,7 +83,6 @@ func (o *Options) Validate() error {
 		log.Debugf("Export path %q is not a directory", o.ExportDir)
 		return fmt.Errorf("export-dir %q is not a directory", o.ExportDir)
 	}
-	log.Debugf("Export directory validated successfully: %q", o.ExportDir)
 	return nil
 }
 

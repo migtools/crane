@@ -102,7 +102,6 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		}
 	}
 
-	log.Debugf("Export configuration loaded successfully")
 	return nil
 }
 
@@ -151,7 +150,6 @@ func (o *ExportOptions) Validate() error {
 			}
 		}
 	}
-	log.Debugf("Export flags validated successfully")
 	return nil
 }
 
@@ -315,7 +313,6 @@ func (o *ExportOptions) Run() error {
 		log.Infof("Collected %d CRDs for referenced custom resources", crdCount)
 	}
 
-	log.Debugf("Attempting to write resources to files")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
 		log.Warnf("Error writing manifests to file: %v, continuing", e)
