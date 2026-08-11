@@ -10,7 +10,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Sets resources migration", func() {
+var _ = Describe("Sets resources migration", func() { //test
 	It("[MTA-805] Should migrate ReplicaSet, DaemonSet and StatefulSet as namespace-admin", Label("tier0"), func() {
 		appName := "sets"
 		namespace := "sets"
