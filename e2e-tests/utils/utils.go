@@ -723,7 +723,7 @@ func LooksLikeYAMLFile(path string) bool {
 // document tree (maps/slices/scalars) for stable export comparisons.
 // It also performs small kind/name-specific normalization for known
 // cluster-generated values.
-func normalizeUnstableFields(doc any) any {
+func normalizeUnstableFields(doc any) any { //test
 	normalized := normalizeWithPath(doc, nil)
 	root, ok := normalized.(map[string]any)
 	if !ok {
@@ -1275,35 +1275,35 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
 	}
 	return nil
 }
- 
-  // RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
-  // replaces srcNamespace with tgtNamespace in metadata.namespace,
-  // and returns the re-serialized YAML string.
-  func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
-      docs, err := parseYAMLDocuments(content)
-      if err != nil {
-          return "", fmt.Errorf("parsing YAML documents: %w", err)
-      }
 
-      var parts []string
-      for i, doc := range docs {
-          obj, ok := doc.(map[string]any)
-          if !ok {
-              return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
-          }
-          if meta, ok := obj["metadata"].(map[string]any); ok {
-              if meta["namespace"] == srcNamespace {
-                  meta["namespace"] = tgtNamespace
-              }
-          }
-          out, err := yaml.Marshal(obj)
-          if err != nil {
-              return "", fmt.Errorf("marshaling YAML document: %w", err)
-          }
-          parts = append(parts, string(out))
-      }
-      return strings.Join(parts, "---\n"), nil
-  }
+// RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
+// replaces srcNamespace with tgtNamespace in metadata.namespace,
+// and returns the re-serialized YAML string.
+func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
+	docs, err := parseYAMLDocuments(content)
+	if err != nil {
+		return "", fmt.Errorf("parsing YAML documents: %w", err)
+	}
+
+	var parts []string
+	for i, doc := range docs {
+		obj, ok := doc.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
+		}
+		if meta, ok := obj["metadata"].(map[string]any); ok {
+			if meta["namespace"] == srcNamespace {
+				meta["namespace"] = tgtNamespace
+			}
+		}
+		out, err := yaml.Marshal(obj)
+		if err != nil {
+			return "", fmt.Errorf("marshaling YAML document: %w", err)
+		}
+		parts = append(parts, string(out))
+	}
+	return strings.Join(parts, "---\n"), nil
+}
 
 // ParseValidationReport reads and parses a crane validate report file.
 // The report parameter should be a pointer to the structure that will hold the parsed data.
