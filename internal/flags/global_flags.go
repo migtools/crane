@@ -22,9 +22,11 @@ func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
 func (g *GlobalFlags) GetLogger() *logrus.Logger {
 	if g.logger == nil {
 		g.logger = logrus.New()
-		if g.Debug {
-			g.logger.SetLevel(logrus.DebugLevel)
-		}
+	}
+	if g.Debug {
+		g.logger.SetLevel(logrus.DebugLevel)
+	} else {
+		g.logger.SetLevel(logrus.InfoLevel)
 	}
 	return g.logger
 }
