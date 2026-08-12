@@ -27,24 +27,34 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		srcApp := scenario.SrcApp
-		tgtApp := scenario.TgtApp
-		kubectlSrc := scenario.KubectlSrc
-		kubectlTgt := scenario.KubectlTgt
+		srcApp := scenario.SrcAppNonAdmin
+		tgtApp := scenario.TgtAppNonAdmin
+		srcApp.ExtraVars = map[string]any{
+			"non_admin_user": "true",
+			"file_size": 1,
+		}
+		tgtApp.ExtraVars = map[string]any{"non_admin_user": "true"}
 
-		// Keep the per-volume payload small (10MB instead of the role's 100MB
-		// default) so the timing/concurrency assertions stay fast and stable in CI.
-		srcApp.ExtraVars = map[string]any{"file_size": 1}
+		By("Grant namespace-admin permissions to non-admin users on source and target")
+		kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
+					log.Printf("cleanup namespace %q on context %q: %v", namespace, k.Context, err)
+				}
+			}
+		})
+		DeferCleanup(cleanup)
 
+		runner := scenario.CraneNonAdmin
 		paths, err := NewScenarioPaths("crane-mta-876-*")
 		Expect(err).NotTo(HaveOccurred())
-		runner := scenario.Crane
 		runner.WorkDir = paths.TempDir
 
 		DeferCleanup(func() {
-			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
-				log.Printf("cleanup: %v", err)
+				log.Printf("cleanup apps/tempdir: %v", err)
 			}
 		})
 
@@ -52,7 +62,7 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		Expect(srcApp.Deploy()).NotTo(HaveOccurred())
 		Expect(srcApp.Validate()).NotTo(HaveOccurred())
 
-		srcPodName, err := GetPodNameByLabel(kubectlSrc, srcApp.Namespace, "app="+appName)
+		srcPodName, err := GetPodNameByLabel(kubectlSrcNonAdmin, srcApp.Namespace, "app="+appName)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("List PVCs created by the source app")
@@ -64,7 +74,7 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		srcMD5s := make(map[string]string, volumeCount)
 		for i := 1; i <= volumeCount; i++ {
 			vol := fmt.Sprintf("volume%d", i)
-			md5, err := md5sumFile(kubectlSrc, srcApp.Namespace, srcPodName, fmt.Sprintf("/mnt/%s/random-data", vol))
+			md5, err := md5sumFile(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName, fmt.Sprintf("/mnt/%s/random-data", vol))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(md5).NotTo(BeEmpty())
 			srcMD5s[vol] = md5
@@ -74,9 +84,6 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 			distinctHashes[h] = true
 		}
 		Expect(distinctHashes).To(HaveLen(volumeCount), "expected each volume to hold distinct data")
-
-		By("Create target namespace")
-		Expect(kubectlTgt.CreateNamespace(tgtApp.Namespace)).NotTo(HaveOccurred())
 
 		By("Launch a separate crane transfer-pvc invocation for each PVC at the same time")
 		tgtIP, err := GetClusterNodeIP(tgtApp.Context)
@@ -115,22 +122,32 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		}
 
 		By("Verify total wall-clock time reflects real concurrency, not serialized transfers")
+		minDuration := durations[0]
 		maxDuration := durations[0]
 		for _, d := range durations[1:] {
+			if d < minDuration {
+				minDuration = d
+			}
 			if d > maxDuration {
 				maxDuration = d
 			}
 		}
-		log.Printf("total wall clock: %s, slowest single transfer: %s, sum of individual durations: %s\n",
-			totalElapsed, maxDuration, sumDurations)
+		log.Printf("total wall clock: %s, fastest single transfer: %s, slowest single transfer: %s, sum of individual durations: %s\n",
+			totalElapsed, minDuration, maxDuration, sumDurations)
 		Expect(totalElapsed).To(BeNumerically("<", sumDurations),
 			"running %d transfers concurrently should take less than the sum of their individual durations", volumeCount)
-		// Allow generous headroom for scheduling and endpoint-programming jitter
-		// while still failing if the transfers were effectively serialized.
+		// Compare against the FASTEST transfer, not the slowest. Every goroutine's
+		// timer starts at the same instant, so the slowest transfer's own duration
+		// is always ~= totalElapsed whether the transfers ran concurrently or were
+		// fully serialized (it's still "running", from its own t0, for the whole
+		// queue ahead of it) — comparing against it can't tell the two cases apart.
+		// The fastest transfer's duration stays small if it truly ran in parallel,
+		// and grows close to totalElapsed if everything was serialized (queued
+		// behind the others), so it's the correct baseline for this check.
 		concurrencyTolerance := 3
-		Expect(totalElapsed).To(BeNumerically("<", maxDuration*time.Duration(concurrencyTolerance)),
-			"total wall-clock time (%s) should stay within %dx the slowest single transfer (%s), not balloon toward the serialized sum (%s)",
-			totalElapsed, concurrencyTolerance, maxDuration, sumDurations)
+		Expect(totalElapsed).To(BeNumerically("<", minDuration*time.Duration(concurrencyTolerance)),
+			"total wall-clock time (%s) should stay within %dx the fastest single transfer (%s), not balloon toward serialized execution (sum: %s)",
+			totalElapsed, concurrencyTolerance, minDuration, sumDurations)
 
 		By("Verify each destination PVC exists on target")
 		tgtPVCs, err := ListPVCs(tgtApp.Namespace, "", tgtApp.Context)
@@ -139,34 +156,31 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 
 		By("Mount all destination PVCs in a verifier pod and confirm each has correct, uncontaminated data")
 		const verifierPod = "mta-876-pvc-verifier"
-		Expect(kubectlTgt.ApplyYAMLSpec(multiVolumePodManifest(verifierPod, tgtApp.Namespace, volumeCount, nil), tgtApp.Namespace)).NotTo(HaveOccurred())
+		Expect(kubectlTgtNonAdmin.ApplyYAMLSpec(multiVolumePodManifest(verifierPod, tgtApp.Namespace, volumeCount, nil), tgtApp.Namespace)).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			if _, err := kubectlTgt.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true"); err != nil {
+			if _, err := kubectlTgtNonAdmin.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true"); err != nil {
 				log.Printf("cleanup verifier pod %q: %v", verifierPod, err)
 			}
 		})
-		_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifierPod, "-n", tgtApp.Namespace, "--timeout=120s")
+		_, err = kubectlTgtNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+verifierPod, "-n", tgtApp.Namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 
-		assertVolumesMatchSource(kubectlTgt, tgtApp.Namespace, verifierPod, volumeCount, srcMD5s,
+		assertVolumesMatchSource(kubectlTgtNonAdmin, tgtApp.Namespace, verifierPod, volumeCount, srcMD5s,
 			"%s data on target should match source with no cross-contamination")
-		_, err = kubectlTgt.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true")
+		_, err = kubectlTgtNonAdmin.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true")
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Deploy the app on target using the migrated PVCs and confirm it starts with correct data")
 		appLabels := map[string]string{"app": appName}
-		Expect(kubectlTgt.ApplyYAMLSpec(multiVolumePodManifest(appName, tgtApp.Namespace, volumeCount, appLabels), tgtApp.Namespace)).NotTo(HaveOccurred())
-		_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+appName, "-n", tgtApp.Namespace, "--timeout=120s")
+		Expect(kubectlTgtNonAdmin.ApplyYAMLSpec(multiVolumePodManifest(appName, tgtApp.Namespace, volumeCount, appLabels), tgtApp.Namespace)).NotTo(HaveOccurred())
+		_, err = kubectlTgtNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+appName, "-n", tgtApp.Namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 
-		assertVolumesMatchSource(kubectlTgt, tgtApp.Namespace, appName, volumeCount, srcMD5s,
+		assertVolumesMatchSource(kubectlTgtNonAdmin, tgtApp.Namespace, appName, volumeCount, srcMD5s,
 			"app on target should read correct %s data after mounting migrated PVCs")
 	})
 })
 
-// assertVolumesMatchSource execs into pod and checks that volume1..volumeN's data
-// each match the corresponding source checksum, failing with msgFormat (which takes
-// the volume name) on the first mismatch.
 func assertVolumesMatchSource(k KubectlRunner, namespace, pod string, volumeCount int, srcMD5s map[string]string, msgFormat string) {
 	GinkgoHelper()
 	for i := 1; i <= volumeCount; i++ {
@@ -177,11 +191,6 @@ func assertVolumesMatchSource(k KubectlRunner, namespace, pod string, volumeCoun
 	}
 }
 
-// multiVolumePodManifest renders a single pod that mounts volumeCount PVCs
-// named volume1..volumeN at /mnt/volumeN, matching the layout the 8pvc-app
-// role uses on the source side. Passing labels lets the same manifest double
-// as either a throwaway verifier pod (nil labels) or the redeployed app pod
-// (labelled to match the original Deployment's selector).
 func multiVolumePodManifest(podName, namespace string, volumeCount int, labels map[string]string) string {
 	var labelLines strings.Builder
 	for k, v := range labels {
