@@ -80,7 +80,7 @@ func TestGetFilePath(t *testing.T) {
 				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "authorization.openshift.io", Version: "v1", Kind: "RoleBinding"})
 				return u
 			}(),
-			wantParts: []string{"RoleBinding", "authorization.openshift.io", "v1", "my-ns", "system_deployers", ".yaml"},
+			wantParts: []string{"RoleBinding", "authorization.openshift.io", "v1", "my-ns", "system_deployers_", ".yaml"},
 		},
 		{
 			name: "extremely long name gets truncated with hash",

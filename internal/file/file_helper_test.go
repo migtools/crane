@@ -147,7 +147,7 @@ func TestGetResourceFilename_SanitizesWindowsReservedChars(t *testing.T) {
 				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
 				return u
 			}(),
-			expected: "RoleBinding_rbac.authorization.k8s.io_v1_my-ns_system_deployers.yaml",
+			expected: "RoleBinding_rbac.authorization.k8s.io_v1_my-ns_system_deployers_7ce771ca.yaml",
 		},
 		{
 			name: "system:image-builders RoleBinding",
@@ -158,7 +158,7 @@ func TestGetResourceFilename_SanitizesWindowsReservedChars(t *testing.T) {
 				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
 				return u
 			}(),
-			expected: "RoleBinding_rbac.authorization.k8s.io_v1_my-ns_system_image-builders.yaml",
+			expected: "RoleBinding_rbac.authorization.k8s.io_v1_my-ns_system_image-builders_faff99cd.yaml",
 		},
 		{
 			name: "name without reserved chars is unchanged",
@@ -180,7 +180,7 @@ func TestGetResourceFilename_SanitizesWindowsReservedChars(t *testing.T) {
 				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
 				return u
 			}(),
-			expected: "ConfigMap__v1_ns_a_b_c_d.yaml",
+			expected: "ConfigMap__v1_ns_a_b_c_d_20b20061.yaml",
 		},
 		{
 			name: "cluster-scoped resource with colon",
@@ -190,7 +190,7 @@ func TestGetResourceFilename_SanitizesWindowsReservedChars(t *testing.T) {
 				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"})
 				return u
 			}(),
-			expected: "ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_system_admin.yaml",
+			expected: "ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_system_admin_f7295a44.yaml",
 		},
 	}
 
@@ -201,6 +201,25 @@ func TestGetResourceFilename_SanitizesWindowsReservedChars(t *testing.T) {
 				t.Errorf("GetResourceFilename() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestGetResourceFilename_NoCollisionAfterSanitization(t *testing.T) {
+	colonObj := unstructured.Unstructured{}
+	colonObj.SetName("system:deployers")
+	colonObj.SetNamespace("ns")
+	colonObj.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
+
+	underscoreObj := unstructured.Unstructured{}
+	underscoreObj.SetName("system_deployers")
+	underscoreObj.SetNamespace("ns")
+	underscoreObj.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
+
+	colonFile := file.GetResourceFilename(colonObj)
+	underscoreFile := file.GetResourceFilename(underscoreObj)
+
+	if colonFile == underscoreFile {
+		t.Errorf("system:deployers and system_deployers must produce distinct filenames, both got %q", colonFile)
 	}
 }
 

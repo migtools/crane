@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -198,5 +199,10 @@ func GetResourceFilename(obj unstructured.Unstructured) string {
 		namespace,
 		obj.GetName(),
 	}, "_")
-	return sanitizeFilename(basename) + ".yaml"
+	sanitized := sanitizeFilename(basename)
+	if sanitized != basename {
+		hash := sha256.Sum256([]byte(basename))
+		sanitized = fmt.Sprintf("%s_%x", sanitized, hash[:4])
+	}
+	return sanitized + ".yaml"
 }
