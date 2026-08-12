@@ -48,7 +48,7 @@ func (f *InstructionsFile) UnmarshalYAML(value *yamlv3.Node) error {
 		return err
 	}
 
-	// Check for unknown top-level keys
+	// Replaces KnownFields(true) which has no effect with custom UnmarshalYAML.
 	if value.Kind == yamlv3.MappingNode {
 		for i := 0; i+1 < len(value.Content); i += 2 {
 			key := value.Content[i].Value
@@ -97,7 +97,6 @@ func LoadInstructions(path string) (*InstructionsFile, error) {
 
 	cfg := &InstructionsFile{}
 	decoder := yamlv3.NewDecoder(bytes.NewReader(data))
-	decoder.KnownFields(true)
 	if err := decoder.Decode(cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse instructions file %q: %s: %w", path, friendlyInstructionsDecodeError(err), err)
 	}

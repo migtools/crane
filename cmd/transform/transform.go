@@ -221,7 +221,10 @@ func (o *Options) run() error {
 		if err != nil {
 			return err
 		}
-		optionalFlags = optionalFlagsToLower(optionalFlags)
+		optionalFlags, err = optionalFlagsToLowerChecked(optionalFlags)
+		if err != nil {
+			return fmt.Errorf("invalid --optional-flags: %w", err)
+		}
 	}
 
 	// Parse per-stage optional flags from CLI
@@ -380,14 +383,6 @@ func parseStageOptionals(values []string) (map[string]map[string]string, error) 
 
 // Returns an extras map with lowercased keys, since any keys coming from the config file
 // are lower-cased by viper
-func optionalFlagsToLower(inFlags map[string]string) map[string]string {
-	lowerMap := make(map[string]string)
-	for key, val := range inFlags {
-		lowerMap[strings.ToLower(key)] = val
-	}
-	return lowerMap
-}
-
 func optionalFlagsToLowerChecked(inFlags map[string]string) (map[string]string, error) {
 	lowerMap := make(map[string]string, len(inFlags))
 	for key, val := range inFlags {
