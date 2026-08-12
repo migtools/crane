@@ -148,7 +148,7 @@ func validateExportNamespace(ctx context.Context, client kubernetes.Interface, n
 		if apierrors.IsNotFound(err) {
 			return fmt.Errorf(`namespaces "%s" not found`, namespace)
 		}
-		log.Warnf("cannot verify namespace %q exists (may lack RBAC permission): %v", namespace, err)
+		log.Warnf("Cannot verify namespace %q exists (may lack RBAC permission): %v", namespace, err)
 	}
 	return nil
 }
@@ -193,10 +193,11 @@ func (o *ExportOptions) Run() error {
 	var err error
 
 	log := o.globalFlags.GetLogger()
+	log.Infof("Starting export for namespace %q", o.userSpecifiedNamespace)
 
 	restConfig, err := o.configFlags.ToRESTConfig()
 	if err != nil {
-		log.Errorf("cannot create rest config: %#v", err)
+		log.Errorf("Cannot create rest config: %v", err)
 		return err
 	}
 
@@ -206,10 +207,11 @@ func (o *ExportOptions) Run() error {
 
 	kubeClient, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
-		log.Errorf("cannot create kubernetes client: %#v", err)
+		log.Errorf("Cannot create kubernetes client: %v", err)
 		return err
 	}
 	if err := validateExportNamespace(context.Background(), kubeClient, o.userSpecifiedNamespace, log); err != nil {
+		log.Errorf("Namespace validation failed for %q: %v", o.userSpecifiedNamespace, err)
 		return err
 	}
 
@@ -218,24 +220,24 @@ func (o *ExportOptions) Run() error {
 			return fmt.Errorf("export directory %q already exists; use --overwrite to replace it", o.exportDir)
 		}
 		if err = os.RemoveAll(o.exportDir); err != nil {
-			log.Errorf("error clearing export directory: %#v", err)
+			log.Errorf("Error clearing export directory: %v", err)
 			return err
 		}
 	}
 	resourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace)
 	if err = os.MkdirAll(resourceDir, 0700); err != nil {
-		log.Errorf("error creating the resources directory: %#v", err)
+		log.Errorf("Error creating the resources directory: %v", err)
 		return err
 	}
 	failuresDir := filepath.Join(o.exportDir, "failures", o.userSpecifiedNamespace)
 	if err = os.MkdirAll(failuresDir, 0700); err != nil {
-		log.Errorf("error creating the failures directory: %#v", err)
+		log.Errorf("Error creating the failures directory: %v", err)
 		return err
 	}
 
 	discoveryClient, err := o.configFlags.ToDiscoveryClient()
 	if err != nil {
-		log.Errorf("cannot create discovery client: %#v", err)
+		log.Errorf("Cannot create discovery client: %v", err)
 		return err
 	}
 
@@ -244,7 +246,7 @@ func (o *ExportOptions) Run() error {
 
 	dynamicClient, err := dynamic.NewForConfig(restConfig)
 	if err != nil {
-		log.Errorf("cannot create dynamic client: %#v", err)
+		log.Errorf("Cannot create dynamic client: %v", err)
 		return err
 	}
 
@@ -252,6 +254,7 @@ func (o *ExportOptions) Run() error {
 	if err != nil {
 		return err
 	}
+	log.Debugf("Discovered %d API resource lists", len(resourceLists))
 
 	var errs []error
 
@@ -259,8 +262,10 @@ func (o *ExportOptions) Run() error {
 	requestTimeout := restConfig.Timeout
 
 	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
+	log.Debugf("Extracted %d resources (%d errors)", len(resources), len(resourceErrs))
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
+	log.Debugf("Resources after RBAC filter: %d", len(resources))
 
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 
@@ -273,6 +278,7 @@ func (o *ExportOptions) Run() error {
 	for _, resErr := range resourceErrs {
 		if resErr != nil && resErr.Error != nil {
 			if apierrors.IsTimeout(resErr.Error) || strings.Contains(resErr.Error.Error(), "context deadline exceeded") {
+				log.Errorf("Timeout listing resource %q: %v", resErr.APIResource.Kind, resErr.Error)
 				return resErr.Error
 			}
 		}
@@ -280,34 +286,40 @@ func (o *ExportOptions) Run() error {
 
 	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
 	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
-		log.Errorf("error preparing cluster resources directory: %#v", err)
+		log.Errorf("Error preparing cluster resources directory: %v", err)
 		return err
 	}
 
 	//count and log the no of crds
 	crdCount := len(crdResources)
 	if crdCount > 0 {
-		log.Infof("Exported %d CRDs for referenced custom resources to the _cluster resources directory\n", crdCount)
+		log.Infof("Collected %d CRDs for referenced custom resources", crdCount)
 	}
 
-	log.Debugf("attempting to write resources to files\n")
+	log.Debugf("Attempting to write resources to files")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
-		log.Warnf("error writing manifests to file: %#v, ignoring\n", e)
+		log.Warnf("Error writing manifests to file: %v, continuing", e)
 	}
 
 	writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
 	for _, e := range writeErrorsErrors {
-		log.Warnf("error writing errors to file: %#v, ignoring\n", e)
+		log.Warnf("Error writing errors to file: %v, continuing", e)
 	}
 
 	errs = append(errs, writeResourcesErrors...)
 	errs = append(errs, writeErrorsErrors...)
 	if allResourceListsForbidden(resources, resourceErrs) {
+		log.Warnf("All resource types returned Forbidden for namespace %q", o.userSpecifiedNamespace)
 		errs = append(errs, fmt.Errorf(
 			"all resource types returned Forbidden for namespace %q -- verify the namespace exists and your user has list permissions",
 			o.userSpecifiedNamespace,
 		))
+	}
+	if len(errs) > 0 {
+		log.Warnf("Export completed with %d error(s) for namespace %q", len(errs), o.userSpecifiedNamespace)
+	} else {
+		log.Infof("Export complete for namespace %q", o.userSpecifiedNamespace)
 	}
 	return errorsutil.NewAggregate(errs)
 }

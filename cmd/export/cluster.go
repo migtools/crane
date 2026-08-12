@@ -55,7 +55,7 @@ func (c *ClusterScopeHandler) filterRbacResources(resources []*groupResource, lo
 			}
 		}
 		if isClusterScopedResource(r.APIGroup, kind) {
-			log.Debugf("Adding %d Cluster resource of type %s", len(r.objects.Items), kind)
+			log.Debugf("Adding %d cluster resource of type %s", len(r.objects.Items), kind)
 			handler.clusterResources[kind] = r
 		} else {
 			filteredResources = append(filteredResources, r)
@@ -117,6 +117,7 @@ func (c *ClusterScopedRbacHandler) exportedSANamespaces() map[string]struct{} {
 			m[ns] = struct{}{}
 		}
 	}
+	
 	return m
 }
 
@@ -153,7 +154,7 @@ func parseServiceAccountUserSubject(userName string) (namespace, saName string, 
 
 func (c *ClusterScopedRbacHandler) prepareForFiltering() {
 	c.readyToFilter = true
-	c.log.Infof("Preparing matching ClusterRoleBindings")
+	c.log.Debug("Preparing matching ClusterRoleBindings")
 
 	clusterRoleBindings, ok := c.clusterResources["ClusterRoleBinding"]
 	if ok {
@@ -167,7 +168,7 @@ func (c *ClusterScopedRbacHandler) prepareForFiltering() {
 		for _, crb := range clusterRoleBindings.objects.Items {
 			if c.acceptClusterRoleBinding(crb) {
 				filteredClusterRoleBindings.Items = append(filteredClusterRoleBindings.Items, crb)
-				c.log.Infof("Found matching %s %s", crb.GetKind(), crb.GetName())
+				c.log.Debugf("Found matching %s %s", crb.GetKind(), crb.GetName())
 			}
 		}
 		c.filteredClusterRoleBindings.objects = &filteredClusterRoleBindings
@@ -225,7 +226,7 @@ func (c *ClusterScopedRbacHandler) acceptClusterRoleBinding(clusterResource unst
 	err := runtime.DefaultUnstructuredConverter.
 		FromUnstructured(clusterResource.Object, &crb)
 	if err != nil {
-		c.log.Warnf("Cannot convert to rbacv1.ClusterRoleBinding: %s", err)
+		c.log.Warnf("Cannot convert %s %q to rbacv1.ClusterRoleBinding: %v", clusterResource.GetKind(), clusterResource.GetName(), err)
 		return false
 	}
 	nsSet := c.exportedSANamespaces()
@@ -236,19 +237,19 @@ func (c *ClusterScopedRbacHandler) acceptClusterRoleBinding(clusterResource unst
 		switch s.Kind {
 		case rbacv1.ServiceAccountKind:
 			if c.anyServiceAccountInNamespace(s.Namespace, s.Name) {
-				c.log.Infof("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+				c.log.Debugf("Accepted %s of kind %s (match via ServiceAccount %s/%s)", clusterResource.GetName(), clusterResource.GetKind(), s.Namespace, s.Name)
 				return true
 			}
 		case rbacv1.GroupKind:
 			if groupMatchesExportedSANamespaces(s.Name, nsSet) {
-				c.log.Infof("Accepted %s of kind %s (match via Group %s)",
+				c.log.Debugf("Accepted %s of kind %s (match via Group %s)",
 					clusterResource.GetName(), clusterResource.GetKind(), s.Name)
 				return true
 			}
 		case rbacv1.UserKind:
 			ns, saName, ok := parseServiceAccountUserSubject(s.Name)
 			if ok && c.anyServiceAccountInNamespace(ns, saName) {
-				c.log.Infof("Accepted %s of kind %s (match via User %s)",
+				c.log.Debugf("Accepted %s of kind %s (match via User %s)",
 					clusterResource.GetName(), clusterResource.GetKind(), s.Name)
 				return true
 			}
@@ -262,17 +263,17 @@ func (c *ClusterScopedRbacHandler) acceptClusterRole(clusterResource unstructure
 	err := runtime.DefaultUnstructuredConverter.
 		FromUnstructured(clusterResource.Object, &cr)
 	if err != nil {
-		c.log.Warnf("Cannot convert to rbacv1.ClusterRole: %s", err)
+		c.log.Warnf("Cannot convert %s %q to rbacv1.ClusterRole: %v", clusterResource.GetKind(), clusterResource.GetName(), err)
 	} else {
 		for _, f := range c.filteredClusterRoleBindings.objects.Items {
 			var crb rbacv1.ClusterRoleBinding
 			err := runtime.DefaultUnstructuredConverter.
 				FromUnstructured(f.Object, &crb)
 			if err != nil {
-				c.log.Warnf("Cannot convert to rbacv1.ClusterRoleBinding: %s", err)
+				c.log.Warnf("Cannot convert ClusterRoleBinding %q to rbacv1.ClusterRoleBinding: %v", f.GetName(), err)
 			} else {
 				if crb.RoleRef.Kind == "ClusterRole" && crb.RoleRef.Name == cr.Name {
-					c.log.Infof("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+					c.log.Debugf("Accepted %s of kind %s (match via ClusterRoleBinding %s)", clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
 					return true
 				}
 			}
@@ -286,7 +287,7 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 	err := runtime.DefaultUnstructuredConverter.
 		FromUnstructured(clusterResource.Object, &scc)
 	if err != nil {
-		c.log.Warnf("Cannot convert to securityv1.SecurityContextConstraints: %s", err)
+		c.log.Warnf("Cannot convert %s %q to securityv1.SecurityContextConstraints: %v", clusterResource.GetKind(), clusterResource.GetName(), err)
 		return false
 	}
 
@@ -295,17 +296,17 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 		err := runtime.DefaultUnstructuredConverter.
 			FromUnstructured(f.Object, &crb)
 		if err != nil {
-			c.log.Warnf("Cannot convert to rbacv1.ClusterRoleBinding: %s", err)
+			c.log.Warnf("Cannot convert ClusterRoleBinding %q to rbacv1.ClusterRoleBinding: %v", f.GetName(), err)
 			continue
 		}
 
 		if crb.RoleRef.Kind == "SecurityContextConstraints" && crb.RoleRef.Name == scc.Name {
-			c.log.Infof("Accepted %s of kind %s", clusterResource.GetName(), clusterResource.GetKind())
+			c.log.Debugf("Accepted %s of kind %s (match via ClusterRoleBinding RoleRef %s)", clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
 			return true
 		} else {
 			sccSystemName := fmt.Sprintf("system:openshift:scc:%s", clusterResource.GetName())
 			if crb.RoleRef.Kind == "ClusterRole" && crb.RoleRef.Name == sccSystemName {
-				c.log.Infof("Accepted %s of kind %s (match via ClusterRoleBinding %s)",
+				c.log.Debugf("Accepted %s of kind %s (match via ClusterRoleBinding %s)",
 					clusterResource.GetName(), clusterResource.GetKind(), crb.Name)
 				return true
 			}
@@ -315,7 +316,7 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 	// Last option, look at the users field if it contains one of the exported serviceaccounts
 	for _, u := range scc.Users {
 		if ns, saName, ok := parseServiceAccountUserSubject(u); ok && c.anyServiceAccountInNamespace(ns, saName) {
-			c.log.Infof("Accepted %s of kind %s (match via user %s)",
+			c.log.Debugf("Accepted %s of kind %s (match via User %s)",
 				clusterResource.GetName(), clusterResource.GetKind(), u)
 			return true
 		}
@@ -324,7 +325,7 @@ func (c *ClusterScopedRbacHandler) acceptSecurityContextConstraints(clusterResou
 	nsSet := c.exportedSANamespaces()
 	for _, g := range scc.Groups {
 		if groupMatchesExportedSANamespaces(g, nsSet) {
-			c.log.Infof("Accepted %s of kind %s (match via group %s)",
+			c.log.Debugf("Accepted %s of kind %s (match via Group %s)",
 				clusterResource.GetName(), clusterResource.GetKind(), g)
 			return true
 		}

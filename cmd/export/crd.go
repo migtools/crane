@@ -106,8 +106,10 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 	}
 
 	if len(seen) == 0 {
+		log.Debug("No eligible custom resource groups found, skipping CRD collection")
 		return nil, nil
 	}
+	log.Debugf("Collecting CRDs for %d custom resource groups", len(seen))
 
 	crdClient := dynamicClient.Resource(crdGVR)
 	out := make([]*groupResource, 0, len(seen))
@@ -126,11 +128,11 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 		if err != nil {
 			switch {
 			case apierrors.IsForbidden(err):
-				log.Warnf("cannot get CustomResourceDefinition %q (forbidden); ensure get on customresourcedefinitions.apiextensions.k8s.io", crdName)
+				log.Warnf("Cannot get CustomResourceDefinition %q (forbidden); ensure get on customresourcedefinitions.apiextensions.k8s.io", crdName)
 			case apierrors.IsNotFound(err):
 				log.Debugf("CustomResourceDefinition %q not found (plural may not match CRD spec.names.plural)", crdName)
 			default:
-				log.Warnf("error getting CustomResourceDefinition %q: %v", crdName, err)
+				log.Warnf("Error getting CustomResourceDefinition %q: %v", crdName, err)
 			}
 			outErrs = append(outErrs, &groupResourceError{
 				APIResource: metav1.APIResource{
@@ -146,11 +148,11 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 		}
 
 		if manager := getOperatorManager(obj); manager != "" {
-			log.Warnf("Skipping CRD %q — managed by %s; install the operator on the target cluster instead", crdName, manager)
+			log.Warnf("Skipping CRD %q: managed by %s; install the operator on the target cluster instead", crdName, manager)
 			continue
 		}
 
-		log.Infof("exported CustomResourceDefinition %q for referenced custom resources", crdName)
+		log.Debugf("Collected CustomResourceDefinition %q for referenced custom resources", crdName)
 		out = append(out, &groupResource{
 			APIGroup:        crdGVR.Group,
 			APIVersion:      crdGVR.Version,

@@ -87,7 +87,7 @@ func prepareFailuresDir(failuresDir string) error {
 func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range resources {
-		log.Infof("Writing objects of resource: %s to the output directory\n", r.APIResource.Name)
+		log.Debugf("Writing objects of resource: %s to the output directory", r.APIResource.Name)
 
 		kind := r.APIResource.Kind
 
@@ -135,7 +135,7 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) []error {
 	errs := []error{}
 	for _, r := range errors {
-		log.Debugf("Writing error for resource %s, error: %#v\n", r.APIResource.Name, r.Error)
+		log.Debugf("Writing error for resource %s, error: %v", r.APIResource.Name, r.Error)
 
 		kind := r.APIResource.Kind
 
@@ -220,10 +220,12 @@ func discoverPreferredResources(
 	if err != nil {
 		if discovery.IsGroupDiscoveryFailedError(err) {
 			if len(lists) == 0 {
+				log.Errorf("Failed to discover any preferred resources: %v", err)
 				return nil, err
 			}
-			log.Warnf("some API groups failed discovery, continuing with available groups: %v", err)
+			log.Warnf("Some API groups failed discovery, continuing with available groups: %v", err)
 		} else {
+			log.Errorf("Failed to discover preferred resources: %v", err)
 			return nil, err
 		}
 	}
@@ -247,29 +249,32 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 
 	for _, list := range lists {
 		if len(list.APIResources) == 0 {
+			log.Debugf("Skipping group version %q: no API resources", list.GroupVersion)
 			continue
 		}
 		gv, err := schema.ParseGroupVersion(list.GroupVersion)
 		if err != nil {
+			log.Warnf("Failed to parse group version %q: %v", list.GroupVersion, err)
 			continue
 		}
 		for _, resource := range list.APIResources {
 			if len(resource.Verbs) == 0 {
+				log.Debugf("Skipping resource %s.%s: no verbs", gv.String(), resource.Kind)
 				continue
 			}
 
 			// TODO: alpatel: put this behing a flag
 			if resource.Kind == "Event" {
-				log.Debugf("skipping extracting events\n")
+				log.Debugf("Skipping extracting events")
 				continue
 			}
 
 			if !isAdmittedResource(gv, resource) {
-				log.Debugf("resource: %s.%s is clusterscoped or not admitted kind, skipping\n", gv.String(), resource.Kind)
+				log.Debugf("Resource: %s.%s is clusterscoped or not admitted kind, skipping", gv.String(), resource.Kind)
 				continue
 			}
 
-			log.Debugf("processing resource: %s.%s\n", gv.String(), resource.Kind)
+			log.Debugf("Processing resource: %s.%s", gv.String(), resource.Kind)
 
 			g := &groupResource{
 				APIGroup:        gv.Group,
@@ -282,18 +287,18 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 			if err != nil {
 				// Check if error is due to timeout/deadline exceeded - fail fast
 				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
-					log.Errorf("request timeout exceeded for groupVersion %s, kind: %s: %v\n", g.APIGroupVersion, g.APIResource.Kind, err)
+					log.Errorf("Request timeout exceeded for groupVersion %s, resource: %s, kind: %s: %v", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind, err)
 					return nil, []*groupResourceError{{resource, err}}
 				}
 				switch {
 				case apierrors.IsForbidden(err):
-					log.Debugf("access denied for groupVersion %s, kind: %s (expected for namespace-admin users)\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("Access denied for groupVersion %s, resource: %s, kind: %s (expected for namespace-admin users)", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				case apierrors.IsMethodNotSupported(err):
-					log.Warnf("list method not supported on the groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Warnf("List method not supported on the groupVersion %s, resource: %s, kind: %s", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				case apierrors.IsNotFound(err):
-					log.Debugf("resource not found (virtual resource), groupVersion %s, kind: %s\n", g.APIGroupVersion, g.APIResource.Kind)
+					log.Debugf("Resource not found (virtual resource), groupVersion %s, resource: %s, kind: %s", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				default:
-					log.Errorf("error listing objects: %#v, groupVersion %s, kind: %s\n", err, g.APIGroupVersion, g.APIResource.Kind)
+					log.Errorf("Error listing objects: %v, groupVersion %s, resource: %s, kind: %s", err, g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				}
 				errors = append(errors, &groupResourceError{resource, err})
 				continue
@@ -301,12 +306,12 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 
 			if len(objs.Items) > 0 {
 				g.objects = objs
-				log.Infof("adding resource: %s to the list of GVRs to be extracted", resource.Name)
+				log.Infof("Adding resource: %s to the list of GVRs to be extracted", resource.Name)
 				resources = append(resources, g)
 				continue
 			}
 
-			log.Debugf("0 objects found, for resource %s, skipping\n", resource.Name)
+			log.Debugf("0 objects found for resource %s, skipping", resource.Name)
 		}
 	}
 
@@ -384,8 +389,8 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
+			logger.Errorf("Expected unstructured.Unstructured but got %T for groupVersion %s, resource: %s, object: %v", object, g.APIGroupVersion, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T for groupVersion %s, resource: %s", object, g.APIGroupVersion, g.APIResource.Name)
 		}
 		// Create fresh context with timeout for each Get request
 		ctx := context.Background()
@@ -396,15 +401,16 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		}
 		
 		obj, err := c.Namespace(namespace).Get(ctx, u.GetName(), metav1.GetOptions{})
-		cancel() 
+		cancel()
 		if err != nil {
+			logger.Errorf("Failed to get %s/%s (groupVersion: %s, resource: %s): %v", namespace, u.GetName(), g.APIGroupVersion, g.APIResource.Name, err)
 			return err
 		}
 		unstructuredList.Items = append(unstructuredList.Items, *obj)
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s", g.APIGroup, g.APIResource.Kind)
+		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s: %w", g.APIGroup, g.APIResource.Kind, err)
 	}
 	return unstructuredList, nil
 }
@@ -419,14 +425,14 @@ func iterateItemsInList(list runtime.Object, g *groupResource, logger logrus.Fie
 		u, ok := object.(*unstructured.Unstructured)
 		if !ok {
 			// TODO: explore aggregating all the errors here instead of terminating the loop
-			logger.Errorf("expected unstructured.Unstructured but got %T for groupResource %s and object: %#v\n", object, g.APIResource.Name, object)
-			return fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
+			logger.Errorf("Expected unstructured.Unstructured but got %T for groupVersion %s, resource: %s, object: %v", object, g.APIGroupVersion, g.APIResource.Name, object)
+			return fmt.Errorf("expected *unstructured.Unstructured but got %T for groupVersion %s, resource: %s", object, g.APIGroupVersion, g.APIResource.Name)
 		}
 		unstructuredList.Items = append(unstructuredList.Items, *u)
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s", g.APIGroup, g.APIResource.Kind)
+		return nil, fmt.Errorf("unable to process the list for group: %s, kind: %s: %w", g.APIGroup, g.APIResource.Kind, err)
 	}
 	return unstructuredList, nil
 }
