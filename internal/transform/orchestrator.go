@@ -27,6 +27,7 @@ type Orchestrator struct {
 	PluginDir      string
 	SkipPlugins    []string
 	OptionalFlags  map[string]string
+	StageOptionalFlags map[string]map[string]string
 	Overwrite      bool
 	CraneVersion   string
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
@@ -34,6 +35,15 @@ type Orchestrator struct {
 	NewlyCreatedStages map[string]bool
 	// KustomizeArgs holds additional arguments for embedded kustomize (e.g. helm options)
 	KustomizeArgs []string
+}
+
+func (o *Orchestrator) resolveOptionalFlags(stage Stage) map[string]string {
+	if o.StageOptionalFlags != nil {
+		if stageFlags, ok := o.StageOptionalFlags[stage.PluginName]; ok {
+			return stageFlags
+		}
+	}
+	return o.OptionalFlags
 }
 
 // RunMultiStage executes transform with multi-stage pipeline
@@ -199,7 +209,7 @@ func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plug
 	runner := cranelib.Runner{
 		Log:              o.Log,
 		PluginPriorities: nil, // No priorities needed - max 1 plugin per stage
-		OptionalFlags:    o.OptionalFlags,
+		OptionalFlags:    o.resolveOptionalFlags(stage),
 	}
 
 	var artifacts []cranelib.TransformArtifact

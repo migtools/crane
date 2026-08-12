@@ -1088,6 +1088,127 @@ func TestValidate_ExportDir(t *testing.T) {
 	}
 }
 
+func TestParseStageOptionals(t *testing.T) {
+	tests := []struct {
+		name      string
+		values    []string
+		wantErr   bool
+		errMsg    string
+		expected  map[string]map[string]string
+	}{
+		{
+			name:   "single stage",
+			values: []string{`KubernetesPlugin={"registry-replacement": "docker.io=quay.io"}`},
+			expected: map[string]map[string]string{
+				"KubernetesPlugin": {"registry-replacement": "docker.io=quay.io"},
+			},
+		},
+		{
+			name: "multiple stages",
+			values: []string{
+				`KubernetesPlugin={"registry-replacement": "docker.io=quay.io"}`,
+				`RegistryPlugin={"registry-replacement": "quay.io=ghcr.io"}`,
+			},
+			expected: map[string]map[string]string{
+				"KubernetesPlugin": {"registry-replacement": "docker.io=quay.io"},
+				"RegistryPlugin":   {"registry-replacement": "quay.io=ghcr.io"},
+			},
+		},
+		{
+			name:    "missing equals sign",
+			values:  []string{"KubernetesPlugin"},
+			wantErr: true,
+			errMsg:  "expected format StageName=JSON",
+		},
+		{
+			name:    "empty stage name",
+			values:  []string{`={"key": "value"}`},
+			wantErr: true,
+			errMsg:  "stage name is empty",
+		},
+		{
+			name:    "malformed JSON",
+			values:  []string{`KubernetesPlugin=not-json`},
+			wantErr: true,
+			errMsg:  "invalid JSON",
+		},
+		{
+			name: "duplicate stage name",
+			values: []string{
+				`KubernetesPlugin={"key": "val1"}`,
+				`KubernetesPlugin={"key": "val2"}`,
+			},
+			wantErr: true,
+			errMsg:  "duplicate",
+		},
+		{
+			name:   "keys are lowercased",
+			values: []string{`MyPlugin={"Registry-Replacement": "docker.io=quay.io"}`},
+			expected: map[string]map[string]string{
+				"MyPlugin": {"registry-replacement": "docker.io=quay.io"},
+			},
+		},
+		{
+			name:   "JSON value containing equals sign",
+			values: []string{`MyPlugin={"registry-replacement": "docker.io=quay.io,gcr.io=ghcr.io"}`},
+			expected: map[string]map[string]string{
+				"MyPlugin": {"registry-replacement": "docker.io=quay.io,gcr.io=ghcr.io"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseStageOptionals(tt.values)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Fatalf("expected error containing %q, got %v", tt.errMsg, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(result) != len(tt.expected) {
+				t.Fatalf("expected %d stages, got %d", len(tt.expected), len(result))
+			}
+			for stage, expectedFlags := range tt.expected {
+				actualFlags, ok := result[stage]
+				if !ok {
+					t.Errorf("missing stage %q", stage)
+					continue
+				}
+				for k, v := range expectedFlags {
+					if actualFlags[k] != v {
+						t.Errorf("stage %q key %q: expected %q, got %q", stage, k, v, actualFlags[k])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRun_InstructionsFileAndStageOptionalsConflict(t *testing.T) {
+	o := &Options{
+		globalFlags: &flags.GlobalFlags{},
+		Flags: Flags{
+			InstructionsFile: "instructions.yaml",
+			StageOptionals:   []string{`KubernetesPlugin={"key": "val"}`},
+		},
+	}
+
+	err := o.run()
+	if err == nil {
+		t.Fatalf("expected conflict error, got nil")
+	}
+	if !strings.Contains(err.Error(), "use either --instructions-file or --stage-optionals, not both") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
 func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
 	tmpDir := t.TempDir()
 	transformDir := filepath.Join(tmpDir, "transform")

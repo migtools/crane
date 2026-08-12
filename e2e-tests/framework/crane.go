@@ -49,6 +49,7 @@ type TransformOptions struct {
 	PluginDir         string
 	SkipPlugins       []string
 	OptionalFlags     string
+	StageOptionals    []string
 	Overwrite         bool
 	KustomizeArgs     string
 	InstructionsFile  string
@@ -121,6 +122,9 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 	}
 	if opts.OptionalFlags != "" {
 		args = append(args, "--optional-flags", opts.OptionalFlags)
+	}
+	for _, so := range opts.StageOptionals {
+		args = append(args, "--stage-optionals", so)
 	}
 	if opts.Overwrite {
 		args = append(args, "--overwrite")

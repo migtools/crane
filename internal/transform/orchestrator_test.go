@@ -1825,6 +1825,74 @@ resources:
 	t.Log("✓ Resource content: ClusterRole rules survived two pipeline stages")
 }
 
+func TestResolveOptionalFlags(t *testing.T) {
+	globalFlags := map[string]string{
+		"registry-replacement": "docker.io=quay.io",
+		"strip-default-rbac":   "false",
+	}
+	stageFlags := map[string]map[string]string{
+		"RegistryPlugin": {
+			"registry-replacement": "docker.io=ghcr.io",
+		},
+	}
+
+	tests := []struct {
+		name           string
+		optionalFlags  map[string]string
+		stageOptionals map[string]map[string]string
+		stage          Stage
+		expected       map[string]string
+	}{
+		{
+			name:           "per-stage flags override global",
+			optionalFlags:  globalFlags,
+			stageOptionals: stageFlags,
+			stage:          Stage{PluginName: "RegistryPlugin"},
+			expected:       stageFlags["RegistryPlugin"],
+		},
+		{
+			name:           "falls back to global when no per-stage",
+			optionalFlags:  globalFlags,
+			stageOptionals: stageFlags,
+			stage:          Stage{PluginName: "KubernetesPlugin"},
+			expected:       globalFlags,
+		},
+		{
+			name:           "returns nil when neither set",
+			optionalFlags:  nil,
+			stageOptionals: nil,
+			stage:          Stage{PluginName: "KubernetesPlugin"},
+			expected:       nil,
+		},
+		{
+			name:           "returns global when stageOptionals map is empty",
+			optionalFlags:  globalFlags,
+			stageOptionals: map[string]map[string]string{},
+			stage:          Stage{PluginName: "KubernetesPlugin"},
+			expected:       globalFlags,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &Orchestrator{
+				OptionalFlags:      tt.optionalFlags,
+				StageOptionalFlags: tt.stageOptionals,
+			}
+			result := o.resolveOptionalFlags(tt.stage)
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d flags, got %d", len(tt.expected), len(result))
+				return
+			}
+			for k, v := range tt.expected {
+				if result[k] != v {
+					t.Errorf("key %q: expected %q, got %q", k, v, result[k])
+				}
+			}
+		})
+	}
+}
+
 // TestEmptyStageErrorMessage verifies that when a stage has no resources,
 // a helpful error message is displayed instead of the generic kustomize error
 func TestEmptyStageErrorMessage(t *testing.T) {
