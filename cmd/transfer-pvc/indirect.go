@@ -70,13 +70,13 @@ func (t *TransferPVCCommand) runIndirect() error {
 	// Resolve rclone config secret name
 	configSecret := t.Flags.RcloneConfigSecret
 	if t.Flags.RcloneConfigFile != "" {
-		secretName, err := t.createTempRcloneSecret(srcClient, t.PVC.Namespace.source, t.Flags.RcloneConfigFile)
+		secretName, err := t.createTempRcloneSecret(srcClient, t.PVC.Namespace.source, t.Flags.RcloneConfigFile, t.PVC.Name.source)
 		if err != nil {
 			return fmt.Errorf("failed to create rclone config secret on source: %w", err)
 		}
 		configSecret = secretName
 
-		_, err = t.createTempRcloneSecret(destClient, t.PVC.Namespace.destination, t.Flags.RcloneConfigFile)
+		_, err = t.createTempRcloneSecret(destClient, t.PVC.Namespace.destination, t.Flags.RcloneConfigFile, t.PVC.Name.destination)
 		if err != nil {
 			return fmt.Errorf("failed to create rclone config secret on destination: %w", err)
 		}
@@ -167,10 +167,12 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		return fmt.Errorf("failed to create clientset: %w", err)
 	}
 
-	// Wait for pod to be running
-	if err := wait.PollUntil(time.Second*3, func() (done bool, err error) {
+	// Wait for pod to be running (5-minute timeout to catch ImagePullBackOff, Unschedulable, etc.)
+	startCtx, startCancel := context.WithTimeout(context.TODO(), 5*time.Minute)
+	defer startCancel()
+	if err := wait.PollUntilContextCancel(startCtx, 3*time.Second, true, func(ctx context.Context) (bool, error) {
 		pod := &corev1.Pod{}
-		if err := c.Get(context.TODO(), client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+		if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
 			return false, nil
 		}
 		switch pod.Status.Phase {
@@ -179,7 +181,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		default:
 			return false, nil
 		}
-	}, make(<-chan struct{})); err != nil {
+	}); err != nil {
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
 
@@ -211,23 +213,38 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		}
 	}
 
-	// Check final pod status
-	pod := &corev1.Pod{}
-	if err := c.Get(context.TODO(), client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
-		return fmt.Errorf("failed to get pod status: %w", err)
-	}
-	if pod.Status.Phase == corev1.PodFailed {
-		return fmt.Errorf("pod %s/%s failed", namespace, podName)
+	// Check final pod status — wait for terminal state in case the log stream
+	// ended before the pod completed (e.g. network interruption).
+	waitCtx, waitCancel := context.WithTimeout(context.TODO(), 2*time.Minute)
+	defer waitCancel()
+	if err := wait.PollUntilContextCancel(waitCtx, 3*time.Second, true, func(ctx context.Context) (bool, error) {
+		pod := &corev1.Pod{}
+		if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+			return false, fmt.Errorf("failed to get pod status: %w", err)
+		}
+		switch pod.Status.Phase {
+		case corev1.PodSucceeded:
+			return true, nil
+		case corev1.PodFailed:
+			return true, fmt.Errorf("pod %s/%s failed", namespace, podName)
+		default:
+			return false, nil
+		}
+	}); err != nil {
+		return err
 	}
 	return nil
 }
 
-func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, configFilePath string) (string, error) {
+func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, configFilePath, labelPVCName string) (string, error) {
 	data, err := os.ReadFile(configFilePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read rclone config file %s: %w", configFilePath, err)
 	}
 
+	// Secret name uses source PVC name so both clusters use the same name
+	// (crane-lib references a single ConfigSecret for upload and download).
+	// Label uses the per-cluster PVC name so Cleanup can find it by label selector.
 	secretName := fmt.Sprintf("crane-rclone-config-%s", getValidatedResourceName(t.PVC.Name.source))
 
 	secret := &corev1.Secret{
@@ -238,7 +255,7 @@ func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, 
 				"app.kubernetes.io/name":          "crane",
 				"app.kubernetes.io/component":     "indirect-transfer",
 				"app.kubernetes.io/managed-by":    "crane",
-				"app.konveyor.io/created-for-pvc": getValidatedResourceName(t.PVC.Name.source),
+				"app.konveyor.io/created-for-pvc": getValidatedResourceName(labelPVCName),
 			},
 		},
 		Data: map[string][]byte{
