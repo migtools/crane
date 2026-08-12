@@ -112,7 +112,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			Volumes:   []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
 		}
 		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
-		verifyValue, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "redis", "mytestkey")
+		verifyValue, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "verifier", "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(verifyValue).To(Equal(initial))
 		Expect(DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod)).NotTo(HaveOccurred())
@@ -144,10 +144,10 @@ var _ = Describe("Stage and cutover migration flow", func() {
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
 		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
-		mytestkeyAfterStage2, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "redis", "mytestkey")
+		mytestkeyAfterStage2, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "verifier", "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(mytestkeyAfterStage2).To(Equal(initial))
-		stage1ValueOnTarget, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "redis", "stage1key")
+		stage1ValueOnTarget, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "verifier", "stage1key")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stage1ValueOnTarget).To(Equal("stage1-value"))
 		Expect(DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod)).NotTo(HaveOccurred())
