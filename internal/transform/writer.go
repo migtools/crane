@@ -72,8 +72,6 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 	for _, artifact := range artifacts {
 		resourceID := getResourceID(artifact.Resource)
 
-		isNewResourceMap[resourceID] = artifact.IsNewResource
-
 		// Check for duplicates
 		if _, exists := allResourcesMap[resourceID]; exists {
 			// Duplicate detected - determine which to keep
@@ -104,6 +102,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 			// First occurrence - store it
 			allResourcesMap[resourceID] = artifact.Resource
 			whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+			isNewResourceMap[resourceID] = artifact.IsNewResource
 		}
 
 		// Track whiteout status - whiteout resources don't get active references or patches

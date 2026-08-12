@@ -250,6 +250,9 @@ func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plug
 			if newResource.GetName() == "" {
 				return nil, fmt.Errorf("stage %s: new resource #%d (%s) missing name", stage.DirName, i, newResource.GetKind())
 			}
+			if newResource.GetAPIVersion() == "" {
+				return nil, fmt.Errorf("stage %s: new resource #%d (%s/%s) missing apiVersion", stage.DirName, i, newResource.GetKind(), newResource.GetName())
+			}
 
 			skeleton, newPatch, err := cranelib.SplitNewResourceToSkeletonAndPatch(newResource)
 			if err != nil {

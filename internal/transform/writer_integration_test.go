@@ -666,3 +666,100 @@ func TestWriteStage_KustomizeBuildWithMixedResources(t *testing.T) {
 		t.Error("ClusterRole not found in kustomize output")
 	}
 }
+
+func TestWriteStage_NewResourceDedupWithWhiteout(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "crane-dedup-newresource-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	opts := file.PathOpts{TransformDir: filepath.Join(tmpDir, "transform")}
+
+	// Active new resource followed by whiteout duplicate with same ID.
+	// The active resource should win and still land in new/.
+	newResource := &unstructured.Unstructured{}
+	newResource.SetKind("Build")
+	newResource.SetAPIVersion("shipwright.io/v1beta1")
+	newResource.SetName("my-build")
+	newResource.SetNamespace("default")
+
+	whiteoutDup := &unstructured.Unstructured{}
+	whiteoutDup.SetKind("Build")
+	whiteoutDup.SetAPIVersion("shipwright.io/v1beta1")
+	whiteoutDup.SetName("my-build")
+	whiteoutDup.SetNamespace("default")
+
+	artifacts := []StageArtifact{
+		{
+			TransformArtifact: cranelib.TransformArtifact{
+				Resource:     *newResource,
+				HaveWhiteOut: false,
+				Patches:      nil,
+				IgnoredOps:   []cranelib.IgnoredOperation{},
+				Target:       cranelib.DeriveTargetFromResource(*newResource),
+				PluginName:   "TestPlugin",
+			},
+			IsNewResource: true,
+		},
+		{
+			TransformArtifact: cranelib.TransformArtifact{
+				Resource:     *whiteoutDup,
+				HaveWhiteOut: true,
+				Patches:      nil,
+				IgnoredOps:   []cranelib.IgnoredOperation{},
+				Target:       cranelib.DeriveTargetFromResource(*whiteoutDup),
+				PluginName:   "TestPlugin",
+			},
+			IsNewResource: false,
+		},
+	}
+
+	writer := NewKustomizeWriter(opts, "10_TestPlugin", logger)
+	if err := writer.WriteStage(artifacts, true); err != nil {
+		t.Fatalf("WriteStage failed: %v", err)
+	}
+
+	stageDir := filepath.Join(tmpDir, "transform", "10_TestPlugin")
+
+	// The resource should be in new/, not input/
+	newDir := filepath.Join(stageDir, "new")
+	newFiles, err := os.ReadDir(newDir)
+	if err != nil {
+		t.Fatalf("Failed to read new/ directory: %v", err)
+	}
+
+	found := false
+	for _, f := range newFiles {
+		if strings.Contains(f.Name(), "Build") && strings.Contains(f.Name(), "my-build") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("New resource should be in new/ directory after dedup with whiteout")
+	}
+
+	// It should NOT be in input/
+	inputDir := filepath.Join(stageDir, "input")
+	inputFiles, err := os.ReadDir(inputDir)
+	if err != nil {
+		t.Fatalf("Failed to read input/ directory: %v", err)
+	}
+	for _, f := range inputFiles {
+		if strings.Contains(f.Name(), "Build") && strings.Contains(f.Name(), "my-build") {
+			t.Errorf("New resource should NOT be in input/ after dedup — dedup should preserve IsNewResource routing")
+		}
+	}
+
+	// kustomization.yaml should reference new/
+	kustomizationContent, err := os.ReadFile(filepath.Join(stageDir, "kustomization.yaml"))
+	if err != nil {
+		t.Fatalf("Failed to read kustomization.yaml: %v", err)
+	}
+	if !strings.Contains(string(kustomizationContent), "new/Build") {
+		t.Errorf("kustomization.yaml should reference new/ for the Build resource, got:\n%s", string(kustomizationContent))
+	}
+}

@@ -233,6 +233,45 @@ func TestTransformResources_InvalidNewResource_MissingName(t *testing.T) {
 	}
 }
 
+func TestTransformResources_InvalidNewResource_MissingAPIVersion(t *testing.T) {
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+
+	o := &Orchestrator{
+		Log:           logger,
+		OptionalFlags: make(map[string]string),
+	}
+
+	input := &unstructured.Unstructured{}
+	input.SetKind("Input")
+	input.SetName("test-input")
+
+	mockPlugin := &mockNewResourcePlugin{
+		name: "InvalidPlugin",
+		newResources: []unstructured.Unstructured{
+			{
+				Object: map[string]interface{}{
+					"kind":     "ConfigMap",
+					"metadata": map[string]interface{}{"name": "no-apiversion"},
+				},
+			},
+		},
+	}
+
+	stage := Stage{
+		DirName:    "10_InvalidPlugin",
+		PluginName: "InvalidPlugin",
+	}
+
+	_, err := o.transformResources(stage, mockPlugin, []unstructured.Unstructured{*input})
+	if err == nil {
+		t.Fatal("Expected error for missing apiVersion")
+	}
+	if !strings.Contains(err.Error(), "missing apiVersion") {
+		t.Errorf("Error should mention 'missing apiVersion', got: %v", err)
+	}
+}
+
 func TestTransformResources_EmptyNewResources(t *testing.T) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.ErrorLevel)
