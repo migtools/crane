@@ -133,8 +133,8 @@ var _ = Describe("Live PVC transfer with an active writer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		lateCounter, err := strconv.Atoi(lateCounterRaw)
 		Expect(err).NotTo(HaveOccurred(), "late source counter should be an integer, got %q", lateCounterRaw)
-		Expect(lateCounter).To(BeNumerically(">=", preCounter),
-			"writer should still be advancing (or at least not regress) around transfer completion")
+		Expect(lateCounter).To(BeNumerically(">", preCounter),
+			"writer must advance while transfer-pvc runs")
 		lateLog, err := readFileFromPod(kubectlSrcNonAdmin, namespace, writerPodLate, dataMountPath+"/"+logFile)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(lateLog).NotTo(BeEmpty())
@@ -161,23 +161,19 @@ var _ = Describe("Live PVC transfer with an active writer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(destLog).NotTo(BeEmpty(), "destination live.log must be present and readable")
 
-		consistency := "partially inconsistent"
+		Expect(destCounter).To(BeNumerically("<=", lateCounter),
+			"destination counter must not be ahead of the post-transfer source counter")
+
+		consistency := "partially inconsistent (counter not ahead of source; log diverged)"
 		switch {
 		case destCounter == lateCounter && destLog == lateLog:
 			consistency = "fully consistent with late source snapshot"
-		case destCounter <= lateCounter && strings.HasPrefix(lateLog, destLog):
+		case strings.HasPrefix(lateLog, destLog):
 			consistency = "partially consistent (destination appears to be an earlier prefix of source)"
-		case destCounter <= lateCounter:
-			consistency = "partially inconsistent (counter not ahead of source; log diverged)"
-		default:
-			consistency = "unexpected (destination counter ahead of late source snapshot)"
 		}
 		log.Printf(
 			"MTA-880 observed transfer behavior with active writer: consistency=%s pre=%d late=%d dest=%d dest_log_bytes≈%d late_log_bytes≈%d (perfect consistency is not required without quiesce; transfer must not crash/corrupt)\n",
 			consistency, preCounter, lateCounter, destCounter, len(destLog), len(lateLog),
 		)
-		if destCounter > lateCounter {
-			log.Printf("MTA-880 note: dest counter (%d) > late source counter (%d); documenting only — Polarion does not require perfect consistency without quiesce\n", destCounter, lateCounter)
-		}
 	})
 })
