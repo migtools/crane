@@ -10,7 +10,7 @@ require (
 	github.com/google/gnostic-models v0.7.0
 	github.com/google/go-cmp v0.7.0
 	github.com/jarcoal/httpmock v1.2.0
-	github.com/konveyor/crane-lib v0.1.6-0.20260618130404-9791be7b44bd
+	github.com/konveyor/crane-lib v0.1.6-0.20260807130033-222a325c7cee
 	github.com/migtools/pvc-transfer v0.0.0-20260805073413-1b1f9d254821
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.28.1

@@ -79,6 +79,11 @@ type Flags struct {
 	Verify             bool
 	RsyncFlags         []string
 	ProgressOutput     string
+	CloudStorage       string
+	RcloneConfigSecret string
+	RcloneConfigFile   string
+	Encrypt            bool
+	KeepCloudData      bool
 }
 
 // EndpointFlags defines command line flags specific
@@ -187,6 +192,11 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.Endpoint.IngressClass, "ingress-class", "", "IngressClass to use for the ingress endpoint")
 	cmd.Flags().BoolVar(&c.Verify, "verify", false, "Enable checksum verification")
 	cmd.Flags().StringVar(&c.ProgressOutput, "output", "", "Write data transfer stats to specified output file")
+	cmd.Flags().StringVar(&c.CloudStorage, "cloud-storage", "", "S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket)")
+	cmd.Flags().StringVar(&c.RcloneConfigSecret, "rclone-config-secret", "", "Name of the K8s Secret containing rclone.conf for indirect transfer")
+	cmd.Flags().StringVar(&c.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer (crane creates temporary Secrets)")
+	cmd.Flags().BoolVar(&c.Encrypt, "encrypt", false, "Enable client-side encryption for indirect transfer")
+	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer")
 	cmd.MarkFlagRequired("source-context")
 	cmd.MarkFlagRequired("destination-context")
 	cmd.MarkFlagRequired("pvc-name")
@@ -241,6 +251,16 @@ func (t *TransferPVCCommand) Validate() error {
 		return err
 	}
 
+	if t.Flags.CloudStorage != "" {
+		if t.Flags.RcloneConfigSecret == "" && t.Flags.RcloneConfigFile == "" {
+			return fmt.Errorf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
+		}
+		if t.Flags.RcloneConfigSecret != "" && t.Flags.RcloneConfigFile != "" {
+			return fmt.Errorf("--rclone-config-secret and --rclone-config-file are mutually exclusive")
+		}
+		return nil
+	}
+
 	err = t.Endpoint.Validate()
 	if err != nil {
 		return err
@@ -250,6 +270,9 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
+	if t.Flags.CloudStorage != "" {
+		return t.runIndirect()
+	}
 	return t.run()
 }
 
@@ -470,12 +493,12 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	destPVCList := transfer.NewSingletonPVC(destPVC)
 	srcPVCList := transfer.NewSingletonPVC(srcPVC)
 
-	clientPodSecCtx, err := getRsyncClientPodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name)
+	clientPodSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name)
 	if err != nil {
 		return phases.Fail(err, "error creating security context for rsync client")
 	}
 
-	serverPodSecContext, err := getRsyncServerPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name)
+	serverPodSecContext, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name)
 	if err != nil {
 		return phases.Fail(err, "error creating security context for rsync server")
 	}
@@ -964,11 +987,11 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) 
 	return &uid, nil
 }
 
-func getRsyncClientPodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+func getSourcePodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
 	return getIDsForNamespace(c, namespace, pvcName)
 }
 
-func getRsyncServerPodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+func getTargetPodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
 	return getIDsForNamespace(c, namespace, pvcName)
 }
 
