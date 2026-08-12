@@ -9,6 +9,7 @@ import (
 type GlobalFlags struct {
 	ConfigFile string
 	Debug      bool
+	logger     *logrus.Logger
 }
 
 func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
@@ -19,11 +20,13 @@ func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
 }
 
 func (g *GlobalFlags) GetLogger() *logrus.Logger {
-	log := logrus.New()
-	if g.Debug {
-		log.SetLevel(logrus.DebugLevel)
+	if g.logger == nil {
+		g.logger = logrus.New()
+		if g.Debug {
+			g.logger.SetLevel(logrus.DebugLevel)
+		}
 	}
-	return log
+	return g.logger
 }
 
 func (g *GlobalFlags) initConfig() {

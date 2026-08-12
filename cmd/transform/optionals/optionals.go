@@ -6,6 +6,7 @@ import (
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,6 +22,7 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	log *logrus.Logger
 }
 
 type Flags struct {
@@ -30,6 +32,12 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @sseago
+	if o.globalFlags != nil {
+		o.log = o.globalFlags.GetLogger()
+	}
+	if o.log == nil {
+		o.log = logrus.StandardLogger()
+	}
 	return nil
 }
 
@@ -76,7 +84,10 @@ func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLogger()
+	log := o.log
+	if log == nil {
+		log = logrus.StandardLogger()
+	}
 
 	pluginDir, err := filepath.Abs(o.PluginDir)
 	if err != nil {

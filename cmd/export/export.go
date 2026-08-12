@@ -34,6 +34,7 @@ type ExportOptions struct {
 	// 2. globalFlags for the args merged with values from the viper config file
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
+	log              *logrus.Logger
 
 	rawConfig              api.Config
 	exportDir              string
@@ -53,10 +54,13 @@ type ExportOptions struct {
 // Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
-	log := logrus.StandardLogger()
 	if o.globalFlags != nil {
-		log = o.globalFlags.GetLogger()
+		o.log = o.globalFlags.GetLogger()
 	}
+	if o.log == nil {
+		o.log = logrus.StandardLogger()
+	}
+	log := o.log
 
 	if c != nil {
 		kubeconfigFlag := c.Flags().Lookup("kubeconfig")
@@ -107,9 +111,9 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
-	log := logrus.StandardLogger()
-	if o.globalFlags != nil {
-		log = o.globalFlags.GetLogger()
+	log := o.log
+	if log == nil {
+		log = logrus.StandardLogger()
 	}
 
 	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
@@ -209,7 +213,10 @@ func mergeImpersonationExtras(dest, src map[string][]string) map[string][]string
 func (o *ExportOptions) Run() error {
 	var err error
 
-	log := o.globalFlags.GetLogger()
+	log := o.log
+	if log == nil {
+		log = logrus.StandardLogger()
+	}
 	log.Infof("Starting export for namespace %q", o.userSpecifiedNamespace)
 
 	restConfig, err := o.configFlags.ToRESTConfig()

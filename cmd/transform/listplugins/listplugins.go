@@ -23,6 +23,7 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	log *logrus.Logger
 }
 
 type Flags struct {
@@ -32,6 +33,12 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @sseago
+	if o.globalFlags != nil {
+		o.log = o.globalFlags.GetLogger()
+	}
+	if o.log == nil {
+		o.log = logrus.StandardLogger()
+	}
 	return nil
 }
 
@@ -104,7 +111,10 @@ func getFilteredPlugins(pluginDir string, skipPlugins []string, log *logrus.Logg
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLogger()
+	log := o.log
+	if log == nil {
+		log = logrus.StandardLogger()
+	}
 
 	plugins, err := getFilteredPlugins(o.PluginDir, o.SkipPlugins, log)
 	if err != nil {

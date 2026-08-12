@@ -37,6 +37,7 @@ type Options struct {
 	Flags
 	// Positional arguments for stage selection
 	RequestedStages []string
+	log             *logrus.Logger
 }
 
 type Flags struct {
@@ -55,13 +56,19 @@ type Flags struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
+	if o.globalFlags != nil {
+		o.log = o.globalFlags.GetLogger()
+	}
+	if o.log == nil {
+		o.log = logrus.StandardLogger()
+	}
 	return nil
 }
 
 func (o *Options) Validate() error {
-	log := logrus.StandardLogger()
-	if o.globalFlags != nil {
-		log = o.globalFlags.GetLogger()
+	log := o.log
+	if log == nil {
+		log = logrus.StandardLogger()
 	}
 
 	exportDir, err := filepath.Abs(o.ExportDir)
@@ -182,7 +189,10 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLogger()
+	log := o.log
+	if log == nil {
+		log = logrus.StandardLogger()
+	}
 
 	log.Infof("Starting transform...")
 	exportDir, err := filepath.Abs(o.ExportDir)
