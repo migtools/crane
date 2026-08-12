@@ -175,18 +175,22 @@ func (f *InstructionsFile) StageNames() []string {
 
 // StageOptionals returns a map of stage name to optional flags for stages that
 // have per-stage optionals defined. Stages without optionals are omitted.
-func (f *InstructionsFile) StageOptionals() map[string]map[string]string {
+func (f *InstructionsFile) StageOptionals() (map[string]map[string]string, error) {
 	result := make(map[string]map[string]string)
 	for _, s := range f.Stages {
 		if len(s.Optionals) > 0 {
 			lower := make(map[string]string, len(s.Optionals))
 			for k, v := range s.Optionals {
-				lower[strings.ToLower(k)] = v
+				lk := strings.ToLower(k)
+				if _, exists := lower[lk]; exists {
+					return nil, fmt.Errorf("stage %q: duplicate optional key %q (case-insensitive collision)", s.Name, lk)
+				}
+				lower[lk] = v
 			}
 			result[s.Name] = lower
 		}
 	}
-	return result
+	return result, nil
 }
 
 // GenerateStageDirNames converts ordered stage tokens into deterministic stage

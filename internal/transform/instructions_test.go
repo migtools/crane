@@ -292,7 +292,10 @@ func TestInstructionsFile_StageOptionals(t *testing.T) {
 		},
 	}
 
-	optionals := cfg.StageOptionals()
+	optionals, err := cfg.StageOptionals()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(optionals) != 1 {
 		t.Fatalf("expected 1 entry in StageOptionals, got %d", len(optionals))
 	}
@@ -312,7 +315,10 @@ func TestInstructionsFile_StageOptionals_LowercasesKeys(t *testing.T) {
 		},
 	}
 
-	optionals := cfg.StageOptionals()
+	optionals, err := cfg.StageOptionals()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	got := optionals["RegistryPlugin"]
 	if got["registry-replacement"] != "docker.io=quay.io" {
 		t.Errorf("expected lowercased key registry-replacement, got keys: %v", got)
@@ -322,6 +328,26 @@ func TestInstructionsFile_StageOptionals_LowercasesKeys(t *testing.T) {
 	}
 	if _, exists := got["Registry-Replacement"]; exists {
 		t.Errorf("original mixed-case key should not be present after lowercasing")
+	}
+}
+
+// StageOptionals should reject case-insensitive duplicate keys.
+func TestInstructionsFile_StageOptionals_RejectsCaseCollision(t *testing.T) {
+	cfg := &InstructionsFile{
+		Stages: []StageEntry{
+			{Name: "RegistryPlugin", Optionals: map[string]string{
+				"Registry-Replacement": "docker.io=quay.io",
+				"registry-replacement": "gcr.io=ghcr.io",
+			}},
+		},
+	}
+
+	_, err := cfg.StageOptionals()
+	if err == nil {
+		t.Fatalf("expected error for case-insensitive duplicate key, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate optional key") {
+		t.Fatalf("expected duplicate key error, got %v", err)
 	}
 }
 

@@ -161,7 +161,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&o.Overwrite, "overwrite", false, "Overwrite existing stage directories even if they contain user modifications")
 
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins (e.g. '{\"registry-replacement\": \"docker.io=quay.io\"}')")
-	cmd.Flags().StringSliceVar(&o.StageOptionals, "stage-optionals", nil, "Per-stage optional flags as StageName=JSON, repeatable (e.g. --stage-optionals 'KubernetesPlugin={\"registry-replacement\":\"docker.io=quay.io\"}')")
+	cmd.Flags().StringArrayVar(&o.StageOptionals, "stage-optionals", nil, "Per-stage optional flags as StageName=JSON, repeatable (e.g. --stage-optionals 'KubernetesPlugin={\"registry-replacement\":\"docker.io=quay.io\"}')")
 
 	// Kustomize arguments
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
@@ -209,7 +209,10 @@ func (o *Options) run() error {
 			return err
 		}
 		instructionStages = internalTransform.GenerateStageDirNames(cfg.StageNames())
-		instructionStageOptionals = cfg.StageOptionals()
+		instructionStageOptionals, err = cfg.StageOptionals()
+		if err != nil {
+			return fmt.Errorf("invalid instructions file %q: %w", instructionsFilePath, err)
+		}
 	}
 	// Parse optional flags
 	var optionalFlags map[string]string
@@ -363,7 +366,14 @@ func parseStageOptionals(values []string) (map[string]map[string]string, error) 
 		if err := json.Unmarshal([]byte(jsonStr), &flags); err != nil {
 			return nil, fmt.Errorf("invalid JSON in --stage-optionals for stage %q: %w", stageName, err)
 		}
-		result[stageName] = optionalFlagsToLower(flags)
+		if flags == nil {
+			return nil, fmt.Errorf("invalid JSON in --stage-optionals for stage %q: expected a JSON object, got null", stageName)
+		}
+		lower, err := optionalFlagsToLowerChecked(flags)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --stage-optionals for stage %q: %w", stageName, err)
+		}
+		result[stageName] = lower
 	}
 	return result, nil
 }
@@ -376,6 +386,18 @@ func optionalFlagsToLower(inFlags map[string]string) map[string]string {
 		lowerMap[strings.ToLower(key)] = val
 	}
 	return lowerMap
+}
+
+func optionalFlagsToLowerChecked(inFlags map[string]string) (map[string]string, error) {
+	lowerMap := make(map[string]string, len(inFlags))
+	for key, val := range inFlags {
+		lk := strings.ToLower(key)
+		if _, exists := lowerMap[lk]; exists {
+			return nil, fmt.Errorf("duplicate optional key %q (case-insensitive collision)", lk)
+		}
+		lowerMap[lk] = val
+	}
+	return lowerMap, nil
 }
 
 // runStageWithCleanup runs a single stage and optionally cleans up on error.

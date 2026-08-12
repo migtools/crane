@@ -1149,6 +1149,12 @@ func TestParseStageOptionals(t *testing.T) {
 			},
 		},
 		{
+			name:    "null JSON value",
+			values:  []string{`KubernetesPlugin=null`},
+			wantErr: true,
+			errMsg:  "expected a JSON object",
+		},
+		{
 			name:   "JSON value containing equals sign",
 			values: []string{`MyPlugin={"registry-replacement": "docker.io=quay.io,gcr.io=ghcr.io"}`},
 			expected: map[string]map[string]string{
@@ -1188,6 +1194,39 @@ func TestParseStageOptionals(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Reject case-insensitive duplicate keys in --stage-optionals JSON.
+func TestParseStageOptionals_CaseInsensitiveDuplicateKey(t *testing.T) {
+	values := []string{
+		`MyPlugin={"Registry-Replacement": "docker.io=quay.io", "registry-replacement": "gcr.io=ghcr.io"}`,
+	}
+	_, err := parseStageOptionals(values)
+	if err == nil {
+		t.Fatalf("expected error for case-insensitive duplicate key, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate optional key") {
+		t.Fatalf("expected duplicate key error, got %v", err)
+	}
+}
+
+// Regression: multi-field JSON with commas must not be split by the flag parser.
+// StringArrayVar preserves each value as-is; StringSliceVar would split on commas.
+func TestParseStageOptionals_MultiFieldJSON(t *testing.T) {
+	values := []string{
+		`KubernetesPlugin={"registry-replacement": "docker.io=quay.io", "strip-default-rbac": "false"}`,
+	}
+	result, err := parseStageOptionals(values)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := result["KubernetesPlugin"]
+	if got["registry-replacement"] != "docker.io=quay.io" {
+		t.Errorf("registry-replacement: expected %q, got %q", "docker.io=quay.io", got["registry-replacement"])
+	}
+	if got["strip-default-rbac"] != "false" {
+		t.Errorf("strip-default-rbac: expected %q, got %q", "false", got["strip-default-rbac"])
 	}
 }
 
