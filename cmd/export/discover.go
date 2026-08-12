@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/konveyor/crane/internal/file"
 	"github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -177,23 +178,12 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 func getFilePath(obj unstructured.Unstructured) string {
 	const maxFilenameLength = 255
 
-	namespace := obj.GetNamespace()
-	if namespace == "" {
-		namespace = "clusterscoped"
-	}
-
-	kind := obj.GetKind()
-	group := obj.GetObjectKind().GroupVersionKind().GroupKind().Group
-	version := obj.GetObjectKind().GroupVersionKind().Version
-	name := obj.GetName()
-
-	basename := strings.Join([]string{kind, group, version, namespace, name}, "_")
-	filename := basename + ".yaml"
-
+	filename := file.GetResourceFilename(obj)
 	if len(filename) <= maxFilenameLength {
 		return filename
 	}
 
+	basename := strings.TrimSuffix(filename, ".yaml")
 	maxBaseLen := maxFilenameLength - 22 // "_" + 16 hash chars + ".yaml"
 	truncated := basename
 	if len(basename) > maxBaseLen {

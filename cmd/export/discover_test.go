@@ -71,6 +71,18 @@ func TestGetFilePath(t *testing.T) {
 			maxLen:    255,
 		},
 		{
+			name: "resource name with colon is sanitized",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetKind("RoleBinding")
+				u.SetName("system:deployers")
+				u.SetNamespace("my-ns")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "authorization.openshift.io", Version: "v1", Kind: "RoleBinding"})
+				return u
+			}(),
+			wantParts: []string{"RoleBinding", "authorization.openshift.io", "v1", "my-ns", "system_deployers", ".yaml"},
+		},
+		{
 			name: "extremely long name gets truncated with hash",
 			obj: func() unstructured.Unstructured {
 				u := unstructured.Unstructured{}
@@ -97,6 +109,22 @@ func TestGetFilePath(t *testing.T) {
 				t.Errorf("getFilePath() = %q (len=%d), exceeds max length %d", got, len(got), tt.maxLen)
 			}
 		})
+	}
+}
+
+func TestGetFilePath_NoWindowsReservedChars(t *testing.T) {
+	reserved := []string{"<", ">", ":", "\"", "/", "\\", "|", "?", "*"}
+	obj := unstructured.Unstructured{}
+	obj.SetKind("RoleBinding")
+	obj.SetName("system:deployers")
+	obj.SetNamespace("my-ns")
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "authorization.openshift.io", Version: "v1", Kind: "RoleBinding"})
+
+	got := getFilePath(obj)
+	for _, ch := range reserved {
+		if strings.Contains(got, ch) {
+			t.Errorf("getFilePath() = %q, contains Windows-reserved character %q", got, ch)
+		}
 	}
 }
 

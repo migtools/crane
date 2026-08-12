@@ -169,6 +169,20 @@ func (opts *PathOpts) GetStageOutputDir(stageName string) string {
 	return filepath.Join(opts.GetStageDir(stageName), OutputDirName)
 }
 
+// sanitizeFilename replaces characters that are reserved in Windows filenames
+// (NTFS Alternate Data Stream separator and other illegal chars) with underscores.
+// Applied to the joined basename so that exported files are valid on all platforms.
+func sanitizeFilename(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '<', '>', ':', '"', '/', '\\', '|', '?', '*':
+			return '_'
+		default:
+			return r
+		}
+	}, name)
+}
+
 // GetResourceFilename returns a stable filename from kind, group, version, namespace, and name.
 // Format matches export: Kind_group_version_namespace_name.yaml
 // Examples: "ConfigMap__v1_default_my-config.yaml", "Deployment_apps_v1_default_my-app.yaml"
@@ -177,11 +191,12 @@ func GetResourceFilename(obj unstructured.Unstructured) string {
 	if namespace == "" {
 		namespace = "clusterscoped"
 	}
-	return strings.Join([]string{
+	basename := strings.Join([]string{
 		obj.GetKind(),
 		obj.GetObjectKind().GroupVersionKind().GroupKind().Group,
 		obj.GetObjectKind().GroupVersionKind().Version,
 		namespace,
 		obj.GetName(),
-	}, "_") + ".yaml"
+	}, "_")
+	return sanitizeFilename(basename) + ".yaml"
 }

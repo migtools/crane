@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/konveyor/crane/internal/file"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func createTestDir(t *testing.T) string {
@@ -127,6 +129,78 @@ func TestReadFilesNonExistentDir(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), dir) {
 		t.Errorf("error should contain directory path, got: %v", err)
+	}
+}
+
+func TestGetResourceFilename_SanitizesWindowsReservedChars(t *testing.T) {
+	tests := []struct {
+		name     string
+		obj      unstructured.Unstructured
+		expected string
+	}{
+		{
+			name: "system:deployers RoleBinding",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetName("system:deployers")
+				u.SetNamespace("my-ns")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
+				return u
+			}(),
+			expected: "RoleBinding_rbac.authorization.k8s.io_v1_my-ns_system_deployers.yaml",
+		},
+		{
+			name: "system:image-builders RoleBinding",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetName("system:image-builders")
+				u.SetNamespace("my-ns")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
+				return u
+			}(),
+			expected: "RoleBinding_rbac.authorization.k8s.io_v1_my-ns_system_image-builders.yaml",
+		},
+		{
+			name: "name without reserved chars is unchanged",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetName("my-deployment")
+				u.SetNamespace("default")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
+				return u
+			}(),
+			expected: "Deployment_apps_v1_default_my-deployment.yaml",
+		},
+		{
+			name: "name with multiple reserved chars",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetName("a<b>c:d")
+				u.SetNamespace("ns")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
+				return u
+			}(),
+			expected: "ConfigMap__v1_ns_a_b_c_d.yaml",
+		},
+		{
+			name: "cluster-scoped resource with colon",
+			obj: func() unstructured.Unstructured {
+				u := unstructured.Unstructured{}
+				u.SetName("system:admin")
+				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"})
+				return u
+			}(),
+			expected: "ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_system_admin.yaml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := file.GetResourceFilename(tt.obj)
+			if got != tt.expected {
+				t.Errorf("GetResourceFilename() = %q, want %q", got, tt.expected)
+			}
+		})
 	}
 }
 
