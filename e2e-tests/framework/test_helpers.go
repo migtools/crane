@@ -140,3 +140,82 @@ func GetSecretData(kubectl KubectlRunner, namespace, secretName string) (map[str
 	}
 	return secretObj.Data, nil
 }
+
+// PodVolumeMount maps a PVC to a mount path inside a VerifierPodOptions pod.
+type PodVolumeMount struct {
+	PVCName   string
+	MountPath string
+}
+
+// VerifierPodOptions configures a disposable pod created by DeployVerifierPod.
+type VerifierPodOptions struct {
+	Name      string
+	Namespace string
+	Image     string
+	Command   []string
+	Volumes   []PodVolumeMount
+	// Labels are applied to the pod's metadata. Useful when the pod needs to
+	// match a Deployment's selector (e.g. simulating the real app briefly)
+	// rather than just being a throwaway inspector.
+	Labels map[string]string
+}
+
+// DeployVerifierPod creates a disposable pod that mounts one or more existing
+// PVCs, so their data can be inspected directly (e.g. via kubectl exec)
+// independent of whatever application normally owns them. This is commonly
+// needed mid-migration: a PVC has been transferred to the target cluster, but
+// the owning application hasn't been deployed there yet, so there's nothing
+// else to mount it and let you look inside.
+//
+// PVCs are typically ReadWriteOnce, so callers must call DeleteVerifierPod
+// before mounting the same PVC anywhere else (a subsequent transfer-pvc run,
+// or the real app).
+func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
+	var labelLines strings.Builder
+	for key, val := range opts.Labels {
+		labelLines.WriteString(fmt.Sprintf("    %s: %q\n", key, val))
+	}
+	labelsBlock := ""
+	if labelLines.Len() > 0 {
+		labelsBlock = "  labels:\n" + labelLines.String()
+	}
+
+	var mounts, volumes strings.Builder
+	for i, v := range opts.Volumes {
+		name := fmt.Sprintf("vol%d", i)
+		mounts.WriteString(fmt.Sprintf("    - name: %s\n      mountPath: %s\n", name, v.MountPath))
+		volumes.WriteString(fmt.Sprintf("  - name: %s\n    persistentVolumeClaim:\n      claimName: %s\n", name, v.PVCName))
+	}
+
+	commandJSON, err := json.Marshal(opts.Command)
+	if err != nil {
+		return fmt.Errorf("marshal verifier pod command: %w", err)
+	}
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+%sspec:
+  restartPolicy: Never
+  containers:
+  - name: verifier
+    image: %s
+    command: %s
+    volumeMounts:
+%s  volumes:
+%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mounts.String(), volumes.String())
+
+	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
+		return err
+	}
+	_, err = k.Run("wait", "--for=condition=Ready", "pod/"+opts.Name, "-n", opts.Namespace, "--timeout=120s")
+	return err
+}
+
+// DeleteVerifierPod deletes a pod created by DeployVerifierPod.
+func DeleteVerifierPod(k KubectlRunner, namespace, name string) error {
+	_, err := k.Run("delete", "pod", name, "-n", namespace, "--wait=true")
+	return err
+}

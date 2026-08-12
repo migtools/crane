@@ -16,10 +16,7 @@ import (
 )
 
 const (
-	mta898RedisPassword = "PASSWORD"
-	// deltaBaselineKey holds a large, unchanging value so a genuine incremental
-	// sync (only the small stage1key addition) is trivially distinguishable from
-	// a full re-copy of the PVC.
+	mta898RedisPassword    = "PASSWORD"
 	deltaBaselineKey       = "delta-test-baseline"
 	deltaBaselineSizeBytes = 3_000_000
 )
@@ -104,11 +101,21 @@ var _ = Describe("Stage and cutover migration flow", func() {
 
 		By("Verify the initial data landed on target via a throwaway redis instance on the migrated PVC")
 		const verifierPod = "mta-898-redis-verifier"
-		Expect(deployRedisVerifier(kubectlTgt, tgtApp.Namespace, verifierPod, pvcName)).NotTo(HaveOccurred())
+		// Reused as-is for every verifier deploy below — same pod name, same PVC,
+		// just torn down and recreated between transfer-pvc runs since the PVC
+		// is ReadWriteOnce.
+		verifierOpts := VerifierPodOptions{
+			Name:      verifierPod,
+			Namespace: tgtApp.Namespace,
+			Image:     "redis:latest",
+			Command:   []string{"redis-server", "--requirepass", mta898RedisPassword},
+			Volumes:   []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
+		}
+		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
 		verifyValue, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "redis", "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(verifyValue).To(Equal(initial))
-		Expect(deleteRedisVerifier(kubectlTgt, tgtApp.Namespace, verifierPod)).NotTo(HaveOccurred())
+		Expect(DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod)).NotTo(HaveOccurred())
 
 		By("Insert new data on source while the app is still running")
 		Expect(redisSet(kubectlSrc, srcApp.Namespace, srcPodName, appName, "stage1key", "stage1-value")).NotTo(HaveOccurred())
@@ -136,14 +143,14 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			literalBytes, deltaBaselineSizeBytes)
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
-		Expect(deployRedisVerifier(kubectlTgt, tgtApp.Namespace, verifierPod, pvcName)).NotTo(HaveOccurred())
+		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
 		mytestkeyAfterStage2, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "redis", "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(mytestkeyAfterStage2).To(Equal(initial))
 		stage1ValueOnTarget, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "redis", "stage1key")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stage1ValueOnTarget).To(Equal("stage1-value"))
-		Expect(deleteRedisVerifier(kubectlTgt, tgtApp.Namespace, verifierPod)).NotTo(HaveOccurred())
+		Expect(DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod)).NotTo(HaveOccurred())
 
 		By("Insert a second new data set on source")
 		Expect(redisSet(kubectlSrc, srcApp.Namespace, srcPodName, appName, "stage2key", "stage2-value")).NotTo(HaveOccurred())
@@ -200,8 +207,6 @@ var _ = Describe("Stage and cutover migration flow", func() {
 	})
 })
 
-// redisExec runs a redis-cli command against a container in the given pod,
-// stripping kubectl warning noise (e.g. the "-a" password warning) from the output.
 func redisExec(k KubectlRunner, namespace, pod, container string, args ...string) (string, error) {
 	cmdArgs := append([]string{"exec", pod, "-n", namespace, "-c", container, "--", "redis-cli", "-a", mta898RedisPassword}, args...)
 	out, err := k.Run(cmdArgs...)
@@ -233,70 +238,18 @@ func redisStrlen(k KubectlRunner, namespace, pod, container, key string) (int64,
 	return strconv.ParseInt(out, 10, 64)
 }
 
-// redisSetRandomBlob generates sizeBytes of random data inside the pod itself
-// (avoiding passing large payloads through kubectl exec argv) and stores it,
-// base64-encoded, under key.
 func redisSetRandomBlob(k KubectlRunner, namespace, pod, container, key string, sizeBytes int) error {
 	shellCmd := fmt.Sprintf("head -c %d /dev/urandom | base64 | redis-cli -a %s -x set %s", sizeBytes, mta898RedisPassword, key)
 	_, err := k.Run("exec", pod, "-n", namespace, "-c", container, "--", "/bin/sh", "-c", shellCmd)
 	return err
 }
 
-// deployRedisVerifier starts a throwaway redis instance mounting the given PVC,
-// so its persisted data can be inspected directly with redis-cli. The migrated
-// PVC is ReadWriteOnce, so callers must delete this pod (deleteRedisVerifier)
-// before mounting the same PVC again (e.g. a subsequent transfer-pvc run).
-func deployRedisVerifier(k KubectlRunner, namespace, podName, pvcName string) error {
-	manifest := fmt.Sprintf(`apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  restartPolicy: Never
-  containers:
-  - name: redis
-    image: redis:latest
-    command: ["redis-server", "--requirepass", "%s"]
-    volumeMounts:
-    - name: data
-      mountPath: /data
-  volumes:
-  - name: data
-    persistentVolumeClaim:
-      claimName: %s
-`, podName, namespace, mta898RedisPassword, pvcName)
-	if err := k.ApplyYAMLSpec(manifest, namespace); err != nil {
-		return err
-	}
-	_, err := k.Run("wait", "--for=condition=Ready", "pod/"+podName, "-n", namespace, "--timeout=120s")
-	return err
-}
-
-func deleteRedisVerifier(k KubectlRunner, namespace, podName string) error {
-	_, err := k.Run("delete", "pod", podName, "-n", namespace, "--wait=true")
-	return err
-}
-
-// literalDataRegex matches rsync's "Literal data: X bytes" stats line, where X
-// may be a plain comma-grouped integer (e.g. "32,847") or a human-readable
-// value with a unit suffix (e.g. "2.66K", "4.05M").
 var literalDataRegex = regexp.MustCompile(`Literal data: ([\d,.]+)\s*([KMGT]?) bytes`)
 
 var byteUnitMultipliers = map[string]float64{
 	"": 1, "K": 1_000, "M": 1_000_000, "G": 1_000_000_000, "T": 1_000_000_000_000,
 }
 
-// literalDataBytes extracts rsync's own authoritative "Literal data" figure
-// from a raw rsync client log — the count of bytes actually sent because they
-// were new, as opposed to "Matched data" (bytes rsync found already present
-// on the receiver and reused instead of resending). This is the correct
-// metric for verifying an incremental sync; "Total transferred file size"
-// counts every file rsync touched regardless of whether its content was new.
-// crane's own progress display (cmd/transfer-pvc/progress.go) has a buffered-
-// line parsing bug that can misreport its stats, so tests that need a
-// trustworthy number should read them from the client pod's raw log via
-// captureRsyncClientLog instead.
 func literalDataBytes(rsyncLog string) (float64, error) {
 	matched := literalDataRegex.FindStringSubmatch(rsyncLog)
 	if len(matched) < 3 {
@@ -309,12 +262,6 @@ func literalDataBytes(rsyncLog string) (float64, error) {
 	return val * byteUnitMultipliers[matched[2]], nil
 }
 
-// captureRsyncClientLog polls namespace for the ephemeral "rsync-client-*" pod
-// that transfer-pvc creates on the source cluster during a copy, and
-// continuously re-fetches its raw "rsync" container log. It sends the last
-// successfully captured log once the pod is cleaned up (the transfer
-// finished) or a generous deadline elapses, whichever comes first. Intended to
-// be started in a goroutine immediately before calling TransferPVC.
 func captureRsyncClientLog(k KubectlRunner, namespace string, result chan<- string) {
 	deadline := time.Now().Add(180 * time.Second)
 	var lastLog string
