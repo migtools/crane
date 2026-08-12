@@ -1844,11 +1844,14 @@ func TestResolveOptionalFlags(t *testing.T) {
 		expected       map[string]string
 	}{
 		{
-			name:           "per-stage flags override global",
+			name:           "per-stage flags merged with global, stage wins on conflict",
 			optionalFlags:  globalFlags,
 			stageOptionals: stageFlags,
 			stage:          Stage{PluginName: "RegistryPlugin"},
-			expected:       stageFlags["RegistryPlugin"],
+			expected: map[string]string{
+				"registry-replacement": "docker.io=ghcr.io",
+				"strip-default-rbac":   "false",
+			},
 		},
 		{
 			name:           "falls back to global when no per-stage",
@@ -1871,6 +1874,13 @@ func TestResolveOptionalFlags(t *testing.T) {
 			stage:          Stage{PluginName: "KubernetesPlugin"},
 			expected:       globalFlags,
 		},
+		{
+			name:           "stage optionals with no global flags",
+			optionalFlags:  nil,
+			stageOptionals: stageFlags,
+			stage:          Stage{PluginName: "RegistryPlugin"},
+			expected:       stageFlags["RegistryPlugin"],
+		},
 	}
 
 	for _, tt := range tests {
@@ -1887,6 +1897,76 @@ func TestResolveOptionalFlags(t *testing.T) {
 			for k, v := range tt.expected {
 				if result[k] != v {
 					t.Errorf("key %q: expected %q, got %q", k, v, result[k])
+				}
+			}
+		})
+	}
+}
+
+func TestValidateStageOptionalFlags(t *testing.T) {
+	stages := []Stage{
+		{PluginName: "KubernetesPlugin", DirName: "10_KubernetesPlugin"},
+		{PluginName: "CustomEdits", DirName: "20_CustomEdits"},
+	}
+
+	tests := []struct {
+		name           string
+		stageOptionals map[string]map[string]string
+		wantErr        bool
+		errContains    string
+	}{
+		{
+			name:           "nil map is valid",
+			stageOptionals: nil,
+			wantErr:        false,
+		},
+		{
+			name:           "empty map is valid",
+			stageOptionals: map[string]map[string]string{},
+			wantErr:        false,
+		},
+		{
+			name: "known stage is valid",
+			stageOptionals: map[string]map[string]string{
+				"KubernetesPlugin": {"key": "val"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "unknown stage is rejected",
+			stageOptionals: map[string]map[string]string{
+				"NonExistentPlugin": {"key": "val"},
+			},
+			wantErr:     true,
+			errContains: "unknown stage",
+		},
+		{
+			name: "typo in stage name is rejected",
+			stageOptionals: map[string]map[string]string{
+				"KubernetesPlugin": {"key": "val"},
+				"Typo":             {"key": "val"},
+			},
+			wantErr:     true,
+			errContains: "unknown stage",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &Orchestrator{
+				StageOptionalFlags: tt.stageOptionals,
+			}
+			err := o.validateStageOptionalFlags(stages)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Fatalf("expected error containing %q, got %v", tt.errContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
 				}
 			}
 		})

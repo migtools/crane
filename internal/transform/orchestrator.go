@@ -37,13 +37,45 @@ type Orchestrator struct {
 	KustomizeArgs []string
 }
 
-func (o *Orchestrator) resolveOptionalFlags(stage Stage) map[string]string {
-	if o.StageOptionalFlags != nil {
-		if stageFlags, ok := o.StageOptionalFlags[stage.PluginName]; ok {
-			return stageFlags
+func (o *Orchestrator) validateStageOptionalFlags(stages []Stage) error {
+	if len(o.StageOptionalFlags) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(stages))
+	for _, s := range stages {
+		known[s.PluginName] = true
+	}
+	for name := range o.StageOptionalFlags {
+		if !known[name] {
+			names := make([]string, len(stages))
+			for i, s := range stages {
+				names[i] = s.PluginName
+			}
+			return fmt.Errorf("per-stage optionals reference unknown stage %q (known stages: %s)", name, strings.Join(names, ", "))
 		}
 	}
-	return o.OptionalFlags
+	return nil
+}
+
+func (o *Orchestrator) resolveOptionalFlags(stage Stage) map[string]string {
+	if o.StageOptionalFlags == nil {
+		return o.OptionalFlags
+	}
+	stageFlags, ok := o.StageOptionalFlags[stage.PluginName]
+	if !ok {
+		return o.OptionalFlags
+	}
+	if len(o.OptionalFlags) == 0 {
+		return stageFlags
+	}
+	merged := make(map[string]string, len(o.OptionalFlags)+len(stageFlags))
+	for k, v := range o.OptionalFlags {
+		merged[k] = v
+	}
+	for k, v := range stageFlags {
+		merged[k] = v
+	}
+	return merged
 }
 
 // RunMultiStage executes transform with multi-stage pipeline
@@ -67,6 +99,10 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 	if len(selectedStages) == 0 {
 		return fmt.Errorf("no stages found matching selector")
+	}
+
+	if err := o.validateStageOptionalFlags(selectedStages); err != nil {
+		return err
 	}
 
 	opts := file.PathOpts{
