@@ -19,14 +19,20 @@ func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
 	viper.BindPFlags(cmd.PersistentFlags())
 }
 
+// GetLoggerOrDefault returns the configured logger, or logrus.StandardLogger() if GlobalFlags is nil.
+func (g *GlobalFlags) GetLoggerOrDefault() *logrus.Logger {
+	if g == nil {
+		return logrus.StandardLogger()
+	}
+	return g.GetLogger()
+}
+
 func (g *GlobalFlags) GetLogger() *logrus.Logger {
 	if g.logger == nil {
 		g.logger = logrus.New()
-	}
-	if g.Debug {
-		g.logger.SetLevel(logrus.DebugLevel)
-	} else {
-		g.logger.SetLevel(logrus.InfoLevel)
+		if g.Debug {
+			g.logger.SetLevel(logrus.DebugLevel)
+		}
 	}
 	return g.logger
 }

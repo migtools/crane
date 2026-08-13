@@ -54,12 +54,7 @@ type ExportOptions struct {
 // Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
-	if o.globalFlags != nil {
-		o.log = o.globalFlags.GetLogger()
-	}
-	if o.log == nil {
-		o.log = logrus.StandardLogger()
-	}
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	log := o.log
 
 	if c != nil {
@@ -111,10 +106,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
-	log := o.log
-	if log == nil {
-		log = logrus.StandardLogger()
-	}
+	log := o.globalFlags.GetLoggerOrDefault()
 
 	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 		for _, f := range []struct {
@@ -213,10 +205,7 @@ func mergeImpersonationExtras(dest, src map[string][]string) map[string][]string
 func (o *ExportOptions) Run() error {
 	var err error
 
-	log := o.log
-	if log == nil {
-		log = logrus.StandardLogger()
-	}
+	log := o.globalFlags.GetLoggerOrDefault()
 	log.Infof("Starting export for namespace %q", o.userSpecifiedNamespace)
 
 	restConfig, err := o.configFlags.ToRESTConfig()

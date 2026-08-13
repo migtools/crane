@@ -56,20 +56,12 @@ type Flags struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
-	if o.globalFlags != nil {
-		o.log = o.globalFlags.GetLogger()
-	}
-	if o.log == nil {
-		o.log = logrus.StandardLogger()
-	}
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
 func (o *Options) Validate() error {
-	log := o.log
-	if log == nil {
-		log = logrus.StandardLogger()
-	}
+	log := o.globalFlags.GetLoggerOrDefault()
 
 	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
@@ -189,10 +181,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	log := o.log
-	if log == nil {
-		log = logrus.StandardLogger()
-	}
+	log := o.globalFlags.GetLoggerOrDefault()
 
 	log.Infof("Starting transform...")
 	exportDir, err := filepath.Abs(o.ExportDir)
@@ -296,7 +285,7 @@ func (o *Options) run() error {
 				return err
 			}
 		}
-		log.Infof("Transform complete")
+		log.Infof("Transform complete (instructions file stages)")
 		return nil
 	}
 
@@ -317,7 +306,7 @@ func (o *Options) run() error {
 			log.Errorf("Transform failed: %v", runErr)
 			return runErr
 		}
-		log.Infof("Transform complete")
+		log.Infof("Transform complete (%d requested stage(s))", len(resolvedStages))
 		return nil
 	} else {
 		// No stage parameters given - discover existing stages or create default
@@ -365,7 +354,7 @@ func (o *Options) run() error {
 		log.Errorf("Transform failed: %v", runErr)
 		return runErr
 	}
-	log.Infof("Transform complete")
+	log.Infof("Transform complete (all stages)")
 	return nil
 }
 

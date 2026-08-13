@@ -32,12 +32,7 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @sseago
-	if o.globalFlags != nil {
-		o.log = o.globalFlags.GetLogger()
-	}
-	if o.log == nil {
-		o.log = logrus.StandardLogger()
-	}
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
@@ -84,10 +79,7 @@ func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (o *Options) run() error {
-	log := o.log
-	if log == nil {
-		log = logrus.StandardLogger()
-	}
+	log := o.globalFlags.GetLoggerOrDefault()
 
 	pluginDir, err := filepath.Abs(o.PluginDir)
 	if err != nil {
