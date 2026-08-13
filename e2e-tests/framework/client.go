@@ -187,6 +187,9 @@ func VerifyPVCSchedulable(contextName, namespace, pvcName string) error {
 	}
 
 	for i := range nodeList.Items {
+		if nodeList.Items[i].Spec.Unschedulable {
+			continue
+		}
 		if selector.Match(&nodeList.Items[i]) {
 			return nil
 		}
