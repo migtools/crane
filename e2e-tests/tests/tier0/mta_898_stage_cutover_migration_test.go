@@ -286,7 +286,7 @@ func captureRsyncClientLog(k KubectlRunner, namespace, pvcName string, result ch
 		if podLog, err := k.Run("logs", podName, "-n", namespace, "-c", "rsync"); err == nil && podLog != "" {
 			lastLog = podLog
 		}
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	if !seenPod {
 		result <- fmt.Sprintf("no rsync-client pod found in namespace %q (selector %q) within the capture window", namespace, selector)

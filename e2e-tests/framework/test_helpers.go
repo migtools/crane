@@ -186,6 +186,11 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 		fmt.Fprintf(&mounts, "    - name: %s\n      mountPath: %s\n", name, v.MountPath)
 		fmt.Fprintf(&volumes, "  - name: %s\n    persistentVolumeClaim:\n      claimName: %s\n", name, v.PVCName)
 	}
+	mountsBlock, volumesBlock := "", ""
+	if len(opts.Volumes) > 0 {
+		mountsBlock = "    volumeMounts:\n" + mounts.String()
+		volumesBlock = "  volumes:\n" + volumes.String()
+	}
 
 	commandJSON, err := json.Marshal(opts.Command)
 	if err != nil {
@@ -203,9 +208,7 @@ metadata:
   - name: verifier
     image: %s
     command: %s
-    volumeMounts:
-%s  volumes:
-%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mounts.String(), volumes.String())
+%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mountsBlock, volumesBlock)
 
 	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
 		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
@@ -219,6 +222,8 @@ metadata:
 // DeleteVerifierPod deletes a pod created by DeployVerifierPod. Safe to call
 // even if the pod was already removed (e.g. by an earlier DeferCleanup).
 func DeleteVerifierPod(k KubectlRunner, namespace, name string) error {
-	_, err := k.Run("delete", "pod", name, "-n", namespace, "--ignore-not-found", "--wait=true")
-	return err
+	if _, err := k.Run("delete", "pod", name, "-n", namespace, "--ignore-not-found", "--wait=true", "--timeout=120s"); err != nil {
+		return fmt.Errorf("delete verifier pod %s/%s: %w", namespace, name, err)
+	}
+	return nil
 }
