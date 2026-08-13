@@ -28,15 +28,15 @@
       }
     },
     "development": {
-      "built": "2026-08-06T09:58:49.012222",
+      "built": "2026-08-13T09:30:39.271609",
       "doc_hashes": {
         "development/setup.md": "c2064cf8412e64c2d259a121c1717fe305d9e3c6782413640a1041ed5c8e1ea4",
         "development/plugin-development.md": "18be806fa9771eda99dfd7af775ac728f2e86b647ea9280f7b4f7271b29b220e",
         "development/testing.md": "60d476a324f8c241ef502f61e85f1fc444d45dbc299e1658afc24b0b253de357",
-        "development/architecture.md": "e1346c1411bebf6aca860317bdb0fbbc92eae3810e3a2a66ab5a981b4bec9531",
-        "development/README.md": "02cb2ad963534727279a3cddd5a357a95e95b8117dad2f38803ae4333cf3c271"
+        "development/architecture.md": "ba955b12e3bc729e70a8ec776501398d6e8a30cabeff75038b3a0b6a28fd770f",
+        "development/README.md": "af080e30c5f3a549753aa53045ab99ecda515bd28a1317e7125fb2db66758df8"
       }
     }
   },
-  "updated": "2026-08-06T09:58:49.012677"
+  "updated": "2026-08-13T09:30:39.272202"
 }
