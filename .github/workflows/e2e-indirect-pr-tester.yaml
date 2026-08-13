@@ -138,24 +138,9 @@ jobs:
               ;;
           esac
 
-  # Setup MinIO and generate rclone config (shared by tier jobs)
-  setup-minio:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.run_tests == 'true'
-    permissions:
-      contents: read
-    runs-on: ubuntu-22.04
-    outputs:
-      rclone_config: ${{ steps.minio.outputs.rclone_config }}
-    steps:
-      - name: Generate MinIO config reference
-        id: minio
-        run: |
-          echo "rclone_config=generated-at-runtime" >> "$GITHUB_OUTPUT"
-
   # Full suite: run tier0 and tier1 in parallel with indirect transfer
   e2e-indirect-tier0:
-    needs: [detect-changes, setup-minio]
+    needs: detect-changes
     if: needs.detect-changes.outputs.run_tests == 'true' && needs.detect-changes.outputs.run_mode == 'all'
     permissions:
       contents: read
@@ -174,94 +159,8 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
-      - name: Deploy MinIO on source cluster
-        run: |
-          kubectl --context src create namespace minio
-          cat <<'MINIO_EOF' | kubectl --context src apply -f -
-          apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: minio-data
-            namespace: minio
-          spec:
-            accessModes: [ReadWriteOnce]
-            resources:
-              requests:
-                storage: 2Gi
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: minio
-            namespace: minio
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: minio
-            template:
-              metadata:
-                labels:
-                  app: minio
-              spec:
-                containers:
-                - name: minio
-                  image: quay.io/minio/minio:latest
-                  command: ["minio", "server", "/data"]
-                  ports:
-                  - containerPort: 9000
-                  env:
-                  - name: MINIO_ROOT_USER
-                    value: minioadmin
-                  - name: MINIO_ROOT_PASSWORD
-                    value: minioadmin
-                  volumeMounts:
-                  - name: data
-                    mountPath: /data
-                volumes:
-                - name: data
-                  persistentVolumeClaim:
-                    claimName: minio-data
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: minio
-            namespace: minio
-          spec:
-            type: NodePort
-            selector:
-              app: minio
-            ports:
-            - port: 9000
-              targetPort: 9000
-          MINIO_EOF
-          kubectl --context src wait --for=condition=Available deployment/minio -n minio --timeout=120s
-
-      - name: Create MinIO bucket
-        run: |
-          MINIO_IP=$(minikube ip -p src)
-          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-          kubectl --context src run minio-setup --restart=Never \
-            --image=quay.io/minio/mc:latest \
-            --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/crane-indirect-e2e --ignore-existing"
-          kubectl --context src wait --for=jsonpath='{.status.phase}'=Succeeded pod/minio-setup --timeout=120s
-          kubectl --context src logs minio-setup
-          kubectl --context src delete pod minio-setup --ignore-not-found
-
-      - name: Generate rclone config
-        run: |
-          MINIO_IP=$(minikube ip -p src)
-          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-          cat > /tmp/rclone-ci.conf <<RCLONE_EOF
-          [remote]
-          type = s3
-          provider = Minio
-          access_key_id = minioadmin
-          secret_access_key = minioadmin
-          endpoint = http://${MINIO_IP}:${MINIO_PORT}
-          RCLONE_EOF
-          echo "MinIO endpoint: http://${MINIO_IP}:${MINIO_PORT}"
+      - name: Setup MinIO for indirect transfer
+        uses: ./.github/actions/setup-indirect-minio
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -308,7 +207,7 @@ jobs:
             --rclone-config-file=/tmp/rclone-ci.conf
 
   e2e-indirect-tier1:
-    needs: [detect-changes, setup-minio]
+    needs: detect-changes
     if: needs.detect-changes.outputs.run_tests == 'true' && needs.detect-changes.outputs.run_mode == 'all'
     permissions:
       contents: read
@@ -327,94 +226,8 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
-      - name: Deploy MinIO on source cluster
-        run: |
-          kubectl --context src create namespace minio
-          cat <<'MINIO_EOF' | kubectl --context src apply -f -
-          apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: minio-data
-            namespace: minio
-          spec:
-            accessModes: [ReadWriteOnce]
-            resources:
-              requests:
-                storage: 2Gi
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: minio
-            namespace: minio
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: minio
-            template:
-              metadata:
-                labels:
-                  app: minio
-              spec:
-                containers:
-                - name: minio
-                  image: quay.io/minio/minio:latest
-                  command: ["minio", "server", "/data"]
-                  ports:
-                  - containerPort: 9000
-                  env:
-                  - name: MINIO_ROOT_USER
-                    value: minioadmin
-                  - name: MINIO_ROOT_PASSWORD
-                    value: minioadmin
-                  volumeMounts:
-                  - name: data
-                    mountPath: /data
-                volumes:
-                - name: data
-                  persistentVolumeClaim:
-                    claimName: minio-data
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: minio
-            namespace: minio
-          spec:
-            type: NodePort
-            selector:
-              app: minio
-            ports:
-            - port: 9000
-              targetPort: 9000
-          MINIO_EOF
-          kubectl --context src wait --for=condition=Available deployment/minio -n minio --timeout=120s
-
-      - name: Create MinIO bucket
-        run: |
-          MINIO_IP=$(minikube ip -p src)
-          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-          kubectl --context src run minio-setup --restart=Never \
-            --image=quay.io/minio/mc:latest \
-            --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/crane-indirect-e2e --ignore-existing"
-          kubectl --context src wait --for=jsonpath='{.status.phase}'=Succeeded pod/minio-setup --timeout=120s
-          kubectl --context src logs minio-setup
-          kubectl --context src delete pod minio-setup --ignore-not-found
-
-      - name: Generate rclone config
-        run: |
-          MINIO_IP=$(minikube ip -p src)
-          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-          cat > /tmp/rclone-ci.conf <<RCLONE_EOF
-          [remote]
-          type = s3
-          provider = Minio
-          access_key_id = minioadmin
-          secret_access_key = minioadmin
-          endpoint = http://${MINIO_IP}:${MINIO_PORT}
-          RCLONE_EOF
-          echo "MinIO endpoint: http://${MINIO_IP}:${MINIO_PORT}"
+      - name: Setup MinIO for indirect transfer
+        uses: ./.github/actions/setup-indirect-minio
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -484,94 +297,8 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
-      - name: Deploy MinIO on source cluster
-        run: |
-          kubectl --context src create namespace minio
-          cat <<'MINIO_EOF' | kubectl --context src apply -f -
-          apiVersion: v1
-          kind: PersistentVolumeClaim
-          metadata:
-            name: minio-data
-            namespace: minio
-          spec:
-            accessModes: [ReadWriteOnce]
-            resources:
-              requests:
-                storage: 2Gi
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: minio
-            namespace: minio
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: minio
-            template:
-              metadata:
-                labels:
-                  app: minio
-              spec:
-                containers:
-                - name: minio
-                  image: quay.io/minio/minio:latest
-                  command: ["minio", "server", "/data"]
-                  ports:
-                  - containerPort: 9000
-                  env:
-                  - name: MINIO_ROOT_USER
-                    value: minioadmin
-                  - name: MINIO_ROOT_PASSWORD
-                    value: minioadmin
-                  volumeMounts:
-                  - name: data
-                    mountPath: /data
-                volumes:
-                - name: data
-                  persistentVolumeClaim:
-                    claimName: minio-data
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: minio
-            namespace: minio
-          spec:
-            type: NodePort
-            selector:
-              app: minio
-            ports:
-            - port: 9000
-              targetPort: 9000
-          MINIO_EOF
-          kubectl --context src wait --for=condition=Available deployment/minio -n minio --timeout=120s
-
-      - name: Create MinIO bucket
-        run: |
-          MINIO_IP=$(minikube ip -p src)
-          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-          kubectl --context src run minio-setup --restart=Never \
-            --image=quay.io/minio/mc:latest \
-            --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/crane-indirect-e2e --ignore-existing"
-          kubectl --context src wait --for=jsonpath='{.status.phase}'=Succeeded pod/minio-setup --timeout=120s
-          kubectl --context src logs minio-setup
-          kubectl --context src delete pod minio-setup --ignore-not-found
-
-      - name: Generate rclone config
-        run: |
-          MINIO_IP=$(minikube ip -p src)
-          MINIO_PORT=$(kubectl --context src get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-          cat > /tmp/rclone-ci.conf <<RCLONE_EOF
-          [remote]
-          type = s3
-          provider = Minio
-          access_key_id = minioadmin
-          secret_access_key = minioadmin
-          endpoint = http://${MINIO_IP}:${MINIO_PORT}
-          RCLONE_EOF
-          echo "MinIO endpoint: http://${MINIO_IP}:${MINIO_PORT}"
+      - name: Setup MinIO for indirect transfer
+        uses: ./.github/actions/setup-indirect-minio
 
       - name: Setup Python
         uses: actions/setup-python@v5

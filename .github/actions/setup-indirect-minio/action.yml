@@ -1,0 +1,134 @@
+name: setup-indirect-minio
+description: Deploy MinIO on the source minikube cluster, create a bucket, and generate rclone config
+
+inputs:
+  source_context:
+    description: Kubectl context for the source cluster
+    required: false
+    default: src
+  minikube_profile:
+    description: Minikube profile name for the source cluster
+    required: false
+    default: src
+  bucket_name:
+    description: MinIO bucket name to create
+    required: false
+    default: crane-indirect-e2e
+  rclone_config_path:
+    description: Path to write the generated rclone.conf
+    required: false
+    default: /tmp/rclone-ci.conf
+
+outputs:
+  cloud_storage:
+    description: Cloud storage path for crane transfer-pvc (e.g. remote:bucket-name)
+    value: "remote:${{ inputs.bucket_name }}"
+  rclone_config_file:
+    description: Path to the generated rclone.conf file
+    value: ${{ inputs.rclone_config_path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Deploy MinIO on source cluster
+      shell: bash
+      env:
+        SRC_CTX: ${{ inputs.source_context }}
+      run: |
+        kubectl --context "$SRC_CTX" create namespace minio
+        cat <<'EOF' | kubectl --context "$SRC_CTX" apply -f -
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: minio-data
+          namespace: minio
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 2Gi
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: minio
+          namespace: minio
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: minio
+          template:
+            metadata:
+              labels:
+                app: minio
+            spec:
+              containers:
+              - name: minio
+                image: quay.io/minio/minio:latest
+                command: ["minio", "server", "/data"]
+                ports:
+                - containerPort: 9000
+                env:
+                - name: MINIO_ROOT_USER
+                  value: minioadmin
+                - name: MINIO_ROOT_PASSWORD
+                  value: minioadmin
+                volumeMounts:
+                - name: data
+                  mountPath: /data
+              volumes:
+              - name: data
+                persistentVolumeClaim:
+                  claimName: minio-data
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: minio
+          namespace: minio
+        spec:
+          type: NodePort
+          selector:
+            app: minio
+          ports:
+          - port: 9000
+            targetPort: 9000
+        EOF
+        kubectl --context "$SRC_CTX" wait --for=condition=Available deployment/minio -n minio --timeout=120s
+
+    - name: Create MinIO bucket
+      shell: bash
+      env:
+        SRC_CTX: ${{ inputs.source_context }}
+        PROFILE: ${{ inputs.minikube_profile }}
+        BUCKET: ${{ inputs.bucket_name }}
+      run: |
+        MINIO_IP=$(minikube ip -p "$PROFILE")
+        MINIO_PORT=$(kubectl --context "$SRC_CTX" get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
+        kubectl --context "$SRC_CTX" run minio-setup --restart=Never \
+          --image=quay.io/minio/mc:latest \
+          --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/${BUCKET} --ignore-existing"
+        kubectl --context "$SRC_CTX" wait --for=jsonpath='{.status.phase}'=Succeeded pod/minio-setup --timeout=120s
+        kubectl --context "$SRC_CTX" logs minio-setup
+        kubectl --context "$SRC_CTX" delete pod minio-setup --ignore-not-found
+
+    - name: Generate rclone config
+      shell: bash
+      env:
+        SRC_CTX: ${{ inputs.source_context }}
+        PROFILE: ${{ inputs.minikube_profile }}
+        CONFIG_PATH: ${{ inputs.rclone_config_path }}
+      run: |
+        MINIO_IP=$(minikube ip -p "$PROFILE")
+        MINIO_PORT=$(kubectl --context "$SRC_CTX" get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
+        cat > "$CONFIG_PATH" <<EOF
+        [remote]
+        type = s3
+        provider = Minio
+        access_key_id = minioadmin
+        secret_access_key = minioadmin
+        endpoint = http://${MINIO_IP}:${MINIO_PORT}
+        EOF
+        echo "MinIO endpoint: http://${MINIO_IP}:${MINIO_PORT}"
+        echo "rclone config: ${CONFIG_PATH}"
