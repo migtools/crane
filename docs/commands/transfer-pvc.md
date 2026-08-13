@@ -53,7 +53,7 @@ crane transfer-pvc --source-context=source --destination-context=destination \
 | `--rclone-config-secret` | string | No | Name of the K8s Secret containing rclone.conf for indirect transfer |
 | `--rclone-config-file` | string | No | Path to local rclone.conf file for indirect transfer |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
-| `--keep-cloud-data` | bool | No | Skip cloud storage cleanup after indirect transfer |
+| `--keep-cloud-data` | bool | No | Reserved for cloud-data retention; currently has no effect because cleanup is not implemented |
 
 ### PVC Options
 
