@@ -187,7 +187,13 @@ func sanitizeFilename(name string) string {
 // GetResourceFilename returns a stable filename from kind, group, version, namespace, and name.
 // Format matches export: Kind_group_version_namespace_name.yaml
 // Examples: "ConfigMap__v1_default_my-config.yaml", "Deployment_apps_v1_default_my-app.yaml"
+//
+// The result is capped at 255 bytes (filesystem limit). When the basename is
+// truncated or when sanitization replaces reserved characters, a deterministic
+// hash suffix is appended to prevent collisions.
 func GetResourceFilename(obj unstructured.Unstructured) string {
+	const maxFilenameLength = 255
+
 	namespace := obj.GetNamespace()
 	if namespace == "" {
 		namespace = "clusterscoped"
@@ -200,9 +206,22 @@ func GetResourceFilename(obj unstructured.Unstructured) string {
 		obj.GetName(),
 	}, "_")
 	sanitized := sanitizeFilename(basename)
-	if sanitized != basename {
+	needsHash := sanitized != basename
+	if needsHash {
 		hash := sha256.Sum256([]byte(basename))
 		sanitized = fmt.Sprintf("%s_%x", sanitized, hash[:4])
 	}
-	return sanitized + ".yaml"
+	filename := sanitized + ".yaml"
+
+	if len(filename) <= maxFilenameLength {
+		return filename
+	}
+
+	maxBaseLen := maxFilenameLength - 22 // "_" + 16 hash chars + ".yaml"
+	truncated := sanitized
+	if len(sanitized) > maxBaseLen {
+		truncated = sanitized[:maxBaseLen]
+	}
+	hash := sha256.Sum256([]byte(basename))
+	return fmt.Sprintf("%s_%x.yaml", truncated, hash[:8])
 }
