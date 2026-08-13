@@ -73,7 +73,7 @@ crane transfer-pvc --source-context=mycluster --destination-context=mycluster \
   --dest-storage-class=gp3 --endpoint=route
 ```
 
-> **Warning — StorageClass conversion with StatefulSets:** `crane transfer-pvc` migrates data from existing PVCs to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. If the StatefulSet is scaled up after conversion without being recreated, new replicas will provision PVCs on the original StorageClass. To complete the conversion, delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec.
+> **Warning — StatefulSet StorageClass conversion is not yet supported for same-cluster transfers:** `crane transfer-pvc` migrates data to a new PVC, but it does not update the StatefulSet's `volumeClaimTemplates`, which is immutable and expects the destination PVC to keep the deterministic `<template>-<statefulset>-<ordinal>` name. Same-cluster transfers (like the example above) require a renamed destination PVC, so a recreated StatefulSet will not adopt it — scaling up instead provisions a new, empty PVC on the original StorageClass. This is tracked in [#659](https://github.com/migtools/crane/issues/659). Cross-cluster or cross-namespace transfers that preserve the original PVC name are unaffected: delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec to complete the conversion in that case.
 
 ### Endpoint Options
 
