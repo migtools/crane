@@ -266,7 +266,7 @@ func literalDataBytes(rsyncLog string) (float64, error) {
 
 func captureRsyncClientLog(k KubectlRunner, namespace, pvcName string, result chan<- string) {
 	selector := fmt.Sprintf(
-		"app.kubernetes.io/component=transfer-pvc,app.konveyor.io/role=client,app.konveyor.io/created-for-pvc=%s",
+		"app.kubernetes.io/component=transfer-pvc,app.konveyor.io/created-for-pvc=%s",
 		pvcName,
 	)
 	deadline := time.Now().Add(180 * time.Second)
