@@ -111,11 +111,16 @@ jobs:
           echo "focus_file_regex=$FOCUS_FILE_REGEX" >> "$GITHUB_OUTPUT"
 
       - name: Print execution plan
+        env:
+          RUN_MODE: ${{ steps.changed_tests.outputs.run_mode }}
+          FULL_REASON: ${{ steps.changed_tests.outputs.full_reason }}
+          TEST_PATHS: ${{ steps.changed_tests.outputs.test_paths }}
+          FOCUS_FILE_REGEX: ${{ steps.changed_tests.outputs.focus_file_regex }}
         run: |
-          echo "Run mode: ${{ steps.changed_tests.outputs.run_mode }}"
-          echo "Full reason: ${{ steps.changed_tests.outputs.full_reason }}"
+          echo "Run mode: $RUN_MODE"
+          echo "Full reason: $FULL_REASON"
           echo "Transfer mode: INDIRECT (via MinIO)"
-          case "${{ steps.changed_tests.outputs.full_reason }}" in
+          case "$FULL_REASON" in
             outside_e2e)
               echo "Running full suite in parallel: tier0 + tier1 (indirect)"
               echo "Reason: changes outside e2e-tests/ (crane or repo paths)"
@@ -125,8 +130,8 @@ jobs:
               echo "Reason: impactful non-test file(s) or suite bootstrap changed under e2e-tests/"
               ;;
             focused)
-              echo "Running touched tests (indirect): ${{ steps.changed_tests.outputs.test_paths }}"
-              echo "Using focus-file regex: ${{ steps.changed_tests.outputs.focus_file_regex }}"
+              echo "Running touched tests (indirect): $TEST_PATHS"
+              echo "Using focus-file regex: $FOCUS_FILE_REGEX"
               ;;
             *)
               echo "Skipping E2E run (no applicable changes)."
@@ -240,7 +245,7 @@ jobs:
           kubectl --context src run minio-setup --restart=Never \
             --image=quay.io/minio/mc:latest \
             --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/crane-indirect-e2e --ignore-existing"
-          sleep 15
+          kubectl --context src wait --for=jsonpath='{.status.phase}'=Succeeded pod/minio-setup --timeout=120s
           kubectl --context src logs minio-setup
           kubectl --context src delete pod minio-setup --ignore-not-found
 
@@ -393,7 +398,7 @@ jobs:
           kubectl --context src run minio-setup --restart=Never \
             --image=quay.io/minio/mc:latest \
             --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/crane-indirect-e2e --ignore-existing"
-          sleep 15
+          kubectl --context src wait --for=jsonpath='{.status.phase}'=Succeeded pod/minio-setup --timeout=120s
           kubectl --context src logs minio-setup
           kubectl --context src delete pod minio-setup --ignore-not-found
 
@@ -550,7 +555,7 @@ jobs:
           kubectl --context src run minio-setup --restart=Never \
             --image=quay.io/minio/mc:latest \
             --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/crane-indirect-e2e --ignore-existing"
-          sleep 15
+          kubectl --context src wait --for=jsonpath='{.status.phase}'=Succeeded pod/minio-setup --timeout=120s
           kubectl --context src logs minio-setup
           kubectl --context src delete pod minio-setup --ignore-not-found
 
@@ -630,12 +635,17 @@ jobs:
       contents: read
     steps:
       - name: Aggregate E2E results (indirect)
+        env:
+          RUN_MODE: ${{ needs.detect-changes.outputs.run_mode }}
+          TIER0_RESULT: ${{ needs.e2e-indirect-tier0.result }}
+          TIER1_RESULT: ${{ needs.e2e-indirect-tier1.result }}
+          FOCUSED_RESULT: ${{ needs.e2e-indirect-focused.result }}
         run: |
           set -euo pipefail
-          run_mode="${{ needs.detect-changes.outputs.run_mode }}"
-          tier0_result="${{ needs.e2e-indirect-tier0.result }}"
-          tier1_result="${{ needs.e2e-indirect-tier1.result }}"
-          focused_result="${{ needs.e2e-indirect-focused.result }}"
+          run_mode="$RUN_MODE"
+          tier0_result="$TIER0_RESULT"
+          tier1_result="$TIER1_RESULT"
+          focused_result="$FOCUSED_RESULT"
 
           echo "run_mode=${run_mode}"
           echo "e2e-indirect-tier0=${tier0_result}"

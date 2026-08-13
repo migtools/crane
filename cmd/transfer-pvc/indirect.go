@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -185,7 +186,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
 
-	// Follow logs
+	// Follow logs — also capture output to detect rclone transfer stats
 	req := clientset.CoreV1().Pods(namespace).GetLogs(podName, &corev1.PodLogOptions{
 		Container: containerName,
 		Follow:    true,
@@ -200,6 +201,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		}
 	}()
 
+	var logOutput strings.Builder
 	buf := make([]byte, 4096)
 	for {
 		n, readErr := stream.Read(buf)
@@ -207,6 +209,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 			if _, writeErr := os.Stderr.Write(buf[:n]); writeErr != nil {
 				return fmt.Errorf("failed to write logs for pod %s/%s: %w", namespace, podName, writeErr)
 			}
+			logOutput.Write(buf[:n])
 		}
 		if readErr != nil {
 			break
@@ -217,6 +220,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	// ended before the pod completed (e.g. network interruption).
 	waitCtx, waitCancel := context.WithTimeout(context.TODO(), 2*time.Minute)
 	defer waitCancel()
+	var podFailed bool
 	if err := wait.PollUntilContextCancel(waitCtx, 3*time.Second, true, func(ctx context.Context) (bool, error) {
 		pod := &corev1.Pod{}
 		if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
@@ -226,14 +230,75 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		case corev1.PodSucceeded:
 			return true, nil
 		case corev1.PodFailed:
-			return true, fmt.Errorf("pod %s/%s failed", namespace, podName)
+			podFailed = true
+			return true, nil
 		default:
 			return false, nil
 		}
 	}); err != nil {
 		return err
 	}
+
+	if podFailed {
+		return checkRclonePartialSuccess(logOutput.String(), podName, namespace)
+	}
 	return nil
+}
+
+// checkRclonePartialSuccess examines rclone output when the pod exits non-zero.
+// rclone treats permission-denied on a single unreadable directory (e.g., MongoDB's
+// .mongodb) as a fatal sync error even though all data files transferred successfully.
+// This function detects that case and treats it as success when files were transferred.
+// It returns an error only when no files were transferred or the failure is not
+// a permission issue.
+func checkRclonePartialSuccess(output, podName, namespace string) error {
+	// Parse the last "Transferred: N / M, P%" file count line
+	var lastTransferred, lastTotal int
+	fileCountFound := false
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "Transferred:") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 4 {
+			continue
+		}
+		// Skip byte-count lines (contain B, KiB, MiB, GiB units)
+		if strings.ContainsAny(parts[1], "BMKGi") {
+			continue
+		}
+		var n, m int
+		if _, err := fmt.Sscanf(parts[1], "%d", &n); err != nil {
+			continue
+		}
+		// parts[2] is "/" separator, parts[3] is total with possible comma
+		totalStr := strings.TrimRight(parts[3], ",")
+		if _, err := fmt.Sscanf(totalStr, "%d", &m); err != nil {
+			continue
+		}
+		lastTransferred = n
+		lastTotal = m
+		fileCountFound = true
+	}
+
+	if !fileCountFound {
+		return fmt.Errorf("pod %s/%s failed", namespace, podName)
+	}
+
+	if lastTransferred == 0 && lastTotal > 0 {
+		return fmt.Errorf("pod %s/%s: rclone transferred 0 of %d files — all files may be unreadable (check UID/permissions)",
+			namespace, podName, lastTotal)
+	}
+
+	hasPermissionError := strings.Contains(output, "permission denied")
+	if lastTransferred > 0 && hasPermissionError {
+		log.Printf("WARN: rclone completed with permission errors on %d of %d items (unreadable directories skipped)",
+			lastTotal-lastTransferred, lastTotal)
+		return nil
+	}
+
+	return fmt.Errorf("pod %s/%s failed", namespace, podName)
 }
 
 func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, configFilePath, labelPVCName string) (string, error) {

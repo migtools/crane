@@ -189,11 +189,12 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 	if opts.CloudStorage == "" && config.CloudStorage != "" {
 		opts.CloudStorage = config.CloudStorage
 	}
-	if opts.RcloneConfigFile == "" && config.RcloneConfigFile != "" {
-		opts.RcloneConfigFile = config.RcloneConfigFile
-	}
-	if opts.RcloneConfigSecret == "" && config.RcloneConfigSecret != "" {
-		opts.RcloneConfigSecret = config.RcloneConfigSecret
+	if opts.RcloneConfigFile == "" && opts.RcloneConfigSecret == "" {
+		if config.RcloneConfigSecret != "" {
+			opts.RcloneConfigSecret = config.RcloneConfigSecret
+		} else if config.RcloneConfigFile != "" {
+			opts.RcloneConfigFile = config.RcloneConfigFile
+		}
 	}
 
 	args := []string{"transfer-pvc",
