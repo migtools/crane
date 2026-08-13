@@ -1,40 +1,35 @@
 # DEVELOPMENT Documentation Index
 
 ## Overview
-This documentation area provides a comprehensive guide for contributors to the Crane project. It covers the technical architecture, development environment configuration, testing standards, and the plugin-based transformation system required to maintain and extend the tool.
+This documentation area provides a comprehensive guide for developers contributing to the Crane project. It covers project architecture, local development environment setup, plugin creation, testing procedures, and the end-to-end data pipeline lifecycle.
 
 ## Files Summary
-*   **development/README.md**: Serves as the primary entry point and navigator for all developer-focused documentation and project structure.
-*   **development/setup.md**: Details the prerequisites, environment setup, build procedures, and coding conventions for working on the Crane repository.
-*   **development/plugin-development.md**: Explains the architecture, interface, naming conventions, and best practices for creating custom transformation plugins.
-*   **development/testing.md**: Describes unit and E2E testing strategies, including table-driven test patterns, test infrastructure, and CI requirements.
-*   **development/architecture.md**: Provides a deep dive into the pipeline-based data flow, covering the export, transform, apply, validate, and PVC transfer phases.
+* **`development/README.md`**: Serves as the central landing page and navigational index for all developer-focused documentation.
+* **`development/setup.md`**: Details environment prerequisites, repository cloning, building from source, IDE configurations, and instructions for setting up test clusters.
+* **`development/plugin-development.md`**: Explains the plugin system architecture, interface specifications (stdin/stdout), creation of Go/Bash plugins, and stage-based priority execution.
+* **`development/testing.md`**: Outlines standards for unit testing, table-driven test patterns, E2E testing using `kind`/`minikube`, and CI/CD integration requirements.
+* **`development/architecture.md`**: Describes the core "pipeline" philosophy, covering the design and flow of the Export, Transform, Apply, Validate, and PVC transfer phases.
 
 ## Code Changes That Would Require Documentation Updates
-*   **CLI Command Structure**: Adding, renaming, or changing the signature of CLI commands under `cmd/`.
-*   **Pipeline Stages**: Any modification to how stages are discovered, executed, or persisted in the `transform/` directory.
-*   **Plugin Interface**: Changes to the stdin/stdout contract, JSONPatch structure, or plugin discovery paths (e.g., changing the default `~/.local/share/crane/plugins/` directory).
-*   **Kustomize Integration**: Changes to the embedded `krusty` API usage or how `kustomization.yaml` files are generated.
-*   **API Interactions**: Modifications to how `unstructured.Unstructured` objects are handled or how CRDs are collected during export.
-*   **Validation Logic**: Updates to how compatibility reports are generated or how the `validate` phase queries cluster API surfaces.
-*   **Testing Infrastructure**: Changes to the E2E framework under `e2e-tests/` or the introduction of new mock/helper utilities.
-*   **Project Layout**: Moving files out of `internal/` or changing the directory hierarchy.
+* **Command Structure Changes**: Adding, removing, or modifying CLI commands (requires updating `cmd/` directory documentation in `setup.md`).
+* **Pipeline Logic Updates**: Changes to how stages are discovered, how plugins are executed, or updates to the `orchestrator` logic in `internal/transform/`.
+* **Plugin Interface Changes**: Altering the stdin/stdout contract for plugins or the naming convention for stage directories.
+* **Kustomize Integration**: Modifying how `krusty` (embedded kustomize) is invoked or how patch files are generated/applied.
+* **API/Discovery Logic**: Updates to how `dynamic.Interface` or Kubernetes discovery clients are used in the export or validation phases.
+* **New Supported Platforms**: Adding platform-specific transformations or changing how cluster-scoped resources are handled.
+* **Testing Infrastructure**: Changes to the `e2e-tests/` framework or the introduction of new mock/helper utilities.
+* **Dependency Changes**: Updates to the Go version, external libraries, or build dependencies listed in `setup.md`.
 
 ## Key Technical Concepts
-*   **Pipeline Architecture**: Export → Transform → Apply → Validate flow.
-*   **JSONPatch (RFC 6902)**: Used for resource transformations via plugins.
-*   **Kustomize/Krusty**: Embedded Kubernetes configuration management library.
-*   **Plugin Stages**: Naming convention `<priority>_<PluginName>`.
-*   **Unstructured API**: `k8s.io/apimachinery/pkg/apis/meta/v1/unstructured`.
-*   **Table-Driven Tests**: The standard pattern for Go testing in the project.
-*   **Discovery Client**: Used for dynamic Kubernetes resource listing.
-*   **Stage Orchestrator**: The logic in `internal/transform/` managing sequential consistency.
-*   **Golden Manifests**: Fixtures used in `e2e-tests/` for verification.
+* **Pipeline Stages**: `export`, `transform`, `apply`, `validate`, `transfer-pvc`.
+* **Plugin System**: JSONPatch (RFC 6902), `~/.local/share/crane/plugins/`, stage priority numeric prefixes.
+* **Infrastructure**: `kustomize` (krusty API), Kubernetes `unstructured.Unstructured`, `cobra` (CLI framework), `viper` (flags).
+* **Test Patterns**: Table-driven tests, `t.TempDir()`, `golden-manifests`, E2E test framework.
+* **Orchestration**: `Orchestrator`, `Stage` discovery, `KustomizeApplier`.
 
 ## Related Components
-*   **`cmd/`**: CLI command entry points.
-*   **`internal/`**: Core business logic packages (apply, transform, validate, plugin, kustomize).
-*   **`e2e-tests/`**: Integration and regression testing framework.
-*   **`crane-lib`**: External library for built-in transformation logic.
-*   **`pvc-transfer`**: External library used for persistent volume migration.
-*   **Kubernetes API/Discovery**: The source of truth for cluster-scoped and namespaced resources.
+* **`cmd/`**: CLI entry points for all functional phases.
+* **`internal/`**: Core business logic packages including `transform/`, `apply/`, `validate/`, and `plugin/`.
+* **`e2e-tests/`**: The dedicated suite for integration and regression testing.
+* **`crane-lib`**: External library containing common transformation utilities.
+* **`pvc-transfer`**: External subsystem used for data volume migrations.
