@@ -28,9 +28,8 @@ crane transfer-pvc --source-context=<source> --destination-context=<destination>
 ```bash
 crane transfer-pvc --source-context=source --destination-context=destination \
   --pvc-name=data-pvc \
-  --cloud-storage=s3://my-bucket/transfer-path \
+  --cloud-storage=remote:my-bucket/transfer-path \
   --rclone-config-secret=rclone-secret
-```
 
 ## Flags
 
