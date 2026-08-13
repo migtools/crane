@@ -173,7 +173,7 @@ type VerifierPodOptions struct {
 func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 	var labelLines strings.Builder
 	for key, val := range opts.Labels {
-		labelLines.WriteString(fmt.Sprintf("    %s: %q\n", key, val))
+		fmt.Fprintf(&labelLines, "    %s: %q\n", key, val)
 	}
 	labelsBlock := ""
 	if labelLines.Len() > 0 {
@@ -183,8 +183,8 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 	var mounts, volumes strings.Builder
 	for i, v := range opts.Volumes {
 		name := fmt.Sprintf("vol%d", i)
-		mounts.WriteString(fmt.Sprintf("    - name: %s\n      mountPath: %s\n", name, v.MountPath))
-		volumes.WriteString(fmt.Sprintf("  - name: %s\n    persistentVolumeClaim:\n      claimName: %s\n", name, v.PVCName))
+		fmt.Fprintf(&mounts, "    - name: %s\n      mountPath: %s\n", name, v.MountPath)
+		fmt.Fprintf(&volumes, "  - name: %s\n    persistentVolumeClaim:\n      claimName: %s\n", name, v.PVCName)
 	}
 
 	commandJSON, err := json.Marshal(opts.Command)
@@ -208,14 +208,17 @@ metadata:
 %s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mounts.String(), volumes.String())
 
 	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
-		return err
+		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
-	_, err = k.Run("wait", "--for=condition=Ready", "pod/"+opts.Name, "-n", opts.Namespace, "--timeout=120s")
-	return err
+	if _, err := k.Run("wait", "--for=condition=Ready", "pod/"+opts.Name, "-n", opts.Namespace, "--timeout=120s"); err != nil {
+		return fmt.Errorf("wait for verifier pod %s/%s to become ready: %w", opts.Namespace, opts.Name, err)
+	}
+	return nil
 }
 
-// DeleteVerifierPod deletes a pod created by DeployVerifierPod.
+// DeleteVerifierPod deletes a pod created by DeployVerifierPod. Safe to call
+// even if the pod was already removed (e.g. by an earlier DeferCleanup).
 func DeleteVerifierPod(k KubectlRunner, namespace, name string) error {
-	_, err := k.Run("delete", "pod", name, "-n", namespace, "--wait=true")
+	_, err := k.Run("delete", "pod", name, "-n", namespace, "--ignore-not-found", "--wait=true")
 	return err
 }

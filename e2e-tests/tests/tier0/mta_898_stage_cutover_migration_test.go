@@ -101,9 +101,6 @@ var _ = Describe("Stage and cutover migration flow", func() {
 
 		By("Verify the initial data landed on target via a throwaway redis instance on the migrated PVC")
 		const verifierPod = "mta-898-redis-verifier"
-		// Reused as-is for every verifier deploy below — same pod name, same PVC,
-		// just torn down and recreated between transfer-pvc runs since the PVC
-		// is ReadWriteOnce.
 		verifierOpts := VerifierPodOptions{
 			Name:      verifierPod,
 			Namespace: tgtApp.Namespace,
@@ -111,6 +108,11 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			Command:   []string{"redis-server", "--requirepass", mta898RedisPassword},
 			Volumes:   []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
 		}
+		DeferCleanup(func() {
+			if err := DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod); err != nil {
+				log.Printf("cleanup verifier pod %q: %v", verifierPod, err)
+			}
+		})
 		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
 		verifyValue, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "verifier", "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
@@ -131,7 +133,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 
 		By("Run the second stage transfer-pvc while capturing the rsync client's raw log for delta verification")
 		rsyncLogCh := make(chan string, 1)
-		go captureRsyncClientLog(kubectlSrc, srcApp.Namespace, rsyncLogCh)
+		go captureRsyncClientLog(kubectlSrc, srcApp.Namespace, pvcName, rsyncLogCh)
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
 		rsyncLog := <-rsyncLogCh
 
@@ -262,35 +264,33 @@ func literalDataBytes(rsyncLog string) (float64, error) {
 	return val * byteUnitMultipliers[matched[2]], nil
 }
 
-func captureRsyncClientLog(k KubectlRunner, namespace string, result chan<- string) {
+func captureRsyncClientLog(k KubectlRunner, namespace, pvcName string, result chan<- string) {
+	selector := fmt.Sprintf(
+		"app.kubernetes.io/component=transfer-pvc,app.konveyor.io/role=client,app.konveyor.io/created-for-pvc=%s",
+		pvcName,
+	)
 	deadline := time.Now().Add(180 * time.Second)
 	var lastLog string
 	seenPod := false
 	for time.Now().Before(deadline) {
-		out, err := k.Run("get", "pods", "-n", namespace, "-o", "name")
-		if err != nil {
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		podName := ""
-		for _, line := range strings.Split(out, "\n") {
-			if strings.HasPrefix(line, "pod/rsync-client") {
-				podName = strings.TrimPrefix(line, "pod/")
-				break
-			}
-		}
-		if podName == "" {
+		out, err := k.Run("get", "pods", "-n", namespace, "-l", selector, "-o", "name")
+		if err != nil || strings.TrimSpace(out) == "" {
 			if seenPod {
 				break
 			}
 			time.Sleep(300 * time.Millisecond)
 			continue
 		}
+		podName := strings.TrimPrefix(strings.Split(strings.TrimSpace(out), "\n")[0], "pod/")
 		seenPod = true
 		if podLog, err := k.Run("logs", podName, "-n", namespace, "-c", "rsync"); err == nil && podLog != "" {
 			lastLog = podLog
 		}
 		time.Sleep(300 * time.Millisecond)
+	}
+	if !seenPod {
+		result <- fmt.Sprintf("no rsync-client pod found in namespace %q (selector %q) within the capture window", namespace, selector)
+		return
 	}
 	result <- lastLog
 }
