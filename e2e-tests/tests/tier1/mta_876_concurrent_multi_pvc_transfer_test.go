@@ -31,7 +31,7 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		tgtApp := scenario.TgtAppNonAdmin
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
-			"file_size": 1,
+			"file_size":      1,
 		}
 		tgtApp.ExtraVars = map[string]any{"non_admin_user": "true"}
 
@@ -86,7 +86,7 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		Expect(distinctHashes).To(HaveLen(volumeCount), "expected each volume to hold distinct data")
 
 		By("Launch a separate crane transfer-pvc invocation for each PVC at the same time")
-		tgtIP, err := GetClusterNodeIP(tgtApp.Context)
+		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 
 		durations := make([]time.Duration, volumeCount)
@@ -136,14 +136,6 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 			totalElapsed, minDuration, maxDuration, sumDurations)
 		Expect(totalElapsed).To(BeNumerically("<", sumDurations),
 			"running %d transfers concurrently should take less than the sum of their individual durations", volumeCount)
-		// Compare against the FASTEST transfer, not the slowest. Every goroutine's
-		// timer starts at the same instant, so the slowest transfer's own duration
-		// is always ~= totalElapsed whether the transfers ran concurrently or were
-		// fully serialized (it's still "running", from its own t0, for the whole
-		// queue ahead of it) — comparing against it can't tell the two cases apart.
-		// The fastest transfer's duration stays small if it truly ran in parallel,
-		// and grows close to totalElapsed if everything was serialized (queued
-		// behind the others), so it's the correct baseline for this check.
 		concurrencyTolerance := 3
 		Expect(totalElapsed).To(BeNumerically("<", minDuration*time.Duration(concurrencyTolerance)),
 			"total wall-clock time (%s) should stay within %dx the fastest single transfer (%s), not balloon toward serialized execution (sum: %s)",
