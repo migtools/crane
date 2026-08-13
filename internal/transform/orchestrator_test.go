@@ -859,16 +859,16 @@ data:
 	}
 
 	// Create transform artifacts with Secret marked as whiteout (entire type)
-	var artifacts []cranelib.TransformArtifact
+	var artifacts []StageArtifact
 	for _, f := range files {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: false,
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 
 		// Mark ALL Secrets as whiteout (entire type whiteout)
 		if f.Unstructured.GetKind() == "Secret" {
@@ -1062,16 +1062,16 @@ data:
 	}
 
 	// Create artifacts with Secret marked as whiteout
-	var artifacts []cranelib.TransformArtifact
+	var artifacts []StageArtifact
 	for _, f := range files {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: f.Unstructured.GetKind() == "Secret", // Whiteout all Secrets
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 		artifacts = append(artifacts, artifact)
 	}
 
@@ -1179,16 +1179,16 @@ data:
 		t.Fatalf("Failed to read export files: %v", err)
 	}
 
-	var stage1Artifacts []cranelib.TransformArtifact
+	var stage1Artifacts []StageArtifact
 	for _, f := range files {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: f.Unstructured.GetKind() == "Secret", // Whiteout Secrets in stage 1
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 		stage1Artifacts = append(stage1Artifacts, artifact)
 	}
 
@@ -1218,16 +1218,16 @@ data:
 	}
 
 	// Stage 2: Load from stage 1 output and create stage 2 artifacts (no whiteout)
-	var stage2Artifacts []cranelib.TransformArtifact
+	var stage2Artifacts []StageArtifact
 	for _, resource := range stage1Output {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     resource,
 			HaveWhiteOut: false, // Stage 2 doesn't whiteout anything
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(resource),
 			PluginName:   "",
-		}
+		}}
 		stage2Artifacts = append(stage2Artifacts, artifact)
 	}
 
@@ -1342,17 +1342,17 @@ data:
 	}
 
 	// Create artifacts with one ConfigMap whiteout, one not
-	var artifacts []cranelib.TransformArtifact
+	var artifacts []StageArtifact
 	for _, f := range files {
 		isWhiteout := f.Unstructured.GetName() == "config-whiteout"
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: isWhiteout,
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 		artifacts = append(artifacts, artifact)
 	}
 
