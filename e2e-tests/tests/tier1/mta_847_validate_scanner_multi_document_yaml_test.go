@@ -15,7 +15,7 @@ import (
 )
 
 var _ = Describe("Validate scanner multi-document YAML behavior [Live Mode]", func() {
-	It("[MTA-847] should scan all resources from a single multi-document YAML file", Label("tier1", "validate", "admin"), func() {
+	It("[MTA-847] should scan all resources from a single multi-document YAML file", Label("tier1", "validate"), func() {
 		scenario := NewMigrationScenario(
 			"scanner-multi-doc-validate-live",
 			"validate-multi-doc-yaml",
@@ -25,11 +25,11 @@ var _ = Describe("Validate scanner multi-document YAML behavior [Live Mode]", fu
 			config.TargetContext,
 		)
 
-		if scenario.KubectlTgt.Context == "" {
-			Skip("target-context is required")
+		if scenario.KubectlTgtNonAdmin.Context == "" {
+			Skip("target-nonadmin-context is required")
 		}
 
-		runner := scenario.Crane
+		runner := scenario.CraneNonAdmin
 		paths, err := NewScenarioPaths("crane-validate-multi-doc-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
@@ -48,7 +48,7 @@ var _ = Describe("Validate scanner multi-document YAML behavior [Live Mode]", fu
 
 		By("Run crane validate in live mode against target context")
 		stdout, err := runner.Validate(ValidateOptions{
-			Context:      scenario.KubectlTgt.Context,
+			Context:      scenario.KubectlTgtNonAdmin.Context,
 			InputDir:     inputDir,
 			ValidateDir:  paths.ValidateDir,
 			OutputFormat: "json",
@@ -69,7 +69,7 @@ var _ = Describe("Validate scanner multi-document YAML behavior [Live Mode]", fu
 
 		By("Verify report metadata")
 		Expect(report.Mode).To(Equal("live"))
-		Expect(report.ClusterContext).To(Equal(scenario.KubectlTgt.Context))
+		Expect(report.ClusterContext).To(Equal(scenario.KubectlTgtNonAdmin.Context))
 
 		By("Verify all 3 resources from multi-document YAML were scanned")
 		Expect(report.TotalScanned).To(Equal(3), "expected 3 resources scanned from multi-document YAML (Namespace, ConfigMap, Service)")
