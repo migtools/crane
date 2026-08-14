@@ -37,7 +37,7 @@ The transform phase uses a multi-stage Kustomize pipeline:
 
 1. **Stage discovery** — Scans `transform/` for existing stage directories matching `<number>_<name>` pattern
 2. **Plugin execution** — For plugin-based stages (name ending in `Plugin`), loads and runs the matching plugin to generate JSONPatch operations
-3. **Resource writing** — Writes individual resource files to `<stage>/input/` or `<stage>/new/` (for plugin-generated resources)
+3. **Resource writing** — Writes individual resource files to `<stage>/input/` or `<stage>/new/` (for plugin-generated new resources)
 4. **Patch writing** — Writes plugin-generated patches to `<stage>/patches/`
 5. **Kustomization generation** — Generates `kustomization.yaml` linking resources and patches
 
@@ -48,7 +48,7 @@ The transform phase uses a multi-stage Kustomize pipeline:
 
 ### Sequential Consistency
 
-In multi-stage pipelines, each stage runs on the fully materialized output of the previous stage (not raw patches). Each stage contains `input/`, `new/`, `patches/`, and `output/` directly within the stage directory (e.g., `transform/<stage>/input/`, `transform/<stage>/new/`).
+In multi-stage pipelines, each stage runs on the fully materialized output of the previous stage (not raw patches). Each stage contains `input/`, `patches/`, `output/` and optionally `new/` directly within the stage directory (e.g., `transform/<stage>/input/`, `transform/<stage>/new/`).
 
 ### Key Components
 
@@ -137,5 +137,5 @@ Uses the [pvc-transfer](https://github.com/migtools/pvc-transfer) library:
                     ┌──────────────┐
                     │ Target       │
                     │ Cluster      │
-                    └──────┘
+                    └──────────────┘
 ```
