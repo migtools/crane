@@ -136,8 +136,9 @@ When creating a Pull Request that introduces new features, CLI flags, or changes
 2. The bot will analyze your code diff and suggest updates to the relevant documentation files under `docs/`.
 3. Review the AI suggestions. If satisfied, comment `[update-docs]` to apply the documentation updates directly.
 
-> **Note:** For security reasons, the `[review-docs]` and `[update-docs]` commands can only be triggered by repository **collaborators/maintainers** (users with write permissions). If you are an external contributor, a maintainer can trigger the bot on your PR.
-> 
+> **Note:** For security reasons, the `[review-docs]` and `[update-docs]` commands can only be triggered by **authorized maintainers listed in the repository allowlist**. If you need the bot to run on your PR, please ask an authorized maintainer to trigger it for you.
+>
+
 ## Further Examples
 
 Please see [konveyor/crane-runner/main/examples](https://github.com/konveyor/crane-runner/tree/main/examples#readme) for further scenarios to explore what can be done with Crane + Tekton for migrating applications. 
