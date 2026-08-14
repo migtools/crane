@@ -18,25 +18,25 @@
       }
     },
     "commands": {
-      "built": "2026-08-06T09:58:45.478067",
+      "built": "2026-08-13T14:13:07.658197",
       "doc_hashes": {
         "commands/export.md": "18d5f3a7088cb799a8d88d34c033fd44221128ff1a72d9b7cadffc211493f3d4",
         "commands/transform.md": "2f067699ade74ba84c49fa40f12fe7253f30978a503cddb3186b7ae65d51d80e",
         "commands/validate.md": "be296169a1e5dbf222ae233c49843d7b76cbbe8759fc0f16220c27d68592d305",
         "commands/apply.md": "64902f9c980f3aa86f7aeddc0a9819cbb1031467e3263b26ac83b9494ba7b4ba",
-        "commands/transfer-pvc.md": "c0a6e7fb147d0ac5e52e696ca2be4cb44ca1589f8389807f1e9811008b874ba1"
+        "commands/transfer-pvc.md": "b6a2d593d56ef973f480228b770d7c034863e0830b210fd8dd66585df82ece2d"
       }
     },
     "development": {
-      "built": "2026-08-06T09:58:49.012222",
+      "built": "2026-08-13T14:13:13.737408",
       "doc_hashes": {
         "development/setup.md": "c2064cf8412e64c2d259a121c1717fe305d9e3c6782413640a1041ed5c8e1ea4",
         "development/plugin-development.md": "18be806fa9771eda99dfd7af775ac728f2e86b647ea9280f7b4f7271b29b220e",
         "development/testing.md": "60d476a324f8c241ef502f61e85f1fc444d45dbc299e1658afc24b0b253de357",
-        "development/architecture.md": "e1346c1411bebf6aca860317bdb0fbbc92eae3810e3a2a66ab5a981b4bec9531",
-        "development/README.md": "02cb2ad963534727279a3cddd5a357a95e95b8117dad2f38803ae4333cf3c271"
+        "development/architecture.md": "ba955b12e3bc729e70a8ec776501398d6e8a30cabeff75038b3a0b6a28fd770f",
+        "development/README.md": "af080e30c5f3a549753aa53045ab99ecda515bd28a1317e7125fb2db66758df8"
       }
     }
   },
-  "updated": "2026-08-06T09:58:49.012677"
+  "updated": "2026-08-13T14:13:13.738034"
 }
