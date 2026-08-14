@@ -15,6 +15,9 @@ var (
 	TargetNonAdminContext string
 	InsecureSkipTLSVerify bool
 	RunAs                 string
+	CloudStorage          string
+	RcloneConfigFile      string
+	RcloneConfigSecret    string
 )
 
 // Validates the --run-as flag value and logs the active mode.
