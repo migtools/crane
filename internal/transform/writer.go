@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
-	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/sirupsen/logrus"
@@ -34,7 +33,7 @@ func NewKustomizeWriter(opts file.PathOpts, stageName string, log *logrus.Logger
 }
 
 // WriteStage writes all artifacts for a stage to disk
-func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, force bool) error {
+func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) error {
 	stageDir := w.opts.GetStageDir(w.stageName)
 
 	// Handle directory preparation based on force flag
@@ -53,7 +52,6 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	// Create stage directories
 	resourcesDir := w.opts.GetInputDir(w.stageName)
 	patchesDir := w.opts.GetPatchesDir(w.stageName)
-
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
 		return fmt.Errorf("failed to create resources directory: %w", err)
 	}
@@ -69,6 +67,8 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	activeResourcesMap := make(map[string]unstructured.Unstructured)
 	var patches []kustomize.Patch
 
+	isNewResourceMap := make(map[string]bool) // tracks IsNewResource per artifact for dedup resolution
+
 	for _, artifact := range artifacts {
 		resourceID := getResourceID(artifact.Resource)
 
@@ -82,6 +82,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 				w.log.Warnf("Duplicate resource %s: replacing whiteout with active resource", resourceID)
 				allResourcesMap[resourceID] = artifact.Resource
 				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+				isNewResourceMap[resourceID] = artifact.IsNewResource
 				// Update active resources map
 				delete(activeResourcesMap, resourceID) // remove old entry if any
 				activeResourcesMap[resourceID] = artifact.Resource
@@ -95,11 +96,13 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 					resourceID, map[bool]string{true: "whiteout", false: "active"}[artifact.HaveWhiteOut])
 				allResourcesMap[resourceID] = artifact.Resource
 				whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+				isNewResourceMap[resourceID] = artifact.IsNewResource
 			}
 		} else {
 			// First occurrence - store it
 			allResourcesMap[resourceID] = artifact.Resource
 			whiteoutStatusMap[resourceID] = artifact.HaveWhiteOut
+			isNewResourceMap[resourceID] = artifact.IsNewResource
 		}
 
 		// Track whiteout status - whiteout resources don't get active references or patches
@@ -172,12 +175,31 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 	var resourcePaths []string
 	var whiteoutComments []string
 
-	// Write each resource to its own file (similar to export structure)
+	// Write each resource to its own file
+	// New resources go to new/, all other resources go to input/
+	newResourcesDir := w.opts.GetNewResourcesDir(w.stageName)
+	newResourcesDirCreated := false
 	for _, resource := range allResources {
 		filename := file.GetResourceFilename(resource)
-		fullPath := filepath.Join(resourcesDir, filename)
+		resourceID := getResourceID(resource)
 
-		// Write individual resource file
+		var targetDir, dirPrefix string
+		if isNewResourceMap[resourceID] {
+			if !newResourcesDirCreated {
+				if err := os.MkdirAll(newResourcesDir, 0700); err != nil {
+					return fmt.Errorf("failed to create new resources directory: %w", err)
+				}
+				newResourcesDirCreated = true
+			}
+			targetDir = newResourcesDir
+			dirPrefix = file.NewResourcesDirName
+		} else {
+			targetDir = resourcesDir
+			dirPrefix = file.InputDirName
+		}
+
+		fullPath := filepath.Join(targetDir, filename)
+
 		yamlBytes, err := yaml.Marshal(resource.Object)
 		if err != nil {
 			return fmt.Errorf("failed to marshal resource %s to YAML: %w", filename, err)
@@ -186,13 +208,10 @@ func (w *KustomizeWriter) WriteStage(artifacts []cranelib.TransformArtifact, for
 			return fmt.Errorf("failed to write resource file %s: %w", filename, err)
 		}
 
-		// Check if this resource is active or whiteout
-		resourceID := getResourceID(resource)
 		if activeResourceIDs[resourceID] {
-			resourcePaths = append(resourcePaths, filepath.Join(file.InputDirName, filename))
+			resourcePaths = append(resourcePaths, filepath.Join(dirPrefix, filename))
 		} else {
-			// This resource is whiteout - add comment
-			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - %s/%s", file.InputDirName, filename))
+			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - %s/%s", dirPrefix, filename))
 		}
 	}
 

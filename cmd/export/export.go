@@ -34,6 +34,7 @@ type ExportOptions struct {
 	// 2. globalFlags for the args merged with values from the viper config file
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
+	log              *logrus.Logger
 
 	rawConfig              api.Config
 	exportDir              string
@@ -53,6 +54,8 @@ type ExportOptions struct {
 // Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
+	o.log = o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 
 	if c != nil {
 		kubeconfigFlag := c.Flags().Lookup("kubeconfig")
@@ -64,11 +67,13 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 	o.rawConfig, err = o.configFlags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {
+		log.Errorf("Failed to load kubeconfig: %v", err)
 		return err
 	}
 
 	o.userSpecifiedNamespace, _, err = o.configFlags.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
+		log.Errorf("Failed to resolve namespace from kubeconfig: %v", err)
 		return err
 	}
 
@@ -77,6 +82,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	if c != nil {
 		if f := c.Flags().Lookup("namespace"); f != nil && f.Changed {
 			if o.configFlags.Namespace != nil && strings.TrimSpace(*o.configFlags.Namespace) == "" {
+				log.Debugf("Namespace flag was set to empty string")
 				return fmt.Errorf("namespace cannot be empty; omit -n/--namespace to use your kubeconfig context default")
 			}
 		}
@@ -88,7 +94,8 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		for _, keysAndString := range keysAndStrings {
 			keyString := strings.Split(keysAndString, "=")
 			if len(keyString) != 2 {
-				return fmt.Errorf("extra options (%v) formatted incorrectly", o.asExtras)
+				log.Debugf("Invalid --as-extras format at entry %d", len(o.extras)+1)
+				return fmt.Errorf("extra options formatted incorrectly")
 			}
 			o.extras[keyString[0]] = strings.Split(keyString[1], ",")
 		}
@@ -99,6 +106,8 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
+	log := o.globalFlags.GetLoggerOrDefault()
+
 	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 		for _, f := range []struct {
 			flag string
@@ -110,15 +119,18 @@ func (o *ExportOptions) Validate() error {
 			{"--token", o.configFlags.BearerToken},
 		} {
 			if f.val != nil && *f.val != "" {
+				log.Debugf("Cannot use --context with %s", f.flag)
 				return fmt.Errorf("cannot use --context with %s; it overrides the value defined in the context", f.flag)
 			}
 		}
 	}
 	if o.asExtras != "" && *o.configFlags.Impersonate == "" && len(*o.configFlags.ImpersonateGroup) == 0 {
+		log.Debugf("--as-extras requires specifying a user or group to impersonate")
 		return fmt.Errorf("extras requires specifying a user or group to impersonate")
 	}
 	if o.labelSelector != "" {
 		if _, err := labels.Parse(o.labelSelector); err != nil {
+			log.Debugf("Invalid --label-selector %q: %v", o.labelSelector, err)
 			return fmt.Errorf("invalid --label-selector: %w", err)
 		}
 	}
@@ -129,6 +141,7 @@ func (o *ExportOptions) Validate() error {
 		}
 		for _, g := range o.crdSkipGroups {
 			if includeSet[g] {
+				log.Debugf("CRD group %q appears in both --crd-skip-group and --crd-include-group", g)
 				return fmt.Errorf("CRD group %q appears in both --crd-skip-group and --crd-include-group", g)
 			}
 		}
@@ -192,7 +205,7 @@ func mergeImpersonationExtras(dest, src map[string][]string) map[string][]string
 func (o *ExportOptions) Run() error {
 	var err error
 
-	log := o.globalFlags.GetLogger()
+	log := o.globalFlags.GetLoggerOrDefault()
 	log.Infof("Starting export for namespace %q", o.userSpecifiedNamespace)
 
 	restConfig, err := o.configFlags.ToRESTConfig()
@@ -296,7 +309,6 @@ func (o *ExportOptions) Run() error {
 		log.Infof("Collected %d CRDs for referenced custom resources", crdCount)
 	}
 
-	log.Debugf("Attempting to write resources to files")
 	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
 		log.Warnf("Error writing manifests to file: %v, continuing", e)

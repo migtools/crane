@@ -859,16 +859,16 @@ data:
 	}
 
 	// Create transform artifacts with Secret marked as whiteout (entire type)
-	var artifacts []cranelib.TransformArtifact
+	var artifacts []StageArtifact
 	for _, f := range files {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: false,
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 
 		// Mark ALL Secrets as whiteout (entire type whiteout)
 		if f.Unstructured.GetKind() == "Secret" {
@@ -1062,16 +1062,16 @@ data:
 	}
 
 	// Create artifacts with Secret marked as whiteout
-	var artifacts []cranelib.TransformArtifact
+	var artifacts []StageArtifact
 	for _, f := range files {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: f.Unstructured.GetKind() == "Secret", // Whiteout all Secrets
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 		artifacts = append(artifacts, artifact)
 	}
 
@@ -1179,16 +1179,16 @@ data:
 		t.Fatalf("Failed to read export files: %v", err)
 	}
 
-	var stage1Artifacts []cranelib.TransformArtifact
+	var stage1Artifacts []StageArtifact
 	for _, f := range files {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: f.Unstructured.GetKind() == "Secret", // Whiteout Secrets in stage 1
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 		stage1Artifacts = append(stage1Artifacts, artifact)
 	}
 
@@ -1218,16 +1218,16 @@ data:
 	}
 
 	// Stage 2: Load from stage 1 output and create stage 2 artifacts (no whiteout)
-	var stage2Artifacts []cranelib.TransformArtifact
+	var stage2Artifacts []StageArtifact
 	for _, resource := range stage1Output {
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     resource,
 			HaveWhiteOut: false, // Stage 2 doesn't whiteout anything
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(resource),
 			PluginName:   "",
-		}
+		}}
 		stage2Artifacts = append(stage2Artifacts, artifact)
 	}
 
@@ -1342,17 +1342,17 @@ data:
 	}
 
 	// Create artifacts with one ConfigMap whiteout, one not
-	var artifacts []cranelib.TransformArtifact
+	var artifacts []StageArtifact
 	for _, f := range files {
 		isWhiteout := f.Unstructured.GetName() == "config-whiteout"
-		artifact := cranelib.TransformArtifact{
+		artifact := StageArtifact{TransformArtifact: cranelib.TransformArtifact{
 			Resource:     f.Unstructured,
 			HaveWhiteOut: isWhiteout,
 			Patches:      nil,
 			IgnoredOps:   []cranelib.IgnoredOperation{},
 			Target:       cranelib.DeriveTargetFromResource(f.Unstructured),
 			PluginName:   "",
-		}
+		}}
 		artifacts = append(artifacts, artifact)
 	}
 
@@ -1823,6 +1823,154 @@ resources:
 	t.Log("✓ Stage 2 kustomization.yaml: includes both namespaced and cluster-scoped resources")
 	t.Log("✓ Stage 2 output: all resources preserved with correct directory structure")
 	t.Log("✓ Resource content: ClusterRole rules survived two pipeline stages")
+}
+
+func TestResolveOptionalFlags(t *testing.T) {
+	globalFlags := map[string]string{
+		"registry-replacement": "docker.io=quay.io",
+		"strip-default-rbac":   "false",
+	}
+	stageFlags := map[string]map[string]string{
+		"RegistryPlugin": {
+			"registry-replacement": "docker.io=ghcr.io",
+		},
+	}
+
+	tests := []struct {
+		name           string
+		optionalFlags  map[string]string
+		stageOptionals map[string]map[string]string
+		stage          Stage
+		expected       map[string]string
+	}{
+		{
+			name:           "per-stage flags merged with global, stage wins on conflict",
+			optionalFlags:  globalFlags,
+			stageOptionals: stageFlags,
+			stage:          Stage{PluginName: "RegistryPlugin"},
+			expected: map[string]string{
+				"registry-replacement": "docker.io=ghcr.io",
+				"strip-default-rbac":   "false",
+			},
+		},
+		{
+			name:           "falls back to global when no per-stage",
+			optionalFlags:  globalFlags,
+			stageOptionals: stageFlags,
+			stage:          Stage{PluginName: "KubernetesPlugin"},
+			expected:       globalFlags,
+		},
+		{
+			name:           "returns nil when neither set",
+			optionalFlags:  nil,
+			stageOptionals: nil,
+			stage:          Stage{PluginName: "KubernetesPlugin"},
+			expected:       nil,
+		},
+		{
+			name:           "returns global when stageOptionals map is empty",
+			optionalFlags:  globalFlags,
+			stageOptionals: map[string]map[string]string{},
+			stage:          Stage{PluginName: "KubernetesPlugin"},
+			expected:       globalFlags,
+		},
+		{
+			name:           "stage optionals with no global flags",
+			optionalFlags:  nil,
+			stageOptionals: stageFlags,
+			stage:          Stage{PluginName: "RegistryPlugin"},
+			expected:       stageFlags["RegistryPlugin"],
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &Orchestrator{
+				OptionalFlags:      tt.optionalFlags,
+				StageOptionalFlags: tt.stageOptionals,
+			}
+			result := o.resolveOptionalFlags(tt.stage)
+			if len(result) != len(tt.expected) {
+				t.Errorf("expected %d flags, got %d", len(tt.expected), len(result))
+				return
+			}
+			for k, v := range tt.expected {
+				if result[k] != v {
+					t.Errorf("key %q: expected %q, got %q", k, v, result[k])
+				}
+			}
+		})
+	}
+}
+
+func TestValidateStageOptionalFlags(t *testing.T) {
+	stages := []Stage{
+		{PluginName: "KubernetesPlugin", DirName: "10_KubernetesPlugin"},
+		{PluginName: "CustomEdits", DirName: "20_CustomEdits"},
+	}
+
+	tests := []struct {
+		name           string
+		stageOptionals map[string]map[string]string
+		wantErr        bool
+		errContains    string
+	}{
+		{
+			name:           "nil map is valid",
+			stageOptionals: nil,
+			wantErr:        false,
+		},
+		{
+			name:           "empty map is valid",
+			stageOptionals: map[string]map[string]string{},
+			wantErr:        false,
+		},
+		{
+			name: "known stage is valid",
+			stageOptionals: map[string]map[string]string{
+				"KubernetesPlugin": {"key": "val"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "unknown stage is rejected",
+			stageOptionals: map[string]map[string]string{
+				"NonExistentPlugin": {"key": "val"},
+			},
+			wantErr:     true,
+			errContains: "unknown stage",
+		},
+		{
+			name: "typo in stage name is rejected",
+			stageOptionals: map[string]map[string]string{
+				"KubernetesPlugin": {"key": "val"},
+				"Typo":             {"key": "val"},
+			},
+			wantErr:     true,
+			errContains: "unknown stage",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &Orchestrator{
+				StageOptionalFlags: tt.stageOptionals,
+			}
+			err := o.validateStageOptionalFlags(stages)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Fatalf("expected error containing %q, got %v", tt.errContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
 }
 
 // TestEmptyStageErrorMessage verifies that when a stage has no resources,
