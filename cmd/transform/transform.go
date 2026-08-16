@@ -46,6 +46,7 @@ type Flags struct {
 	TransformDir      string   `mapstructure:"transform-dir"`
 	SkipPlugins       []string `mapstructure:"skip-plugins"`
 	OptionalFlags     string   `mapstructure:"optional-flags"`
+	StageOptionals    []string `mapstructure:"stage-optionals"`
 	Overwrite         bool     `mapstructure:"overwrite"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
@@ -167,9 +168,8 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.InstructionsFile, "instructions-file", "", "Path to the transform instructions file")
 	cmd.Flags().BoolVar(&o.Overwrite, "overwrite", false, "Overwrite existing stage directories even if they contain user modifications")
 
-	// Deprecated: optional-flags will be removed in a future version
-	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "(DEPRECATED) JSON string holding flag value pairs to be passed to all plugins. Use custom stages with kustomization instead. (ie. '{\"foo-flag\": \"foo-a=/data,foo-b=/data\", \"bar-flag\": \"bar-value\"}')")
-	cmd.Flags().MarkDeprecated("optional-flags", "use custom stages with kustomization patches instead. This flag applies globally to all stages and will be removed in a future version.")
+	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins (e.g. '{\"registry-replacement\": \"docker.io=quay.io\"}')")
+	cmd.Flags().StringArrayVar(&o.StageOptionals, "stage-optionals", nil, "Per-stage optional flags as StageName=JSON, repeatable (e.g. --stage-optionals 'KubernetesPlugin={\"registry-replacement\":\"docker.io=quay.io\"}')")
 
 	// Kustomize arguments
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
@@ -202,11 +202,16 @@ func (o *Options) run() error {
 		return err
 	}
 
-	if o.InstructionsFile != "" && len(o.RequestedStages) > 0 { // instructions file and positional args are mutually exclusive
-		log.Debugf("Cannot use --instructions-file together with positional stage arguments")
+	if o.InstructionsFile != "" && len(o.RequestedStages) > 0 {
+    log.Debugf("Cannot use --instructions-file together with positional stage arguments")
 		return fmt.Errorf("use either --instructions-file or positional stage arguments, not both")
 	}
+	if o.InstructionsFile != "" && len(o.StageOptionals) > 0 {
+		return fmt.Errorf("use either --instructions-file or --stage-optionals, not both")
+	}
+
 	var instructionStages []string
+	var instructionStageOptionals map[string]map[string]string
 	if o.InstructionsFile != "" {
 		instructionsFilePath, err := filepath.Abs(o.InstructionsFile)
 		if err != nil {
@@ -218,7 +223,11 @@ func (o *Options) run() error {
 			log.Errorf("Failed to load instructions file %q: %v", instructionsFilePath, err)
 			return err
 		}
-		instructionStages = internalTransform.GenerateStageDirNames(cfg.Stages)
+		instructionStages = internalTransform.GenerateStageDirNames(cfg.StageNames())
+		instructionStageOptionals, err = cfg.StageOptionals()
+		if err != nil {
+			return fmt.Errorf("invalid instructions file %q: %w", instructionsFilePath, err)
+		}
 	}
 	// Parse optional flags
 	var optionalFlags map[string]string
@@ -228,7 +237,24 @@ func (o *Options) run() error {
 			log.Errorf("Failed to parse optional-flags JSON: %v", err)
 			return err
 		}
-		optionalFlags = optionalFlagsToLower(optionalFlags)
+		optionalFlags, err = optionalFlagsToLowerChecked(optionalFlags)
+		if err != nil {
+			return fmt.Errorf("invalid --optional-flags: %w", err)
+		}
+	}
+
+	// Parse per-stage optional flags from CLI
+	var stageOptionalFlags map[string]map[string]string
+	if len(o.StageOptionals) > 0 {
+		stageOptionalFlags, err = parseStageOptionals(o.StageOptionals)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Use instruction file per-stage optionals if present, otherwise CLI
+	if instructionStageOptionals != nil {
+		stageOptionalFlags = instructionStageOptionals
 	}
 
 	// Parse and validate kustomize arguments
@@ -246,6 +272,7 @@ func (o *Options) run() error {
 		PluginDir:          pluginDir,
 		SkipPlugins:        o.SkipPlugins,
 		OptionalFlags:      optionalFlags,
+		StageOptionalFlags: stageOptionalFlags,
 		Overwrite:          o.Overwrite,
 		CraneVersion:       "v1.0.0", // TODO: Get from build version
 		NewlyCreatedStages: make(map[string]bool),
@@ -358,14 +385,51 @@ func (o *Options) run() error {
 	return nil
 }
 
+// parseStageOptionals parses --stage-optionals values from "StageName=JSON" format
+// into a map of stage name to optional flags.
+func parseStageOptionals(values []string) (map[string]map[string]string, error) {
+	result := make(map[string]map[string]string, len(values))
+	for _, v := range values {
+		stageName, jsonStr, found := strings.Cut(v, "=")
+		if !found {
+			return nil, fmt.Errorf("invalid --stage-optionals value %q: expected format StageName=JSON", v)
+		}
+
+		if stageName == "" {
+			return nil, fmt.Errorf("invalid --stage-optionals value %q: stage name is empty", v)
+		}
+		if _, exists := result[stageName]; exists {
+			return nil, fmt.Errorf("duplicate --stage-optionals for stage %q", stageName)
+		}
+
+		var flags map[string]string
+		if err := json.Unmarshal([]byte(jsonStr), &flags); err != nil {
+			return nil, fmt.Errorf("invalid JSON in --stage-optionals for stage %q: %w", stageName, err)
+		}
+		if flags == nil {
+			return nil, fmt.Errorf("invalid JSON in --stage-optionals for stage %q: expected a JSON object, got null", stageName)
+		}
+		lower, err := optionalFlagsToLowerChecked(flags)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --stage-optionals for stage %q: %w", stageName, err)
+		}
+		result[stageName] = lower
+	}
+	return result, nil
+}
+
 // Returns an extras map with lowercased keys, since any keys coming from the config file
 // are lower-cased by viper
-func optionalFlagsToLower(inFlags map[string]string) map[string]string {
-	lowerMap := make(map[string]string)
+func optionalFlagsToLowerChecked(inFlags map[string]string) (map[string]string, error) {
+	lowerMap := make(map[string]string, len(inFlags))
 	for key, val := range inFlags {
-		lowerMap[strings.ToLower(key)] = val
+		lk := strings.ToLower(key)
+		if _, exists := lowerMap[lk]; exists {
+			return nil, fmt.Errorf("duplicate optional key %q (case-insensitive collision)", lk)
+		}
+		lowerMap[lk] = val
 	}
-	return lowerMap
+	return lowerMap, nil
 }
 
 // runStageWithCleanup runs a single stage and optionally cleans up on error.

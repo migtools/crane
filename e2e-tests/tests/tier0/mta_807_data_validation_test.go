@@ -185,6 +185,12 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		Expect(VerifyPVCsExistByName(pvcs, tgtpvcs)).NotTo(HaveOccurred())
 		log.Printf("Found %d PVCs in target namespace %q", len(tgtpvcs), tgtApp.Namespace)
 
+		By("Pre-flight: verify target PVCs are schedulable")
+		for _, pvc := range tgtpvcs {
+			Expect(VerifyPVCSchedulable(scenario.KubectlTgt.Context, tgtApp.Namespace, pvc.Name)).
+				NotTo(HaveOccurred())
+		}
+
 		By("Verify transferred PVCs contain data")
 		for _, pvc := range tgtpvcs {
 			mountPath := "/var/lib/mysql"
