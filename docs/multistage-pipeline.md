@@ -171,6 +171,58 @@ crane apply 10_KubernetesPlugin 20_OpenshiftPlugin
 
 If no stages are specified, all discovered stages are applied sequentially to ensure sequential consistency.
 
+## Optional Flags
+
+Optional flags control plugin behavior during `crane transform`. They can be set globally (for all stages) or per-stage.
+
+### Discovering Available Flags
+
+```bash
+crane transform optionals
+```
+
+### Global Optional Flags
+
+Pass a JSON object using `--optional-flags`. All plugins in all stages receive these flags.
+
+```bash
+# Registry replacement for all stages
+crane transform --optional-flags '{"registry-replacement": "docker.io=quay.io"}'
+
+# Disable default RBAC stripping
+crane transform --optional-flags '{"strip-default-rbac": "false"}'
+```
+
+### Per-Stage Optional Flags (CLI)
+
+Use repeatable `--stage-optionals` arguments in `StageName=JSON` format. The stage name is the plugin name (e.g., `KubernetesPlugin`), not the directory name.
+
+```bash
+# Different registry replacement per stage
+crane transform \
+--stage-optionals 'KubernetesPlugin={"registry-replacement": "docker.io=quay.io"}' \
+--stage-optionals 'OpenshiftPlugin={"registry-replacement": "docker.io=registry.redhat.io"}'
+```
+
+*Note: Per-stage flags override the global set for that stage (no merging). Stages without per-stage flags inherit global flags.*
+
+### Per-Stage Optional Flags (Instructions File)
+
+Stages in the instructions file can be defined as objects with `name` and `optionals`.
+
+```yaml
+# instructions.yaml
+stages:
+- name: KubernetesPlugin
+  optionals:
+    registry-replacement: "docker.io=quay.io"
+- name: OpenshiftPlugin
+  optionals:
+    registry-replacement: "docker.io=registry.redhat.io"
+```
+
+*Note: Plain strings in the instructions file inherit the global `--optional-flags` value.*
+
 ## Priority Assignment
 
 ### Auto-Assignment
@@ -185,8 +237,6 @@ Plugin priorities are automatically assigned from stage directory names:
 ```
 
 ### Recommended Priority Order
-
-The system provides heuristic-based recommendations:
 
 | Plugin Type        | Recommended Priority | Keywords                    |
 |-------------------|--------------------|------------------------------|
@@ -207,12 +257,6 @@ Stages are chained automatically based on priority order:
 ```text
 export/ → 10_KubernetesPlugin/ → 20_OpenshiftPlugin/ → 30_ImagestreamPlugin/ → output/
 ```
-
-Each stage:
-1. Reads input resources (from export or previous stage)
-2. Applies transformations via plugins
-3. Writes output to its stage directory
-4. Next stage uses this output as input
 
 ## Workflow Examples
 
@@ -249,59 +293,11 @@ crane transform \
   --transform-dir transform \
   20_OpenshiftPlugin
 
-# Create ImageStream transformations
-crane transform \
-  --transform-dir transform \
-  30_ImagestreamPlugin
-
 # Apply all stages
 crane apply --transform-dir transform --output-dir output
 ```
 
-### Example 3: Iterative Development
-
-```bash
-# Initial transform
-crane transform --export-dir export --transform-dir transform
-
-# Make manual edits to resources in transform/10_KubernetesPlugin/input/
-# Edit deployment.yaml to add annotations, etc.
-
-# Try to re-run transform (will fail due to dirty check)
-crane transform --export-dir export --transform-dir transform
-# Error: contains user modifications
-
-# Force overwrite if needed
-crane transform --export-dir export --transform-dir transform --force
-
-# Or preserve changes by creating a new stage
-crane transform 20_custom
-```
-
 ## Migration from JSONPatch Workflow
-
-### Old Workflow
-
-```text
-transform/
-├── namespace/
-│   └── default/
-│       └── deployment/
-│           └── myapp.json          # JSONPatch per resource
-```
-
-### New Workflow
-
-```text
-transform/
-└── 10_KubernetesPlugin/
-    ├── input/
-    │   └── deployment.yaml         # Grouped by type
-    ├── patches/
-    │   └── deployment-myapp-default.yaml
-    ├── output/                     # Materialized output
-    └── kustomization.yaml
-```
 
 ### Benefits
 
@@ -310,48 +306,6 @@ transform/
 3. **Stage Chaining**: Supports multi-stage pipelines for complex transformations
 4. **Better Diff**: Deterministic ordering produces stable Git diffs
 5. **Dirty Check**: Prevents accidental overwrites of user modifications
-
-## Advanced Features
-
-### Stage Validation
-
-Validate stage names before applying:
-
-```go
-import (
-    "github.com/konveyor/crane/internal/transform"
-)
-
-// Validate stage names
-stages, err := transform.DiscoverStages(transformDir)
-if err != nil {
-    fmt.Printf("failed to discover stages: %v\n", err)
-}
-
-for _, stage := range stages {
-    if err := transform.ValidateStageName(stage.DirName); err != nil {
-        fmt.Printf("Invalid stage name %s: %v\n", stage.DirName, err)
-    }
-}
-```
-
-### Custom Stage Naming
-
-Generate stage names with priority numbers:
-
-```go
-import "github.com/konveyor/crane/internal/transform"
-
-// Generate a stage name with priority
-stageName := transform.GenerateStageName(15, "my-plugin")
-// Returns: "15_my-plugin"
-
-// Validate a stage name
-err := transform.ValidateStageName("15_my-plugin")
-if err != nil {
-    // Handle invalid stage name
-}
-```
 
 ## Troubleshooting
 
@@ -373,40 +327,6 @@ if err != nil {
 2. Verify all resource files exist in input/
 3. Run `crane apply <stage>` to isolate the failing stage
 
-### Issue: Resources not appearing in output
-
-**Cause**: Resources may be whiteout (excluded) by plugins.
-
-**Solution**:
-1. Check `whiteout-report.yaml` in stage directory
-2. Review plugin configuration
-3. Check plugin logs for whiteout decisions
-
-### Issue: Patches not being applied
-
-**Cause**: Patch file or target selector may be incorrect.
-
-**Solution**:
-1. Verify patch file exists in patches/
-2. Check target selector matches resource metadata
-3. Review `ignored-patches-report.yaml` for conflicts
-
-## Best Practices
-
-1. **Stage Naming**: Use descriptive names that indicate the transformation purpose
-   - Good: `10_KubernetesPlugin-base`, `20_OpenshiftPlugin-routes`, `30_security-context`
-   - Bad: `10_stage1`, `20_stage2`
-
-2. **Priority Spacing**: Leave gaps (10, 20, 30) to allow insertion of new stages
-
-3. **Version Control**: Commit transform directories to Git to track changes
-
-4. **Testing**: Always test transformed output before applying to production
-
-5. **Incremental Changes**: Use separate stages for different concerns (security, networking, storage)
-
-6. **Documentation**: Include README.md in transform directory explaining pipeline purpose
-
 ## API Reference
 
 ### Transform Package
@@ -427,35 +347,6 @@ first := transform.GetFirstStage(stages)
 last := transform.GetLastStage(stages)
 prev := transform.GetPreviousStage(stages, currentStage)
 next := transform.GetNextStage(stages, currentStage)
-
-// Stage name validation and generation
-err = transform.ValidateStageName("10_KubernetesPlugin")
-stageName := transform.GenerateStageName(10, "kubernetes")
-```
-
-### Apply Package
-
-```go
-// Kustomize apply (embedded — no kubectl dependency)
-applier := &apply.KustomizeApplier{
-    Log:               logger,
-    TransformDir:      transformDir,
-    OutputDir:         outputDir,
-    SkipClusterScoped: false,
-}
-
-// Apply a single stage
-err = applier.ApplySingleStage("10_KubernetesPlugin")
-
-// Apply multiple stages with selector
-selector := transform.StageSelector{
-    FromStage: "10_KubernetesPlugin",
-    ToStage:   "30_ImagestreamPlugin",
-}
-err = applier.ApplyMultiStage(selector)
-
-// Apply all stages sequentially
-err = applier.ApplyMultiStage(transform.StageSelector{})
 ```
 
 ## Further Reading
@@ -472,40 +363,12 @@ Stages don't have to correspond to a plugin. If a stage directory name doesn't m
 
 > **Warning — Namespace renaming:** If you manually rename the namespace in resource files within a custom stage (for example, changing `namespace: old-ns` to `namespace: new-ns`), Crane does not automatically update **ClusterRoleBinding subjects** referencing the old namespace name, or **NetworkPolicy `namespaceSelector`** entries matching the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`). These will silently break after migration. Manually update them as well.
 
-### Example
-
-```bash
-# Create a multi-stage pipeline
-crane transform 10_KubernetesPlugin   # Plugin-backed
-crane transform 50_ManualEdits        # No matching plugin
-crane transform 90_FinalCleanup       # No matching plugin
-```
-
-**What happens:**
-
-1. **10_KubernetesPlugin**: Resources transformed by KubernetesPlugin (removes metadata.uid, etc.)
-2. **50_ManualEdits**: Resources copied unchanged to `transform/50_ManualEdits/input/`
-   - No plugins match "ManualEdits" 
-   - No patches generated
-   - You can manually edit resources in this stage
-3. **90_FinalCleanup**: Resources from previous stage copied unchanged
-   - User can add manual patches or edits
-
-### Behavior
-
-When stage name doesn't match any plugin:
-- `filterPluginsByStage()` returns empty list `[]`
-- `runner.Run()` called with empty plugin list
-- Resources written unchanged (no transformations)
-- No patches generated
-- **This is intentional** - allows user-controlled stages
-
 ### Mixed Pipeline Example
 
 ```text
 export/
 └── resources/
-    └── deployment.yaml (raw export with uid, resourceVersion, etc.)
+    └── deployment.yaml
         ↓
 transform/10_KubernetesPlugin/  (plugin: removes server-managed fields)
 └── input/deployment.yaml (cleaned)

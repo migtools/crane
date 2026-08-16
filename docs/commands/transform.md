@@ -188,6 +188,71 @@ output/
 - **`resources/<namespace>/`**: Individual resource files organized by namespace for easier review and selective application
 - **`resources/_cluster/`**: Cluster-scoped resources (omitted when `--skip-cluster-scoped` is set)
 
+## Plugin Optional Flags
+
+Plugins may accept optional flags to modify their transformation logic.
+
+### Discovering Available Flags
+
+Run the following command to see which optional fields are accepted by configured plugins:
+
+```bash
+crane transform optionals
+```
+
+### Global Optional Flags
+
+Use `--optional-flags` to pass a JSON object of flags to all plugins across all stages.
+
+```bash
+# Registry replacement for all stages
+crane transform --optional-flags '{"registry-replacement": "docker.io=quay.io"}'
+
+# Multiple flags
+crane transform --optional-flags '{"registry-replacement": "docker.io=quay.io", "add-annotations": "migrated-by=crane"}'
+```
+
+### Per-Stage Optional Flags (CLI)
+
+Use the repeatable `--stage-optionals` flag to set options for specific stages. The stage name refers to the plugin name (e.g., `KubernetesPlugin`), not the directory name (`10_KubernetesPlugin`).
+
+```bash
+# Different registry replacement per stage
+crane transform \
+--stage-optionals 'KubernetesPlugin={"registry-replacement": "docker.io=quay.io"}' \
+--stage-optionals 'OpenshiftPlugin={"registry-replacement": "docker.io=registry.redhat.io"}'
+```
+
+### Per-Stage Optional Flags (Instructions File)
+
+When using an `--instructions-file`, you can define optionals directly within the file. 
+
+```yaml
+# instructions.yaml
+stages:
+- name: KubernetesPlugin
+  optionals:
+    registry-replacement: "docker.io=quay.io"
+- name: OpenshiftPlugin
+  optionals:
+    registry-replacement: "docker.io=registry.redhat.io"
+```
+
+```bash
+crane transform --instructions-file instructions.yaml
+```
+
+### Precedence and Constraints
+
+- **Overrides**: Per-stage optionals replace the entire global set for that stage (there is no merging).
+- **Fallback**: Stages without per-stage flags inherit global `--optional-flags`.
+- **Mutual Exclusivity**: `--instructions-file` and `--stage-optionals` cannot be used together.
+
+| Mode | Highest priority | Lowest priority |
+|------|-----------------|-----------------|
+| With `--instructions-file` | per-stage `optionals` from file | `--optional-flags` CLI |
+| Without `--instructions-file` | `--stage-optionals` CLI | `--optional-flags` CLI |
+
 ## Automatic Stage Creation
 
 When no stages exist in the transform directory, `crane transform` automatically creates stages for **all available plugins** (not just KubernetesPlugin). Plugins are sorted alphabetically and assigned priorities starting at 10, incrementing by 5. Use `--skip-plugins` to exclude specific plugins from this default behavior.
@@ -309,7 +374,7 @@ Example patch (`default--apps-v1--Deployment--wordpress.patch.yaml`):
 
 ### kustomization.yaml
 
-Kustomize configuration that ties everything together:
+Kustomize configuration that ties together:
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -326,12 +391,7 @@ resources:
 - input/ConfigMap__v1_default_nginx-config.yaml
 - input/Deployment_apps_v1_default_wordpress.yaml
 - input/Service__v1_default_kubernetes.yaml
-
-# Whiteout resources are written to input/ for complete snapshot
-# but excluded from active resources list above:
-# - input/Pod__v1_default_wordpress-74b89cc84c-nm9f8.yaml
 ```
-
 
 ## Common Workflows
 
