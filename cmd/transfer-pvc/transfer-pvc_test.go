@@ -1274,13 +1274,19 @@ func TestTransferPVCCommand_Validate(t *testing.T) {
 			errMsg:  "cannot evaluate destination context",
 		},
 		{
-			name: "same cluster for source and destination returns error",
+			name: "same cluster same namespace same name returns error",
 			cmd: TransferPVCCommand{
 				sourceContext:      &clientcmdapi.Context{Cluster: "same-cluster"},
 				destinationContext: &clientcmdapi.Context{Cluster: "same-cluster"},
+				Flags: Flags{
+					PVC: PvcFlags{
+						Name:      mappedNameVar{source: "my-pvc", destination: "my-pvc"},
+						Namespace: mappedNameVar{source: "ns1", destination: "ns1"},
+					},
+				},
 			},
 			wantErr: true,
-			errMsg:  "both source and destination cluster are the same",
+			errMsg:  "source and destination PVC names must differ",
 		},
 		{
 			name: "PVC validation failure cascades error",
