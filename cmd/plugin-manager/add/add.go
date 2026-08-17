@@ -202,14 +202,16 @@ func (o *Options) run(args []string) error {
 	return nil
 }
 
-func validateFileInput(filepath, filename string) error {
-	if strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
-		return fmt.Errorf("invalid plugin name %q: must not contain path separators or traversal sequences", filename)
+func validateFileInput(dir, filename string) error {
+	if filename == "" || filename == "." || filename == ".." || strings.ContainsRune(filename, '\\') || filename != filepath.Base(filename) {
+		return fmt.Errorf("invalid plugin name %q: must be a bare file name without path separators or traversal sequences", filename)
 	}
 
-	existingPath := filepath + "/" + filename
-	if _, err := os.Stat(existingPath); err == nil {
+	existingPath := filepath.Join(dir, filename)
+	if _, err := os.Lstat(existingPath); err == nil {
 		return fmt.Errorf("a plugin named %q already exists at %s, please remove it first before installing", filename, existingPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to check destination %s: %w", existingPath, err)
 	}
 	return nil
 }
@@ -218,7 +220,7 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	if err := validateFileInput(filepath, filename); err != nil {
 		return err
 	}
-	
+
 	var binaryContents io.Reader
 	isUrl, url := plugin.IsUrl(url)
 	if !isUrl {
@@ -246,7 +248,7 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	}
 
 	// Create the file
-	pluginBinary, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0777)
+	pluginBinary, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_EXCL, 0755)
 	if err != nil {
 		return err
 	}
