@@ -69,10 +69,15 @@ type ClusterRoleBinding struct {
 	Name            string
 	ClusterRoleName string
 	Label           string
+	Subject         string
 }
 
 func (crb ClusterRoleBinding) Create(k KubectlRunner) error {
-	_, err := k.Run("create", "clusterrolebinding", crb.Name, "--clusterrole="+crb.ClusterRoleName)
+	args := []string{"create", "clusterrolebinding", crb.Name, "--clusterrole=" + crb.ClusterRoleName}
+	if crb.Subject != "" {
+		args = append(args, crb.Subject)
+	}
+	_, err := k.Run(args...)
 	if err != nil {
 		return fmt.Errorf("failed to create ClusterRoleBinding %s: %w", crb.Name, err)
 	}
