@@ -27,6 +27,7 @@ type Options struct {
 	Flags
 	// Positional arguments for stage selection
 	RequestedStages []string
+	log             *logrus.Logger
 }
 
 type Flags struct {
@@ -44,14 +45,12 @@ type Flags struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
 func (o *Options) Validate() error {
-	log := logrus.StandardLogger()
-	if o.globalFlags != nil {
-		log = o.globalFlags.GetLogger()
-	}
+	log := o.globalFlags.GetLoggerOrDefault()
 	info, err := os.Stat(o.TransformDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -136,19 +135,19 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLogger()
-	log.Infof("Starting apply")
+	log := o.globalFlags.GetLoggerOrDefault()
+	log.Infof("Starting apply...")
 
 	transformDir, err := filepath.Abs(o.TransformDir)
 	if err != nil {
-		log.Debugf("Failed to resolve transform directory path %q: %v", o.TransformDir, err)
-		return fmt.Errorf("failed to resolve transform directory path %q: %w", o.TransformDir, err)
+		log.Errorf("Failed to resolve transform directory path %q: %v", o.TransformDir, err)
+		return err
 	}
 
 	outputDir, err := filepath.Abs(o.OutputDir)
 	if err != nil {
-		log.Debugf("Failed to resolve output directory path %q: %v", o.OutputDir, err)
-		return fmt.Errorf("failed to resolve output directory path %q: %w", o.OutputDir, err)
+		log.Errorf("Failed to resolve output directory path %q: %v", o.OutputDir, err)
+		return err
 	}
 
 	if _, err := os.Stat(outputDir); err == nil {
@@ -157,13 +156,13 @@ func (o *Options) run() error {
 			return fmt.Errorf("output directory %q already exists; use --overwrite to replace it", outputDir)
 		}
 		if err := os.RemoveAll(outputDir); err != nil {
-			log.Debugf("Failed to clear output directory %q: %v", outputDir, err)
-			return fmt.Errorf("failed to clear output directory: %w", err)
+			log.Errorf("Failed to clear output directory %q: %v", outputDir, err)
+			return err
 		}
 	}
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
-		log.Debugf("Failed to create output directory %q: %v", outputDir, err)
-		return fmt.Errorf("failed to create output directory: %w", err)
+		log.Errorf("Failed to create output directory %q: %v", outputDir, err)
+		return err
 	}
 	log.Debugf("Output directory ready: %q", outputDir)
 
@@ -192,8 +191,8 @@ func (o *Options) run() error {
 		// Validate that all requested stages can be resolved
 		existingStages, err := internalTransform.DiscoverStages(transformDir)
 		if err != nil {
-			log.Debugf("Failed to discover stages in %q: %v", transformDir, err)
-			return fmt.Errorf("failed to discover stages: %w", err)
+			log.Errorf("Failed to discover stages in %q: %v", transformDir, err)
+			return err
 		}
 		log.Debugf("Discovered %d existing stage(s)", len(existingStages))
 
