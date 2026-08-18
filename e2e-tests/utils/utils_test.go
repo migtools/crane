@@ -1837,6 +1837,26 @@ func TestAssertResourcesExist(t *testing.T) {
 			},
 			wantFound: true,
 		},
+		{
+			name:  "wrong_group_rejected",
+			files: []string{"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_cr.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRole", Name: "cr", Group: "other.group.io"},
+			},
+			wantFound:   false,
+			wantErr:     true,
+			errContains: []string{"not found"},
+		},
+		{
+			name:  "wrong_version_rejected",
+			files: []string{"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_cr.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRole", Name: "cr", Group: "rbac.authorization.k8s.io", Version: "v2"},
+			},
+			wantFound:   false,
+			wantErr:     true,
+			errContains: []string{"not found"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -1868,7 +1888,7 @@ func TestAssertResourcesExist(t *testing.T) {
 	}
 
 	t.Run("missing_directory", func(t *testing.T) {
-		_, err := AssertResourcesExist("/nonexistent-dir-for-test", []ResourceMatch{
+		_, err := AssertResourcesExist(filepath.Join(t.TempDir(), "does-not-exist"), []ResourceMatch{
 			{Kind: "ClusterRole", Name: "cr"},
 		})
 		if err == nil {
