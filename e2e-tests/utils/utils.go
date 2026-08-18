@@ -1420,7 +1420,10 @@ func AssertResourcesExist(dir string, resources []ResourceMatch) (bool, error) {
 			}
 		}
 		if !found {
-			return false, fmt.Errorf("%v not found", r.Name)
+			return false, fmt.Errorf(
+				"exported resource kind=%q name=%q group=%q version=%q scope=%q not found in directory %q",
+				r.Kind, r.Name, r.Group, r.Version, r.Scope, dir,
+			)
 		}
 	}
 	return true, nil
