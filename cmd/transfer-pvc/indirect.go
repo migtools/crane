@@ -370,7 +370,7 @@ func generateCryptSection(cloudStoragePath string) (string, error) {
 		return "", fmt.Errorf("failed to obscure encryption password: %w", err)
 	}
 
-	return indirect.BuildCryptSection(cloudStoragePath, obscured), nil
+	return indirect.BuildCryptSection(cloudStoragePath, obscured)
 }
 
 // rcloneObscure encodes a plaintext password in rclone's obscured format.
