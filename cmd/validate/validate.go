@@ -8,6 +8,7 @@ import (
 
 	"github.com/konveyor/crane/internal/flags"
 	internalValidate "github.com/konveyor/crane/internal/validate"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -19,6 +20,7 @@ type ValidateOptions struct {
 
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
+	log              *logrus.Logger
 
 	inputDir         string
 	validateDir      string
@@ -35,6 +37,8 @@ type ValidateOptions struct {
 // detected later in Run() when discovery is queried.
 // Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
+	o.log = o.globalFlags.GetLoggerOrDefault()
+
 	kubeconfigFlag := c.Flags().Lookup("kubeconfig")
 	if kubeconfigFlag == nil || !kubeconfigFlag.Changed {
 		emptyStr := ""
@@ -46,7 +50,8 @@ func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 	}
 	_, err := o.configFlags.ToDiscoveryClient()
 	if err != nil {
-		return fmt.Errorf("creating discovery client: %w", err)
+		o.log.Errorf("Failed to create discovery client: %v", err)
+		return err
 	}
 	return nil
 }
@@ -82,16 +87,21 @@ func determineClusterContext(cf *genericclioptions.ConfigFlags) (string, error) 
 
 // Validate checks that flags have valid values.
 func (o *ValidateOptions) Validate(cmd *cobra.Command) error {
+	log := o.globalFlags.GetLoggerOrDefault()
+
 	info, err := os.Stat(o.inputDir)
 	if err != nil {
+		log.Debugf("Input directory %q: %v", o.inputDir, err)
 		return fmt.Errorf("input-dir %q: %w", o.inputDir, err)
 	}
 	if !info.IsDir() {
+		log.Debugf("Input path %q is not a directory", o.inputDir)
 		return fmt.Errorf("input-dir %q is not a directory", o.inputDir)
 	}
 
 	o.outputFormat = strings.ToLower(o.outputFormat)
 	if o.outputFormat != "yaml" && o.outputFormat != "json" {
+		log.Debugf("Invalid --output format: %q", o.outputFormat)
 		return fmt.Errorf("--output must be \"yaml\" or \"json\", got %q", o.outputFormat)
 	}
 
@@ -100,24 +110,31 @@ func (o *ValidateOptions) Validate(cmd *cobra.Command) error {
 		// Ignore default kubeconfig loaded from KUBECONFIG env var or ~/.kube/config.
 		// This allows offline validation to work in CI/CD environments where KUBECONFIG is set.
 		if cmd.Flags().Changed("context") {
+			log.Debugf("--api-resources and --context are mutually exclusive")
 			return fmt.Errorf("--api-resources and --context are mutually exclusive; use --api-resources for offline validation or --context for live validation")
 		}
 		if cmd.Flags().Changed("kubeconfig") {
+			log.Debugf("--api-resources and --kubeconfig are mutually exclusive")
 			return fmt.Errorf("--api-resources and --kubeconfig are mutually exclusive; use --api-resources for offline validation or --kubeconfig for live validation")
 		}
 		if cmd.Flags().Changed("server") {
+			log.Debugf("--api-resources and --server are mutually exclusive")
 			return fmt.Errorf("--api-resources and --server are mutually exclusive; use --api-resources for offline validation or --server for live validation")
 		}
 		if cmd.Flags().Changed("token") {
+			log.Debugf("--api-resources and --token are mutually exclusive")
 			return fmt.Errorf("--api-resources and --token are mutually exclusive; use --api-resources for offline validation or --token for live validation")
 		}
 		if cmd.Flags().Changed("cluster") {
+			log.Debugf("--api-resources and --cluster are mutually exclusive")
 			return fmt.Errorf("--api-resources and --cluster are mutually exclusive; use --api-resources for offline validation or --cluster for live validation")
 		}
 		if cmd.Flags().Changed("user") {
+			log.Debugf("--api-resources and --user are mutually exclusive")
 			return fmt.Errorf("--api-resources and --user are mutually exclusive; use --api-resources for offline validation or --user for live validation")
 		}
 		if _, err := os.Stat(o.apiResourcesFile); err != nil {
+			log.Debugf("API resources file %q: %v", o.apiResourcesFile, err)
 			return fmt.Errorf("api-resources file %q: %w", o.apiResourcesFile, err)
 		}
 	}
@@ -127,16 +144,9 @@ func (o *ValidateOptions) Validate(cmd *cobra.Command) error {
 
 // Run performs the scan, match, and report steps.
 func (o *ValidateOptions) Run() error {
-	log := o.globalFlags.GetLogger()
+	log := o.globalFlags.GetLoggerOrDefault()
 
-	log.Debugf("Input directory: %s", o.inputDir)
-	log.Debugf("Validate directory: %s", o.validateDir)
-	log.Debugf("Output format: %s", o.outputFormat)
-	if o.apiResourcesFile != "" {
-		log.Debugf("Mode: offline (api-resources: %s)", o.apiResourcesFile)
-	} else {
-		log.Debugf("Mode: live")
-	}
+	log.Infof("Starting validate")
 
 	entries, err := internalValidate.ScanManifests(internalValidate.ScanOptions{Dirs: []string{o.inputDir}}, log)
 	if err != nil {
@@ -146,6 +156,7 @@ func (o *ValidateOptions) Run() error {
 	log.Infof("Scanned %d distinct GVK+namespace tuples", len(entries))
 
 	if len(entries) == 0 {
+		log.Debugf("No manifests found in %q: nothing to validate", o.inputDir)
 		return fmt.Errorf("no manifests found in %s: nothing to validate", o.inputDir)
 	}
 
@@ -163,8 +174,9 @@ func (o *ValidateOptions) Run() error {
 	} else {
 		discoveryClient, err := o.configFlags.ToDiscoveryClient()
 		if err != nil {
-			return fmt.Errorf("creating discovery client: %w", err)
-		} 
+			log.Errorf("Failed to create discovery client: %v", err)
+			return err
+		}
 		discoveryClient.Invalidate()
 
 		report, err = internalValidate.MatchResults(entries, internalValidate.MatchOptions{DiscoveryClient: discoveryClient}, log)
@@ -187,14 +199,17 @@ func (o *ValidateOptions) Run() error {
 
 	if _, err := os.Stat(o.validateDir); err == nil {
 		if !o.overwrite {
+			log.Debugf("Validate directory %q already exists; use --overwrite to replace it", o.validateDir)
 			return fmt.Errorf("validate directory %q already exists; use --overwrite to replace it", o.validateDir)
 		}
 		if err := os.RemoveAll(o.validateDir); err != nil {
-			return fmt.Errorf("clearing validate directory %q: %w", o.validateDir, err)
+			log.Errorf("Failed to clear validate directory %q: %v", o.validateDir, err)
+			return err
 		}
 	}
 	if err := os.MkdirAll(o.validateDir, 0700); err != nil {
-		return fmt.Errorf("creating validate directory: %w", err)
+		log.Errorf("Failed to create validate directory %q: %v", o.validateDir, err)
+		return err
 	}
 
 	reportExt := o.outputFormat
@@ -203,7 +218,8 @@ func (o *ValidateOptions) Run() error {
 
 	reportFile, err := os.Create(reportPath)
 	if err != nil {
-		return fmt.Errorf("creating validation report %q: %w", reportPath, err)
+		log.Errorf("Failed to create validation report %q: %v", reportPath, err)
+		return err
 	}
 	var writeErr error
 	switch o.outputFormat {
@@ -214,10 +230,12 @@ func (o *ValidateOptions) Run() error {
 	}
 	if writeErr != nil {
 		_ = reportFile.Close()
-		return fmt.Errorf("writing validation report %q: %w", reportPath, writeErr)
+		log.Errorf("Failed to write validation report %q: %v", reportPath, writeErr)
+		return writeErr
 	}
 	if err := reportFile.Close(); err != nil {
-		return fmt.Errorf("closing validation report %q: %w", reportPath, err)
+		log.Errorf("Failed to close validation report %q: %v", reportPath, err)
+		return err
 	}
 	log.Infof("Wrote validation report to %s", reportPath)
 
@@ -225,9 +243,11 @@ func (o *ValidateOptions) Run() error {
 		if err := internalValidate.WriteFailures(failuresDir, report, log); err != nil {
 			return fmt.Errorf("writing validation failures to %q: %w", failuresDir, err)
 		}
+		log.Warnf("Validate completed with incompatible resources")
 		return internalValidate.ErrValidationFailed
 	}
 
+	log.Infof("Validate complete")
 	return nil
 }
 
@@ -258,7 +278,7 @@ the validate-dir for auditability.
 
 Exit code 0 means all checks pass; exit code 1 means one or more checks
 failed (or another error occurred).`,
-		Args:         cobra.NoArgs,
+		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
