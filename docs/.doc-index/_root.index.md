@@ -4,11 +4,8 @@
 This documentation area provides comprehensive guides, workflows, and reference materials for **Crane**, a tool designed for migrating Kubernetes workloads between clusters. It covers the end-to-end migration lifecycle, including resource extraction, multi-stage Kustomize-based transformations, validation, and compatibility constraints.
 
 ## Files Summary
-* **kustomize-multistage.md**: Describes the sequential, plugin-driven architecture for transforming Kubernetes resources via Kustomize.
-* **CRANE_COMPATIBILITY_MATRIX.md**: Details the support boundaries between namespace-scoped and cluster-scoped resources during migration.
 * **pre-apply-validation-guide.md**: Provides a checklist and scripts for validating generated manifests against a target cluster before deployment.
 * **plugins.md**: Explains the plugin system used for resource transformation, including discovery and management of built-in and community plugins.
-* **transform.md**: Details the `transform/` directory structure, naming conventions, and the multi-stage pipeline workflow.
 * **resource-compatibility.md**: Outlines the functional requirements and RBAC context needed to migrate different Kubernetes resource types.
 * **multistage-pipeline.md**: Provides an in-depth look at the multi-stage Kustomize pipeline, including CLI usage and stage chaining.
 * **stateless-migration-quickstart.md**: A step-by-step tutorial for performing a basic stateless migration.

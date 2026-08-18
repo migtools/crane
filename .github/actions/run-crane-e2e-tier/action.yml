@@ -73,7 +73,7 @@ runs:
 
     - name: Clone k8s-apps-deployer
       shell: bash
-      run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+      run: git clone https://github.com/migtools/k8s-apps-deployer.git
 
     - name: Create venv and install package
       shell: bash
