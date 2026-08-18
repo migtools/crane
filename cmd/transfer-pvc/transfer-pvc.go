@@ -258,6 +258,9 @@ func (t *TransferPVCCommand) Validate() error {
 		if t.Flags.RcloneConfigSecret != "" && t.Flags.RcloneConfigFile != "" {
 			return fmt.Errorf("--rclone-config-secret and --rclone-config-file are mutually exclusive")
 		}
+		if t.Flags.Encrypt && t.Flags.RcloneConfigSecret != "" {
+			return fmt.Errorf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
+		}
 		return nil
 	}
 

@@ -87,6 +87,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 			if err != nil {
 				return fmt.Errorf("failed to generate encryption config: %w", err)
 			}
+			configData = append(configData, '\n')
 			configData = append(configData, []byte(cryptSection)...)
 		}
 
