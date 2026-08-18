@@ -157,12 +157,12 @@ func (o *Options) run() error {
 		}
 		if err := os.RemoveAll(outputDir); err != nil {
 			log.Errorf("Failed to clear output directory %q: %v", outputDir, err)
-			return err
+			return fmt.Errorf("failed to clear output directory: %w", err)
 		}
 	}
 	if err := os.MkdirAll(outputDir, 0700); err != nil {
 		log.Errorf("Failed to create output directory %q: %v", outputDir, err)
-		return err
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 	log.Debugf("Output directory ready: %q", outputDir)
 
@@ -192,7 +192,7 @@ func (o *Options) run() error {
 		existingStages, err := internalTransform.DiscoverStages(transformDir)
 		if err != nil {
 			log.Errorf("Failed to discover stages in %q: %v", transformDir, err)
-			return err
+			return fmt.Errorf("failed to discover stages: %w", err)
 		}
 		log.Debugf("Discovered %d existing stage(s)", len(existingStages))
 
