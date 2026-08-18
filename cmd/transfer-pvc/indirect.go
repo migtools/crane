@@ -106,6 +106,26 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 	}
 
+	// Validate rclone config secret exists on both clusters before creating pods
+	if t.Flags.RcloneConfigSecret != "" {
+		for _, check := range []struct {
+			c         client.Client
+			namespace string
+			side      string
+		}{
+			{srcClient, t.PVC.Namespace.source, "source"},
+			{destClient, t.PVC.Namespace.destination, "destination"},
+		} {
+			secret := &corev1.Secret{}
+			if err := check.c.Get(context.TODO(), client.ObjectKey{
+				Name: configSecret, Namespace: check.namespace,
+			}, secret); err != nil {
+				return fmt.Errorf("rclone config secret %q not found in namespace %q on %s cluster: %w",
+					configSecret, check.namespace, check.side, err)
+			}
+		}
+	}
+
 	// Get security contexts for source and target separately
 	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name)
 	if err != nil {
