@@ -147,6 +147,14 @@ func (o *ValidateOptions) Run() error {
 	log := o.globalFlags.GetLoggerOrDefault()
 
 	log.Infof("Starting validate")
+	log.Debugf("Input directory: %s", o.inputDir)
+	log.Debugf("Validate directory: %s", o.validateDir)
+	log.Debugf("Output format: %s", o.outputFormat)
+	if o.apiResourcesFile != "" {
+		log.Debugf("Mode: offline (api-resources: %s)", o.apiResourcesFile)
+	} else {
+		log.Debugf("Mode: live")
+	}
 
 	entries, err := internalValidate.ScanManifests(internalValidate.ScanOptions{Dirs: []string{o.inputDir}}, log)
 	if err != nil {
