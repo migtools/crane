@@ -73,17 +73,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 	fmt.Fprintf(os.Stderr, "[1/6] Reading source PVC ... ok\n")
 
-	// Create destination PVC
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
-	destPVC := t.buildDestinationPVC(srcPVC)
-	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		log.Debugf("Unable to create destination PVC %s/%s: %v", t.PVC.Namespace.destination, t.PVC.Name.destination, err)
-		return fmt.Errorf("unable to create destination PVC: %w", err)
-	}
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
-
-	// Resolve rclone config secret name
+	// Resolve rclone config secret name and validate before creating destination resources
 	configSecret := t.Flags.RcloneConfigSecret
 	if t.Flags.RcloneConfigFile != "" {
 		configData, err := os.ReadFile(t.Flags.RcloneConfigFile)
@@ -118,7 +108,6 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 	}
 
-	// Validate rclone config secret exists on both clusters before creating pods
 	if t.Flags.RcloneConfigSecret != "" {
 		for _, check := range []struct {
 			c         client.Client
@@ -132,11 +121,28 @@ func (t *TransferPVCCommand) runIndirect() error {
 			if err := check.c.Get(context.TODO(), client.ObjectKey{
 				Name: configSecret, Namespace: check.namespace,
 			}, secret); err != nil {
-				return fmt.Errorf("rclone config secret %q not found in namespace %q on %s cluster: %w",
+				if errors.IsNotFound(err) {
+					return fmt.Errorf("rclone config secret %q not found in namespace %q on %s cluster",
+						configSecret, check.namespace, check.side)
+				}
+				if errors.IsForbidden(err) {
+					return fmt.Errorf("insufficient permissions to read rclone config secret %q in namespace %q on %s cluster: %w",
+						configSecret, check.namespace, check.side, err)
+				}
+				return fmt.Errorf("unable to read rclone config secret %q in namespace %q on %s cluster: %w",
 					configSecret, check.namespace, check.side, err)
 			}
 		}
 	}
+
+	// Create destination PVC
+	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
+	destPVC := t.buildDestinationPVC(srcPVC)
+	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("unable to create destination PVC: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
 
 	// Get security contexts for source and target separately
 	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.Flags.SourceImage)
