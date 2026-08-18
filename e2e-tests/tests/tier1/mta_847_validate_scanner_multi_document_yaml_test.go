@@ -25,10 +25,6 @@ var _ = Describe("Validate scanner multi-document YAML behavior [Live Mode]", fu
 			config.TargetContext,
 		)
 
-		if scenario.KubectlTgtNonAdmin.Context == "" {
-			Skip("target-nonadmin-context is required")
-		}
-
 		runner := scenario.CraneNonAdmin
 		paths, err := NewScenarioPaths("crane-validate-multi-doc-*")
 		Expect(err).NotTo(HaveOccurred())
