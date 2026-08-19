@@ -631,7 +631,7 @@ func TestGetIDsForNamespace_OCPAnnotation(t *testing.T) {
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(ns).Build()
-	got, err := getIDsForNamespace(c, "ocp-ns", "any-pvc")
+	got, err := getIDsForNamespace(c, "ocp-ns", "any-pvc", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -670,7 +670,7 @@ func TestGetIDsForNamespace_WorkloadFallback(t *testing.T) {
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(ns, deploy).Build()
-	got, err := getIDsForNamespace(c, "k8s-ns", "mysql-data")
+	got, err := getIDsForNamespace(c, "k8s-ns", "mysql-data", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -712,7 +712,7 @@ func TestGetIDsForNamespace_OCPTakesPrecedence(t *testing.T) {
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(ns, deploy).Build()
-	got, err := getIDsForNamespace(c, "ocp-ns", "mysql-data")
+	got, err := getIDsForNamespace(c, "ocp-ns", "mysql-data", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1046,10 +1046,10 @@ func TestStripServerManagedPVCAnnotations(t *testing.T) {
 		{
 			name: "only server-managed annotations — all stripped",
 			annotations: map[string]string{
-				"pv.kubernetes.io/bind-completed":                   "yes",
-				"volume.kubernetes.io/storage-provisioner":          "ebs.csi.aws.com",
-				"volume.beta.kubernetes.io/storage-provisioner":     "kubernetes.io/gce-pd",
-				"kubectl.kubernetes.io/last-applied-configuration":  "{}",
+				"pv.kubernetes.io/bind-completed":                  "yes",
+				"volume.kubernetes.io/storage-provisioner":         "ebs.csi.aws.com",
+				"volume.beta.kubernetes.io/storage-provisioner":    "kubernetes.io/gce-pd",
+				"kubectl.kubernetes.io/last-applied-configuration": "{}",
 			},
 			want: nil,
 		},

@@ -107,13 +107,13 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 
 	// Get security contexts for source and target separately
-	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name)
+	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.Flags.SourceImage)
 	if err != nil {
 		log.Printf("WARN: could not determine source security context: %v", err)
 		uploadSecCtx = &corev1.PodSecurityContext{}
 	}
 
-	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name)
+	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.Flags.DestinationImage)
 	if err != nil {
 		log.Printf("WARN: could not determine target security context: %v", err)
 		downloadSecCtx = &corev1.PodSecurityContext{}
@@ -122,18 +122,13 @@ func (t *TransferPVCCommand) runIndirect() error {
 		downloadSecCtx = uploadSecCtx
 	}
 
-	image := t.Flags.SourceImage
-	if image == "" {
-		image = "quay.io/konveyor/rsync-transfer:latest"
-	}
-
 	transfer := indirect.New(srcClient, destClient, indirect.Options{
-		Image:                  image,
-		CloudStorage:           t.Flags.CloudStorage,
-		ConfigSecret:           configSecret,
-		Encrypt:                t.Flags.Encrypt,
-		KeepCloudData:          t.Flags.KeepCloudData,
-		UploadSecurityContext:  *uploadSecCtx,
+		Image:                   t.Flags.SourceImage,
+		CloudStorage:            t.Flags.CloudStorage,
+		ConfigSecret:            configSecret,
+		Encrypt:                 t.Flags.Encrypt,
+		KeepCloudData:           t.Flags.KeepCloudData,
+		UploadSecurityContext:   *uploadSecCtx,
 		DownloadSecurityContext: *downloadSecCtx,
 	})
 
