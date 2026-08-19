@@ -2,7 +2,12 @@ package transfer_pvc
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -71,13 +76,31 @@ func (t *TransferPVCCommand) runIndirect() error {
 	// Resolve rclone config secret name
 	configSecret := t.Flags.RcloneConfigSecret
 	if t.Flags.RcloneConfigFile != "" {
-		secretName, err := t.createTempRcloneSecret(srcClient, t.PVC.Namespace.source, t.Flags.RcloneConfigFile, t.PVC.Name.source)
+		configData, err := os.ReadFile(t.Flags.RcloneConfigFile)
+		if err != nil {
+			return fmt.Errorf("failed to read rclone config file %s: %w", t.Flags.RcloneConfigFile, err)
+		}
+
+		if t.Flags.Encrypt {
+			if strings.Contains(string(configData), "[encrypted]") {
+				return fmt.Errorf("rclone config already contains an [encrypted] section; remove it or omit --encrypt")
+			}
+			remotePath := fmt.Sprintf("%s/%s/%s", t.Flags.CloudStorage, t.PVC.Namespace.source, t.PVC.Name.source)
+			cryptSection, err := generateCryptSection(remotePath)
+			if err != nil {
+				return fmt.Errorf("failed to generate encryption config: %w", err)
+			}
+			configData = append(configData, '\n')
+			configData = append(configData, []byte(cryptSection)...)
+		}
+
+		secretName, err := t.createTempRcloneSecretFromData(srcClient, t.PVC.Namespace.source, configData, t.PVC.Name.source)
 		if err != nil {
 			return fmt.Errorf("failed to create rclone config secret on source: %w", err)
 		}
 		configSecret = secretName
 
-		_, err = t.createTempRcloneSecret(destClient, t.PVC.Namespace.destination, t.Flags.RcloneConfigFile, t.PVC.Name.destination)
+		_, err = t.createTempRcloneSecretFromData(destClient, t.PVC.Namespace.destination, configData, t.PVC.Name.destination)
 		if err != nil {
 			return fmt.Errorf("failed to create rclone config secret on destination: %w", err)
 		}
@@ -301,15 +324,7 @@ func checkRclonePartialSuccess(output, podName, namespace string) error {
 	return fmt.Errorf("pod %s/%s failed", namespace, podName)
 }
 
-func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, configFilePath, labelPVCName string) (string, error) {
-	data, err := os.ReadFile(configFilePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read rclone config file %s: %w", configFilePath, err)
-	}
-
-	// Secret name uses source PVC name so both clusters use the same name
-	// (crane-lib references a single ConfigSecret for upload and download).
-	// Label uses the per-cluster PVC name so Cleanup can find it by label selector.
+func (t *TransferPVCCommand) createTempRcloneSecretFromData(c client.Client, namespace string, configData []byte, labelPVCName string) (string, error) {
 	secretName := fmt.Sprintf("crane-rclone-config-%s", getValidatedResourceName(t.PVC.Name.source))
 
 	secret := &corev1.Secret{
@@ -324,11 +339,11 @@ func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, 
 			},
 		},
 		Data: map[string][]byte{
-			"rclone.conf": data,
+			"rclone.conf": configData,
 		},
 	}
 
-	err = c.Create(context.TODO(), secret)
+	err := c.Create(context.TODO(), secret)
 	if errors.IsAlreadyExists(err) {
 		existing := &corev1.Secret{}
 		if getErr := c.Get(context.TODO(), client.ObjectKey{Name: secretName, Namespace: namespace}, existing); getErr != nil {
@@ -343,4 +358,44 @@ func (t *TransferPVCCommand) createTempRcloneSecret(c client.Client, namespace, 
 	}
 
 	return secretName, nil
+}
+
+// generateCryptSection creates the [encrypted] crypt overlay section for rclone.conf
+// with an auto-generated password. The password is random per transfer — encryption
+// is for data-in-transit in the bucket, not long-term storage.
+func generateCryptSection(cloudStoragePath string) (string, error) {
+	password := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, password); err != nil {
+		return "", fmt.Errorf("failed to generate encryption password: %w", err)
+	}
+
+	obscured, err := rcloneObscure(base64.RawURLEncoding.EncodeToString(password))
+	if err != nil {
+		return "", fmt.Errorf("failed to obscure encryption password: %w", err)
+	}
+
+	return indirect.BuildCryptSection(cloudStoragePath, obscured)
+}
+
+// rcloneObscure encodes a plaintext password in rclone's obscured format.
+// This is AES-CTR with rclone's well-known key, identical to "rclone obscure".
+func rcloneObscure(plaintext string) (string, error) {
+	key := []byte{
+		0x9c, 0x93, 0x5b, 0x48, 0x73, 0x0a, 0x55, 0x4d,
+		0x6b, 0xfd, 0x7c, 0x63, 0xc8, 0x86, 0xa9, 0x2b,
+		0xd3, 0x90, 0x19, 0x8e, 0xb8, 0x12, 0x8a, 0xfb,
+		0xf4, 0xde, 0x16, 0x2b, 0x8b, 0x95, 0xf6, 0x38,
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", err
+	}
+	ciphertext := make([]byte, aes.BlockSize+len(plaintext))
+	iv := ciphertext[:aes.BlockSize]
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return "", err
+	}
+	stream := cipher.NewCTR(block, iv)
+	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(plaintext))
+	return base64.RawURLEncoding.EncodeToString(ciphertext), nil
 }

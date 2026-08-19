@@ -339,6 +339,8 @@ github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxv
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konveyor/crane-lib v0.1.6-0.20260807130033-222a325c7cee h1:T3i160U9L0PjkleTXOFpoyAS/npIc8oG9XBlEjE/Uo8=
 github.com/konveyor/crane-lib v0.1.6-0.20260807130033-222a325c7cee/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
+github.com/konveyor/crane-lib v0.1.6-0.20260818123419-d279d85c1dd1 h1:TfmdlBmsUSisxVDIREk0SrV+xAi7fmp27Yn+609cCFU=
+github.com/konveyor/crane-lib v0.1.6-0.20260818123419-d279d85c1dd1/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
