@@ -109,29 +109,8 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 
 	if t.Flags.RcloneConfigSecret != "" {
-		for _, check := range []struct {
-			c         client.Client
-			namespace string
-			side      string
-		}{
-			{srcClient, t.PVC.Namespace.source, "source"},
-			{destClient, t.PVC.Namespace.destination, "destination"},
-		} {
-			secret := &corev1.Secret{}
-			if err := check.c.Get(context.TODO(), client.ObjectKey{
-				Name: configSecret, Namespace: check.namespace,
-			}, secret); err != nil {
-				if errors.IsNotFound(err) {
-					return fmt.Errorf("rclone config secret %q not found in namespace %q on %s cluster",
-						configSecret, check.namespace, check.side)
-				}
-				if errors.IsForbidden(err) {
-					return fmt.Errorf("insufficient permissions to read rclone config secret %q in namespace %q on %s cluster: %w",
-						configSecret, check.namespace, check.side, err)
-				}
-				return fmt.Errorf("unable to read rclone config secret %q in namespace %q on %s cluster: %w",
-					configSecret, check.namespace, check.side, err)
-			}
+		if err := t.validateRcloneConfigSecret(configSecret, srcClient, destClient); err != nil {
+			return err
 		}
 	}
 
@@ -378,6 +357,34 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 
 	log.Debugf("Pod %s/%s failed", namespace, podName)
 	return fmt.Errorf("pod %s/%s failed", namespace, podName)
+}
+
+func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcClient, destClient client.Client) error {
+	for _, check := range []struct {
+		c         client.Client
+		namespace string
+		side      string
+	}{
+		{srcClient, t.PVC.Namespace.source, "source"},
+		{destClient, t.PVC.Namespace.destination, "destination"},
+	} {
+		secret := &corev1.Secret{}
+		if err := check.c.Get(context.TODO(), client.ObjectKey{
+			Name: secretName, Namespace: check.namespace,
+		}, secret); err != nil {
+			if errors.IsNotFound(err) {
+				return fmt.Errorf("rclone config secret %q not found in namespace %q on %s cluster",
+					secretName, check.namespace, check.side)
+			}
+			if errors.IsForbidden(err) {
+				return fmt.Errorf("insufficient permissions to read rclone config secret %q in namespace %q on %s cluster: %w",
+					secretName, check.namespace, check.side, err)
+			}
+			return fmt.Errorf("unable to read rclone config secret %q in namespace %q on %s cluster: %w",
+				secretName, check.namespace, check.side, err)
+		}
+	}
+	return nil
 }
 
 func (t *TransferPVCCommand) createTempRcloneSecretFromData(c client.Client, namespace string, configData []byte, labelPVCName string) (string, error) {
