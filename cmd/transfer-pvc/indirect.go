@@ -82,6 +82,9 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 
 		if t.Flags.Encrypt {
+			if strings.Contains(string(configData), "[encrypted]") {
+				return fmt.Errorf("rclone config already contains an [encrypted] section; remove it or omit --encrypt")
+			}
 			remotePath := fmt.Sprintf("%s/%s/%s", t.Flags.CloudStorage, t.PVC.Namespace.source, t.PVC.Name.source)
 			cryptSection, err := generateCryptSection(remotePath)
 			if err != nil {
