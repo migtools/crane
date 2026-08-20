@@ -243,6 +243,7 @@ func (t *TransferPVCCommand) Validate() error {
 	log := t.globalFlags.GetLoggerOrDefault()
 
 	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
+		log.Debugf("--keep-cloud-data requires --cloud-storage")
 		return fmt.Errorf("--keep-cloud-data requires --cloud-storage")
 	}
 	if t.sourceContext == nil {
