@@ -649,7 +649,7 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	phases.End("finished", detail)
 
 	// ---- Phase 7/8: Cleanup ----
-	log.Infof("Phase 7/8: Cleanup")
+	log.Infof("Phase %d: Cleanup", totalPhases)
 	if t.isIntraClusterSameNamespace() {
 		phases.Start("Cleaning up server resources")
 		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
