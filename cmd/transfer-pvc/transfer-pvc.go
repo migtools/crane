@@ -254,9 +254,9 @@ func (t *TransferPVCCommand) Validate() error {
 		return err
 	}
 
-	cloudStorage := strings.TrimSpace(t.Flags.CloudStorage)
+	cloudStorage := strings.TrimSpace(t.CloudStorage)
 
-	if t.Flags.CloudStorage != "" && cloudStorage == "" {
+	if t.CloudStorage != "" && cloudStorage == "" {
 		return fmt.Errorf("--cloud-storage value cannot be empty or whitespace")
 	}
 
@@ -264,10 +264,10 @@ func (t *TransferPVCCommand) Validate() error {
 		set  bool
 		name string
 	}{
-		{t.Flags.Encrypt, "--encrypt"},
-		{t.Flags.KeepCloudData, "--keep-cloud-data"},
-		{t.Flags.RcloneConfigSecret != "", "--rclone-config-secret"},
-		{t.Flags.RcloneConfigFile != "", "--rclone-config-file"},
+		{t.Encrypt, "--encrypt"},
+		{t.KeepCloudData, "--keep-cloud-data"},
+		{t.RcloneConfigSecret != "", "--rclone-config-secret"},
+		{t.RcloneConfigFile != "", "--rclone-config-file"},
 	}
 	for _, f := range indirectOnlyFlags {
 		if f.set && cloudStorage == "" {
@@ -276,13 +276,13 @@ func (t *TransferPVCCommand) Validate() error {
 	}
 
 	if cloudStorage != "" {
-		if t.Flags.RcloneConfigSecret == "" && t.Flags.RcloneConfigFile == "" {
+		if t.RcloneConfigSecret == "" && t.RcloneConfigFile == "" {
 			return fmt.Errorf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
 		}
-		if t.Flags.RcloneConfigSecret != "" && t.Flags.RcloneConfigFile != "" {
+		if t.RcloneConfigSecret != "" && t.RcloneConfigFile != "" {
 			return fmt.Errorf("--rclone-config-secret and --rclone-config-file are mutually exclusive")
 		}
-		if t.Flags.Encrypt && t.Flags.RcloneConfigSecret != "" {
+		if t.Encrypt && t.RcloneConfigSecret != "" {
 			return fmt.Errorf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
 		}
 		return nil
@@ -297,7 +297,7 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
-	if strings.TrimSpace(t.Flags.CloudStorage) != "" {
+	if strings.TrimSpace(t.CloudStorage) != "" {
 		return t.runIndirect()
 	}
 	return t.run()
