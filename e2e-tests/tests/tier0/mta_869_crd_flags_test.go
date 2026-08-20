@@ -58,7 +58,7 @@ var _ = Describe("CRD group filtering during export", func() {
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir,
 			CRDSkipGroups: []string{"crane-e2e.example.com"}}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 
 		DeferCleanup(func() {
@@ -138,7 +138,7 @@ var _ = Describe("CRD group filtering during export", func() {
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir,
 			CRDIncludeGroups: []string{"crane-e2e.openshift.io"}}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 
 		DeferCleanup(func() {

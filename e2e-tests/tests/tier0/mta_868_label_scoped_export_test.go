@@ -36,7 +36,7 @@ var _ = Describe("Cluster-level export filtering", func() {
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir,
 			LabelSelector: "app=" + appName}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 
 		inScopeSA := ServiceAccount{Name: "nginx-sa", Namespace: namespace, Label: "app=simple-nginx-nopv"}
