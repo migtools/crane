@@ -253,7 +253,7 @@ func (t *TransferPVCCommand) Validate() error {
 	if err != nil {
 		return err
 	}
-	
+
 	if t.Flags.CloudStorage != "" {
 		if t.Flags.RcloneConfigSecret == "" && t.Flags.RcloneConfigFile == "" {
 			return fmt.Errorf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
