@@ -97,7 +97,7 @@ type EndpointFlags struct {
 	IngressClass string
 }
 
-func (e EndpointFlags) Validate() error {
+func (e *EndpointFlags) Validate() error {
 	// default endpoint type is nginx-ingress
 	if e.Type == "" {
 		e.Type = endpointNginx

@@ -18,6 +18,23 @@ import (
 
 func int64Ptr(v int64) *int64 { return &v }
 
+// TestEndpointFlags_Validate_DefaultPersists proves the value-receiver bug in
+// EndpointFlags.Validate: an empty Type with a valid Subdomain passes validation,
+// but the nginx default assigned inside Validate is lost because the receiver is a
+// value copy. The caller is left with Type == "", which fails later in createEndpoint.
+func TestEndpointFlags_Validate_DefaultPersists(t *testing.T) {
+	flags := EndpointFlags{
+		Type:      "",
+		Subdomain: "my.subdomain.example.com",
+	}
+	if err := flags.Validate(); err != nil {
+		t.Fatalf("EndpointFlags.Validate() unexpected error = %v", err)
+	}
+	if flags.Type != endpointNginx {
+		t.Errorf("EndpointFlags.Validate() did not persist default type: got %q, want %q", flags.Type, endpointNginx)
+	}
+}
+
 func int64PtrEqual(a, b *int64) bool {
 	if a == nil && b == nil {
 		return true
