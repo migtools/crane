@@ -1,19 +1,23 @@
 package transfer_pvc
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
+	"github.com/migtools/pvc-transfer/transport"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func int64Ptr(v int64) *int64 { return &v }
@@ -718,6 +722,98 @@ func TestGetIDsForNamespace_OCPTakesPrecedence(t *testing.T) {
 	}
 	if got.RunAsUser == nil || *got.RunAsUser != 1000700000 {
 		t.Errorf("OCP annotation should take precedence: RunAsUser = %v, want 1000700000", fmtInt64Ptr(got.RunAsUser))
+	}
+}
+
+func TestGetIDsForNamespace_InspectUsesTransferImage(t *testing.T) {
+	tests := []struct {
+		name      string
+		image     string
+		wantImage string
+	}{
+		{
+			name:      "configured image is used on the inspect pod",
+			image:     "example.invalid/rsync-custom:1",
+			wantImage: "example.invalid/rsync-custom:1",
+		},
+		{
+			name:      "empty image falls back to library default",
+			image:     "",
+			wantImage: transport.DefaultRsyncTransferImage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newTestScheme()
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "k8s-ns"}}
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: "app-data", Namespace: "k8s-ns"},
+			}
+			// Workload mounts the PVC but has no runAsUser, so inspect is reached.
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "k8s-ns"},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{Name: "app"}},
+							Volumes: []corev1.Volume{
+								{Name: "data", VolumeSource: corev1.VolumeSource{
+									PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "app-data"},
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			var inspectImage string
+			c := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(ns, pvc, deploy).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, cli client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						if pod, ok := obj.(*corev1.Pod); ok && len(pod.Spec.Containers) > 0 {
+							inspectImage = pod.Spec.Containers[0].Image
+						}
+						return cli.Create(ctx, obj, opts...)
+					},
+					Get: func(ctx context.Context, cli client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if err := cli.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						pod, ok := obj.(*corev1.Pod)
+						if !ok {
+							return nil
+						}
+						pod.Status.Phase = corev1.PodSucceeded
+						pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode: 0,
+									Message:  "27",
+								},
+							},
+						}}
+						return nil
+					},
+				}).
+				Build()
+
+			got, err := getIDsForNamespace(c, "k8s-ns", "app-data", tt.image)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if inspectImage == "" {
+				t.Fatal("inspect pod was not created")
+			}
+			if inspectImage != tt.wantImage {
+				t.Errorf("inspect pod image = %q, want %q", inspectImage, tt.wantImage)
+			}
+			if got.RunAsUser == nil || *got.RunAsUser != 27 {
+				t.Errorf("RunAsUser = %v, want 27 from inspect", fmtInt64Ptr(got.RunAsUser))
+			}
+		})
 	}
 }
 
