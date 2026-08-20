@@ -234,6 +234,9 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 }
 
 func (t *TransferPVCCommand) Validate() error {
+	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
+		return fmt.Errorf("--keep-cloud-data requires --cloud-storage")
+	}
 	if t.sourceContext == nil {
 		return fmt.Errorf("cannot evaluate source context")
 	}
@@ -250,7 +253,7 @@ func (t *TransferPVCCommand) Validate() error {
 	if err != nil {
 		return err
 	}
-
+	
 	if t.Flags.CloudStorage != "" {
 		if t.Flags.RcloneConfigSecret == "" && t.Flags.RcloneConfigFile == "" {
 			return fmt.Errorf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
