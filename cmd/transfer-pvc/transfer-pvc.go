@@ -259,6 +259,7 @@ func (t *TransferPVCCommand) Validate() error {
 	if t.CloudStorage != "" && cloudStorage == "" {
 		return fmt.Errorf("--cloud-storage value cannot be empty or whitespace")
 	}
+	t.CloudStorage = cloudStorage
 
 	indirectOnlyFlags := []struct {
 		set  bool
