@@ -254,7 +254,28 @@ func (t *TransferPVCCommand) Validate() error {
 		return err
 	}
 
-	if t.Flags.CloudStorage != "" {
+	cloudStorage := strings.TrimSpace(t.Flags.CloudStorage)
+
+	if t.Flags.CloudStorage != "" && cloudStorage == "" {
+		return fmt.Errorf("--cloud-storage value cannot be empty or whitespace")
+	}
+
+	indirectOnlyFlags := []struct {
+		set  bool
+		name string
+	}{
+		{t.Flags.Encrypt, "--encrypt"},
+		{t.Flags.KeepCloudData, "--keep-cloud-data"},
+		{t.Flags.RcloneConfigSecret != "", "--rclone-config-secret"},
+		{t.Flags.RcloneConfigFile != "", "--rclone-config-file"},
+	}
+	for _, f := range indirectOnlyFlags {
+		if f.set && cloudStorage == "" {
+			return fmt.Errorf("%s requires --cloud-storage", f.name)
+		}
+	}
+
+	if cloudStorage != "" {
 		if t.Flags.RcloneConfigSecret == "" && t.Flags.RcloneConfigFile == "" {
 			return fmt.Errorf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
 		}
@@ -276,7 +297,7 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
-	if t.Flags.CloudStorage != "" {
+	if strings.TrimSpace(t.Flags.CloudStorage) != "" {
 		return t.runIndirect()
 	}
 	return t.run()
