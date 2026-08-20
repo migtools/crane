@@ -100,7 +100,7 @@ type EndpointFlags struct {
 	IngressClass string
 }
 
-func (e EndpointFlags) Validate() error {
+func (e *EndpointFlags) Validate() error {
 	// default endpoint type is nginx-ingress
 	if e.Type == "" {
 		e.Type = endpointNginx
@@ -242,6 +242,9 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 func (t *TransferPVCCommand) Validate() error {
 	log := t.globalFlags.GetLoggerOrDefault()
 
+	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
+		return fmt.Errorf("--keep-cloud-data requires --cloud-storage")
+	}
 	if t.sourceContext == nil {
 		log.Debugf("Cannot evaluate source context")
 		return fmt.Errorf("cannot evaluate source context")
