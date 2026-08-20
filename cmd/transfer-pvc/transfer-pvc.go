@@ -180,8 +180,8 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams) *cobra.Command {
 func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.SourceContext, "source-context", "", "Name of the source context in current kubeconfig")
 	cmd.Flags().StringVar(&c.DestinationContext, "destination-context", "", "Name of the destination context in current kubeconfig")
-	cmd.Flags().StringVar(&c.SourceImage, "source-image", "", "The container image to use on the source cluster. Defaults to quay.io/konveyor/esync-transfer:latest")
-	cmd.Flags().StringVar(&c.DestinationImage, "destination-image", "", "The container image to use on the destination cluster. Defaults to quay.io/konveyor/rsync-transfer:latest")
+	cmd.Flags().StringVar(&c.SourceImage, "source-image", transport.DefaultRsyncTransferImage, "The container image to use on the source cluster")
+	cmd.Flags().StringVar(&c.DestinationImage, "destination-image", transport.DefaultRsyncTransferImage, "The container image to use on the destination cluster")
 
 	cmd.Flags().Var(&c.PVC.Name, "pvc-name", "Name of the PVC to be transferred. Optionally, source name can be mapped to a different destination name in format <source>:<destination> ")
 	cmd.Flags().Var(&c.PVC.Namespace, "pvc-namespace", "Namespace of the PVC to be transferred. Optionally, source namespace can be mapped to a different destination namespace in format <source>:<destination>")

@@ -113,7 +113,8 @@ func (t *TransferPVCCommand) runIndirect() error {
 		uploadSecCtx = &corev1.PodSecurityContext{}
 	}
 
-	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.Flags.DestinationImage)
+	// Indirect transfer uses a single Image (SourceImage) for upload and download.
+	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.Flags.SourceImage)
 	if err != nil {
 		log.Printf("WARN: could not determine target security context: %v", err)
 		downloadSecCtx = &corev1.PodSecurityContext{}
