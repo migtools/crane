@@ -234,6 +234,9 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 }
 
 func (t *TransferPVCCommand) Validate() error {
+	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
+		return fmt.Errorf("--keep-cloud-data requires --cloud-storage")
+	}
 	if t.sourceContext == nil {
 		return fmt.Errorf("cannot evaluate source context")
 	}

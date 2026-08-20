@@ -967,6 +967,45 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 	}
 }
 
+func TestValidateKeepCloudDataRequiresCloudStorage(t *testing.T) {
+	const guardErrMsg = "--keep-cloud-data requires --cloud-storage"
+	tests := []struct {
+		name           string
+		cmd            TransferPVCCommand
+		wantGuardError bool
+	}{
+		{
+			name: "keep-cloud-data without cloud-storage is rejected",
+			cmd: TransferPVCCommand{
+				Flags: Flags{KeepCloudData: true},
+			},
+			wantGuardError: true,
+		},
+		{
+			name: "keep-cloud-data with cloud-storage set does not trigger guard",
+			cmd: TransferPVCCommand{
+				Flags: Flags{
+					KeepCloudData: true,
+					CloudStorage:  "remote:my-bucket",
+				},
+			},
+			wantGuardError: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			hasGuardErr := err != nil && strings.Contains(err.Error(), guardErrMsg)
+			if tt.wantGuardError && !hasGuardErr {
+				t.Errorf("expected guard error %q but got: %v", guardErrMsg, err)
+			}
+			if !tt.wantGuardError && hasGuardErr {
+				t.Errorf("unexpected guard error: %v", err)
+			}
+		})
+	}
+}
+
 func TestCertSecretNaming(t *testing.T) {
 	tests := []struct {
 		name         string
