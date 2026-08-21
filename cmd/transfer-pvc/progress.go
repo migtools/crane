@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"os"
 	"regexp"
@@ -21,6 +20,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/sirupsen/logrus"
 )
 
 type rsyncLogStream struct {
@@ -32,9 +33,10 @@ type rsyncLogStream struct {
 	err        chan error
 	progress   *Progress
 	outputFile *string
+	log        *logrus.Logger
 }
 
-func NewRsyncLogStream(restCfg *rest.Config, pvc types.NamespacedName, labels map[string]string, output string) LogStreams {
+func NewRsyncLogStream(restCfg *rest.Config, pvc types.NamespacedName, labels map[string]string, output string, log *logrus.Logger) LogStreams {
 	var outputFile string
 	if output != "" {
 		outputFile = output
@@ -44,6 +46,7 @@ func NewRsyncLogStream(restCfg *rest.Config, pvc types.NamespacedName, labels ma
 		pvc:        pvc,
 		podLabels:  labels,
 		outputFile: &outputFile,
+		log:        log,
 	}
 }
 
@@ -57,7 +60,7 @@ func (r *rsyncLogStream) Init() error {
 		return err
 	}
 
-	podName, err := waitForPodRunning(clientset, r.pvc.Namespace, r.podLabels)
+	podName, err := waitForPodRunning(clientset, r.pvc.Namespace, r.podLabels, r.log)
 	if err != nil {
 		return err
 	}
@@ -488,7 +491,7 @@ func parseRsyncLogs(rawLogs string) (p *Progress, unprocessedData string) {
 	return p, ""
 }
 
-func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[string]string) (string, error) {
+func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[string]string, log *logrus.Logger) (string, error) {
 	var podName string
 	err := wait.PollUntil(time.Second, func() (done bool, err error) {
 		listOptions := &client.ListOptions{}
@@ -500,7 +503,7 @@ func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[str
 		}
 
 		if len(clientPodList.Items) != 1 {
-			log.Printf("expected 1 client pod found %d, with labels %v\n", len(clientPodList.Items), labels)
+			log.Debugf("Expected 1 client pod, found %d with labels %v", len(clientPodList.Items), labels)
 			return false, nil
 		}
 
@@ -509,11 +512,11 @@ func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[str
 
 		for _, containerStatus := range clientPod.Status.ContainerStatuses {
 			if containerStatus.State.Terminated != nil {
-				log.Printf("container %s in pod %s completed", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
+				log.Debugf("Container %s in pod %s completed", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
 				break
 			}
 			if !containerStatus.Ready {
-				log.Println(fmt.Errorf("container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name}))
+				log.Debugf("Container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
 				return false, nil
 			}
 		}

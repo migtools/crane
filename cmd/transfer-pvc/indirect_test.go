@@ -6,11 +6,13 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 func TestRcloneObscure(t *testing.T) {
 	original := "test-encryption-password-42"
-	obscured, err := rcloneObscure(original)
+	obscured, err := rcloneObscure(original, logrus.StandardLogger())
 	if err != nil {
 		t.Fatalf("rcloneObscure() error: %v", err)
 	}
@@ -32,15 +34,15 @@ func TestRcloneObscure(t *testing.T) {
 }
 
 func TestRcloneObscure_DifferentOutputEachCall(t *testing.T) {
-	a, _ := rcloneObscure("same-input")
-	b, _ := rcloneObscure("same-input")
+	a, _ := rcloneObscure("same-input", logrus.StandardLogger())
+	b, _ := rcloneObscure("same-input", logrus.StandardLogger())
 	if a == b {
 		t.Error("two calls with same input should produce different output (random IV)")
 	}
 }
 
 func TestGenerateCryptSection(t *testing.T) {
-	section, err := generateCryptSection("remote:my-bucket/ns/pvc")
+	section, err := generateCryptSection("remote:my-bucket/ns/pvc", logrus.StandardLogger())
 	if err != nil {
 		t.Fatalf("generateCryptSection() error: %v", err)
 	}
@@ -99,7 +101,7 @@ func TestCheckRclonePartialSuccess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := checkRclonePartialSuccess(tt.output, "test-pod", "test-ns")
+			err := checkRclonePartialSuccess(tt.output, "test-pod", "test-ns", logrus.StandardLogger())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("checkRclonePartialSuccess() error = %v, wantErr %v", err, tt.wantErr)
 			}
