@@ -42,6 +42,8 @@ type ExportOptions struct {
 	userSpecifiedNamespace string
 	crdSkipGroups          []string
 	crdIncludeGroups       []string
+	includeGK              []string
+	excludeGK              []string
 	asExtras               string
 	extras                 map[string][]string
 	QPS                    float32
@@ -101,6 +103,13 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 		}
 	}
 
+	// Apply default --exclude-gk Event if no GK filters specified
+	// This maintains backward compatibility: Events are skipped by default
+	// Users can override by explicitly using --include-gk Event or --exclude-gk <other-kinds>
+	if len(o.includeGK) == 0 && len(o.excludeGK) == 0 {
+		o.excludeGK = []string{"Event"}
+	}
+
 	return nil
 }
 
@@ -145,6 +154,10 @@ func (o *ExportOptions) Validate() error {
 				return fmt.Errorf("CRD group %q appears in both --crd-skip-group and --crd-include-group", g)
 			}
 		}
+	}
+	if _, err := NewGKFilter(o.includeGK, o.excludeGK); err != nil {
+		log.Debugf("Invalid GK filter: %v", err)
+		return err
 	}
 	return nil
 }
@@ -274,7 +287,13 @@ func (o *ExportOptions) Run() error {
 	// Pass restConfig.Timeout to child functions for per-request timeout enforcement
 	requestTimeout := restConfig.Timeout
 
-	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, dynamicClient, resourceLists, log)
+	gkFilter, err := NewGKFilter(o.includeGK, o.excludeGK)
+	if err != nil {
+		log.Errorf("Failed to create GK filter: %v", err)
+		return err
+	}
+
+	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, gkFilter, dynamicClient, resourceLists, log)
 	log.Debugf("Extracted %d resources (%d errors)", len(resources), len(resourceErrs))
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
@@ -377,6 +396,8 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	cmd.Flags().StringVarP(&o.labelSelector, "label-selector", "l", "", "Restrict export to resources matching a label selector")
 	cmd.Flags().StringSliceVar(&o.crdSkipGroups, "crd-skip-group", nil, "Additional API groups to skip for CRD export (repeatable)")
 	cmd.Flags().StringSliceVar(&o.crdIncludeGroups, "crd-include-group", nil, "API groups to force-include for CRD export, even if default-built-in (repeatable)")
+	cmd.Flags().StringSliceVar(&o.includeGK, "include-gk", nil, "Only export resources matching the specified Group/Kind (repeatable, format: \"Kind\" or \"Group/Kind\")")
+	cmd.Flags().StringSliceVar(&o.excludeGK, "exclude-gk", nil, "Skip resources matching the specified Group/Kind (repeatable, format: \"Kind\" or \"Group/Kind\")")
 	cmd.Flags().StringVar(&o.asExtras, "as-extras", "", "The extra info for impersonation can only be used with User or Group but is not required. An example is --as-extras key=string1,string2;key2=string3")
 	cmd.Flags().Float32VarP(&o.QPS, "qps", "q", 100, "Query Per Second Rate.")
 	cmd.Flags().IntVarP(&o.Burst, "burst", "b", 1000, "API Burst Rate.")

@@ -206,7 +206,7 @@ func discoverPreferredResources(
 // resourceToExtract lists objects for each admitted API type in namespace (or cluster-wide
 // for allowed cluster-scoped kinds: ClusterRoleBinding, ClusterRole, SCC). It returns resources
 // with non-empty lists and a parallel slice of per-type list errors.
-func resourceToExtract(requestTimeout time.Duration, namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(requestTimeout time.Duration, namespace string, labelSelector string, gkFilter *GKFilter, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -226,9 +226,9 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				continue
 			}
 
-			// TODO: alpatel: put this behing a flag
-			if resource.Kind == "Event" {
-				log.Debugf("Skipping extracting events")
+			// Apply GK filter
+			if !gkFilter.ShouldInclude(gv, resource) {
+				log.Debugf("Skipping resource %s.%s: filtered by GK filter", gv.String(), resource.Kind)
 				continue
 			}
 
