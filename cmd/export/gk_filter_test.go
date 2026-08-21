@@ -49,6 +49,21 @@ func TestParseGroupKind(t *testing.T) {
 			input:   "   ",
 			wantErr: true,
 		},
+		{
+			name:    "Empty Kind with group",
+			input:   "apps/",
+			wantErr: true,
+		},
+		{
+			name:    "Empty Kind with slash",
+			input:   "/",
+			wantErr: true,
+		},
+		{
+			name:    "Empty Kind with whitespace",
+			input:   "apps/  ",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
