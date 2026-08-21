@@ -377,3 +377,84 @@ func TestGKFilter_IsEmpty(t *testing.T) {
 		})
 	}
 }
+
+func TestGKFilter_SkipsClusterScopedResources(t *testing.T) {
+	tests := []struct {
+		name        string
+		include     []string
+		exclude     []string
+		group       string
+		kind        string
+		namespaced  bool
+		expected    bool
+		description string
+	}{
+		{
+			name:        "ClusterRole excluded but still included (cluster-scoped)",
+			include:     nil,
+			exclude:     []string{"ClusterRole"},
+			group:       "rbac.authorization.k8s.io",
+			kind:        "ClusterRole",
+			namespaced:  false,
+			expected:    true,
+			description: "Cluster-scoped admitted resources bypass GK filter",
+		},
+		{
+			name:        "ClusterRoleBinding in include-only mode still included",
+			include:     []string{"Deployment"},
+			exclude:     nil,
+			group:       "rbac.authorization.k8s.io",
+			kind:        "ClusterRoleBinding",
+			namespaced:  false,
+			expected:    true,
+			description: "ClusterRoleBinding bypasses whitelist filter",
+		},
+		{
+			name:        "SecurityContextConstraints excluded but still included",
+			include:     nil,
+			exclude:     []string{"SecurityContextConstraints"},
+			group:       "security.openshift.io",
+			kind:        "SecurityContextConstraints",
+			namespaced:  false,
+			expected:    true,
+			description: "SCC bypasses GK filter",
+		},
+		{
+			name:        "Namespace (cluster-scoped but not admitted) respects exclude filter",
+			include:     nil,
+			exclude:     []string{"Namespace"},
+			group:       "",
+			kind:        "Namespace",
+			namespaced:  false,
+			expected:    false,
+			description: "Non-admitted cluster resources are filtered normally",
+		},
+		{
+			name:        "Namespaced Role respects exclude filter",
+			include:     nil,
+			exclude:     []string{"Role"},
+			group:       "rbac.authorization.k8s.io",
+			kind:        "Role",
+			namespaced:  true,
+			expected:    false,
+			description: "Namespaced resources are filtered normally",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter, err := NewGKFilter(tt.include, tt.exclude)
+			if err != nil {
+				t.Fatalf("NewGKFilter() error = %v", err)
+			}
+
+			gv := schema.GroupVersion{Group: tt.group, Version: "v1"}
+			resource := metav1.APIResource{Kind: tt.kind, Namespaced: tt.namespaced}
+
+			got := filter.ShouldInclude(gv, resource)
+			if got != tt.expected {
+				t.Errorf("%s: GKFilter.ShouldInclude() = %v, want %v", tt.description, got, tt.expected)
+			}
+		})
+	}
+}

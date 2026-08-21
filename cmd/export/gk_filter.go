@@ -90,8 +90,17 @@ func NewGKFilter(include, exclude []string) (*GKFilter, error) {
 }
 
 // ShouldInclude returns true if the resource should be included based on the filter.
+// Cluster-scoped resources (ClusterRole, ClusterRoleBinding, SCC) are excluded from
+// GK filtering to preserve dependency graph resolution handled by ClusterScopeHandler.
 func (f *GKFilter) ShouldInclude(gv schema.GroupVersion, resource metav1.APIResource) bool {
 	if f == nil {
+		return true
+	}
+
+	// Skip GK filtering for cluster-scoped admitted resources
+	// These are handled by ClusterScopeHandler which maintains dependency graph
+	// (e.g., ClusterRole depends on ClusterRoleBinding relationships)
+	if !resource.Namespaced && isClusterScopedResource(gv.Group, resource.Kind) {
 		return true
 	}
 
