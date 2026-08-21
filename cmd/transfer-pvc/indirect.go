@@ -64,16 +64,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 	fmt.Fprintf(os.Stderr, "[1/6] Reading source PVC ... ok\n")
 
-	// Create destination PVC
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
-	destPVC := t.buildDestinationPVC(srcPVC)
-	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("unable to create destination PVC: %w", err)
-	}
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
-
-	// Resolve rclone config secret name
+	// Resolve rclone config secret name and validate before creating destination resources
 	configSecret := t.Flags.RcloneConfigSecret
 	if t.Flags.RcloneConfigFile != "" {
 		configData, err := os.ReadFile(t.Flags.RcloneConfigFile)
@@ -105,6 +96,21 @@ func (t *TransferPVCCommand) runIndirect() error {
 			return fmt.Errorf("failed to create rclone config secret on destination: %w", err)
 		}
 	}
+
+	if t.Flags.RcloneConfigSecret != "" {
+		if err := t.validateRcloneConfigSecret(configSecret, srcClient, destClient); err != nil {
+			return err
+		}
+	}
+
+	// Create destination PVC
+	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
+	destPVC := t.buildDestinationPVC(srcPVC)
+	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("unable to create destination PVC: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
 
 	// Get security contexts for source and target separately
 	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.Flags.SourceImage)
@@ -318,6 +324,34 @@ func checkRclonePartialSuccess(output, podName, namespace string) error {
 	}
 
 	return fmt.Errorf("pod %s/%s failed", namespace, podName)
+}
+
+func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcClient, destClient client.Client) error {
+	for _, check := range []struct {
+		c         client.Client
+		namespace string
+		side      string
+	}{
+		{srcClient, t.PVC.Namespace.source, "source"},
+		{destClient, t.PVC.Namespace.destination, "destination"},
+	} {
+		secret := &corev1.Secret{}
+		if err := check.c.Get(context.TODO(), client.ObjectKey{
+			Name: secretName, Namespace: check.namespace,
+		}, secret); err != nil {
+			if errors.IsNotFound(err) {
+				return fmt.Errorf("rclone config secret %q not found in namespace %q on %s cluster",
+					secretName, check.namespace, check.side)
+			}
+			if errors.IsForbidden(err) {
+				return fmt.Errorf("insufficient permissions to read rclone config secret %q in namespace %q on %s cluster: %w",
+					secretName, check.namespace, check.side, err)
+			}
+			return fmt.Errorf("unable to read rclone config secret %q in namespace %q on %s cluster: %w",
+				secretName, check.namespace, check.side, err)
+		}
+	}
+	return nil
 }
 
 func (t *TransferPVCCommand) createTempRcloneSecretFromData(c client.Client, namespace string, configData []byte, labelPVCName string) (string, error) {
