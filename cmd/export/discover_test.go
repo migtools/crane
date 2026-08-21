@@ -776,22 +776,50 @@ func TestWriteErrors_jsonMarshalFails(t *testing.T) {
 
 func TestResourceToExtract_SkipsEvents(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := dynamicfake.NewSimpleDynamicClient(scheme)
+	clientgoscheme.AddToScheme(scheme)
+	obj := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-event", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, obj)
 
 	lists := []*metav1.APIResourceList{
 		{
 			GroupVersion: "v1",
 			APIResources: []metav1.APIResource{
-				{Name: "events", Kind: "Event", Namespaced: true, Verbs: metav1.Verbs{"list", "get"}},
+				{Name: "events", Kind: "Event", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
 			},
 		},
 	}
 
-	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
+	// Test default behavior: Events excluded (simulating default from Complete())
+	filterDefault, err := NewGKFilter(nil, []string{"Event"})
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filterDefault, client, lists, testLogger())
 	for _, r := range resources {
 		if r.APIResource.Kind == "Event" {
-			t.Fatal("Event resources should be skipped")
+			t.Fatal("Event resources should be skipped by default (--exclude-gk Event)")
 		}
+	}
+
+	// Test that Events CAN be included if user explicitly requests them
+	filterInclude, err := NewGKFilter([]string{"Event"}, nil)
+	if err != nil {
+		t.Fatalf("NewGKFilter for include failed: %v", err)
+	}
+
+	resources, _ = resourceToExtract(0, "default", "", filterInclude, client, lists, testLogger())
+	foundEvent := false
+	for _, r := range resources {
+		if r.APIResource.Kind == "Event" {
+			foundEvent = true
+			break
+		}
+	}
+	if !foundEvent {
+		t.Fatal("Event resources should be included when explicitly in --include-gk list")
 	}
 }
 
@@ -808,7 +836,7 @@ func TestResourceToExtract_SkipsClusterScopedNonAdmitted(t *testing.T) {
 		},
 	}
 
-	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, _ := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	for _, r := range resources {
 		if r.APIResource.Kind == "Namespace" {
 			t.Fatal("Namespace resources should be skipped (not admitted)")
@@ -829,7 +857,7 @@ func TestResourceToExtract_SkipsEmptyVerbs(t *testing.T) {
 		},
 	}
 
-	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, _ := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) > 0 {
 		t.Fatal("resources with empty verbs should be skipped")
 	}
@@ -846,9 +874,130 @@ func TestResourceToExtract_SkipsEmptyAPIResources(t *testing.T) {
 		},
 	}
 
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatal("empty APIResources list should produce no resources or errors")
+	}
+}
+
+func TestResourceToExtract_GKFilter_IncludeOnly(t *testing.T) {
+	scheme := runtime.NewScheme()
+	clientgoscheme.AddToScheme(scheme)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	}
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cm", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, pod, configMap)
+
+	lists := []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+				{Name: "configmaps", Kind: "ConfigMap", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+			},
+		},
+	}
+
+	// Only include Pods
+	filter, err := NewGKFilter([]string{"Pod"}, nil)
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filter, client, lists, testLogger())
+
+	foundPod := false
+	for _, r := range resources {
+		if r.APIResource.Kind == "Pod" {
+			foundPod = true
+		}
+		if r.APIResource.Kind == "ConfigMap" {
+			t.Fatal("ConfigMap should be excluded when not in include list")
+		}
+	}
+	if !foundPod {
+		t.Fatal("Pod should be included in resources")
+	}
+}
+
+func TestResourceToExtract_GKFilter_ExcludeSpecific(t *testing.T) {
+	scheme := runtime.NewScheme()
+	clientgoscheme.AddToScheme(scheme)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-secret", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, pod, secret)
+
+	lists := []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+				{Name: "secrets", Kind: "Secret", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+			},
+		},
+	}
+
+	// Exclude Secrets
+	filter, err := NewGKFilter(nil, []string{"Secret"})
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filter, client, lists, testLogger())
+
+	foundPod := false
+	for _, r := range resources {
+		if r.APIResource.Kind == "Pod" {
+			foundPod = true
+		}
+		if r.APIResource.Kind == "Secret" {
+			t.Fatal("Secret should be excluded by exclude filter")
+		}
+	}
+	if !foundPod {
+		t.Fatal("Pod should be included in resources")
+	}
+}
+
+func TestResourceToExtract_GKFilter_GroupKindSpecific(t *testing.T) {
+	scheme := runtime.NewScheme()
+	clientgoscheme.AddToScheme(scheme)
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, pod)
+
+	lists := []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+			},
+		},
+	}
+
+	// Exclude core group Pods specifically (using empty string for core group)
+	filter, err := NewGKFilter(nil, []string{"/Pod"})
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filter, client, lists, testLogger())
+
+	for _, r := range resources {
+		if r.APIResource.Kind == "Pod" {
+			t.Fatal("Pod from core group should be excluded by /Pod filter")
+		}
 	}
 }
 
@@ -1188,7 +1337,7 @@ func TestResourceToExtract_loadsConfigMaps(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -1211,7 +1360,7 @@ func TestResourceToExtract_loadsClusterRoles(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -1233,7 +1382,7 @@ func TestResourceToExtract_listForbidden(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 {
 		t.Fatalf("expected no resources, got %d", len(resources))
 	}
@@ -1255,7 +1404,7 @@ func TestResourceToExtract_listNotFound(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || !apierrors.IsNotFound(errs[0].Error) {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1276,7 +1425,7 @@ func TestResourceToExtract_timeoutFailsFast(t *testing.T) {
 		},
 	}
 	// Pass non-zero timeout to enable timeout detection
-	resources, errs := resourceToExtract(100, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(100, "default", "", nil, client, lists, testLogger())
 	// Expect: nil resources, exactly 1 timeout error, and no processing of services
 	if resources != nil {
 		t.Fatalf("expected nil resources on timeout, got %d resources", len(resources))
@@ -1303,7 +1452,7 @@ func TestResourceToExtract_listMethodNotSupported(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || !apierrors.IsMethodNotSupported(errs[0].Error) {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1322,7 +1471,7 @@ func TestResourceToExtract_listGenericError(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || errs[0].Error.Error() != "upstream timeout" {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1338,7 +1487,7 @@ func TestResourceToExtract_zeroObjectsNotAdded(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatalf("empty list should skip resource (no error), got resources=%d errs=%v", len(resources), errs)
 	}
@@ -1355,7 +1504,7 @@ func TestResourceToExtract_skipsUnparseableGroupVersion(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatalf("got resources %d errs %d", len(resources), len(errs))
 	}
