@@ -180,8 +180,8 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams) *cobra.Command {
 func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.SourceContext, "source-context", "", "Name of the source context in current kubeconfig")
 	cmd.Flags().StringVar(&c.DestinationContext, "destination-context", "", "Name of the destination context in current kubeconfig")
-	cmd.Flags().StringVar(&c.SourceImage, "source-image", "", "The container image to use on the source cluster. Defaults to quay.io/konveyor/esync-transfer:latest")
-	cmd.Flags().StringVar(&c.DestinationImage, "destination-image", "", "The container image to use on the destination cluster. Defaults to quay.io/konveyor/rsync-transfer:latest")
+	cmd.Flags().StringVar(&c.SourceImage, "source-image", transport.DefaultRsyncTransferImage, "The container image to use on the source cluster")
+	cmd.Flags().StringVar(&c.DestinationImage, "destination-image", transport.DefaultRsyncTransferImage, "The container image to use on the destination cluster")
 
 	cmd.Flags().Var(&c.PVC.Name, "pvc-name", "Name of the PVC to be transferred. Optionally, source name can be mapped to a different destination name in format <source>:<destination> ")
 	cmd.Flags().Var(&c.PVC.Namespace, "pvc-namespace", "Namespace of the PVC to be transferred. Optionally, source namespace can be mapped to a different destination namespace in format <source>:<destination>")
@@ -499,12 +499,12 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	destPVCList := transfer.NewSingletonPVC(destPVC)
 	srcPVCList := transfer.NewSingletonPVC(srcPVC)
 
-	clientPodSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name)
+	clientPodSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.Flags.SourceImage)
 	if err != nil {
 		return phases.Fail(err, "error creating security context for rsync client")
 	}
 
-	serverPodSecContext, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name)
+	serverPodSecContext, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.Flags.DestinationImage)
 	if err != nil {
 		return phases.Fail(err, "error creating security context for rsync server")
 	}
@@ -667,7 +667,7 @@ func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string
 	return "", nil
 }
 
-func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+func getIDsForNamespace(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
 	ps := &corev1.PodSecurityContext{}
 	ns := &corev1.Namespace{}
 	err := c.Get(context.TODO(), types.NamespacedName{Name: namespace}, ns)
@@ -712,7 +712,7 @@ func getIDsForNamespace(c client.Client, namespace string, pvcName string) (*cor
 	// Fallback 2: workload has no explicit runAsUser (app relies on
 	// Dockerfile USER). Inspect file ownership on the PVC to discover
 	// the UID that wrote the data.
-	uid, err := inspectPVCFileOwnership(c, namespace, pvcName)
+	uid, err := inspectPVCFileOwnership(c, namespace, pvcName, image)
 	if err != nil {
 		log.Printf("PVC file ownership inspection failed for %s/%s: %v", namespace, pvcName, err)
 		return ps, nil
@@ -889,7 +889,7 @@ func extractPodSecurityContext(spec corev1.PodSpec, pvcName ...string) *corev1.P
 // inside (requires the mount point to be listable, which is the common
 // case for PVC roots provisioned as 0755/0777). If the mount point is
 // 0700 root-owned, the glob will fail and the function returns nil.
-func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) (*int64, error) {
+func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string, image string) (*int64, error) {
 	podName := fmt.Sprintf("crane-inspect-%x", sha256.Sum256([]byte(pvcName)))
 	if len(podName) > 63 {
 		podName = podName[:63]
@@ -905,7 +905,7 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) 
 			Containers: []corev1.Container{
 				{
 					Name:  "inspect",
-					Image: "quay.io/konveyor/rsync-transfer:latest",
+					Image: rsyncTransferImage(image),
 					SecurityContext: func() *corev1.SecurityContext {
 						t, f := true, false
 						return &corev1.SecurityContext{
@@ -993,12 +993,21 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string) 
 	return &uid, nil
 }
 
-func getSourcePodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
-	return getIDsForNamespace(c, namespace, pvcName)
+func getSourcePodSecurityContext(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
+	return getIDsForNamespace(c, namespace, pvcName, image)
 }
 
-func getTargetPodSecurityContext(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
-	return getIDsForNamespace(c, namespace, pvcName)
+func getTargetPodSecurityContext(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
+	return getIDsForNamespace(c, namespace, pvcName, image)
+}
+
+// rsyncTransferImage returns the runtime image flag when set, otherwise the
+// build-time default from pvc-transfer.
+func rsyncTransferImage(image string) string {
+	if image != "" {
+		return image
+	}
+	return transport.DefaultRsyncTransferImage
 }
 
 func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint endpointType, namespace mappedNameVar) error {
