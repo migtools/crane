@@ -29,7 +29,12 @@ func ParseGroupKind(s string) (GroupKind, error) {
 		return GroupKind{Group: "", Kind: parts[0]}, nil
 	case 2:
 		// "Group/Kind"
-		return GroupKind{Group: parts[0], Kind: parts[1]}, nil
+		group := strings.TrimSpace(parts[0])
+		kind := strings.TrimSpace(parts[1])
+		if kind == "" {
+			return GroupKind{}, fmt.Errorf("invalid group/kind format %q: kind cannot be empty", s)
+		}
+		return GroupKind{Group: group, Kind: kind}, nil
 	default:
 		return GroupKind{}, fmt.Errorf("invalid group/kind format %q (expected \"Kind\" or \"Group/Kind\")", s)
 	}

@@ -776,7 +776,9 @@ func TestWriteErrors_jsonMarshalFails(t *testing.T) {
 
 func TestResourceToExtract_SkipsEvents(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(scheme)
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
 	obj := &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-event", Namespace: "default"},
 	}
@@ -882,7 +884,9 @@ func TestResourceToExtract_SkipsEmptyAPIResources(t *testing.T) {
 
 func TestResourceToExtract_GKFilter_IncludeOnly(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(scheme)
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
@@ -926,7 +930,9 @@ func TestResourceToExtract_GKFilter_IncludeOnly(t *testing.T) {
 
 func TestResourceToExtract_GKFilter_ExcludeSpecific(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(scheme)
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
@@ -970,7 +976,9 @@ func TestResourceToExtract_GKFilter_ExcludeSpecific(t *testing.T) {
 
 func TestResourceToExtract_GKFilter_GroupKindSpecific(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(scheme)
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
