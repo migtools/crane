@@ -3,18 +3,15 @@
   "created": "2026-08-03T13:08:46.169594",
   "folders": {
     "_root": {
-      "built": "2026-08-06T09:58:42.206472",
+      "built": "2026-08-18T07:46:51.465706",
       "doc_hashes": {
-        "kustomize-multistage.md": "b262a8d29d4e7b32592db7173b34154dd015ebe5df1ba9fcd990e81e9b446126",
-        "CRANE_COMPATIBILITY_MATRIX.md": "8d144df948489144566e02adde9c0416c258420c15fc85dfc494ee1e08b3f14b",
-        "pre-apply-validation-guide.md": "4bdbc5003dc503b0d7546ad82c66126e051ca975623247f2cf5e8da48804008d",
-        "plugins.md": "8a21b9e8e67fa89adb5b0c2ba5af063f0e6fc142e7c7c4c8adf21a54c8aa33c3",
-        "transform.md": "06f12a97b8e110074cb98c3578d7a17dca2574c2e1152fa7a527ff45d668cc62",
-        "resource-compatibility.md": "f0a3d255b125113b0166e74e3f66f48246bab81b356f55f74557cc25bdc16210",
-        "multistage-pipeline.md": "1472830c2360560be41cedbb510586c1a91eb2558e8e39d77a2a9304236263f7",
-        "stateless-migration-quickstart.md": "a7bc2d19bb4acbaf16771bd213d4078bcef66288152075e5e107587888d64157",
+        "README.md": "f58e2efde76bbbe8e3e4002f72b125199940037b84d2d72e39a4b5ae5ec277e0",
         "installation.md": "61f403b6eeb95a2bd92bf97478ce04f3dffd4dd491397bad10516404a0846e1c",
-        "README.md": "f58e2efde76bbbe8e3e4002f72b125199940037b84d2d72e39a4b5ae5ec277e0"
+        "multistage-pipeline.md": "1472830c2360560be41cedbb510586c1a91eb2558e8e39d77a2a9304236263f7",
+        "plugins.md": "8a21b9e8e67fa89adb5b0c2ba5af063f0e6fc142e7c7c4c8adf21a54c8aa33c3",
+        "pre-apply-validation-guide.md": "4bdbc5003dc503b0d7546ad82c66126e051ca975623247f2cf5e8da48804008d",
+        "resource-compatibility.md": "f0a3d255b125113b0166e74e3f66f48246bab81b356f55f74557cc25bdc16210",
+        "stateless-migration-quickstart.md": "a7bc2d19bb4acbaf16771bd213d4078bcef66288152075e5e107587888d64157"
       }
     },
     "commands": {
@@ -38,5 +35,5 @@
       }
     }
   },
-  "updated": "2026-08-13T14:13:13.738034"
+  "updated": "2026-08-18T07:46:51.490204"
 }
