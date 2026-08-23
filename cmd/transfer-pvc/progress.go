@@ -503,7 +503,7 @@ func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[str
 		}
 
 		if len(clientPodList.Items) != 1 {
-			log.Debugf("Expected 1 client pod, found %d with labels %v", len(clientPodList.Items), labels)
+			log.Warnf("Expected 1 client pod, found %d with labels %v", len(clientPodList.Items), labels)
 			return false, nil
 		}
 
@@ -516,7 +516,7 @@ func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[str
 				break
 			}
 			if !containerStatus.Ready {
-				log.Debugf("Container %s in pod %s is not ready", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
+				log.Warnf("Container %s in pod %s is not ready, retrying...", containerStatus.Name, client.ObjectKey{Namespace: namespace, Name: clientPod.Name})
 				return false, nil
 			}
 		}
