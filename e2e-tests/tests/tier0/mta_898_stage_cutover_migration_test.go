@@ -278,13 +278,19 @@ func literalDataBytes(rsyncLog string) (float64, error) {
 }
 
 func rcloneTransferredBytes(rcloneLog string) (float64, error) {
-	matched := rcloneTransferredRegex.FindStringSubmatch(rcloneLog)
-	if len(matched) < 3 {
+	// Find all "Transferred:" matches (rclone logs intermediate progress updates)
+	allMatches := rcloneTransferredRegex.FindAllStringSubmatch(rcloneLog, -1)
+	if len(allMatches) == 0 {
 		return 0, fmt.Errorf("could not find %q in rclone client log", "Transferred:")
+	}
+	// Use the last match (final statistics block)
+	matched := allMatches[len(allMatches)-1]
+	if len(matched) < 3 {
+		return 0, fmt.Errorf("invalid Transferred: format in rclone client log")
 	}
 	val, err := strconv.ParseFloat(strings.ReplaceAll(matched[1], ",", ""), 64)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("parse transferred byte count %q in rclone client log: %w", matched[1], err)
 	}
 	return val * byteUnitMultipliers[matched[2]], nil
 }
