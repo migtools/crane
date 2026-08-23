@@ -131,18 +131,29 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(mytestkeyAfterInsert1).To(Equal(initial))
 
-		By("Run the second stage transfer-pvc while capturing the rsync client's raw log for delta verification")
-		rsyncLogCh := make(chan string, 1)
-		go captureRsyncClientLog(kubectlSrc, srcApp.Namespace, pvcName, rsyncLogCh)
+		By("Run the second stage transfer-pvc while capturing transfer logs for delta verification")
+		isIndirect := config.CloudStorage != ""
+		logCh := make(chan string, 1)
+		if isIndirect {
+			go captureRcloneClientLog(kubectlSrc, srcApp.Namespace, pvcName, logCh)
+		} else {
+			go captureRsyncClientLog(kubectlSrc, srcApp.Namespace, pvcName, logCh)
+		}
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
-		rsyncLog := <-rsyncLogCh
+		transferLog := <-logCh
 
 		By("Verify only the newly added data was transferred, not a full re-copy of the PVC")
-		literalBytes, err := literalDataBytes(rsyncLog)
-		Expect(err).NotTo(HaveOccurred(), "expected to find rsync's stats summary in the client log:\n%s", rsyncLog)
+		var literalBytes float64
+		if isIndirect {
+			literalBytes, err = rcloneTransferredBytes(transferLog)
+			Expect(err).NotTo(HaveOccurred(), "expected to find rclone's stats summary in the client log:\n%s", transferLog)
+		} else {
+			literalBytes, err = literalDataBytes(transferLog)
+			Expect(err).NotTo(HaveOccurred(), "expected to find rsync's stats summary in the client log:\n%s", transferLog)
+		}
 		Expect(literalBytes).To(BeNumerically("<", float64(deltaBaselineSizeBytes)/10),
-			"second sync sent %.0f bytes of literal (new) data; expected well under the %d-byte baseline blob if only the new key was sent, not a full re-copy",
-			literalBytes, deltaBaselineSizeBytes)
+			"second sync sent %.0f bytes of %s data; expected well under the %d-byte baseline blob if only the new key was sent, not a full re-copy",
+			literalBytes, map[bool]string{true: "transferred", false: "literal (new)"}[isIndirect], deltaBaselineSizeBytes)
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
 		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
@@ -247,15 +258,29 @@ func redisSetRandomBlob(k KubectlRunner, namespace, pod, container, key string, 
 }
 
 var literalDataRegex = regexp.MustCompile(`Literal data: ([\d,.]+)\s*([KMGT]?) bytes`)
+var rcloneTransferredRegex = regexp.MustCompile(`Transferred:\s+([\d,.]+)\s*([KMGT]?i?)B\s*/`)
 
 var byteUnitMultipliers = map[string]float64{
 	"": 1, "K": 1_000, "M": 1_000_000, "G": 1_000_000_000, "T": 1_000_000_000_000,
+	"Ki": 1024, "Mi": 1_048_576, "Gi": 1_073_741_824, "Ti": 1_099_511_627_776,
 }
 
 func literalDataBytes(rsyncLog string) (float64, error) {
 	matched := literalDataRegex.FindStringSubmatch(rsyncLog)
 	if len(matched) < 3 {
 		return 0, fmt.Errorf("could not find %q in rsync client log", "Literal data")
+	}
+	val, err := strconv.ParseFloat(strings.ReplaceAll(matched[1], ",", ""), 64)
+	if err != nil {
+		return 0, err
+	}
+	return val * byteUnitMultipliers[matched[2]], nil
+}
+
+func rcloneTransferredBytes(rcloneLog string) (float64, error) {
+	matched := rcloneTransferredRegex.FindStringSubmatch(rcloneLog)
+	if len(matched) < 3 {
+		return 0, fmt.Errorf("could not find %q in rclone client log", "Transferred:")
 	}
 	val, err := strconv.ParseFloat(strings.ReplaceAll(matched[1], ",", ""), 64)
 	if err != nil {
@@ -290,6 +315,37 @@ func captureRsyncClientLog(k KubectlRunner, namespace, pvcName string, result ch
 	}
 	if !seenPod {
 		result <- fmt.Sprintf("no rsync-client pod found in namespace %q (selector %q) within the capture window", namespace, selector)
+		return
+	}
+	result <- lastLog
+}
+
+func captureRcloneClientLog(k KubectlRunner, namespace, pvcName string, result chan<- string) {
+	selector := fmt.Sprintf(
+		"app.kubernetes.io/component=transfer-pvc,app.konveyor.io/created-for-pvc=%s",
+		pvcName,
+	)
+	deadline := time.Now().Add(180 * time.Second)
+	var lastLog string
+	seenPod := false
+	for time.Now().Before(deadline) {
+		out, err := k.Run("get", "pods", "-n", namespace, "-l", selector, "-o", "name")
+		if err != nil || strings.TrimSpace(out) == "" {
+			if seenPod {
+				break
+			}
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		podName := strings.TrimPrefix(strings.Split(strings.TrimSpace(out), "\n")[0], "pod/")
+		seenPod = true
+		if podLog, err := k.Run("logs", podName, "-n", namespace, "-c", "rclone"); err == nil && podLog != "" {
+			lastLog = podLog
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !seenPod {
+		result <- fmt.Sprintf("no rclone-client pod found in namespace %q (selector %q) within the capture window", namespace, selector)
 		return
 	}
 	result <- lastLog
