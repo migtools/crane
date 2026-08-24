@@ -1,0 +1,143 @@
+package e2e
+
+import (
+	"fmt"
+	"log"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+
+	"github.com/konveyor/crane/e2e-tests/config"
+	. "github.com/konveyor/crane/e2e-tests/framework"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+)
+
+var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
+	It("[MTA-900] Convert a single PVC (Deployment) to a different StorageClass, same cluster", Label("tier0", "pvc-transfer"), func() {
+		const (
+			appName    = "mongodb"
+			pvcName    = "mongodb-data"
+			destSCName = "crane-dest-mta-900"
+		)
+		srcNamespace := "mta-900-src"
+		tgtNamespace := "mta-900-tgt"
+
+		scenario := NewMigrationScenario(
+			appName,
+			srcNamespace,
+			config.K8sDeployBin,
+			config.CraneBin,
+			config.SourceContext,
+			config.SourceContext,
+		)
+		scenario.TgtApp.Namespace = tgtNamespace
+		srcApp := scenario.SrcApp
+		tgtApp := scenario.TgtApp
+		kubectlSrc := scenario.KubectlSrc
+		kubectlTgt := scenario.KubectlTgt
+		runner := scenario.Crane
+
+		paths, err := NewScenarioPaths("crane-export-*")
+		Expect(err).NotTo(HaveOccurred())
+		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
+		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
+
+		DeferCleanup(func() {
+			By("Cleanup source and target resources")
+			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
+			By("Delete source and target namespaces")
+			for _, ns := range []string{srcNamespace, tgtNamespace} {
+				if _, err := kubectlSrc.Run("delete", "namespace", ns, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {
+					log.Printf("cleanup: %v", err)
+				}
+			}
+			By("Delete cloned destination StorageClass")
+			if err := DeleteStorageClass(srcApp.Context, destSCName); err != nil {
+				log.Printf("cleanup: %v", err)
+			}
+		})
+
+		By("Deploy and validate source MongoDB")
+		log.Printf("Preparing source app %s in namespace %s", srcApp.Name, srcApp.Namespace)
+		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
+
+		By("Resolve source StorageClass and clone a distinct destination class")
+		srcPVC, err := GetPVC(srcApp.Context, srcNamespace, pvcName)
+		Expect(err).NotTo(HaveOccurred())
+		srcSC, err := ResolvePVCStorageClass(srcApp.Context, *srcPVC)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(srcSC).NotTo(BeEmpty(), "source PVC %s/%s must have a StorageClass", srcNamespace, pvcName)
+		log.Printf("Source PVC %s/%s StorageClass=%s", srcNamespace, pvcName, srcSC)
+
+		Expect(CloneStorageClass(srcApp.Context, srcSC, destSCName)).NotTo(HaveOccurred())
+		Expect(destSCName).NotTo(Equal(srcSC))
+
+		By("Scale down source MongoDB so the RWO PVC is unmounted")
+		Expect(kubectlSrc.ScaleDeploymentIfPresent(srcNamespace, appName, 0)).NotTo(HaveOccurred())
+		_, err = kubectlSrc.Run("wait", "pod", "-n", srcNamespace, "-l", "name="+appName, "--for=delete", "--timeout=60s")
+		Expect(err).NotTo(HaveOccurred())
+		WaitForSourceQuiesce(kubectlSrc, srcNamespace, "name="+appName, appName)
+
+		By("Run crane export/transform/apply pipeline")
+		runner.WorkDir = paths.TempDir
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
+
+		By("Create destination namespace and transfer PVC onto the cloned StorageClass")
+		Expect(kubectlTgt.CreateNamespace(tgtNamespace)).NotTo(HaveOccurred())
+
+		nodeIP, err := GetClusterNodeIP(srcApp.Context)
+		Expect(err).NotTo(HaveOccurred())
+		opts := TransferPVCOptions{
+			SourceContext:    srcApp.Context,
+			TargetContext:    tgtApp.Context,
+			PVCName:          pvcName,
+			PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcNamespace, tgtNamespace),
+			DestStorageClass: destSCName,
+			Subdomain:        fmt.Sprintf("%s.nip.io", nodeIP),
+		}
+		log.Printf("Transferring PVC %s %s -> %s with dest StorageClass %s", pvcName, srcNamespace, tgtNamespace, destSCName)
+		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
+
+		By("Wait for transfer-pvc helpers to finish deleting")
+		assertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
+
+		By("Assert destination PVC uses the converted StorageClass")
+		destPVC, err := GetPVC(tgtApp.Context, tgtNamespace, pvcName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(PVCStorageClassName(*destPVC)).To(Equal(destSCName),
+			"destination PVC StorageClass should be %s", destSCName)
+
+		By("Apply remapped manifests to destination namespace")
+		Expect(ApplyOutputToTargetWithNamespaceRemap(kubectlTgt, srcNamespace, tgtNamespace, paths.OutputDir)).NotTo(HaveOccurred())
+
+		By("Scale destination MongoDB and validate data")
+		Expect(kubectlTgt.ScaleDeployment(tgtNamespace, appName, 1)).NotTo(HaveOccurred())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
+
+		By("Assert destination PVC is Bound after the workload starts")
+		destPVC, err = GetPVC(tgtApp.Context, tgtNamespace, pvcName)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(destPVC.Status.Phase).To(Equal(corev1.ClaimBound))
+
+		By("Confirm no leftover transfer-pvc resources")
+		assertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
+	})
+})
+
+// assertNoTransferPVCLeftovers waits until transfer-pvc helper objects labeled
+// for pvcName are gone. DeleteAllOf in transfer-pvc GC is asynchronous, so the
+// rsync-server pod can still be Terminating for a while after the command exits.
+func assertNoTransferPVCLeftovers(k KubectlRunner, namespaces []string, pvcName string) {
+	selector := "app.konveyor.io/created-for-pvc=" + pvcName
+	for _, ns := range namespaces {
+		Eventually(func() (string, error) {
+			out, err := k.GetResourceNamesByLabel(ns, selector)
+			return strings.TrimSpace(out), err
+		}, "2m", "5s").Should(BeEmpty(),
+			"expected no leftover transfer-pvc resources in namespace %s", ns)
+	}
+}

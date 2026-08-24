@@ -13,6 +13,8 @@ import (
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -40,6 +42,129 @@ func ListPVCs(namespace string, labelSelector string, contextName string) ([]cor
 
 	return pvcList.Items, nil
 
+}
+
+// GetPVC returns a PersistentVolumeClaim by name.
+func GetPVC(contextName, namespace, name string) (*corev1.PersistentVolumeClaim, error) {
+	clientSet, err := NewClientSetForContext(contextName)
+	if err != nil {
+		return nil, err
+	}
+	pvc, err := clientSet.CoreV1().PersistentVolumeClaims(namespace).Get(
+		context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed getting PVC %s/%s (context=%q): %w", namespace, name, contextName, err)
+	}
+	return pvc, nil
+}
+
+// PVCStorageClassName returns the StorageClass name from a PVC spec, or empty
+// when the claim uses the cluster default (unset storageClassName).
+func PVCStorageClassName(pvc corev1.PersistentVolumeClaim) string {
+	if pvc.Spec.StorageClassName != nil {
+		return *pvc.Spec.StorageClassName
+	}
+	return ""
+}
+
+// DefaultStorageClassName returns the name of the cluster default StorageClass.
+func DefaultStorageClassName(contextName string) (string, error) {
+	clientSet, err := NewClientSetForContext(contextName)
+	if err != nil {
+		return "", err
+	}
+	list, err := clientSet.StorageV1().StorageClasses().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed listing StorageClasses (context=%q): %w", contextName, err)
+	}
+	for i := range list.Items {
+		if list.Items[i].Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+			return list.Items[i].Name, nil
+		}
+	}
+	return "", fmt.Errorf("no default StorageClass found (context=%q)", contextName)
+}
+
+// ResolvePVCStorageClass returns the PVC's StorageClass, falling back to the
+// cluster default when spec.storageClassName is unset.
+func ResolvePVCStorageClass(contextName string, pvc corev1.PersistentVolumeClaim) (string, error) {
+	if name := PVCStorageClassName(pvc); name != "" {
+		return name, nil
+	}
+	return DefaultStorageClassName(contextName)
+}
+
+// CloneStorageClass creates destName as a copy of sourceName's provisioner and
+// volume settings, without copying default-class annotations. If destName
+// already exists it is left unchanged. Source and dest names must differ.
+func CloneStorageClass(contextName, sourceName, destName string) error {
+	if sourceName == "" {
+		return fmt.Errorf("source StorageClass name is empty")
+	}
+	if destName == "" {
+		return fmt.Errorf("destination StorageClass name is empty")
+	}
+	if sourceName == destName {
+		return fmt.Errorf("destination StorageClass %q must differ from source %q", destName, sourceName)
+	}
+
+	clientSet, err := NewClientSetForContext(contextName)
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	src, err := clientSet.StorageV1().StorageClasses().Get(ctx, sourceName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("get source StorageClass %q: %w", sourceName, err)
+	}
+
+	_, err = clientSet.StorageV1().StorageClasses().Get(ctx, destName, metav1.GetOptions{})
+	if err == nil {
+		return nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("get destination StorageClass %q: %w", destName, err)
+	}
+
+	clone := &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: destName,
+			Labels: map[string]string{
+				"app.konveyor.io/e2e": "true",
+			},
+		},
+		Provisioner:          src.Provisioner,
+		Parameters:           src.Parameters,
+		ReclaimPolicy:        src.ReclaimPolicy,
+		MountOptions:         src.MountOptions,
+		AllowVolumeExpansion: src.AllowVolumeExpansion,
+		VolumeBindingMode:    src.VolumeBindingMode,
+		AllowedTopologies:    src.AllowedTopologies,
+	}
+	_, err = clientSet.StorageV1().StorageClasses().Create(ctx, clone, metav1.CreateOptions{})
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return nil
+		}
+		return fmt.Errorf("create StorageClass %q cloned from %q: %w", destName, sourceName, err)
+	}
+	return nil
+}
+
+// DeleteStorageClass deletes a StorageClass, treating NotFound as success.
+func DeleteStorageClass(contextName, name string) error {
+	if name == "" {
+		return nil
+	}
+	clientSet, err := NewClientSetForContext(contextName)
+	if err != nil {
+		return err
+	}
+	err = clientSet.StorageV1().StorageClasses().Delete(context.Background(), name, metav1.DeleteOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("delete StorageClass %q: %w", name, err)
+	}
+	return nil
 }
 
 // VerifyPVCsExistByName checks that all source PVCs exist by name in the target PVC list.
