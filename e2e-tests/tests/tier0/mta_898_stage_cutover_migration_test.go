@@ -131,18 +131,28 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(mytestkeyAfterInsert1).To(Equal(initial))
 
-		By("Run the second stage transfer-pvc while capturing the rsync client's raw log for delta verification")
-		rsyncLogCh := make(chan string, 1)
-		go captureRsyncClientLog(kubectlSrc, srcApp.Namespace, pvcName, rsyncLogCh)
-		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
-		rsyncLog := <-rsyncLogCh
+		By("Run the second stage transfer-pvc")
+		isIndirect := config.CloudStorage != ""
 
-		By("Verify only the newly added data was transferred, not a full re-copy of the PVC")
-		literalBytes, err := literalDataBytes(rsyncLog)
-		Expect(err).NotTo(HaveOccurred(), "expected to find rsync's stats summary in the client log:\n%s", rsyncLog)
-		Expect(literalBytes).To(BeNumerically("<", float64(deltaBaselineSizeBytes)/10),
-			"second sync sent %.0f bytes of literal (new) data; expected well under the %d-byte baseline blob if only the new key was sent, not a full re-copy",
-			literalBytes, deltaBaselineSizeBytes)
+		// For direct (rsync) mode: capture logs to verify incremental sync
+		// For indirect (rclone) mode: skip incremental verification because transfer pods
+		// are ephemeral and cleaned up immediately after completion by crane-lib
+		if !isIndirect {
+			rsyncLogCh := make(chan string, 1)
+			go captureRsyncClientLog(kubectlSrc, srcApp.Namespace, pvcName, rsyncLogCh)
+			Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
+			rsyncLog := <-rsyncLogCh
+
+			By("Verify only the newly added data was transferred (rsync incremental sync)")
+			literalBytes, err := literalDataBytes(rsyncLog)
+			Expect(err).NotTo(HaveOccurred(), "expected to find rsync's stats summary in the client log:\n%s", rsyncLog)
+			Expect(literalBytes).To(BeNumerically("<", float64(deltaBaselineSizeBytes)/10),
+				"second sync sent %.0f bytes of literal (new) data; expected well under the %d-byte baseline blob if only the new key was sent, not a full re-copy",
+				literalBytes, deltaBaselineSizeBytes)
+		} else {
+			Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
+			By("Skipping incremental sync verification for indirect mode (pods are ephemeral)")
+		}
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
 		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
