@@ -230,13 +230,30 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 		t.PVC.Namespace.destination = t.destinationContext.Namespace
 	}
 
+	if t.CloudStorage != "" && strings.TrimSpace(t.CloudStorage) == "" {
+		return fmt.Errorf("--cloud-storage value cannot be empty or whitespace")
+	}
+	t.CloudStorage = strings.TrimSpace(t.CloudStorage)
+
 	return nil
 }
 
 func (t *TransferPVCCommand) Validate() error {
-	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
+	cloudStorage := t.CloudStorage
+
+	if t.Encrypt && cloudStorage == "" {
+		return fmt.Errorf("--encrypt requires --cloud-storage")
+	}
+	if t.KeepCloudData && cloudStorage == "" {
 		return fmt.Errorf("--keep-cloud-data requires --cloud-storage")
 	}
+	if t.RcloneConfigSecret != "" && cloudStorage == "" {
+		return fmt.Errorf("--rclone-config-secret requires --cloud-storage")
+	}
+	if t.RcloneConfigFile != "" && cloudStorage == "" {
+		return fmt.Errorf("--rclone-config-file requires --cloud-storage")
+	}
+
 	if t.sourceContext == nil {
 		return fmt.Errorf("cannot evaluate source context")
 	}
@@ -252,28 +269,6 @@ func (t *TransferPVCCommand) Validate() error {
 	err := t.PVC.Validate()
 	if err != nil {
 		return err
-	}
-
-	cloudStorage := strings.TrimSpace(t.CloudStorage)
-
-	if t.CloudStorage != "" && cloudStorage == "" {
-		return fmt.Errorf("--cloud-storage value cannot be empty or whitespace")
-	}
-	t.CloudStorage = cloudStorage
-
-	indirectOnlyFlags := []struct {
-		set  bool
-		name string
-	}{
-		{t.Encrypt, "--encrypt"},
-		{t.KeepCloudData, "--keep-cloud-data"},
-		{t.RcloneConfigSecret != "", "--rclone-config-secret"},
-		{t.RcloneConfigFile != "", "--rclone-config-file"},
-	}
-	for _, f := range indirectOnlyFlags {
-		if f.set && cloudStorage == "" {
-			return fmt.Errorf("%s requires --cloud-storage", f.name)
-		}
 	}
 
 	if cloudStorage != "" {
@@ -298,7 +293,7 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
-	if strings.TrimSpace(t.CloudStorage) != "" {
+	if t.CloudStorage != "" {
 		return t.runIndirect()
 	}
 	return t.run()
