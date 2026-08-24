@@ -41,7 +41,7 @@ func BuildManifestMap(log *logrus.Logger, name string, repoName string) (map[str
 		// get the index.yml file for respective repo
 		index, err := GetYamlFromUrl(url)
 		if err != nil {
-			log.Errorf("Failed to fetch plugin index from %s: %v", url, err)
+			log.Errorf("Failed to fetch plugin index: %v", err)
 			return nil, err
 		}
 		// fetch all the manifest file from a repo

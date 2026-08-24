@@ -29,6 +29,9 @@ type KustomizeApplier struct {
 
 // ApplySingleStage applies a single transform stage to produce output
 func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
+	if k.Log == nil {
+		k.Log = logrus.StandardLogger()
+	}
 	opts := file.PathOpts{
 		TransformDir: k.TransformDir,
 		OutputDir:    k.OutputDir,
@@ -84,6 +87,9 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 
 // ApplyMultiStage applies a multi-stage transform pipeline
 func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.StageSelector) error {
+	if k.Log == nil {
+		k.Log = logrus.StandardLogger()
+	}
 	// Discover stages
 	stages, err := internalTransform.DiscoverStages(k.TransformDir)
 	if err != nil {

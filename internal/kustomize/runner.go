@@ -19,6 +19,9 @@ type Runner struct {
 
 // Build runs kustomize build on the given directory and returns the rendered YAML.
 func (r *Runner) Build(dir string) ([]byte, error) {
+	if r.Log == nil {
+		r.Log = logrus.StandardLogger()
+	}
 	r.Log.Debugf("Running kustomize build on %s", dir)
 
 	opts, envVars, err := r.buildOptions()
