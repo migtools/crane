@@ -190,7 +190,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
 			fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
 		} else {
-			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone"); err != nil {
+			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log); err != nil {
 				log.Printf("WARN: cloud storage cleanup failed: %v", err)
 				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
 			} else {
