@@ -209,7 +209,6 @@ func TestNewProgress(t *testing.T) {
 	}
 }
 
-
 func TestStatus(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -788,7 +787,7 @@ func TestWriteProgressToFile_InvalidPath(t *testing.T) {
 	p := &Progress{
 		TransferredFiles: 100,
 	}
-	err := writeProgressToFile("/nonexistent/directory/file.json", p)
+	err := writeProgressToFile(t.TempDir(), p)
 	if err == nil {
 		t.Errorf("writeProgressToFile() with invalid path should return error")
 	}
