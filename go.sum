@@ -382,6 +382,8 @@ github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
 github.com/migtools/pvc-transfer v0.0.0-20260805073413-1b1f9d254821 h1:C84du165fwGWJY40kr2bbpxMiECFO6JNI6ELKJHjy2I=
 github.com/migtools/pvc-transfer v0.0.0-20260805073413-1b1f9d254821/go.mod h1:ep8dIwq9ZA5oIQKzYL0eVMugUaNWOfIr1fAq02yURgo=
+github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a h1:bSsyUn96V8oLl6S//jWK78nHicx5u7Wr7qhPSZYbZkI=
+github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a/go.mod h1:ep8dIwq9ZA5oIQKzYL0eVMugUaNWOfIr1fAq02yURgo=
 github.com/mitchellh/cli v1.0.0/go.mod h1:hNIlj7HEI86fIcpObd7a0FcrxTWetlwJDGcceTlRvqc=
 github.com/mitchellh/go-homedir v1.0.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
 github.com/mitchellh/go-homedir v1.1.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=

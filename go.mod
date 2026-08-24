@@ -11,7 +11,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/jarcoal/httpmock v1.2.0
 	github.com/konveyor/crane-lib v0.1.6-0.20260823185453-0508f29d427a
-	github.com/migtools/pvc-transfer v0.0.0-20260805073413-1b1f9d254821
+	github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.0
