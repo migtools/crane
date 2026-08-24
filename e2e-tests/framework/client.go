@@ -94,6 +94,46 @@ func ResolvePVCStorageClass(contextName string, pvc corev1.PersistentVolumeClaim
 	return DefaultStorageClassName(contextName)
 }
 
+// PrepareDestinationStorageClass returns a destination StorageClass name for
+// conversion tests. It prefers the first existing class whose name differs from
+// sourceName. If no alternative class exists, it falls back to cloning
+// sourceName into fallbackCloneName and returns a cleanup callback for the
+// temporary clone.
+func PrepareDestinationStorageClass(contextName, sourceName, fallbackCloneName string) (string, func() error, error) {
+	if sourceName == "" {
+		return "", nil, fmt.Errorf("source StorageClass name is empty")
+	}
+	if fallbackCloneName == "" {
+		return "", nil, fmt.Errorf("fallback clone StorageClass name is empty")
+	}
+	if fallbackCloneName == sourceName {
+		return "", nil, fmt.Errorf("fallback clone StorageClass %q must differ from source %q", fallbackCloneName, sourceName)
+	}
+
+	clientSet, err := NewClientSetForContext(contextName)
+	if err != nil {
+		return "", nil, err
+	}
+
+	list, err := clientSet.StorageV1().StorageClasses().List(context.Background(), metav1.ListOptions{})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed listing StorageClasses (context=%q): %w", contextName, err)
+	}
+	for i := range list.Items {
+		if list.Items[i].Name != sourceName {
+			return list.Items[i].Name, func() error { return nil }, nil
+		}
+	}
+
+	if err := CloneStorageClass(contextName, sourceName, fallbackCloneName); err != nil {
+		return "", nil, err
+	}
+	cleanup := func() error {
+		return DeleteStorageClass(contextName, fallbackCloneName)
+	}
+	return fallbackCloneName, cleanup, nil
+}
+
 // CloneStorageClass creates destName as a copy of sourceName's provisioner and
 // volume settings, without copying default-class annotations. If destName
 // already exists it is left unchanged. Source and dest names must differ.

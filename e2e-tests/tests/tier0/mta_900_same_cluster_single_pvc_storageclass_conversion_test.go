@@ -16,9 +16,9 @@ import (
 var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 	It("[MTA-900] Convert a single PVC (Deployment) to a different StorageClass, same cluster", Label("tier0", "pvc-transfer"), func() {
 		const (
-			appName    = "mongodb"
-			pvcName    = "mongodb-data"
-			destSCName = "crane-dest-mta-900"
+			appName            = "mongodb"
+			pvcName            = "mongodb-data"
+			fallbackDestSCName = "crane-dest-mta-900"
 		)
 		srcNamespace := "mta-900-src"
 		tgtNamespace := "mta-900-tgt"
@@ -31,12 +31,25 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 			config.SourceContext,
 			config.SourceContext,
 		)
-		scenario.TgtApp.Namespace = tgtNamespace
-		srcApp := scenario.SrcApp
-		tgtApp := scenario.TgtApp
-		kubectlSrc := scenario.KubectlSrc
-		kubectlTgt := scenario.KubectlTgt
-		runner := scenario.Crane
+		scenario.TgtAppNonAdmin.Namespace = tgtNamespace
+		srcApp := scenario.SrcAppNonAdmin
+		tgtApp := scenario.TgtAppNonAdmin
+		runner := scenario.CraneNonAdmin
+
+		srcApp.ExtraVars = map[string]any{
+			"non_admin_user": "true",
+		}
+		tgtApp.ExtraVars = map[string]any{
+			"non_admin_user": "true",
+		}
+
+		By("Grant namespace admin permissions to the nonadmin user on both namespaces")
+		kubectlSrc, cleanupSrc, err := SetupActiveNamespaceAdmin(scenario.KubectlSrc, scenario.KubectlSrcNonAdmin.Context, srcNamespace)
+		Expect(err).NotTo(HaveOccurred())
+		kubectlTgt, cleanupTgt, err := SetupActiveNamespaceAdmin(scenario.KubectlTgt, scenario.KubectlTgtNonAdmin.Context, tgtNamespace)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(cleanupTgt)
+		DeferCleanup(cleanupSrc)
 
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
@@ -44,6 +57,8 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 
+		var destSCName string
+		var cleanupDestSC func() error
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
 			if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
@@ -51,13 +66,15 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 			}
 			By("Delete source and target namespaces")
 			for _, ns := range []string{srcNamespace, tgtNamespace} {
-				if _, err := kubectlSrc.Run("delete", "namespace", ns, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {
+				if _, err := scenario.KubectlSrc.Run("delete", "namespace", ns, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {
 					log.Printf("cleanup: %v", err)
 				}
 			}
-			By("Delete cloned destination StorageClass")
-			if err := DeleteStorageClass(srcApp.Context, destSCName); err != nil {
-				log.Printf("cleanup: %v", err)
+			By("Cleanup destination StorageClass if this test created one")
+			if cleanupDestSC != nil {
+				if err := cleanupDestSC(); err != nil {
+					log.Printf("cleanup: %v", err)
+				}
 			}
 		})
 
@@ -65,16 +82,18 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		log.Printf("Preparing source app %s in namespace %s", srcApp.Name, srcApp.Namespace)
 		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
 
-		By("Resolve source StorageClass and clone a distinct destination class")
+		By("Resolve source StorageClass and choose a distinct destination class")
 		srcPVC, err := GetPVC(srcApp.Context, srcNamespace, pvcName)
 		Expect(err).NotTo(HaveOccurred())
-		srcSC, err := ResolvePVCStorageClass(srcApp.Context, *srcPVC)
+		srcSC, err := ResolvePVCStorageClass(scenario.SrcApp.Context, *srcPVC)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(srcSC).NotTo(BeEmpty(), "source PVC %s/%s must have a StorageClass", srcNamespace, pvcName)
 		log.Printf("Source PVC %s/%s StorageClass=%s", srcNamespace, pvcName, srcSC)
 
-		Expect(CloneStorageClass(srcApp.Context, srcSC, destSCName)).NotTo(HaveOccurred())
+		destSCName, cleanupDestSC, err = PrepareDestinationStorageClass(scenario.SrcApp.Context, srcSC, fallbackDestSCName)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(destSCName).NotTo(Equal(srcSC))
+		log.Printf("Using destination StorageClass=%s", destSCName)
 
 		By("Scale down source MongoDB so the RWO PVC is unmounted")
 		Expect(kubectlSrc.ScaleDeploymentIfPresent(srcNamespace, appName, 0)).NotTo(HaveOccurred())
@@ -86,10 +105,8 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
-		By("Create destination namespace and transfer PVC onto the cloned StorageClass")
-		Expect(kubectlTgt.CreateNamespace(tgtNamespace)).NotTo(HaveOccurred())
-
-		nodeIP, err := GetClusterNodeIP(srcApp.Context)
+		By("Transfer PVC onto the destination StorageClass")
+		nodeIP, err := GetClusterNodeIP(scenario.SrcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		opts := TransferPVCOptions{
 			SourceContext:    srcApp.Context,
@@ -112,7 +129,7 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 			"destination PVC StorageClass should be %s", destSCName)
 
 		By("Apply remapped manifests to destination namespace")
-		Expect(ApplyOutputToTargetWithNamespaceRemap(kubectlTgt, srcNamespace, tgtNamespace, paths.OutputDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectlTgt, srcNamespace, tgtNamespace, paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("Scale destination MongoDB and validate data")
 		Expect(kubectlTgt.ScaleDeployment(tgtNamespace, appName, 1)).NotTo(HaveOccurred())
