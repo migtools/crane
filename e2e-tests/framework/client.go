@@ -58,8 +58,8 @@ func GetPVC(contextName, namespace, name string) (*corev1.PersistentVolumeClaim,
 	return pvc, nil
 }
 
-// PVCStorageClassName returns the StorageClass name from a PVC spec, or empty
-// when the claim uses the cluster default (unset storageClassName).
+// PVCStorageClassName returns the raw storageClassName from a PVC spec, or
+// empty when the field is unset or explicitly set to "".
 func PVCStorageClassName(pvc corev1.PersistentVolumeClaim) string {
 	if pvc.Spec.StorageClassName != nil {
 		return *pvc.Spec.StorageClassName
@@ -88,8 +88,8 @@ func DefaultStorageClassName(contextName string) (string, error) {
 // ResolvePVCStorageClass returns the PVC's StorageClass, falling back to the
 // cluster default when spec.storageClassName is unset.
 func ResolvePVCStorageClass(contextName string, pvc corev1.PersistentVolumeClaim) (string, error) {
-	if name := PVCStorageClassName(pvc); name != "" {
-		return name, nil
+	if pvc.Spec.StorageClassName != nil {
+		return *pvc.Spec.StorageClassName, nil
 	}
 	return DefaultStorageClassName(contextName)
 }
@@ -125,8 +125,12 @@ func PrepareDestinationStorageClass(contextName, sourceName, fallbackCloneName s
 		}
 	}
 
-	if err := CloneStorageClass(contextName, sourceName, fallbackCloneName); err != nil {
+	created, err := CloneStorageClass(contextName, sourceName, fallbackCloneName)
+	if err != nil {
 		return "", nil, err
+	}
+	if !created {
+		return fallbackCloneName, func() error { return nil }, nil
 	}
 	cleanup := func() error {
 		return DeleteStorageClass(contextName, fallbackCloneName)
@@ -135,35 +139,35 @@ func PrepareDestinationStorageClass(contextName, sourceName, fallbackCloneName s
 }
 
 // CloneStorageClass creates destName as a copy of sourceName's provisioner and
-// volume settings, without copying default-class annotations. If destName
-// already exists it is left unchanged. Source and dest names must differ.
-func CloneStorageClass(contextName, sourceName, destName string) error {
+// volume settings, without copying default-class annotations. It returns true
+// only when it created destName in this call. Source and dest names must differ.
+func CloneStorageClass(contextName, sourceName, destName string) (bool, error) {
 	if sourceName == "" {
-		return fmt.Errorf("source StorageClass name is empty")
+		return false, fmt.Errorf("source StorageClass name is empty")
 	}
 	if destName == "" {
-		return fmt.Errorf("destination StorageClass name is empty")
+		return false, fmt.Errorf("destination StorageClass name is empty")
 	}
 	if sourceName == destName {
-		return fmt.Errorf("destination StorageClass %q must differ from source %q", destName, sourceName)
+		return false, fmt.Errorf("destination StorageClass %q must differ from source %q", destName, sourceName)
 	}
 
 	clientSet, err := NewClientSetForContext(contextName)
 	if err != nil {
-		return err
+		return false, err
 	}
 	ctx := context.Background()
 	src, err := clientSet.StorageV1().StorageClasses().Get(ctx, sourceName, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("get source StorageClass %q: %w", sourceName, err)
+		return false, fmt.Errorf("get source StorageClass %q: %w", sourceName, err)
 	}
 
 	_, err = clientSet.StorageV1().StorageClasses().Get(ctx, destName, metav1.GetOptions{})
 	if err == nil {
-		return nil
+		return false, nil
 	}
 	if !apierrors.IsNotFound(err) {
-		return fmt.Errorf("get destination StorageClass %q: %w", destName, err)
+		return false, fmt.Errorf("get destination StorageClass %q: %w", destName, err)
 	}
 
 	clone := &storagev1.StorageClass{
@@ -184,11 +188,11 @@ func CloneStorageClass(contextName, sourceName, destName string) error {
 	_, err = clientSet.StorageV1().StorageClasses().Create(ctx, clone, metav1.CreateOptions{})
 	if err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			return nil
+			return false, nil
 		}
-		return fmt.Errorf("create StorageClass %q cloned from %q: %w", destName, sourceName, err)
+		return false, fmt.Errorf("create StorageClass %q cloned from %q: %w", destName, sourceName, err)
 	}
-	return nil
+	return true, nil
 }
 
 // DeleteStorageClass deletes a StorageClass, treating NotFound as success.

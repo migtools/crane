@@ -376,7 +376,7 @@ func (k KubectlRunner) GetResourceNamesByLabel(namespace, labelSelector string) 
 	}
 	out, err := k.Run("get", kinds, "-n", namespace, "-l", labelSelector, "-o", "name")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("get resources by label failed (kinds=%q namespace=%q labelSelector=%q): %w", kinds, namespace, labelSelector, err)
 	}
 	return StripKubectlWarnings(out), nil
 }
