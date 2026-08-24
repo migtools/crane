@@ -10,7 +10,7 @@ require (
 	github.com/google/gnostic-models v0.7.0
 	github.com/google/go-cmp v0.7.0
 	github.com/jarcoal/httpmock v1.2.0
-	github.com/konveyor/crane-lib v0.1.6-0.20260820041859-f7a1f8ac605d
+	github.com/konveyor/crane-lib v0.1.6-0.20260823185453-0508f29d427a
 	github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.28.1
@@ -29,7 +29,6 @@ require (
 	k8s.io/apimachinery v0.35.3
 	k8s.io/cli-runtime v0.35.3
 	k8s.io/client-go v0.35.3
-	k8s.io/component-helpers v0.35.3
 	sigs.k8s.io/controller-runtime v0.23.3
 	sigs.k8s.io/kustomize/api v0.21.1
 	sigs.k8s.io/kustomize/kustomize/v5 v5.8.1
@@ -101,6 +100,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.66.4 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	k8s.io/component-helpers v0.35.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
