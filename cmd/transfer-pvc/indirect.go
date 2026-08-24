@@ -108,7 +108,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 	}
 
-	if t.Flags.RcloneConfigSecret != "" {
+	if configSecret != "" {
 		if err := t.validateRcloneConfigSecret(configSecret, srcClient, destClient); err != nil {
 			return err
 		}
@@ -382,6 +382,10 @@ func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcCl
 			}
 			return fmt.Errorf("unable to read rclone config secret %q in namespace %q on %s cluster: %w",
 				secretName, check.namespace, check.side, err)
+		}
+		if len(secret.Data["rclone.conf"]) == 0 {
+			return fmt.Errorf("rclone config secret %q in namespace %q on %s cluster is missing the rclone.conf key or it is empty",
+				secretName, check.namespace, check.side)
 		}
 	}
 	return nil
