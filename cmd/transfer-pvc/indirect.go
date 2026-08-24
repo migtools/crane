@@ -190,7 +190,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
 			fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
 		} else {
-			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone"); err != nil {
+			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log); err != nil {
 				log.Printf("WARN: cloud storage cleanup failed: %v", err)
 				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
 			} else {
@@ -345,8 +345,8 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 
 	hasPermissionError := strings.Contains(output, "permission denied")
 	if lastTransferred > 0 && hasPermissionError {
-		log.Warnf("Rclone completed with permission errors on %d of %d items (unreadable directories skipped)",
-			lastTotal-lastTransferred, lastTotal)
+		log.Printf("WARN: rclone completed with permission errors (unreadable files/directories skipped), %d of %d files transferred",
+			lastTransferred, lastTotal)
 		return nil
 	}
 
