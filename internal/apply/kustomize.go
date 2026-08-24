@@ -38,12 +38,14 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 
 	// Verify stage exists
 	if _, err := os.Stat(stageDir); os.IsNotExist(err) {
+		k.Log.Debugf("Stage directory does not exist: %s", stageDir)
 		return fmt.Errorf("stage directory does not exist: %s", stageDir)
 	}
 
 	// Verify kustomization.yaml exists
 	kustomizationPath := opts.GetKustomizationPath(stageName)
 	if _, err := os.Stat(kustomizationPath); os.IsNotExist(err) {
+		k.Log.Debugf("kustomization.yaml not found in stage: %s", stageName)
 		return fmt.Errorf("kustomization.yaml not found in stage: %s", stageName)
 	}
 
@@ -51,6 +53,7 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 	k.Log.Infof("Building stage: %s", stageName)
 	output, err := k.runKustomizeBuild(stageDir)
 	if err != nil {
+		k.Log.Debugf("Kustomize build failed for stage %s: %v", stageName, err)
 		return fmt.Errorf("kustomize build failed for stage %s: %w", stageName, err)
 	}
 
@@ -58,6 +61,7 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 	if k.SkipClusterScoped {
 		output, err = k.filterClusterScopedResources(output)
 		if err != nil {
+			k.Log.Debugf("Failed to filter cluster-scoped resources in stage %s: %v", stageName, err)
 			return fmt.Errorf("failed to filter cluster-scoped resources: %w", err)
 		}
 	}
@@ -65,10 +69,12 @@ func (k *KustomizeApplier) ApplySingleStage(stageName string) error {
 	// Write output to output directory
 	outputPath := filepath.Join(k.OutputDir, stageName+".yaml")
 	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
+		k.Log.Debugf("Failed to create output directory %s: %v", k.OutputDir, err)
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+		k.Log.Debugf("Failed to write output file %s: %v", outputPath, err)
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
@@ -81,12 +87,14 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 	// Discover stages
 	stages, err := internalTransform.DiscoverStages(k.TransformDir)
 	if err != nil {
+		k.Log.Debugf("Failed to discover stages in %s: %v", k.TransformDir, err)
 		return fmt.Errorf("failed to discover stages: %w", err)
 	}
 
 	// Filter stages
 	selectedStages := internalTransform.FilterStages(stages, stageSelector)
 	if len(selectedStages) == 0 {
+		k.Log.Debugf("No stages found matching selector in %s", k.TransformDir)
 		return fmt.Errorf("no stages found matching selector")
 	}
 
@@ -98,6 +106,7 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 	// Run kustomize build on the last stage
 	output, err := k.runKustomizeBuild(lastStage.Path)
 	if err != nil {
+		k.Log.Debugf("Kustomize build failed for stage %s: %v", lastStage.DirName, err)
 		return fmt.Errorf("kustomize build failed for stage %s: %w", lastStage.DirName, err)
 	}
 
@@ -105,6 +114,7 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 	if k.SkipClusterScoped {
 		output, err = k.filterClusterScopedResources(output)
 		if err != nil {
+			k.Log.Debugf("Failed to filter cluster-scoped resources in stage %s: %v", lastStage.DirName, err)
 			return fmt.Errorf("failed to filter cluster-scoped resources: %w", err)
 		}
 	}
@@ -112,10 +122,12 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 	// Write to output.yaml (single file with all resources)
 	outputPath := filepath.Join(k.OutputDir, "output.yaml")
 	if err := os.MkdirAll(k.OutputDir, 0700); err != nil {
+		k.Log.Debugf("Failed to create output directory %s: %v", k.OutputDir, err)
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
 	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+		k.Log.Debugf("Failed to write output file %s: %v", outputPath, err)
 		return fmt.Errorf("failed to write output file: %w", err)
 	}
 
@@ -124,6 +136,7 @@ func (k *KustomizeApplier) ApplyMultiStage(stageSelector internalTransform.Stage
 	// Split into individual resource files organized by namespace
 	// This creates output/resources/<namespace>/<Kind>_<namespace>_<name>.yaml
 	if err := k.splitMultiDocYAMLToFiles(output); err != nil {
+		k.Log.Debugf("Failed to split output into individual files: %v", err)
 		return fmt.Errorf("failed to split output into individual files: %w", err)
 	}
 
@@ -152,9 +165,11 @@ func (k *KustomizeApplier) filterClusterScopedResources(yamlData []byte) ([]byte
 			break
 		}
 		if err != nil {
+			k.Log.Debugf("Failed to decode YAML document: %v", err)
 			return nil, fmt.Errorf("failed to decode YAML document: %w", err)
 		}
 		if doc == nil {
+			k.Log.Debugf("Skipping empty YAML document")
 			continue
 		}
 
@@ -162,20 +177,24 @@ func (k *KustomizeApplier) filterClusterScopedResources(yamlData []byte) ([]byte
 		encoder := yamlv3.NewEncoder(&buf)
 		encoder.SetIndent(2)
 		if err := encoder.Encode(doc); err != nil {
+			k.Log.Debugf("Failed to encode YAML document: %v", err)
 			return nil, fmt.Errorf("failed to encode YAML document: %w", err)
 		}
 		if err := encoder.Close(); err != nil {
+			k.Log.Debugf("Failed to close YAML encoder: %v", err)
 			return nil, fmt.Errorf("failed to close YAML encoder: %w", err)
 		}
 		docBytes := buf.Bytes()
 
 		jsonData, err := yaml.YAMLToJSON(docBytes)
 		if err != nil {
+			k.Log.Debugf("Failed to convert YAML to JSON: %v", err)
 			return nil, fmt.Errorf("failed to convert YAML to JSON: %w", err)
 		}
 
 		u := unstructured.Unstructured{}
 		if err := u.UnmarshalJSON(jsonData); err != nil {
+			k.Log.Debugf("Failed to unmarshal resource: %v", err)
 			return nil, fmt.Errorf("failed to unmarshal resource: %w", err)
 		}
 
@@ -207,11 +226,13 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 			break
 		}
 		if err != nil {
+			k.Log.Debugf("Failed to decode YAML document: %v", err)
 			return fmt.Errorf("failed to decode YAML document: %w", err)
 		}
 
 		// Skip empty documents
 		if doc == nil {
+			k.Log.Debugf("Skipping empty YAML document")
 			continue
 		}
 
@@ -220,9 +241,11 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 		encoder := yamlv3.NewEncoder(&buf)
 		encoder.SetIndent(2) // Set 2-space indentation
 		if err := encoder.Encode(doc); err != nil {
+			k.Log.Debugf("Failed to encode YAML document: %v", err)
 			return fmt.Errorf("failed to encode YAML document: %w", err)
 		}
 		if err := encoder.Close(); err != nil {
+			k.Log.Debugf("Failed to close YAML encoder: %v", err)
 			return fmt.Errorf("failed to close YAML encoder: %w", err)
 		}
 		docBytes := buf.Bytes()
@@ -230,12 +253,14 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 		// Convert YAML to JSON to extract metadata
 		jsonData, err := yaml.YAMLToJSON(docBytes)
 		if err != nil {
+			k.Log.Debugf("Failed to convert YAML to JSON: %v", err)
 			return fmt.Errorf("failed to convert YAML to JSON: %w", err)
 		}
 
 		// Unmarshal into unstructured to get resource identity
 		u := unstructured.Unstructured{}
 		if err := u.UnmarshalJSON(jsonData); err != nil {
+			k.Log.Debugf("Failed to unmarshal resource: %v", err)
 			return fmt.Errorf("failed to unmarshal resource: %w", err)
 		}
 
@@ -258,6 +283,7 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 		}
 
 		if err := os.MkdirAll(resourceDir, 0700); err != nil {
+			k.Log.Debugf("Failed to create resource directory %s: %v", resourceDir, err)
 			return fmt.Errorf("failed to create resource directory %s: %w", resourceDir, err)
 		}
 
@@ -271,6 +297,7 @@ func (k *KustomizeApplier) splitMultiDocYAMLToFiles(yamlData []byte) error {
 		filePath := filepath.Join(resourceDir, filename)
 
 		if err := os.WriteFile(filePath, docBytes, 0644); err != nil {
+			k.Log.Debugf("Failed to write resource file %s: %v", filePath, err)
 			return fmt.Errorf("failed to write resource file %s: %w", filePath, err)
 		}
 

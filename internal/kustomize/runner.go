@@ -19,14 +19,18 @@ type Runner struct {
 
 // Build runs kustomize build on the given directory and returns the rendered YAML.
 func (r *Runner) Build(dir string) ([]byte, error) {
+	r.Log.Debugf("Running kustomize build on %s", dir)
+
 	opts, envVars, err := r.buildOptions()
 	if err != nil {
+		r.Log.Debugf("Failed to build kustomize options: %v", err)
 		return nil, fmt.Errorf("failed to build kustomize options: %w", err)
 	}
 
 	// Set environment variables (used by helm) and restore after build
 	restoreEnv, err := setEnvVars(envVars)
 	if err != nil {
+		r.Log.Warnf("Failed to set environment variables for kustomize: %v", err)
 		return nil, err
 	}
 	defer restoreEnv()
@@ -34,18 +38,17 @@ func (r *Runner) Build(dir string) ([]byte, error) {
 	k := krusty.MakeKustomizer(opts)
 	resMap, err := k.Run(filesys.MakeFsOnDisk(), dir)
 	if err != nil {
+		r.Log.Debugf("Kustomize build failed for %s: %v", dir, err)
 		return nil, fmt.Errorf("kustomize build failed for %s: %w", dir, err)
 	}
 
 	yamlBytes, err := resMap.AsYaml()
 	if err != nil {
+		r.Log.Debugf("Failed to serialize kustomize output for %s: %v", dir, err)
 		return nil, fmt.Errorf("failed to serialize kustomize output: %w", err)
 	}
 
-	if r.Log != nil {
-		r.Log.Debugf("Kustomize build completed for %s (%d bytes)", dir, len(yamlBytes))
-	}
-
+	r.Log.Debugf("Kustomize build completed for %s (%d bytes)", dir, len(yamlBytes))
 	return yamlBytes, nil
 }
 
@@ -68,6 +71,7 @@ func (r *Runner) buildOptions() (*krusty.Options, []envVar, error) {
 
 		case arg == "--helm-command":
 			if i+1 >= len(r.Args) {
+				r.Log.Debugf("--helm-command requires a value")
 				return nil, nil, fmt.Errorf("--helm-command requires a value")
 			}
 			i++
@@ -81,16 +85,19 @@ func (r *Runner) buildOptions() (*krusty.Options, []envVar, error) {
 
 		case arg == "--env" || arg == "-e":
 			if i+1 >= len(r.Args) {
+				r.Log.Debugf("%s requires a value", arg)
 				return nil, nil, fmt.Errorf("%s requires a value", arg)
 			}
 			i++
 			parts := strings.SplitN(r.Args[i], "=", 2)
 			if len(parts) != 2 {
+				r.Log.Debugf("Invalid env format %q, expected KEY=VALUE", r.Args[i])
 				return nil, nil, fmt.Errorf("invalid env format %q, expected KEY=VALUE", r.Args[i])
 			}
 			envVars = append(envVars, envVar{key: parts[0], value: parts[1]})
 
 		default:
+			r.Log.Debugf("Unsupported kustomize argument: %q", arg)
 			return nil, nil, fmt.Errorf("unsupported kustomize argument: %q", arg)
 		}
 	}
