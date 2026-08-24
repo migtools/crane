@@ -345,8 +345,8 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 
 	hasPermissionError := strings.Contains(output, "permission denied")
 	if lastTransferred > 0 && hasPermissionError {
-		log.Warnf("Rclone completed with permission errors on %d of %d items (unreadable directories skipped)",
-			lastTotal-lastTransferred, lastTotal)
+		log.Printf("WARN: rclone completed with permission errors (unreadable files/directories skipped), %d of %d files transferred",
+			lastTransferred, lastTotal)
 		return nil
 	}
 
