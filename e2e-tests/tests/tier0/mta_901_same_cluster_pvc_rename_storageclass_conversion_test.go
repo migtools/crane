@@ -122,7 +122,7 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 
 		By("Wait for transfer-pvc helpers to finish deleting")
 		AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcNamespace}, srcPVCName)
-		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, dstPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, srcPVCName)
 
 		By("Assert destination PVC exists with the new name and converted StorageClass")
 		destPVC, err := GetPVC(tgtApp.Context, tgtNamespace, dstPVCName)
@@ -152,7 +152,7 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 
 		By("Confirm no leftover transfer-pvc resources")
 		AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcNamespace}, srcPVCName)
-		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, dstPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, srcPVCName)
 	})
 })
 
