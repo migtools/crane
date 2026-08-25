@@ -58,7 +58,7 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		transformOpts := TransformOptions{
 			ExportDir:    paths.ExportDir,
 			TransformDir: paths.TransformDir,
-			OptionalFlags: fmt.Sprintf("pvc-rename-map=%s:%s", srcPVCName, dstPVCName),
+			OptionalFlags: fmt.Sprintf(`{"pvc-rename-map":"%s:%s"}`, srcPVCName, dstPVCName),
 		}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 
