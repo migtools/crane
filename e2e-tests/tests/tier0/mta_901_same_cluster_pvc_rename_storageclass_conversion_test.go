@@ -132,9 +132,7 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 
 		By("Run crane export/transform/apply pipeline with pvc-rename-map")
 		runner.WorkDir = paths.TempDir
-		Expect(runner.Export(exportOpts)).NotTo(HaveOccurred())
-		Expect(runner.Transform(transformOpts)).NotTo(HaveOccurred())
-		Expect(runner.Apply(applyOpts)).NotTo(HaveOccurred())
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 		By("Verify the rendered output references the new PVC name")
 		VerifyPVCReferenceInOutput(paths.OutputDir, dstPVCName)
