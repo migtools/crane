@@ -3,7 +3,6 @@ package e2e
 import (
 	"fmt"
 	"log"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -122,7 +121,7 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 
 		By("Wait for transfer-pvc helpers to finish deleting")
-		assertNoTransferPVCLeftoversMTA901(kubectlTgt, []string{srcNamespace, tgtNamespace}, dstPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, dstPVCName)
 
 		By("Assert destination PVC exists with the new name and converted StorageClass")
 		destPVC, err := GetPVC(tgtApp.Context, tgtNamespace, dstPVCName)
@@ -153,17 +152,7 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		Expect(destPVC.Status.Phase).To(Equal(corev1.ClaimBound))
 
 		By("Confirm no leftover transfer-pvc resources")
-		assertNoTransferPVCLeftoversMTA901(kubectlTgt, []string{srcNamespace, tgtNamespace}, dstPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, dstPVCName)
 	})
 })
 
-func assertNoTransferPVCLeftoversMTA901(k KubectlRunner, namespaces []string, pvcName string) {
-	selector := "app.konveyor.io/created-for-pvc=" + pvcName
-	for _, ns := range namespaces {
-		Eventually(func() (string, error) {
-			out, err := k.GetResourceNamesByLabel(ns, selector)
-			return strings.TrimSpace(out), err
-		}, "2m", "5s").Should(BeEmpty(),
-			"expected no leftover transfer-pvc resources in namespace %s", ns)
-	}
-}

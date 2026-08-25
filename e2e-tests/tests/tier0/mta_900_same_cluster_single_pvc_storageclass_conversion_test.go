@@ -3,7 +3,6 @@ package e2e
 import (
 	"fmt"
 	"log"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -120,7 +119,7 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 
 		By("Wait for transfer-pvc helpers to finish deleting")
-		assertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
 
 		By("Assert destination PVC uses the converted StorageClass")
 		destPVC, err := GetPVC(tgtApp.Context, tgtNamespace, pvcName)
@@ -141,20 +140,7 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		Expect(destPVC.Status.Phase).To(Equal(corev1.ClaimBound))
 
 		By("Confirm no leftover transfer-pvc resources")
-		assertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
 	})
 })
 
-// assertNoTransferPVCLeftovers waits until transfer-pvc helper objects labeled
-// for pvcName are gone. DeleteAllOf in transfer-pvc GC is asynchronous, so the
-// rsync-server pod can still be Terminating for a while after the command exits.
-func assertNoTransferPVCLeftovers(k KubectlRunner, namespaces []string, pvcName string) {
-	selector := "app.konveyor.io/created-for-pvc=" + pvcName
-	for _, ns := range namespaces {
-		Eventually(func() (string, error) {
-			out, err := k.GetResourceNamesByLabel(ns, selector)
-			return strings.TrimSpace(out), err
-		}, "2m", "5s").Should(BeEmpty(),
-			"expected no leftover transfer-pvc resources in namespace %s", ns)
-	}
-}
