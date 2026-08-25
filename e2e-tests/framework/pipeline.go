@@ -168,17 +168,22 @@ func ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectl KubectlRunner, srcNam
 	return nil
 }
 
-// VerifyPVCReferenceInOutput checks that the rendered output.yaml contains
-// the expected PVC name. Useful for verifying pvc-rename-map transforms
-// updated the workload's claimName after crane apply.
-func VerifyPVCReferenceInOutput(outputDir, expectedPVCName string) {
+// VerifyPVCRenameInOutput checks that the rendered output.yaml contains
+// the new PVC name and does not contain the old PVC name as a claimName.
+// This verifies the pvc-rename-map transform both added the new reference
+// and removed the old one.
+func VerifyPVCRenameInOutput(outputDir, oldPVCName, newPVCName string) {
 	outputFile := filepath.Join(outputDir, "output.yaml")
 	content, err := os.ReadFile(outputFile)
 	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "failed to read %s", outputFile)
-	log.Printf("Checking output.yaml for PVC reference %q", expectedPVCName)
+	text := string(content)
 
-	gomega.Expect(string(content)).To(gomega.ContainSubstring(expectedPVCName),
-		"output.yaml should reference the renamed PVC %q", expectedPVCName)
+	log.Printf("Checking output.yaml: expect claimName %q, reject claimName %q", newPVCName, oldPVCName)
+
+	gomega.Expect(text).To(gomega.ContainSubstring("claimName: "+newPVCName),
+		"output.yaml should contain claimName: %s", newPVCName)
+	gomega.Expect(text).NotTo(gomega.ContainSubstring("claimName: "+oldPVCName),
+		"output.yaml should not contain old claimName: %s (transform should have renamed it)", oldPVCName)
 }
 
 // AssertNoTransferPVCLeftovers waits until transfer-pvc helper objects labeled

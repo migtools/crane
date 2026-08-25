@@ -121,7 +121,8 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 
 		By("Wait for transfer-pvc helpers to finish deleting")
-		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, dstPVCName)
+		AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcNamespace}, srcPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, dstPVCName)
 
 		By("Assert destination PVC exists with the new name and converted StorageClass")
 		destPVC, err := GetPVC(tgtApp.Context, tgtNamespace, dstPVCName)
@@ -134,8 +135,8 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
-		By("Verify the rendered output references the new PVC name")
-		VerifyPVCReferenceInOutput(paths.OutputDir, dstPVCName)
+		By("Verify the pvc-rename-map transform rewrote claimName in the rendered output")
+		VerifyPVCRenameInOutput(paths.OutputDir, srcPVCName, dstPVCName)
 
 		By("Apply remapped manifests to destination namespace")
 		Expect(ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectlTgt, srcNamespace, tgtNamespace, paths.OutputDir)).NotTo(HaveOccurred())
@@ -150,7 +151,8 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		Expect(destPVC.Status.Phase).To(Equal(corev1.ClaimBound))
 
 		By("Confirm no leftover transfer-pvc resources")
-		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, dstPVCName)
+		AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcNamespace}, srcPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, dstPVCName)
 	})
 })
 
