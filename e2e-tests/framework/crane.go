@@ -19,6 +19,7 @@ type TransferPVCOptions struct {
 	TargetContext      string
 	PVCName            string
 	PVCNamespaceMap    string
+	DestStorageClass   string
 	Endpoint           string
 	IngressClass       string
 	Subdomain          string
@@ -50,16 +51,16 @@ type ExportOptions struct {
 }
 
 type TransformOptions struct {
-	ExportDir         string
-	TransformDir      string
-	PluginDir         string
-	SkipPlugins       []string
-	OptionalFlags     string
-	StageOptionals    []string
-	Overwrite         bool
-	KustomizeArgs     string
-	InstructionsFile  string
-	Stages            []string
+	ExportDir        string
+	TransformDir     string
+	PluginDir        string
+	SkipPlugins      []string
+	OptionalFlags    string
+	StageOptionals   []string
+	Overwrite        bool
+	KustomizeArgs    string
+	InstructionsFile string
+	Stages           []string
 }
 
 type ApplyOptions struct {
@@ -214,6 +215,9 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 		"--destination-context", opts.TargetContext,
 		"--pvc-name", opts.PVCName,
 		"--pvc-namespace", opts.PVCNamespaceMap,
+	}
+	if opts.DestStorageClass != "" {
+		args = append(args, "--dest-storage-class", opts.DestStorageClass)
 	}
 
 	if opts.CloudStorage != "" {
