@@ -12,6 +12,10 @@ import (
 type GroupKind struct {
 	Group string
 	Kind  string
+	// GroupSpecified is true when the input explicitly included a group
+	// component (i.e. contained a "/"), even if that group is empty ("/Pod").
+	// This distinguishes "Pod" (matches any group) from "/Pod" (core group only).
+	GroupSpecified bool
 }
 
 // ParseGroupKind parses a string in "Kind" or "Group/Kind" format.
@@ -26,28 +30,29 @@ func ParseGroupKind(s string) (GroupKind, error) {
 	switch len(parts) {
 	case 1:
 		// "Kind" - matches any group
-		return GroupKind{Group: "", Kind: parts[0]}, nil
+		return GroupKind{Group: "", Kind: parts[0], GroupSpecified: false}, nil
 	case 2:
-		// "Group/Kind"
+		// "Group/Kind" - matches the specified group only ("" means core group)
 		group := strings.TrimSpace(parts[0])
 		kind := strings.TrimSpace(parts[1])
 		if kind == "" {
 			return GroupKind{}, fmt.Errorf("invalid group/kind format %q: kind cannot be empty", s)
 		}
-		return GroupKind{Group: group, Kind: kind}, nil
+		return GroupKind{Group: group, Kind: kind, GroupSpecified: true}, nil
 	default:
 		return GroupKind{}, fmt.Errorf("invalid group/kind format %q (expected \"Kind\" or \"Group/Kind\")", s)
 	}
 }
 
 // Matches returns true if the given group and kind match this GroupKind.
-// If gk.Group is empty, it matches any group with the same kind.
+// A Kind-only filter (no group specified) matches any group with the same kind.
+// A Group/Kind filter matches only that exact group ("" means the core group).
 func (gk GroupKind) Matches(group, kind string) bool {
 	if gk.Kind != kind {
 		return false
 	}
-	// If Group is empty, match any group
-	if gk.Group == "" {
+	// Kind-only filter matches any group
+	if !gk.GroupSpecified {
 		return true
 	}
 	return gk.Group == group

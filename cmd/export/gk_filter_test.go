@@ -22,12 +22,12 @@ func TestParseGroupKind(t *testing.T) {
 		{
 			name:  "Group/Kind",
 			input: "apps/Deployment",
-			want:  GroupKind{Group: "apps", Kind: "Deployment"},
+			want:  GroupKind{Group: "apps", Kind: "Deployment", GroupSpecified: true},
 		},
 		{
 			name:  "Core group with slash",
 			input: "/Pod",
-			want:  GroupKind{Group: "", Kind: "Pod"},
+			want:  GroupKind{Group: "", Kind: "Pod", GroupSpecified: true},
 		},
 		{
 			name:  "With whitespace",
@@ -111,21 +111,21 @@ func TestGroupKind_Matches(t *testing.T) {
 		},
 		{
 			name:  "Group/Kind filter matches exact group",
-			gk:    GroupKind{Group: "apps", Kind: "Deployment"},
+			gk:    GroupKind{Group: "apps", Kind: "Deployment", GroupSpecified: true},
 			group: "apps",
 			kind:  "Deployment",
 			want:  true,
 		},
 		{
 			name:  "Group/Kind filter does not match different group",
-			gk:    GroupKind{Group: "apps", Kind: "Deployment"},
+			gk:    GroupKind{Group: "apps", Kind: "Deployment", GroupSpecified: true},
 			group: "batch",
 			kind:  "Deployment",
 			want:  false,
 		},
 		{
 			name:  "Group/Kind filter does not match different kind",
-			gk:    GroupKind{Group: "apps", Kind: "Deployment"},
+			gk:    GroupKind{Group: "apps", Kind: "Deployment", GroupSpecified: true},
 			group: "apps",
 			kind:  "StatefulSet",
 			want:  false,
@@ -136,6 +136,27 @@ func TestGroupKind_Matches(t *testing.T) {
 			group: "",
 			kind:  "Service",
 			want:  false,
+		},
+		{
+			name:  "Core-group filter (/Pod) matches core Pod",
+			gk:    GroupKind{Group: "", Kind: "Pod", GroupSpecified: true},
+			group: "",
+			kind:  "Pod",
+			want:  true,
+		},
+		{
+			name:  "Core-group filter (/Pod) does not match custom group Pod",
+			gk:    GroupKind{Group: "", Kind: "Pod", GroupSpecified: true},
+			group: "example.io",
+			kind:  "Pod",
+			want:  false,
+		},
+		{
+			name:  "Kind-only filter (Pod) matches custom group Pod",
+			gk:    GroupKind{Group: "", Kind: "Pod", GroupSpecified: false},
+			group: "example.io",
+			kind:  "Pod",
+			want:  true,
 		},
 	}
 
@@ -326,6 +347,30 @@ func TestGKFilter_ShouldInclude(t *testing.T) {
 			group:    "",
 			kind:     "Pod",
 			expected: false,
+		},
+		{
+			name:     "Include /Pod matches core Pod",
+			include:  []string{"/Pod"},
+			exclude:  nil,
+			group:    "",
+			kind:     "Pod",
+			expected: true,
+		},
+		{
+			name:     "Include /Pod does not match custom group Pod",
+			include:  []string{"/Pod"},
+			exclude:  nil,
+			group:    "example.io",
+			kind:     "Pod",
+			expected: false,
+		},
+		{
+			name:     "Include Pod (no group) matches custom group Pod",
+			include:  []string{"Pod"},
+			exclude:  nil,
+			group:    "example.io",
+			kind:     "Pod",
+			expected: true,
 		},
 	}
 
