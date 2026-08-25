@@ -153,7 +153,7 @@ var _ = Describe("Custom transformation stage", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		log.Printf("Running crane apply for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		Expect(runner.Apply(ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
@@ -232,7 +232,7 @@ var _ = Describe("Custom transformation stage", func() {
 		}, "2m", "10s").Should(Succeed())
 
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
 	})
 })

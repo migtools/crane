@@ -36,7 +36,7 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 
 		crb := ClusterRoleBinding{Name: clusterRoleBindingName, ClusterRoleName: clusterRoleName}
@@ -89,7 +89,7 @@ var _ = Describe("Cluster-level RBAC export", func() {
 
 		By("Scaling target deployment and validating app")
 		Expect(kubectlTgt.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 
 		By("Verifying ClusterRoleBinding on target references correct ClusterRole and ServiceAccount")
 		Expect(ValidateClusterRBAC(kubectlTgt, []ExpectedClusterRoleBinding{

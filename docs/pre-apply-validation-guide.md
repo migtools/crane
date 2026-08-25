@@ -89,6 +89,8 @@ kubectl get storageclass <name>
 
 If everything was exported together, references are usually satisfied; gaps often come from excluded resources or cluster-only dependencies.
 
+> **Warning — Namespace renaming:** If you renamed a namespace during migration, Crane does not automatically update **ClusterRoleBinding subjects** referencing the old namespace name, or **NetworkPolicy `namespaceSelector`** entries matching the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`). These will silently point to a namespace that no longer exists. Manually update them before applying.
+
 ---
 
 ## 5. Namespaces

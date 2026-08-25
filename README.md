@@ -12,6 +12,7 @@ Crane is a migration tool under the [Konveyor](https://www.konveyor.io/) communi
 | Branch | Build & unit tests (after merge) | E2E CI (after merge) | E2E Nightly (cron) |
 | :----- | :------------------------------- | :------------------- | :----------------- |
 | main | [![Go](https://github.com/migtools/crane/actions/workflows/go.yml/badge.svg?branch=main&event=push)](https://github.com/migtools/crane/actions/workflows/go.yml?query=branch%3Amain+event%3Apush) | [![Tier0 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml/badge.svg?branch=main&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml?query=branch%3Amain+event%3Apush)<br>[![Tier1 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml/badge.svg?branch=main&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml?query=branch%3Amain+event%3Apush) | [![Tier0 Nightly](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml/badge.svg?branch=main&event=schedule)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml?query=branch%3Amain+event%3Aschedule)<br>[![Tier1 Nightly](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml/badge.svg?branch=main&event=schedule)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml?query=branch%3Amain+event%3Aschedule) |
+| release-0.10 | [![Go](https://github.com/migtools/crane/actions/workflows/go.yml/badge.svg?branch=release-0.10&event=push)](https://github.com/migtools/crane/actions/workflows/go.yml?query=branch%3Arelease-0.10+event%3Apush) | [![Tier0 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml/badge.svg?branch=release-0.10&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml?query=branch%3Arelease-0.10+event%3Apush)<br>[![Tier1 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml/badge.svg?branch=release-0.10&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml?query=branch%3Arelease-0.10+event%3Apush) | [![Tier0 Nightly](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier0.yml/badge.svg?event=schedule)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier0.yml)<br>[![Tier1 Nightly](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier1.yml/badge.svg?event=schedule)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier1.yml) |
 
 ## YouTube Demo
 [![Alt text](https://img.youtube.com/vi/PoSivlgVLf8/0.jpg)](https://www.youtube.com/watch?v=PoSivlgVLf8)
@@ -33,7 +34,7 @@ Crane is composed of several repositories:
 * [konveyor/crane-lib](https://github.com/konveyor/crane-lib): The brains behind Crane functionality responsible for transforming resources.
 * [konveyor/crane-plugins](https://github.com/konveyor/crane-plugins): Collection of plugins from the Konveyor community based on experience from performing Kube migrations.
 * [konveyor/crane-plugin-openshift](https://github.com/konveyor/crane-plugin-openshift): An optional plugin specifically tailored to manage OpenShift migration workloads and an example of a repeatable best-practice.
-* [backube/pvc-transfer](https://github.com/backube/pvc-transfer): The library that powers the Persistent Volume migration ability, shared with the [VolSync](https://volsync.readthedocs.io/en/stable/index.html) project.  State migration of Persistent Volumes is handled by rsync allowing storage migrations between different storage classes.  
+* [migtools/pvc-transfer](https://github.com/migtools/pvc-transfer): The library that powers the Persistent Volume migration ability, shared with the [VolSync](https://volsync.readthedocs.io/en/stable/index.html) project.  State migration of Persistent Volumes is handled by rsync allowing storage migrations between different storage classes.  
 * [konveyor/crane-runner](https://github.com/konveyor/crane-runner): A collection of resources showing how to leverage Tekton to build migration workflows with Crane
 * [konveyor/crane-ui-plugin](https://github.com/konveyor/crane-ui-plugin): A dynamic UI plugin for the [openshift/console](https://github.com/openshift/console)
 * [konveyor/mtrho-operator](https://github.com/konveyor/mtrho-operator): An Operator which deploys Crane in an opinionated manner leveraging Tekton for migrating applications
@@ -99,7 +100,7 @@ How does it work? Crane works by:
     * `$ cat transform/10_KubernetesPlugin/input/secret.yaml` - Contains the original exported Secret with all metadata
 
 5. `$ crane apply`
-  * Runs `kubectl kustomize` on the transform stage to apply patches
+  * Runs embedded kustomize on the transform stage to apply patches
   * Outputs clean, declarative YAML to `output/output.yaml`
   * Example:
     * `$ cat output/output.yaml`
@@ -116,6 +117,27 @@ How does it work? Crane works by:
     * Note that the fields `metadata.uid`, `metadata.resourceVersion`, and `metadata.creationTimestamp` have been removed.
 6. The content in `output/output.yaml` is now ready to be deployed to the target cluster or checked into Git for GitOps workflows:
     * `$ kubectl apply -f output/output.yaml`
+
+## Documentation
+
+For comprehensive documentation, see the [docs/](docs/README.md) directory:
+
+- [Installation](docs/installation.md)
+- [Command Reference](docs/README.md#command-reference) — export, transform, apply, validate, transfer-pvc
+- [Contributing](CONTRIBUTING.md) | [Development Guide](docs/development/README.md)
+
+## Automated Documentation Review (`code-to-docs`)
+
+To keep documentation in sync with code changes, this repository uses an automated documentation bot.
+
+When creating a Pull Request that introduces new features, CLI flags, or changes functionality:
+
+1. Comment `[review-docs]` on your PR.
+2. The bot will analyze your code diff and suggest updates to the relevant documentation files under `docs/`.
+3. Review the AI suggestions. If satisfied, comment `[update-docs]` to apply the documentation updates directly.
+
+> **Note:** For security reasons, the `[review-docs]` and `[update-docs]` commands can only be triggered by **authorized maintainers listed in the repository allowlist**. If you need the bot to run on your PR, please ask an authorized maintainer to trigger it for you.
+>
 
 ## Further Examples
 

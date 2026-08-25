@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -13,8 +14,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Instructions-file force reconcile migration", func() {
-	It("[MTA-830] should reconcile pre-existing transform stages with --force and complete end-to-end migration", Label("tier1"), func() {
+var _ = Describe("Instructions-file overwrite reconcile migration", func() {
+	It("[MTA-830] should reconcile pre-existing transform stages with --overwrite and complete end-to-end migration", Label("tier1"), func() {
 
 		appName := "simple-nginx-nopv"
 		namespace := "simple-nginx-force-reconcile"
@@ -31,6 +32,7 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
+		isOpenShift := scenario.KubectlSrc.IsOpenShift()
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
 		}
@@ -71,16 +73,20 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		By("Create transform dir with orphan stage and existing stage present in instructions-file")
 		err = os.MkdirAll(paths.TransformDir, 0o755)
 		Expect(err).NotTo(HaveOccurred())
-		//Create orphan stage directory for extra stage that should be deleted with --force
+		//Create orphan stage directory for extra stage that should be deleted with --overwrite
 		orphanStagePath := filepath.Join(paths.TransformDir, "99_OrphanStage")
 		err = os.MkdirAll(orphanStagePath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
-		// Create orphan output directory within stage that should also be deleted with --force
+		// Create orphan output directory within stage that should also be deleted with --overwrite
 		orphanOutputPath := filepath.Join(paths.TransformDir, "99_OrphanStage", "output")
 		err = os.MkdirAll(orphanOutputPath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
-		//Create path for CustomStage that should be overwritten with --force
-		customStagePath := filepath.Join(paths.TransformDir, "20_CustomStage")
+		//Create path for CustomStage that should be overwritten with --overwrite
+		customStageDirName := "20_CustomStage"
+		if isOpenShift {
+			customStageDirName = "30_CustomStage"
+		}
+		customStagePath := filepath.Join(paths.TransformDir, customStageDirName)
 		err = os.MkdirAll(customStagePath, 0o755)
 		Expect(err).NotTo(HaveOccurred())
 		customStageExistingFilePath := filepath.Join(customStagePath, "preexisting.txt")
@@ -97,37 +103,44 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(orphanOutputDirInfo.IsDir()).To(BeTrue())
 
-		By("Assert 20_CustomStage exists before running transform")
+		By(fmt.Sprintf("Assert %s exists before running transform", customStageDirName))
 		customStageDirInfo, err := os.Stat(customStagePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(customStageDirInfo.IsDir()).To(BeTrue())
 
-		By("Assert 20_CustomStage has preexisting.txt file")
+		By(fmt.Sprintf("Assert %s has preexisting.txt file", customStageDirName))
 		customStageFileInfo, err := os.Stat(customStageExistingFilePath)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(customStageFileInfo.IsDir()).To(BeFalse())
 
 		log.Printf("Running crane transform --instructions-file for namespace %s\n", srcApp.Namespace)
-		instructionsFile, err := utils.TestdataFilePath("basic-instructions-file.yaml")
+		instructionsFilename := "basic-instructions-file.yaml"
+		if isOpenShift {
+			instructionsFilename = "basic-instructions-file-ocp.yaml"
+		}
+		instructionsFile, err := utils.TestdataFilePath(instructionsFilename)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(runner.Transform(TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
-			InstructionsFile: instructionsFile, Force: true})).NotTo(HaveOccurred())
+			InstructionsFile: instructionsFile, Overwrite: true})).NotTo(HaveOccurred())
 
 		By("Assert post transform orphan stage is removed and existing CustomStage is overwritten ")
-		By("Assert orphan stage dir is removed by --force")
+		By("Assert orphan stage dir is removed by --overwrite")
 		_, err = os.Stat(orphanStagePath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage to be removed by --force")
+		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage to be removed by --overwrite")
 
-		By("Assert orphan stage (including output dir) is removed by --force")
+		By("Assert orphan stage (including output dir) is removed by --overwrite")
 		_, err = os.Stat(orphanOutputPath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage output dir to be removed by --force")
+		Expect(os.IsNotExist(err)).To(BeTrue(), "expected orphan stage output dir to be removed by --overwrite")
 
-		By("Assert preexisting custom stage file is removed by --force")
+		By("Assert preexisting custom stage file is removed by --overwrite")
 		_, err = os.Stat(customStageExistingFilePath)
-		Expect(os.IsNotExist(err)).To(BeTrue(), "expected preexisting custom stage file to be removed by --force")
+		Expect(os.IsNotExist(err)).To(BeTrue(), "expected preexisting custom stage file to be removed by --overwrite")
 
 		By("Assert instructions-file stages are present as stage-directories in transform dir")
 		stageDirectories := []string{"10_KubernetesPlugin", "20_CustomStage"}
+		if isOpenShift {
+			stageDirectories = []string{"10_KubernetesPlugin", "20_OpenShiftPlugin", "30_CustomStage"}
+		}
 		for _, stageDir := range stageDirectories {
 			dirPath := filepath.Join(paths.TransformDir, stageDir)
 			dirInfo, err := os.Stat(dirPath)
@@ -136,16 +149,33 @@ var _ = Describe("Instructions-file force reconcile migration", func() {
 		}
 
 		log.Printf("Running crane apply for namespace %s\n", srcApp.Namespace)
-		Expect(runner.Apply(ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		Expect(runner.Apply(ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir})).NotTo(HaveOccurred())
 		log.Printf("Crane pipeline completed for namespace %s\n", srcApp.Namespace)
 
 		By("Apply rendered manifests to target")
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
-		By("Scale target deployment and validate app on target")
+		By("Scale target deployment and wait for target pod readiness")
 		Expect(kubectlTgtNonAdmin.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(func() error {
+			readyOutput, err := kubectlTgtNonAdmin.Run(
+				"get", "pods",
+				"-n", namespace,
+				"-l", "app="+appName,
+				"-o", "jsonpath={.items[0].status.containerStatuses[0].ready}",
+			)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(readyOutput) != "true" {
+				return fmt.Errorf("target pod not ready yet, ready=%q", strings.TrimSpace(readyOutput))
+			}
+			return nil
+		}, "2m", "5s").Should(Succeed())
+
+		By("Validate app on target")
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 	})
 })

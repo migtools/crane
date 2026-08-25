@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -75,9 +76,10 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 // Directory name constants for stage structure
 // These can be changed if different naming is preferred (e.g., "input-resources" instead of "input")
 const (
-	InputDirName   = "input"    // input resources directory within a stage
-	PatchesDirName = "patches"  // patches directory within a stage
-	OutputDirName  = "output"   // output directory within a stage
+	InputDirName        = "input"    // input resources directory within a stage
+	PatchesDirName      = "patches"  // patches directory within a stage
+	OutputDirName       = "output"   // output directory within a stage
+	NewResourcesDirName = "new"      // plugin-generated new resources directory within a stage
 )
 
 //TODO: @shawn-hurley Add errors for these methods to validate that the correct struct values are set.
@@ -85,7 +87,6 @@ type PathOpts struct {
 	TransformDir      string
 	ExportDir         string
 	OutputDir         string
-	IgnoredPatchesDir string
 }
 
 func (opts *PathOpts) GetWhiteOutFilePath(filePath string) string {
@@ -96,19 +97,8 @@ func (opts *PathOpts) GetTransformPath(filePath string) string {
 	return opts.updateTransformDirPath("transform-", filePath)
 }
 
-func (opts *PathOpts) GetIgnoredPatchesPath(filePath string) string {
-	return opts.updateIgnoredPatchesDirPath("ignored-", filePath)
-}
-
 func (opts *PathOpts) updateTransformDirPath(prefix, filePath string) string {
 	return opts.updatePath(opts.TransformDir, prefix, filePath)
-}
-
-func (opts *PathOpts) updateIgnoredPatchesDirPath(prefix, filePath string) string {
-	if len(opts.IgnoredPatchesDir) == 0 {
-		return ""
-	}
-	return opts.updatePath(opts.IgnoredPatchesDir, prefix, filePath)
 }
 
 func (opts *PathOpts) updatePath(updateDir, prefix, filePath string) string {
@@ -136,6 +126,12 @@ func (opts *PathOpts) GetStageDir(stageName string) string {
 // Format: <transformDir>/<stageName>/input
 func (opts *PathOpts) GetInputDir(stageName string) string {
 	return filepath.Join(opts.GetStageDir(stageName), InputDirName)
+}
+
+// GetNewResourcesDir returns the path to the new resources directory within a stage
+// Format: <transformDir>/<stageName>/new
+func (opts *PathOpts) GetNewResourcesDir(stageName string) string {
+	return filepath.Join(opts.GetStageDir(stageName), NewResourcesDirName)
 }
 
 // GetPatchesDir returns the path to the patches directory within a stage
@@ -181,19 +177,58 @@ func (opts *PathOpts) GetStageOutputDir(stageName string) string {
 	return filepath.Join(opts.GetStageDir(stageName), OutputDirName)
 }
 
+// sanitizeFilename replaces characters that are reserved in Windows filenames
+// (NTFS Alternate Data Stream separator and other illegal chars) with underscores.
+// Applied to the joined basename so that exported files are valid on all platforms.
+func sanitizeFilename(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '<', '>', ':', '"', '/', '\\', '|', '?', '*':
+			return '_'
+		default:
+			return r
+		}
+	}, name)
+}
+
 // GetResourceFilename returns a stable filename from kind, group, version, namespace, and name.
 // Format matches export: Kind_group_version_namespace_name.yaml
 // Examples: "ConfigMap__v1_default_my-config.yaml", "Deployment_apps_v1_default_my-app.yaml"
+//
+// The result is capped at 255 bytes (filesystem limit). When the basename is
+// truncated or when sanitization replaces reserved characters, a deterministic
+// hash suffix is appended to prevent collisions.
 func GetResourceFilename(obj unstructured.Unstructured) string {
+	const maxFilenameLength = 255
+
 	namespace := obj.GetNamespace()
 	if namespace == "" {
 		namespace = "clusterscoped"
 	}
-	return strings.Join([]string{
+	basename := strings.Join([]string{
 		obj.GetKind(),
 		obj.GetObjectKind().GroupVersionKind().GroupKind().Group,
 		obj.GetObjectKind().GroupVersionKind().Version,
 		namespace,
 		obj.GetName(),
-	}, "_") + ".yaml"
+	}, "_")
+	sanitized := sanitizeFilename(basename)
+	needsHash := sanitized != basename
+	if needsHash {
+		hash := sha256.Sum256([]byte(basename))
+		sanitized = fmt.Sprintf("%s_%x", sanitized, hash[:4])
+	}
+	filename := sanitized + ".yaml"
+
+	if len(filename) <= maxFilenameLength {
+		return filename
+	}
+
+	maxBaseLen := maxFilenameLength - 22 // "_" + 16 hash chars + ".yaml"
+	truncated := sanitized
+	if len(sanitized) > maxBaseLen {
+		truncated = sanitized[:maxBaseLen]
+	}
+	hash := sha256.Sum256([]byte(basename))
+	return fmt.Sprintf("%s_%x.yaml", truncated, hash[:8])
 }

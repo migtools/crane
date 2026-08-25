@@ -1,0 +1,99 @@
+name: Cherry-pick to release branches
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - closed
+
+jobs:
+  branches:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.cherry_pick_branches.outputs.result }}
+    steps:
+      - name: Check for cherry-pick labels
+        id: cherry_pick_branches
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: issue } = await github.rest.issues.get({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const labels = issue.labels.map(label => label.name);
+            console.log(`Labels: ${labels}`);
+
+            const branches = labels.filter(label => label.startsWith('cherry-pick/'))
+              .map(label => label.substr(12));
+            console.log(`Branches: ${branches}`);
+
+            return branches
+
+  cherry-pick:
+    runs-on: ubuntu-latest
+    needs: branches
+    if: ${{ needs.branches.outputs.branches != '[]' && needs.branches.outputs.branches != '' }}
+    permissions:
+      pull-requests: write
+      contents: write
+    strategy:
+      matrix:
+        branch: ${{ fromJson(needs.branches.outputs.branches) }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0
+
+      - name: Get Token
+        id: get_workflow_token
+        uses: peter-murray/workflow-application-token-action@v3
+        with:
+          application_id: ${{ vars.MIGTOOLS_BOT_ID }}
+          application_private_key: ${{ secrets.MIGTOOLS_BOT_KEY }}
+
+      - name: Cherry-pick
+        id: cherry_pick
+        env:
+          GH_TOKEN: ${{ steps.get_workflow_token.outputs.token }}
+          BRANCH_NAME: "cherry-pick-pr${{ github.event.number }}-${{ matrix.branch }}"
+        run: |
+          git config --global user.email "noreply@github.com"
+          git config --global user.name "Cherry Picker"
+          git checkout -b "${BRANCH_NAME}"
+          git cherry-pick -s ${{ github.sha }}
+          git push origin "${BRANCH_NAME}"
+          PR_URL=$(gh pr create --base "${{ matrix.branch }}" --fill)
+          echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+
+      - name: Post success comment
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.get_workflow_token.outputs.token }}
+          script: |
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `PR cherry-picked to branch __${{ matrix.branch }}__. Backport PR: ${{ steps.cherry_pick.outputs.pr_url }}`
+            });
+
+      - name: Post failure comment
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.get_workflow_token.outputs.token }}
+          script: |
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `Failed to cherry-pick this PR to branch __${{ matrix.branch }}__. [View failed action](${runUrl})`
+            });

@@ -67,8 +67,6 @@ github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hC
 github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da/go.mod h1:Q73ZrmVTwzkszR9V5SSuryQ31EELlFMUz1kKyl939pY=
 github.com/armon/go-radix v0.0.0-20180808171621-7fddfc383310/go.mod h1:ufUuZ+zHj4x4TnLV4JWEpy2hxWSpsRywHrMgIH9cCH8=
 github.com/asaskevich/govalidator v0.0.0-20190424111038-f61b66f89f4a/go.mod h1:lB+ZfQJz7igIIfQNfa7Ml4HSf2uFQQRzpGGRXenZAgY=
-github.com/backube/pvc-transfer v0.0.0-20220810121213-5f9e29a1f6e5 h1:unOJfSjp5VZ9XK5+qVLSf+0Txce7qIostmT92koibc8=
-github.com/backube/pvc-transfer v0.0.0-20220810121213-5f9e29a1f6e5/go.mod h1:pkCOc4hLmDHNAqgZGOypDcaHEi2dGgjqP9jMshlNvYw=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
@@ -339,8 +337,8 @@ github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
-github.com/konveyor/crane-lib v0.1.6-0.20260618130404-9791be7b44bd h1:40YRFVxxE2zq1jxtpZ7tCvQgEmEQz9GaZLqDdn5liz4=
-github.com/konveyor/crane-lib v0.1.6-0.20260618130404-9791be7b44bd/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
+github.com/konveyor/crane-lib v0.1.6-0.20260824070743-b8fa732fccd4 h1:95MyFCfEnTnBL8By+BqsVT2RIQ2UNWD6nGBc4IHuAdE=
+github.com/konveyor/crane-lib v0.1.6-0.20260824070743-b8fa732fccd4/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
@@ -380,6 +378,8 @@ github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
 github.com/migtools/crane-plugin-openshift v0.1.1 h1:67h9tND4GeRlsbADbVo7RvMz//Q+yKvGoyHjeTJal9w=
 github.com/migtools/crane-plugin-openshift v0.1.1/go.mod h1:wFdbjNnSn8tSen9oYy8769ivLmwAS3TFL34H1jfSeFw=
+github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a h1:bSsyUn96V8oLl6S//jWK78nHicx5u7Wr7qhPSZYbZkI=
+github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a/go.mod h1:ep8dIwq9ZA5oIQKzYL0eVMugUaNWOfIr1fAq02yURgo=
 github.com/mitchellh/cli v1.0.0/go.mod h1:hNIlj7HEI86fIcpObd7a0FcrxTWetlwJDGcceTlRvqc=
 github.com/mitchellh/go-homedir v1.0.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
 github.com/mitchellh/go-homedir v1.1.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
@@ -1026,6 +1026,8 @@ k8s.io/client-go v0.35.3/go.mod h1:RzoXkc0mzpWIDvBrRnD+VlfXP+lRzqQjCmKtiwZ8Q9c=
 k8s.io/code-generator v0.21.1/go.mod h1:hUlps5+9QaTrKx+jiM4rmq7YmH8wPOIko64uZCHDh6Q=
 k8s.io/code-generator v0.21.2/go.mod h1:8mXJDCB7HcRo1xiEQstcguZkbxZaqeUOrO9SsicWs3U=
 k8s.io/component-base v0.21.2/go.mod h1:9lvmIThzdlrJj5Hp8Z/TOgIkdfsNARQ1pT+3PByuiuc=
+k8s.io/component-helpers v0.35.3 h1:Rl2p3wNMC0YU21rziLkWXavr7MwkB5Td3lNZ/+gYGm8=
+k8s.io/component-helpers v0.35.3/go.mod h1:8BkyfcBA6XsCtFYxDB+mCfZqM6P39Aco12AKigNn0C8=
 k8s.io/gengo v0.0.0-20200413195148-3a45101e95ac/go.mod h1:ezvh/TsK7cY6rbqRK0oQQ8IAqLxYwwyPxAX1Pzy0ii0=
 k8s.io/gengo v0.0.0-20201214224949-b6c5ce23f027/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
 k8s.io/klog/v2 v2.0.0/go.mod h1:PBfzABfn139FHAV07az/IF9Wp1bkk3vpT2XSJ76fSDE=

@@ -3,10 +3,12 @@ package transfer_pvc
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,8 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,13 +35,16 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/backube/pvc-transfer/endpoint"
-	ingressendpoint "github.com/backube/pvc-transfer/endpoint/ingress"
-	routeendpoint "github.com/backube/pvc-transfer/endpoint/route"
-	"github.com/backube/pvc-transfer/transfer"
-	rsynctransfer "github.com/backube/pvc-transfer/transfer/rsync"
-	"github.com/backube/pvc-transfer/transport"
-	stunneltransport "github.com/backube/pvc-transfer/transport/stunnel"
+	"github.com/konveyor/crane/internal/cli"
+	"github.com/konveyor/crane/internal/flags"
+
+	"github.com/migtools/pvc-transfer/endpoint"
+	ingressendpoint "github.com/migtools/pvc-transfer/endpoint/ingress"
+	routeendpoint "github.com/migtools/pvc-transfer/endpoint/route"
+	"github.com/migtools/pvc-transfer/transfer"
+	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
+	"github.com/migtools/pvc-transfer/transport"
+	stunneltransport "github.com/migtools/pvc-transfer/transport/stunnel"
 	securityv1 "github.com/openshift/api/security/v1"
 	openshiftuid "github.com/openshift/library-go/pkg/security/uid"
 )
@@ -52,7 +59,9 @@ const (
 type TransferPVCCommand struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
-	logger logrus.FieldLogger
+	globalFlags *flags.GlobalFlags
+	log         *logrus.Logger
+	logger      logrus.FieldLogger
 
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
@@ -73,6 +82,11 @@ type Flags struct {
 	Verify             bool
 	RsyncFlags         []string
 	ProgressOutput     string
+	CloudStorage       string
+	RcloneConfigSecret string
+	RcloneConfigFile   string
+	Encrypt            bool
+	KeepCloudData      bool
 }
 
 // EndpointFlags defines command line flags specific
@@ -86,7 +100,7 @@ type EndpointFlags struct {
 	IngressClass string
 }
 
-func (e EndpointFlags) Validate() error {
+func (e *EndpointFlags) Validate() error {
 	// default endpoint type is nginx-ingress
 	if e.Type == "" {
 		e.Type = endpointNginx
@@ -130,7 +144,7 @@ func (p *PvcFlags) Validate() error {
 	return nil
 }
 
-func NewTransferPVCCommand(streams genericclioptions.IOStreams) *cobra.Command {
+func NewTransferPVCCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	t := &TransferPVCCommand{
 		configFlags: genericclioptions.NewConfigFlags(false),
 		Flags: Flags{
@@ -140,8 +154,9 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams) *cobra.Command {
 				StorageRequests: quantityVar{},
 			},
 		},
-		IOStreams: streams,
-		logger:    logrus.New(),
+		IOStreams:    streams,
+		globalFlags: f,
+		logger:      logrus.New(),
 	}
 
 	cmd := &cobra.Command{
@@ -169,8 +184,8 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams) *cobra.Command {
 func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.SourceContext, "source-context", "", "Name of the source context in current kubeconfig")
 	cmd.Flags().StringVar(&c.DestinationContext, "destination-context", "", "Name of the destination context in current kubeconfig")
-	cmd.Flags().StringVar(&c.SourceImage, "source-image", "", "The container image to use on the source cluster. Defaults to quay.io/konveyor/esync-transfer:latest")
-	cmd.Flags().StringVar(&c.DestinationImage, "destination-image", "", "The container image to use on the destination cluster. Defaults to quay.io/konveyor/rsync-transfer:latest")
+	cmd.Flags().StringVar(&c.SourceImage, "source-image", transport.DefaultRsyncTransferImage, "The container image to use on the source cluster")
+	cmd.Flags().StringVar(&c.DestinationImage, "destination-image", transport.DefaultRsyncTransferImage, "The container image to use on the destination cluster")
 
 	cmd.Flags().Var(&c.PVC.Name, "pvc-name", "Name of the PVC to be transferred. Optionally, source name can be mapped to a different destination name in format <source>:<destination> ")
 	cmd.Flags().Var(&c.PVC.Namespace, "pvc-namespace", "Namespace of the PVC to be transferred. Optionally, source namespace can be mapped to a different destination namespace in format <source>:<destination>")
@@ -181,15 +196,22 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.Endpoint.IngressClass, "ingress-class", "", "IngressClass to use for the ingress endpoint")
 	cmd.Flags().BoolVar(&c.Verify, "verify", false, "Enable checksum verification")
 	cmd.Flags().StringVar(&c.ProgressOutput, "output", "", "Write data transfer stats to specified output file")
+	cmd.Flags().StringVar(&c.CloudStorage, "cloud-storage", "", "S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket)")
+	cmd.Flags().StringVar(&c.RcloneConfigSecret, "rclone-config-secret", "", "Name of the K8s Secret containing rclone.conf for indirect transfer")
+	cmd.Flags().StringVar(&c.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer (crane creates temporary Secrets)")
+	cmd.Flags().BoolVar(&c.Encrypt, "encrypt", false, "Enable client-side encryption for indirect transfer")
+	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer")
 	cmd.MarkFlagRequired("source-context")
 	cmd.MarkFlagRequired("destination-context")
 	cmd.MarkFlagRequired("pvc-name")
 }
 
 func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
+	t.log = t.globalFlags.GetLoggerOrDefault()
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
 	if err != nil {
+		t.log.Errorf("Failed to load kubeconfig: %v", err)
 		return err
 	}
 
@@ -218,25 +240,52 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 }
 
 func (t *TransferPVCCommand) Validate() error {
+	log := t.globalFlags.GetLoggerOrDefault()
+
+	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
+		log.Debugf("--keep-cloud-data requires --cloud-storage")
+		return fmt.Errorf("--keep-cloud-data requires --cloud-storage")
+	}
 	if t.sourceContext == nil {
+		log.Debugf("Cannot evaluate source context")
 		return fmt.Errorf("cannot evaluate source context")
 	}
 
 	if t.destinationContext == nil {
+		log.Debugf("Cannot evaluate destination context")
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
-	if t.sourceContext.Cluster == t.destinationContext.Cluster {
-		return fmt.Errorf("both source and destination cluster are the same, this is not support right now, coming soon")
+	if t.isIntraClusterSameNamespace() && t.PVC.Name.source == t.PVC.Name.destination {
+		log.Debugf("Source and destination PVC names must differ for same-cluster same-namespace transfers")
+		return fmt.Errorf("source and destination PVC names must differ for same-cluster same-namespace transfers")
 	}
 
 	err := t.PVC.Validate()
 	if err != nil {
+		log.Errorf("PVC validation failed: %v", err)
 		return err
+	}
+
+	if t.Flags.CloudStorage != "" {
+		if t.Flags.RcloneConfigSecret == "" && t.Flags.RcloneConfigFile == "" {
+			log.Debugf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
+			return fmt.Errorf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
+		}
+		if t.Flags.RcloneConfigSecret != "" && t.Flags.RcloneConfigFile != "" {
+			log.Debugf("--rclone-config-secret and --rclone-config-file are mutually exclusive")
+			return fmt.Errorf("--rclone-config-secret and --rclone-config-file are mutually exclusive")
+		}
+		if t.Flags.Encrypt && t.Flags.RcloneConfigSecret != "" {
+			log.Debugf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
+			return fmt.Errorf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
+		}
+		return nil
 	}
 
 	err = t.Endpoint.Validate()
 	if err != nil {
+		log.Errorf("Endpoint validation failed: %v", err)
 		return err
 	}
 
@@ -244,7 +293,19 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
+	if t.Flags.CloudStorage != "" {
+		return t.runIndirect()
+	}
 	return t.run()
+}
+
+// isIntraClusterSameNamespace returns true when source and destination are on the same
+// cluster AND the same namespace. This requires special handling for stunnel
+// cert secrets and pod labels to avoid collisions.
+func (t *TransferPVCCommand) isIntraClusterSameNamespace() bool {
+	return t.sourceContext != nil && t.destinationContext != nil &&
+		t.sourceContext.Cluster == t.destinationContext.Cluster &&
+		t.PVC.Namespace.source == t.PVC.Namespace.destination
 }
 
 func (t *TransferPVCCommand) getClientFromContext(ctx string) (client.Client, error) {
@@ -275,26 +336,55 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 	return t.configFlags.ToRESTConfig()
 }
 
-func (t *TransferPVCCommand) run() error {
+func (t *TransferPVCCommand) run() (retErr error) {
+	log := t.globalFlags.GetLoggerOrDefault()
+	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 	logrusLog := logrus.New()
 	logrusLog.SetFormatter(&logrus.JSONFormatter{})
 	logger := logrusr.New(logrusLog).WithName("transfer-pvc")
 
+	totalPhases := 7
+	if t.isIntraClusterSameNamespace() {
+		totalPhases = 8
+	}
+	phases := cli.NewPhaseTracker(t.ErrOut, totalPhases)
+	defer func() {
+		status := "succeeded"
+		if retErr != nil {
+			status = "failed"
+		}
+		cli.PrintTransferSummary(t.ErrOut, &cli.TransferSummary{
+			Status:   status,
+			Duration: phases.Elapsed(),
+		})
+	}()
+
+	cli.PrintTransferBanner(t.ErrOut,
+		t.Flags.SourceContext, t.Flags.DestinationContext,
+		fmt.Sprintf("%s/%s -> %s/%s",
+			t.PVC.Namespace.source, t.PVC.Name.source,
+			t.PVC.Namespace.destination, t.PVC.Name.destination),
+		string(t.Endpoint.Type), t.Endpoint.Subdomain,
+	)
+
+	// ---- Phase 1: Reading source PVC ----
+	log.Infof("Phase 1: Reading source PVC")
+	phases.Start("Reading source PVC")
 	srcCfg, err := t.getRestConfigFromContext(t.Flags.SourceContext)
 	if err != nil {
-		log.Fatal(err, "unable to get source rest config")
+		log.Errorf("Unable to get source rest config: %v", err)
+		return phases.Fail(err, "unable to get source rest config")
 	}
-
 	srcClient, err := t.getClientFromContext(t.Flags.SourceContext)
 	if err != nil {
-		log.Fatal(err, "unable to get source client")
+		log.Errorf("Unable to get source client: %v", err)
+		return phases.Fail(err, "unable to get source client")
 	}
 	destClient, err := t.getClientFromContext(t.Flags.DestinationContext)
 	if err != nil {
-		log.Fatal(err, "unable to get destination client")
+		log.Errorf("Unable to get destination client: %v", err)
+		return phases.Fail(err, "unable to get destination client")
 	}
-
-	// set up the PVC on destination to receive the data
 	srcPVC := &corev1.PersistentVolumeClaim{}
 	err = srcClient.Get(
 		context.TODO(),
@@ -305,14 +395,21 @@ func (t *TransferPVCCommand) run() error {
 		srcPVC,
 	)
 	if err != nil {
-		log.Fatal(err, "unable to get source PVC")
+		log.Errorf("Unable to get source PVC %s/%s: %v", t.PVC.Namespace.source, t.PVC.Name.source, err)
+		return phases.Fail(err, "unable to get source PVC")
 	}
+	phases.End("ok", "")
 
+	// ---- Phase 2: Creating destination PVC ----
+	log.Infof("Phase 2: Creating destination PVC")
+	phases.Start("Creating destination PVC")
 	destPVC := t.buildDestinationPVC(srcPVC)
 	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
-		log.Fatal(err, "unable to create destination PVC")
+		log.Errorf("Unable to create destination PVC %s/%s: %v", t.PVC.Namespace.destination, t.PVC.Name.destination, err)
+		return phases.Fail(err, "unable to create destination PVC")
 	}
+	phases.End("ok", "")
 
 	labels := map[string]string{
 		"app.kubernetes.io/name":          "crane",
@@ -320,15 +417,40 @@ func (t *TransferPVCCommand) run() error {
 		"app.konveyor.io/created-for-pvc": getValidatedResourceName(srcPVC.Name),
 	}
 
+	clientLabels := labels
+	if t.isIntraClusterSameNamespace() {
+		labels["app.konveyor.io/role"] = "server"
+		labels["app.konveyor.io/created-for-pvc"] = getValidatedResourceName(destPVC.Name)
+		clientLabels = map[string]string{
+			"app.kubernetes.io/name":          "crane",
+			"app.kubernetes.io/component":     "transfer-pvc",
+			"app.konveyor.io/role":            "client",
+			"app.konveyor.io/created-for-pvc": getValidatedResourceName(srcPVC.Name),
+		}
+	}
+
+	// ---- Phase 3: Creating endpoint ----
+	log.Infof("Phase 3: Creating endpoint (%s)", t.Endpoint.Type)
+	phases.Start(fmt.Sprintf("Creating endpoint (%s)", t.Endpoint.Type))
 	e, err := createEndpoint(t.Endpoint, destPVC, labels, logger, destClient)
 	if err != nil {
-		log.Fatal(err, "failed creating endpoint")
+		log.Errorf("Failed creating endpoint: %v", err)
+		return phases.Fail(err, "failed creating endpoint")
 	}
+	phases.End("ok", "")
 
+	// ---- Phase 4: Waiting for endpoint healthy ----
+	log.Infof("Phase 4: Waiting for endpoint healthy")
+	phases.Start("Waiting for endpoint healthy")
 	if err := waitForEndpoint(e, destClient); err != nil {
-		log.Fatal("endpoint not healthy")
+		log.Errorf("Endpoint not healthy: %v", err)
+		return phases.Fail(err, "endpoint not healthy")
 	}
+	phases.End("ok", "")
 
+	// ---- Phase 5: Setting up secure tunnel and server ----
+	log.Infof("Phase 5: Setting up secure tunnel and server")
+	phases.Start("Setting up secure tunnel and server")
 	stunnelServer, err := stunneltransport.NewServer(
 		context.TODO(),
 		destClient,
@@ -341,7 +463,8 @@ func (t *TransferPVCCommand) run() error {
 			Image:  t.Flags.DestinationImage,
 		})
 	if err != nil {
-		log.Fatal(err, "error creating stunnel server")
+		log.Errorf("Error creating stunnel server: %v", err)
+		return phases.Fail(err, "error creating stunnel server")
 	}
 
 	secretList := &corev1.SecretList{}
@@ -351,24 +474,45 @@ func (t *TransferPVCCommand) run() error {
 		client.InNamespace(destPVC.Namespace),
 		client.MatchingLabels(labels))
 	if err != nil {
-		log.Fatal(err, "failed to find certificate secrets")
+		log.Errorf("Failed to find certificate secrets: %v", err)
+		return phases.Fail(err, "failed to find certificate secrets")
 	}
 
 	for i := range secretList.Items {
 		destSecret := &secretList.Items[i]
+		secretName := certificateSecretName(destSecret.Name, srcPVC.Name, destPVC.Name)
+		secretLabels := destSecret.Labels
+		if t.isIntraClusterSameNamespace() {
+			secretLabels = clientLabels
+		}
 		srcSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        destSecret.Name,
+				Name:        secretName,
 				Namespace:   srcPVC.Namespace,
-				Labels:      destSecret.Labels,
+				Labels:      secretLabels,
 				Annotations: destSecret.Annotations,
 			},
 			StringData: destSecret.StringData,
 			Data:       destSecret.Data,
 		}
 		err = srcClient.Create(context.TODO(), srcSecret)
-		if err != nil {
-			log.Fatal(err, "failed to create certificate secret on source cluster")
+		if errors.IsAlreadyExists(err) {
+			existing := &corev1.Secret{}
+			if getErr := srcClient.Get(context.TODO(), client.ObjectKey{Name: secretName, Namespace: srcPVC.Namespace}, existing); getErr != nil {
+				log.Errorf("Failed to get existing certificate Secret %q: %v", secretName, getErr)
+				return phases.Fail(getErr, fmt.Sprintf("failed to get existing certificate Secret %q", secretName))
+			}
+			existing.Data = destSecret.Data
+			existing.StringData = destSecret.StringData
+			existing.Labels = secretLabels
+			existing.Annotations = destSecret.Annotations
+			if updateErr := srcClient.Update(context.TODO(), existing); updateErr != nil {
+				log.Errorf("Failed to update certificate Secret %q: %v", secretName, updateErr)
+				return phases.Fail(updateErr, fmt.Sprintf("failed to update certificate Secret %q", secretName))
+			}
+		} else if err != nil {
+			log.Errorf("Failed to create certificate Secret %q: %v", secretName, err)
+			return phases.Fail(err, fmt.Sprintf("failed to create certificate Secret %q", secretName))
 		}
 	}
 
@@ -380,20 +524,31 @@ func (t *TransferPVCCommand) run() error {
 			Name:      getValidatedResourceName(srcPVC.Name),
 			Namespace: srcPVC.Namespace,
 		}, e.Hostname(), e.IngressPort(), &transport.Options{
-			Labels: labels,
+			Labels: clientLabels,
 			Image:  t.Flags.DestinationImage,
 		},
 	)
 	if err != nil {
-		log.Fatal(err, "error creating stunnel server")
+		log.Errorf("Error creating stunnel client: %v", err)
+		return phases.Fail(err, "error creating stunnel client")
 	}
 
 	destPVCList := transfer.NewSingletonPVC(destPVC)
 	srcPVCList := transfer.NewSingletonPVC(srcPVC)
 
-	serverPodSecContext, err := getRsyncServerPodSecurityContext(destClient, destPVC.Namespace)
+	clientPodSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.Flags.SourceImage)
 	if err != nil {
-		log.Fatal(err, "error creating security context for rsync server")
+		log.Errorf("Error creating security context for rsync client: %v", err)
+		return phases.Fail(err, "error creating security context for rsync client")
+	}
+
+	serverPodSecContext, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.Flags.DestinationImage)
+	if err != nil {
+		log.Errorf("Error creating security context for rsync server: %v", err)
+		return phases.Fail(err, "error creating security context for rsync server")
+	}
+	if serverPodSecContext.RunAsUser == nil && clientPodSecCtx.RunAsUser != nil {
+		serverPodSecContext = clientPodSecCtx
 	}
 
 	trueBool := bool(true)
@@ -414,37 +569,45 @@ func (t *TransferPVCCommand) run() error {
 				},
 			},
 			PodSecurityContext: corev1.PodSecurityContext{
-				FSGroup: serverPodSecContext.FSGroup,
+				RunAsUser:  serverPodSecContext.RunAsUser,
+				RunAsGroup: serverPodSecContext.RunAsGroup,
+				FSGroup:    serverPodSecContext.FSGroup,
 			},
 			Image: t.Flags.DestinationImage,
 		},
 	)
 	if err != nil {
-		log.Fatal(err, "error creating rsync transfer server")
+		log.Errorf("Error creating rsync transfer server: %v", err)
+		return phases.Fail(err, "error creating rsync transfer server")
 	}
 
-	_ = wait.PollUntil(time.Second*5, func() (done bool, err error) {
-		ready, err := rsyncServer.IsHealthy(context.TODO(), destClient)
+	healthCtx, healthCancel := context.WithTimeout(context.TODO(), 5*time.Minute)
+	defer healthCancel()
+	err = wait.PollUntilContextCancel(healthCtx, time.Second*5, false, func(ctx context.Context) (done bool, err error) {
+		ready, err := rsyncServer.IsHealthy(ctx, destClient)
 		if err != nil {
-			log.Println(err, "unable to check rsync server health, retrying...")
+			fmt.Fprintf(t.ErrOut, "  rsync server not ready, retrying...\n")
 			return false, nil
 		}
 		return ready, nil
-	}, make(<-chan struct{}))
+	})
+	if err != nil {
+		log.Fatal(err, "rsync server failed to become healthy")
+	}
+	phases.End("ok", "")
 
+	// ---- Phase 6: Copying data (rsync) ----
+	log.Infof("Phase 6: Copying data (rsync)")
+	phases.Start("Copying data (rsync)")
 	nodeName, err := getNodeNameForPVC(srcClient, srcPVC.Namespace, srcPVC.Name)
 	if err != nil {
-		log.Fatal(err, "failed to find node name")
-	}
-
-	clientPodSecCtx, err := getRsyncClientPodSecurityContext(srcClient, srcPVC.Namespace)
-	if err != nil {
-		log.Fatal(err, "error creating security context for rsync server")
+		log.Errorf("Failed to find node name for PVC %s/%s: %v", srcPVC.Namespace, srcPVC.Name, err)
+		return phases.Fail(err, "failed to find node name")
 	}
 
 	_, err = rsynctransfer.NewClient(
 		context.TODO(),
-		srcClient, srcPVCList, stunnelClient, logger, "rsync-client", labels, nil,
+		srcClient, srcPVCList, stunnelClient, logger, "rsync-client", clientLabels, nil,
 		transfer.PodOptions{
 			NodeName: nodeName,
 			CommandOptions: rsynctransfer.NewDefaultOptionsFrom(
@@ -458,26 +621,67 @@ func (t *TransferPVCCommand) run() error {
 					Drop: []corev1.Capability{"ALL"},
 				},
 				RunAsNonRoot:             &trueBool,
-				RunAsUser:                clientPodSecCtx.RunAsUser,
 				AllowPrivilegeEscalation: &falseBool,
 			},
 			PodSecurityContext: corev1.PodSecurityContext{
-				FSGroup: clientPodSecCtx.FSGroup,
+				RunAsUser:  clientPodSecCtx.RunAsUser,
+				RunAsGroup: clientPodSecCtx.RunAsGroup,
+				FSGroup:    clientPodSecCtx.FSGroup,
 			},
 			Image: t.Flags.SourceImage,
 		},
 	)
 	if err != nil {
-		log.Fatal(err, "failed to create rsync client")
+		log.Errorf("Failed to create rsync client: %v", err)
+		return phases.Fail(err, "failed to create rsync client")
 	}
 
-	err = followClientLogs(
-		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, labels, t.ProgressOutput)
+	exitCode, err := followClientLogs(
+		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, clientLabels, t.ProgressOutput, log)
 	if err != nil {
-		log.Fatal(err, "error following rsync client logs")
+		log.Errorf("Error following rsync client logs: %v", err)
+		return phases.Fail(err, "error following rsync client logs")
+	}
+	detail := ""
+	if exitCode != nil {
+		detail = fmt.Sprintf("exit=%d", *exitCode)
+	}
+	phases.End("finished", detail)
+
+	// ---- Phase 7/8: Cleanup ----
+	log.Infof("Phase %d: Cleanup", totalPhases)
+	if t.isIntraClusterSameNamespace() {
+		phases.Start("Cleaning up server resources")
+		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
+			log.Warnf("Server-side cleanup warning: %v", err)
+			fmt.Fprintf(t.ErrOut, "  WARN: %v\n", err)
+		}
+		phases.End("ok", "")
+
+		phases.Start("Cleaning up client resources")
+		if err := garbageCollect(srcClient, destClient, clientLabels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
+			log.Errorf("Client-side cleanup failed: %v", err)
+			return phases.Fail(err, "client-side cleanup failed")
+		}
+		phases.End("ok", "")
+	} else {
+		phases.Start("Cleaning up temporary resources")
+		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
+			log.Errorf("Cleanup failed: %v", err)
+			return phases.Fail(err, "cleanup failed")
+		}
+		phases.End("ok", "")
 	}
 
-	return garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace)
+	log.Infof("PVC transfer complete: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
+	return nil
+}
+
+func certificateSecretName(serverSecret, srcPVCName, destPVCName string) string {
+	if srcPVCName != destPVCName {
+		return fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(srcPVCName))
+	}
+	return serverSecret
 }
 
 // getValidatedResourceName returns a name for resources
@@ -512,54 +716,347 @@ func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string
 	return "", nil
 }
 
-func getIDsForNamespace(client client.Client, namespace string) (*corev1.SecurityContext, error) {
-	ctx := &corev1.SecurityContext{}
+func getIDsForNamespace(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
+	ps := &corev1.PodSecurityContext{}
 	ns := &corev1.Namespace{}
-	err := client.Get(context.TODO(), types.NamespacedName{Name: namespace}, ns)
+	err := c.Get(context.TODO(), types.NamespacedName{Name: namespace}, ns)
 	if err != nil {
 		return nil, err
 	}
 	if annotationVal, found := ns.Annotations[securityv1.UIDRangeAnnotation]; found {
 		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
 		if err != nil {
-			return nil, nil
+			log.Printf("malformed UID range annotation %q in namespace %s: %v, falling back to workload discovery", annotationVal, namespace, err)
+		} else {
+			min := int64(uidBlock.Start)
+			ps.RunAsUser = &min
 		}
-		min := int64(uidBlock.Start)
-		ctx.RunAsUser = &min
 	}
 	if annotationVal, found := ns.Annotations[securityv1.SupplementalGroupsAnnotation]; found {
 		uidBlock, err := openshiftuid.ParseBlock(annotationVal)
 		if err != nil {
-			return nil, nil
+			log.Printf("malformed supplemental groups annotation %q in namespace %s: %v", annotationVal, namespace, err)
+		} else {
+			min := int64(uidBlock.Start)
+			ps.RunAsGroup = &min
+			ps.FSGroup = &min
 		}
-		min := int64(uidBlock.Start)
-		ctx.RunAsGroup = &min
 	}
-	return ctx, nil
-}
 
-func getRsyncClientPodSecurityContext(client client.Client, namespace string) (*corev1.PodSecurityContext, error) {
-	ps := &corev1.PodSecurityContext{}
-	ctx, err := getIDsForNamespace(client, namespace)
-	if err != nil {
-		return ps, err
+	if ps.RunAsUser != nil {
+		return ps, nil
 	}
-	ps.RunAsUser = ctx.RunAsUser
-	ps.RunAsGroup = ctx.RunAsGroup
-	ps.FSGroup = ctx.RunAsGroup
+
+	// Fallback 1: no OCP namespace annotation found (vanilla K8s).
+	// Read securityContext from the workload that owns this PVC.
+	wps, err := getSecurityContextFromWorkload(c, namespace, pvcName)
+	if err != nil {
+		log.Printf("workload security context lookup failed for PVC %s/%s: %v", namespace, pvcName, err)
+		return ps, nil
+	}
+	if wps != nil && wps.RunAsUser != nil {
+		return wps, nil
+	}
+
+	// Fallback 2: workload has no explicit runAsUser (app relies on
+	// Dockerfile USER). Inspect file ownership on the PVC to discover
+	// the UID that wrote the data.
+	uid, err := inspectPVCFileOwnership(c, namespace, pvcName, image)
+	if err != nil {
+		log.Printf("PVC file ownership inspection failed for %s/%s: %v", namespace, pvcName, err)
+		return ps, nil
+	}
+	if uid != nil {
+		ps.RunAsUser = uid
+		ps.RunAsGroup = uid
+		ps.FSGroup = uid
+		return ps, nil
+	}
 	return ps, nil
 }
 
-func getRsyncServerPodSecurityContext(client client.Client, namespace string) (*corev1.PodSecurityContext, error) {
-	ps := &corev1.PodSecurityContext{}
-	ctx, err := getIDsForNamespace(client, namespace)
-	if err != nil {
-		return ps, err
+// getSecurityContextFromWorkload finds the workload (Deployment, StatefulSet,
+// DaemonSet, ReplicaSet, Job, or CronJob) that mounts the given PVC and
+// returns its pod-level securityContext. This is the fallback path for vanilla
+// K8s clusters that lack the OCP namespace UID annotation.
+func getSecurityContextFromWorkload(c client.Client, namespace string, pvcName string) (*corev1.PodSecurityContext, error) {
+	// Deployments
+	var deployments appsv1.DeploymentList
+	if err := c.List(context.TODO(), &deployments, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing deployments: %w", err)
+		}
+	} else {
+		for _, d := range deployments.Items {
+			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(d.Spec.Template.Spec, pvcName), nil
+			}
+		}
 	}
-	ps.RunAsUser = ctx.RunAsUser
-	ps.RunAsGroup = ctx.RunAsGroup
-	ps.FSGroup = ctx.RunAsGroup
-	return ps, nil
+
+	// StatefulSets
+	var statefulSets appsv1.StatefulSetList
+	if err := c.List(context.TODO(), &statefulSets, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing statefulsets: %w", err)
+		}
+	} else {
+		for _, s := range statefulSets.Items {
+			if podSpecReferencesPVC(s.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(s.Spec.Template.Spec, pvcName), nil
+			}
+			for _, vct := range s.Spec.VolumeClaimTemplates {
+				prefix := fmt.Sprintf("%s-%s-", vct.Name, s.Name)
+				if strings.HasPrefix(pvcName, prefix) {
+					suffix := pvcName[len(prefix):]
+					if _, err := strconv.Atoi(suffix); err == nil {
+						return extractPodSecurityContext(s.Spec.Template.Spec, pvcName), nil
+					}
+				}
+			}
+		}
+	}
+
+	// DaemonSets
+	var daemonSets appsv1.DaemonSetList
+	if err := c.List(context.TODO(), &daemonSets, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing daemonsets: %w", err)
+		}
+	} else {
+		for _, d := range daemonSets.Items {
+			if podSpecReferencesPVC(d.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(d.Spec.Template.Spec, pvcName), nil
+			}
+		}
+	}
+
+	// ReplicaSets
+	var replicaSets appsv1.ReplicaSetList
+	if err := c.List(context.TODO(), &replicaSets, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing replicasets: %w", err)
+		}
+	} else {
+		for _, r := range replicaSets.Items {
+			if len(r.OwnerReferences) > 0 {
+				continue
+			}
+			if podSpecReferencesPVC(r.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(r.Spec.Template.Spec, pvcName), nil
+			}
+		}
+	}
+
+	// Jobs
+	var jobs batchv1.JobList
+	if err := c.List(context.TODO(), &jobs, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing jobs: %w", err)
+		}
+	} else {
+		for _, j := range jobs.Items {
+			if podSpecReferencesPVC(j.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(j.Spec.Template.Spec, pvcName), nil
+			}
+		}
+	}
+
+	// CronJobs
+	var cronJobs batchv1.CronJobList
+	if err := c.List(context.TODO(), &cronJobs, client.InNamespace(namespace)); err != nil {
+		if !errors.IsNotFound(err) && !errors.IsForbidden(err) {
+			return nil, fmt.Errorf("listing cronjobs: %w", err)
+		}
+	} else {
+		for _, cj := range cronJobs.Items {
+			if podSpecReferencesPVC(cj.Spec.JobTemplate.Spec.Template.Spec, pvcName) {
+				return extractPodSecurityContext(cj.Spec.JobTemplate.Spec.Template.Spec, pvcName), nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+func podSpecReferencesPVC(spec corev1.PodSpec, pvcName string) bool {
+	for _, vol := range spec.Volumes {
+		if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == pvcName {
+			return true
+		}
+	}
+	return false
+}
+
+func extractPodSecurityContext(spec corev1.PodSpec, pvcName ...string) *corev1.PodSecurityContext {
+	ps := &corev1.PodSecurityContext{}
+
+	if spec.SecurityContext != nil {
+		ps.RunAsUser = spec.SecurityContext.RunAsUser
+		ps.RunAsGroup = spec.SecurityContext.RunAsGroup
+		ps.FSGroup = spec.SecurityContext.FSGroup
+		ps.SupplementalGroups = spec.SecurityContext.SupplementalGroups
+	}
+
+	// Find which containers mount the PVC to pick the right runAsUser
+	pvcMounters := make(map[string]bool)
+	if len(pvcName) > 0 && pvcName[0] != "" {
+		for _, vol := range spec.Volumes {
+			if vol.PersistentVolumeClaim != nil && vol.PersistentVolumeClaim.ClaimName == pvcName[0] {
+				for _, c := range spec.Containers {
+					for _, vm := range c.VolumeMounts {
+						if vm.Name == vol.Name {
+							pvcMounters[c.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Container-level runAsUser overrides pod-level — prefer the
+	// container that mounts the PVC, fall back to first with runAsUser
+	for _, c := range spec.Containers {
+		if c.SecurityContext != nil && c.SecurityContext.RunAsUser != nil {
+			if len(pvcMounters) == 0 || pvcMounters[c.Name] {
+				ps.RunAsUser = c.SecurityContext.RunAsUser
+				break
+			}
+		}
+	}
+
+	return ps
+}
+
+// inspectPVCFileOwnership creates a temporary pod that mounts the PVC and
+// reads file ownership using stat. Returns the UID of the first non-root
+// file owner found, or nil if no non-root owner is detected.
+//
+// The pod runs as UID 65534 (nobody). It first stats the PVC mount point
+// itself — this works even if the directory is 0700 because stat reads
+// from the parent. If the mount point is root-owned, it iterates entries
+// inside (requires the mount point to be listable, which is the common
+// case for PVC roots provisioned as 0755/0777). If the mount point is
+// 0700 root-owned, the glob will fail and the function returns nil.
+func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string, image string) (*int64, error) {
+	podName := fmt.Sprintf("crane-inspect-%x", sha256.Sum256([]byte(pvcName)))
+	if len(podName) > 63 {
+		podName = podName[:63]
+	}
+
+	inspectPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers: []corev1.Container{
+				{
+					Name:  "inspect",
+					Image: rsyncTransferImage(image),
+					SecurityContext: func() *corev1.SecurityContext {
+						t, f := true, false
+						return &corev1.SecurityContext{
+							RunAsNonRoot:             &t,
+							AllowPrivilegeEscalation: &f,
+							Capabilities: &corev1.Capabilities{
+								Drop: []corev1.Capability{"ALL"},
+							},
+							SeccompProfile: &corev1.SeccompProfile{
+								Type: corev1.SeccompProfileTypeRuntimeDefault,
+							},
+						}
+					}(),
+					Command: []string{"sh", "-c",
+						`ROOT_UID=$(stat -c '%u' /mnt/pvc); ` +
+							`if [ "$ROOT_UID" != "0" ]; then echo -n "$ROOT_UID" > /dev/termination-log; exit 0; fi; ` +
+							`for f in /mnt/pvc/* /mnt/pvc/.*; do ` +
+							`  [ -e "$f" ] || continue; ` +
+							`  OWNER=$(stat -c '%u' "$f" 2>/dev/null); ` +
+							`  if [ -n "$OWNER" ] && [ "$OWNER" != "0" ]; then echo -n "$OWNER" > /dev/termination-log; exit 0; fi; ` +
+							`done; ` +
+							`exit 0`,
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: "pvc", MountPath: "/mnt/pvc"},
+					},
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: "pvc",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: pvcName,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := c.Create(context.TODO(), inspectPod); err != nil {
+		return nil, fmt.Errorf("creating inspect pod: %w", err)
+	}
+
+	defer func() {
+		_ = c.Delete(context.TODO(), inspectPod)
+	}()
+
+	err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 60*time.Second, true, func(ctx context.Context) (bool, error) {
+		pod := &corev1.Pod{}
+		if err := c.Get(ctx, types.NamespacedName{Name: podName, Namespace: namespace}, pod); err != nil {
+			return false, nil
+		}
+		return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("waiting for inspect pod: %w", err)
+	}
+
+	pod := &corev1.Pod{}
+	if err := c.Get(context.TODO(), types.NamespacedName{Name: podName, Namespace: namespace}, pod); err != nil {
+		return nil, fmt.Errorf("getting inspect pod status: %w", err)
+	}
+
+	if len(pod.Status.ContainerStatuses) == 0 ||
+		pod.Status.ContainerStatuses[0].State.Terminated == nil {
+		return nil, fmt.Errorf("inspect pod %s/%s did not terminate normally", namespace, podName)
+	}
+
+	terminated := pod.Status.ContainerStatuses[0].State.Terminated
+	if terminated.ExitCode != 0 {
+		return nil, fmt.Errorf("inspect pod %s/%s failed with exit code %d: %s", namespace, podName, terminated.ExitCode, terminated.Reason)
+	}
+
+	msg := strings.TrimSpace(terminated.Message)
+	if msg == "" {
+		return nil, nil
+	}
+
+	uid, err := strconv.ParseInt(msg, 10, 64)
+	if err != nil {
+		return nil, nil
+	}
+	return &uid, nil
+}
+
+func getSourcePodSecurityContext(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
+	return getIDsForNamespace(c, namespace, pvcName, image)
+}
+
+func getTargetPodSecurityContext(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
+	return getIDsForNamespace(c, namespace, pvcName, image)
+}
+
+// rsyncTransferImage returns the runtime image flag when set, otherwise the
+// build-time default from pvc-transfer.
+func rsyncTransferImage(image string) string {
+	if image != "" {
+		return image
+	}
+	return transport.DefaultRsyncTransferImage
 }
 
 func garbageCollect(srcClient client.Client, destClient client.Client, labels map[string]string, endpoint endpointType, namespace mappedNameVar) error {
@@ -644,13 +1141,15 @@ type LogStreams interface {
 	Streams() (stdout chan string, stderr chan string, err chan error)
 	// Close closes log streams
 	Close()
+	// ExitCode returns the rsync process exit code, if available
+	ExitCode() *int32
 }
 
-func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string) error {
-	logReader := NewRsyncLogStream(srcConfig, pvc, labels, outputFile)
+func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string, log *logrus.Logger) (*int32, error) {
+	logReader := NewRsyncLogStream(srcConfig, pvc, labels, outputFile, log)
 	err := logReader.Init()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer logReader.Close()
 	stdout, stderr, errChan := logReader.Streams()
@@ -671,7 +1170,7 @@ func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels m
 			break
 		}
 	}
-	return err
+	return logReader.ExitCode(), err
 }
 
 // waitForEndpoint waits for endpoint to become ready
@@ -738,14 +1237,20 @@ func getRouteHostName(client client.Client, namespacedName types.NamespacedName)
 	if len(routeNamePrefix) <= 62 {
 		return nil, nil
 	}
-	// if route prefix exceeds limits, a custom hostname will be provided
+	// if route prefix exceeds limits, truncate and append a hash suffix for uniqueness
 	ingressConfig := &configv1.Ingress{}
 	err := client.Get(context.TODO(), types.NamespacedName{Name: "cluster"}, ingressConfig)
 	if err != nil {
 		return nil, err
 	}
-	hostname := fmt.Sprintf("%s.%s", routeNamePrefix[:62], ingressConfig.Spec.Domain)
+	truncated := truncateWithHash(routeNamePrefix)
+	hostname := fmt.Sprintf("%s.%s", truncated, ingressConfig.Spec.Domain)
 	return &hostname, nil
+}
+
+func truncateWithHash(name string) string {
+	hash := fmt.Sprintf("%x", md5.Sum([]byte(name)))[:8]
+	return name[:62-9] + "-" + hash
 }
 
 // buildDestinationPVC given a source PVC, returns a PVC to be created in the destination cluster
@@ -754,6 +1259,7 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	pvc.Namespace = t.PVC.Namespace.destination
 	pvc.Name = t.PVC.Name.destination
 	pvc.Labels = sourcePVC.Labels
+	pvc.Annotations = stripServerManagedPVCAnnotations(sourcePVC.Annotations)
 	pvc.Spec = *sourcePVC.Spec.DeepCopy()
 	if t.PVC.StorageRequests.quantity != nil {
 		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = *t.PVC.StorageRequests.quantity
@@ -765,6 +1271,37 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	pvc.Spec.VolumeMode = nil
 	pvc.Spec.VolumeName = ""
 	return pvc
+}
+
+func stripServerManagedPVCAnnotations(annotations map[string]string) map[string]string {
+	if len(annotations) == 0 {
+		return nil
+	}
+	result := make(map[string]string)
+	for key, val := range annotations {
+		if isServerManagedPVCAnnotation(key) {
+			continue
+		}
+		result[key] = val
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func isServerManagedPVCAnnotation(key string) bool {
+	for _, prefix := range []string{
+		"pv.kubernetes.io/",
+		"volume.kubernetes.io/",
+		"volume.beta.kubernetes.io/",
+		"kubectl.kubernetes.io/",
+	} {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // verify enables/disables --checksum option in Rsync
@@ -795,8 +1332,9 @@ func (r restrictedContainers) ApplyTo(opts *rsynctransfer.CommandOptions) error 
 	opts.Owners = bool(!r)
 	opts.DeviceFiles = bool(!r)
 	opts.SpecialFiles = bool(!r)
-	opts.Extras = append(
-		opts.Extras, "--omit-dir-times")
+	if r {
+		opts.Extras = append(opts.Extras, "--omit-dir-times")
+	}
 	return nil
 }
 

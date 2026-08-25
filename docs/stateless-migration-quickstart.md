@@ -145,10 +145,10 @@ In most pipelines, your custom stage is the last stage under `transform/`, so re
 
 For a deeper explanation of stage ordering, stage structure, and multi-stage behavior, see [Multi-Stage Kustomize Transform Pipeline](./multistage-pipeline.md).
 
-If a custom stage already contains edits, rerun with `--force` to regenerate the custom stage directories and custom stage artifacts under `transform/` (for example: `input/`, `output/`, `kustomization.yaml`):
+If a custom stage already contains edits, rerun with `--overwrite` to regenerate the custom stage directories and custom stage artifacts under `transform/` (for example: `input/`, `output/`, `kustomization.yaml`):
 
 ```bash
-crane transform -e export -t transform --force
+crane transform -e export -t transform --overwrite
 ```
 
 ## 5) Apply (Render Final Manifests)
@@ -293,11 +293,13 @@ What you should see (example):
 
 After validation passes and you are satisfied with the cleaned manifests, apply them to the target cluster:
 
+> **Warning — Namespace renaming:** If you renamed the namespace during migration, Crane does not automatically update **ClusterRoleBinding subjects** referencing the old namespace name, or **NetworkPolicy `namespaceSelector`** entries matching the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`). These will silently point to a namespace that no longer exists. Manually update them before applying.
+
+Make sure the target namespace already exists before applying manifests, so namespace-scoped resources do not fail during apply.
+
 ```bash
 kubectl --context "${TARGET_CONTEXT}" apply -f output/output.yaml
 ```
-
-Make sure the target namespace already exists before applying manifests, so namespace-scoped resources do not fail during apply.
 
 ## Troubleshooting
 
@@ -311,7 +313,7 @@ Use `--overwrite` with `crane apply` or `crane validate`.
 
 ### Existing custom stage blocks rerun
 
-Use `crane transform --force` to regenerate stage directories.
+Use `crane transform --overwrite` to regenerate stage directories.
 
 ### Validation shows incompatibilities
 

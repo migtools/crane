@@ -5,12 +5,14 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// ResourceOrder defines the application order for Kubernetes resources.
+const defaultResourceOrder = 999
+
+// resourceOrder defines the application order for Kubernetes resources.
 // Lower numbers are applied first to ensure dependencies exist before dependents.
 // All order values must be ≤ 999 to maintain 3-digit padding in ordered filenames.
 // Unknown resource kinds use order 999 to ensure they are applied last.
 // This ordering follows kubectl's resource ordering for apply operations.
-var ResourceOrder = map[string]int{
+var resourceOrder = map[string]int{
 	// Cluster-wide resources
 	"Namespace":                   10,
 	"CustomResourceDefinition":    20,
@@ -24,6 +26,8 @@ var ResourceOrder = map[string]int{
 	"VolumeSnapshotClass":         100,
 	"CSIDriver":                   110,
 	"CSINode":                     120,
+	"SecurityContextConstraints":  130,
+
 
 	// Namespace-scoped configuration resources
 	"ResourceQuota":      200,
@@ -63,27 +67,23 @@ var ResourceOrder = map[string]int{
 	"Route":              600,
 	"BuildConfig":        610,
 	"Build":              620,
-	"DeploymentConfig":   630,
-	"ImageStream":        640,
-	"ImageStreamTag":     650,
+	"ImageStream":        630,
+	"ImageStreamTag":     640,
+	"DeploymentConfig":   650,
 	"Template":           660,
-	"SecurityContextConstraints": 670,
 
 	// Admission webhooks (must come after workload resources to avoid bootstrap deadlock)
 	"ValidatingWebhookConfiguration": 800,
 	"MutatingWebhookConfiguration":   810,
-
-	// Default for unknown types
-	"_default": 999,
 }
 
 // GetResourceOrder returns the application order for a given resource kind.
 // Resources with lower order values should be applied before those with higher values.
 func GetResourceOrder(kind string) int {
-	if order, exists := ResourceOrder[kind]; exists {
+	if order, exists := resourceOrder[kind]; exists {
 		return order
 	}
-	return ResourceOrder["_default"]
+	return defaultResourceOrder
 }
 
 // GetOrderedResourceFilename returns a filename with an order prefix for dependency-aware application.

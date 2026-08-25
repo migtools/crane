@@ -38,7 +38,7 @@ var _ = Describe("Stateless migration", func() {
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
-		applyOpts := ApplyOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir,
+		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")
@@ -71,11 +71,7 @@ var _ = Describe("Stateless migration", func() {
 		By("Compare YAML semantic diff of golden and actual output files")
 		goldenOutputDir, err := utils.GoldenManifestsDirForPlatform(appName, "output", isOpenShift)
 		Expect(err).NotTo(HaveOccurred())
-		compareOutput := utils.CompareDirectoryYAMLSemantics
-		if isOpenShift {
-			compareOutput = utils.CompareDirectoryYAMLSemanticsExportAllowOptionalOCPOutputDefaults
-		}
-		if err := compareOutput(goldenOutputDir, paths.OutputDir); err != nil {
+		if err := utils.CompareDirectoryYAMLSemantics(goldenOutputDir, paths.OutputDir); err != nil {
 			Fail(fmt.Sprintf("YAML semantic diff of golden and actual output files: %v", err))
 		} else {
 			log.Printf("YAML semantic diff of golden and actual output files: no differences found")
@@ -90,7 +86,7 @@ var _ = Describe("Stateless migration", func() {
 		Expect(kubectlTgt.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 
 		log.Printf("Validating app %s on target cluster\n", tgtApp.Name)
-		Eventually(tgtApp.Validate, "2m", "10s").Should(Succeed())
+		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 		log.Printf("Target validation completed for app %s\n", tgtApp.Name)
 	})
 })

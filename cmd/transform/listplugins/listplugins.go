@@ -23,6 +23,7 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	log *logrus.Logger
 }
 
 type Flags struct {
@@ -32,6 +33,7 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @sseago
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
@@ -87,6 +89,7 @@ func GetPluginNames(pluginDir string, skipPlugins []string, log *logrus.Logger) 
 	for i, p := range plugins {
 		pluginNames[i] = p.Metadata().Name
 	}
+	log.Debugf("Found %d plugin(s) in %q", len(pluginNames), pluginDir)
 
 	return pluginNames, nil
 }
@@ -95,6 +98,7 @@ func GetPluginNames(pluginDir string, skipPlugins []string, log *logrus.Logger) 
 func getFilteredPlugins(pluginDir string, skipPlugins []string, log *logrus.Logger) ([]cranelib.Plugin, error) {
 	absPluginDir, err := filepath.Abs(pluginDir)
 	if err != nil {
+		log.Errorf("Failed to resolve plugin directory path %q: %v", pluginDir, err)
 		return nil, err
 	}
 
@@ -102,7 +106,7 @@ func getFilteredPlugins(pluginDir string, skipPlugins []string, log *logrus.Logg
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLogger()
+	log := o.globalFlags.GetLoggerOrDefault()
 
 	plugins, err := getFilteredPlugins(o.PluginDir, o.SkipPlugins, log)
 	if err != nil {

@@ -199,19 +199,16 @@ func CompareDirectoryFileSets(goldenDir, gotDir string) error {
 	return nil
 }
 
-// CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
-// two directories using strict file-set equality and no export-specific normalization.
-// This is intended for stable outputs (for example transform/output artifacts).
-func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
+// compareDirectoryYAMLSemanticsWithFunc is the shared implementation for directory YAML
+// comparison, parameterized by the per-file comparison function.
+func compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir string, compareFunc func(string, []byte, []byte) error) error {
 	if err := CompareDirectoryFileSets(goldenDir, gotDir); err != nil {
 		return err
 	}
-
 	relativeFilePaths, err := ListFilesRecursivelyAsList(goldenDir)
 	if err != nil {
 		return fmt.Errorf("list files in golden directory %q: %w", goldenDir, err)
 	}
-
 	for _, relativeFilePath := range relativeFilePaths {
 		goldenPath := filepath.Join(goldenDir, relativeFilePath)
 		gotPath := filepath.Join(gotDir, relativeFilePath)
@@ -223,11 +220,74 @@ func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
 		if err != nil {
 			return fmt.Errorf("read got file %q: %w", gotPath, err)
 		}
-		if err := compareYAMLFileBytes(relativeFilePath, goldenBytes, gotBytes); err != nil {
+		if err := compareFunc(relativeFilePath, goldenBytes, gotBytes); err != nil {
 			return fmt.Errorf("compare YAML file %q: %w", relativeFilePath, err)
 		}
 	}
 	return nil
+}
+
+// CompareDirectoryYAMLSemantics compares YAML semantics for all matching files in
+// two directories using strict file-set equality and no export-specific normalization.
+// This is intended for stable outputs (for example transform/output artifacts).
+func CompareDirectoryYAMLSemantics(goldenDir, gotDir string) error {
+	return compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir, compareYAMLFileBytes)
+}
+
+// sortTopLevelArray returns a sorted copy of arr by canonical JSON representation of
+// each element, enabling order-independent comparison of top-level YAML sequences
+func sortTopLevelArray(arr []any) []any {
+	sorted := make([]any, len(arr))
+	copy(sorted, arr)
+	sort.Slice(sorted, func(i, j int) bool {
+		a, errA := json.Marshal(sorted[i])
+		b, errB := json.Marshal(sorted[j])
+		if errA != nil || errB != nil {
+			return false
+		}
+		return string(a) < string(b)
+	})
+	return sorted
+}
+
+// compareYAMLFileBytesUnordered parses two YAML inputs and compares their decoded
+// document streams treating arrays as unordered sets. relPath is used only for error context.
+func compareYAMLFileBytesUnordered(relPath string, golden, got []byte) error {
+	goldenDocs, err := parseYAMLDocuments(golden)
+	if err != nil {
+		return fmt.Errorf("parse golden file %q: %w", relPath, err)
+	}
+
+	gotDocs, err := parseYAMLDocuments(got)
+	if err != nil {
+		return fmt.Errorf("parse got file %q: %w", relPath, err)
+	}
+
+	for i := range goldenDocs {
+		goldenDocs[i] = normalizeWithPath(goldenDocs[i], nil)
+		if arr, ok := goldenDocs[i].([]any); ok {
+			goldenDocs[i] = sortTopLevelArray(arr)
+		}
+	}
+	for i := range gotDocs {
+		gotDocs[i] = normalizeWithPath(gotDocs[i], nil)
+		if arr, ok := gotDocs[i].([]any); ok {
+			gotDocs[i] = sortTopLevelArray(arr)
+		}
+	}
+
+	if !cmp.Equal(goldenDocs, gotDocs) {
+		return fmt.Errorf("YAML differs in %q:\n%s", relPath, cmp.Diff(goldenDocs, gotDocs))
+	}
+
+	return nil
+}
+
+// CompareDirectoryYAMLSemanticsUnordered compares YAML semantics for all matching
+// files in two directories treating arrays as unordered sets, so patch ordering
+// differences between runs do not cause false failures.
+func CompareDirectoryYAMLSemanticsUnordered(goldenDir, gotDir string) error {
+	return compareDirectoryYAMLSemanticsWithFunc(goldenDir, gotDir, compareYAMLFileBytesUnordered)
 }
 
 // CompareDirectoryYAMLSemanticsExport compares export YAML semantics using
@@ -380,6 +440,9 @@ func buildNormalizedExportIndex(dir string) (map[string][]exportIndexedDoc, erro
 		for i, doc := range docs {
 			identity, err := extractResourceIdentity(doc)
 			if err != nil {
+				if strings.Contains(relativeFilePath, "failures/") {
+					continue
+				}
 				return nil, fmt.Errorf("extract identity for %q doc #%d: %w", relativeFilePath, i+1, err)
 			}
 			normalized := normalizeUnstableFields(doc)
@@ -707,6 +770,44 @@ func normalizeUnstableFields(doc any) any {
 		return normalized
 	}
 
+	if kind == "PersistentVolumeClaim" {
+		if annotations, ok := metadata["annotations"].(map[string]any); ok {
+			// Scheduler and provisioner annotations vary across OCP clusters.
+			delete(annotations, "volume.kubernetes.io/selected-node")
+			delete(annotations, "volume.kubernetes.io/storage-provisioner")
+			delete(annotations, "volume.beta.kubernetes.io/storage-provisioner")
+			if len(annotations) == 0 {
+				delete(metadata, "annotations")
+			}
+		}
+		return normalized
+	}
+
+	if kind == "Service" {
+		if spec, ok := root["spec"].(map[string]any); ok {
+			// Single-stack defaults can be injected differently across clusters.
+			delete(spec, "ipFamilies")
+			delete(spec, "ipFamilyPolicy")
+		}
+		return normalized
+	}
+
+	if kind == "Route" {
+		if annotations, ok := metadata["annotations"].(map[string]any); ok {
+			// Only normalize host when OpenShift explicitly marks it as generated.
+			if generated, _ := annotations["openshift.io/host.generated"].(string); generated == "true" {
+				if spec, ok := root["spec"].(map[string]any); ok {
+					delete(spec, "host")
+				}
+				delete(annotations, "openshift.io/host.generated")
+			}
+			if len(annotations) == 0 {
+				delete(metadata, "annotations")
+			}
+		}
+		return normalized
+	}
+
 	if kind == "ReplicaSet" {
 		delete(metadata, "name")
 		stripPodTemplateHash(metadata)
@@ -850,6 +951,11 @@ func normalizeWithPath(value any, path []string) any {
 			// An empty securityContext: {} is semantically identical to absent.
 			// Some plugins strip it, others preserve it — treat both as equal.
 			if k == "securityContext" {
+				if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
+					continue
+				}
+			}
+			if k == "annotations" {
 				if m, ok := normalized.(map[string]any); ok && len(m) == 0 {
 					continue
 				}
@@ -1189,5 +1295,69 @@ func AssertFilesExist(dir string, expectedFiles []string) error {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing files: %v", missing)
 	}
+	return nil
+}
+
+// RemapNamespaceInYAML parses each document in a multi-doc YAML stream,
+// replaces srcNamespace with tgtNamespace in metadata.namespace,
+// and returns the re-serialized YAML string.
+func RemapNamespaceInYAML(content []byte, srcNamespace, tgtNamespace string) (string, error) {
+	docs, err := parseYAMLDocuments(content)
+	if err != nil {
+		return "", fmt.Errorf("parsing YAML documents: %w", err)
+	}
+
+	var parts []string
+	for i, doc := range docs {
+		obj, ok := doc.(map[string]any)
+		if !ok {
+			return "", fmt.Errorf("document %d: expected map[string]any, got %T", i, doc)
+		}
+		if meta, ok := obj["metadata"].(map[string]any); ok {
+			if meta["namespace"] == srcNamespace {
+				meta["namespace"] = tgtNamespace
+			}
+		}
+		out, err := yaml.Marshal(obj)
+		if err != nil {
+			return "", fmt.Errorf("marshaling YAML document: %w", err)
+		}
+		parts = append(parts, string(out))
+	}
+	return strings.Join(parts, "---\n"), nil
+}
+
+// ParseValidationReport reads and parses a crane validate report file.
+// The report parameter should be a pointer to the structure that will hold the parsed data.
+func ParseValidationReport(validateDir string, outputFormat string, report interface{}) error {
+	if outputFormat != "json" && outputFormat != "yaml" {
+		return fmt.Errorf("unsupported output format: %s (must be 'json' or 'yaml')", outputFormat)
+	}
+
+	reportExt := "." + outputFormat
+	reportPath := filepath.Join(validateDir, "report"+reportExt)
+
+	// Check if report file exists
+	if _, err := os.Stat(reportPath); err != nil {
+		return fmt.Errorf("report file not found at %s: %w", reportPath, err)
+	}
+
+	// Read report file
+	reportData, err := os.ReadFile(reportPath)
+	if err != nil {
+		return fmt.Errorf("failed to read report file: %w", err)
+	}
+
+	// Parse based on format
+	if outputFormat == "yaml" {
+		if err := yaml.Unmarshal(reportData, report); err != nil {
+			return fmt.Errorf("failed to parse YAML report: %w", err)
+		}
+	} else {
+		if err := json.Unmarshal(reportData, report); err != nil {
+			return fmt.Errorf("failed to parse JSON report: %w", err)
+		}
+	}
+
 	return nil
 }

@@ -14,7 +14,7 @@ Crane is a Kubernetes migration tool that helps migrate workloads between cluste
 - migtools/crane (this repo) - CLI tool
 - migtools/crane-lib - transformation logic
 - migtools/crane-plugins - community plugins
-- backube/pvc-transfer - PV migration
+- migtools/pvc-transfer - PV migration
 
 ## Code Quality Standards
 

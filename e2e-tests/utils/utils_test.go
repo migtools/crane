@@ -591,6 +591,36 @@ func TestCompareDirectoryYAMLSemanticsExport(t *testing.T) {
 			},
 		},
 		{
+			name: "service_ip_family_defaults_are_ignored",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  namespace: ns\n  name: s\nspec:\n  type: ClusterIP\n  ipFamilies:\n  - IPv4\n  ipFamilyPolicy: SingleStack\n")
+				write(t, got, "resources/svc.yaml", "apiVersion: v1\nkind: Service\nmetadata:\n  namespace: ns\n  name: s\nspec:\n  type: ClusterIP\n  ipFamilies:\n  - IPv6\n  ipFamilyPolicy: PreferDualStack\n")
+				return golden, got
+			},
+		},
+		{
+			name: "pvc_provisioner_and_selected_node_annotations_are_ignored",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\n  annotations:\n    volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com\n    volume.kubernetes.io/selected-node: ip-10-0-25-205.us-east-2.compute.internal\n    volume.kubernetes.io/storage-provisioner: ebs.csi.aws.com\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				write(t, got, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\n  annotations:\n    volume.beta.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io\n    volume.kubernetes.io/selected-node: gke-worker-01\n    volume.kubernetes.io/storage-provisioner: pd.csi.storage.gke.io\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				return golden, got
+			},
+		},
+		{
+			name: "pvc_ignored_annotations_present_on_one_side_only",
+			build: func(t *testing.T) (string, string) {
+				golden := t.TempDir()
+				got := t.TempDir()
+				write(t, golden, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\n  annotations:\n    volume.beta.kubernetes.io/storage-provisioner: ebs.csi.aws.com\n    volume.kubernetes.io/selected-node: ip-10-0-25-205.us-east-2.compute.internal\n    volume.kubernetes.io/storage-provisioner: ebs.csi.aws.com\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				write(t, got, "resources/pvc.yaml", "apiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  namespace: ns\n  name: data\nspec:\n  accessModes:\n  - ReadWriteOnce\n  resources:\n    requests:\n      storage: 1Gi\n")
+				return golden, got
+			},
+		},
+		{
 			name: "real_semantic_diff_detected",
 			build: func(t *testing.T) (string, string) {
 				golden := t.TempDir()
@@ -1455,6 +1485,185 @@ func TestNormalizeUnstableFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := normalizeUnstableFields(tc.in)
 			tc.validate(t, got)
+		})
+	}
+}
+
+func TestSortTopLevelArray(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    []any
+		expected []any
+	}{
+		{
+			name:     "already_sorted",
+			input:    []any{"a", "b", "c"},
+			expected: []any{"a", "b", "c"},
+		},
+		{
+			name:     "different_order",
+			input:    []any{"c", "a", "b"},
+			expected: []any{"a", "b", "c"},
+		},
+		{
+			name:     "empty",
+			input:    []any{},
+			expected: []any{},
+		},
+		{
+			name:     "nested_maps",
+			input:    []any{map[string]any{"z": 1}, map[string]any{"a": 1}},
+			expected: []any{map[string]any{"a": 1}, map[string]any{"z": 1}},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			result := sortTopLevelArray(tc.input)
+			if !cmp.Equal(tc.expected, result) {
+				t.Fatalf("sortTopLevelArray(%v): got %v, want %v", tc.input, result, tc.expected)
+			}
+		})
+	}
+}
+func TestCompareYAMLFileBytesUnordered(t *testing.T) {
+	cases := []struct {
+		name        string
+		relPath     string
+		golden      []byte
+		got         []byte
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name:    "identical_order",
+			relPath: "patches.yaml",
+			golden:  []byte("- a: 1\n- b: 2\n"),
+			got:     []byte("- a: 1\n- b: 2\n"),
+		},
+		{
+			name:    "different_order",
+			relPath: "patches.yaml",
+			golden:  []byte("- a: 1\n- b: 2\n"),
+			got:     []byte("- b: 2\n- a: 1\n"),
+		},
+		{
+			name:    "non_array_root",
+			relPath: "cm.yaml",
+			golden:  []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"),
+			got:     []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: x\n"),
+		},
+		{
+			name:        "semantic_mismatch",
+			relPath:     "patches.yaml",
+			golden:      []byte("- a: 1\n"),
+			got:         []byte("- a: 2\n"),
+			wantErr:     true,
+			errContains: []string{"YAML differs"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			err := compareYAMLFileBytesUnordered(tc.relPath, tc.golden, tc.got)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, s := range tc.errContains {
+					if !strings.Contains(err.Error(), s) {
+						t.Fatalf("error %q does not contain %q", err.Error(), s)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("compareYAMLFileBytesUnordered: %v", err)
+			}
+		})
+	}
+}
+func TestCompareDirectoryYAMLSemanticsUnordered(t *testing.T) {
+	write := func(t *testing.T, dir, rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cases := []struct {
+		name        string
+		build       func(t *testing.T) (string, string)
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name: "identical_content",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "patches.yaml", "- a: 1\n- b: 2\n")
+				write(t, got, "patches.yaml", "- a: 1\n- b: 2\n")
+				return golden, got
+			},
+		},
+		{
+			name: "different_array_order",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "patches.yaml", "- a: 1\n- b: 2\n")
+				write(t, got, "patches.yaml", "- b: 2\n- a: 1\n")
+				return golden, got
+			},
+		},
+		{
+			name: "semantic_mismatch",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "patches.yaml", "- a: 1\n")
+				write(t, got, "patches.yaml", "- a: 2\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"YAML differs"},
+		},
+		{
+			name: "file_set_mismatch",
+			build: func(t *testing.T) (string, string) {
+				golden, got := t.TempDir(), t.TempDir()
+				write(t, golden, "only-golden.yaml", "a: 1\n")
+				write(t, got, "only-got.yaml", "a: 1\n")
+				return golden, got
+			},
+			wantErr:     true,
+			errContains: []string{"file sets differ"},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			goldenDir, gotDir := tc.build(t)
+			err := CompareDirectoryYAMLSemanticsUnordered(goldenDir, gotDir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, s := range tc.errContains {
+					if !strings.Contains(err.Error(), s) {
+						t.Fatalf("error %q does not contain %q", err.Error(), s)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CompareDirectoryYAMLSemanticsUnordered: %v", err)
+			}
 		})
 	}
 }

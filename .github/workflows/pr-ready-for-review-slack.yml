@@ -77,11 +77,9 @@ jobs:
             exit 0
           fi
 
-          if gh api "repos/${GITHUB_REPOSITORY}/issues/${pr_number}/labels" | jq -e '.[] | select(.name == "ready-for-review-notified")' >/dev/null; then
-            echo "::notice::PR #${pr_number} already has ready-for-review-notified label; skipping duplicate notification."
-            echo "should_notify=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # Allow repeated /rfr notifications. The ready-for-review-notified label is
+          # retained for audit and still applied after a successful notify, but it no
+          # longer blocks a subsequent author /rfr on an open, non-draft PR.
 
           pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}")"
           is_draft="$(printf '%s' "$pr_json" | jq -r '.draft')"
@@ -130,16 +128,15 @@ jobs:
         with:
           text: |
             :pr-open-1: PR Ready for Review
-            PR Title: ${{ steps.guard.outputs.pr_title }}
-            PR: ${{ steps.guard.outputs.pr_url }}
-            Author: @${{ steps.guard.outputs.pr_author }}
-
+            ${{ steps.guard.outputs.pr_title }}
+            ${{ steps.guard.outputs.pr_url }} | @${{ steps.guard.outputs.pr_author }}
+ 
       - name: Mark PR as notified
         if: steps.guard.outputs.should_notify == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
+          set -euo pipefail  
           max_attempts=3
           for attempt in $(seq 1 "${max_attempts}"); do
             if gh api "repos/${GITHUB_REPOSITORY}/issues/${{ steps.guard.outputs.pr_number }}/labels" \

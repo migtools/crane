@@ -22,7 +22,14 @@ func init() {
 	flag.StringVar(&config.TargetNonAdminContext, "target-nonadmin-context", "", "Target cluster non-admin context for RBAC scenarios")
 	flag.BoolVar(&config.InsecureSkipTLSVerify, "insecure-skip-tls-verify", false, "Skip TLS certificate verification for k8sdeploy connections (use for OCP clusters with self-signed certs)")
 	flag.StringVar(&config.RunAs, "run-as", "", "Override user context: set to 'admin' to run all tests with cluster-admin credentials")
+	flag.StringVar(&config.CloudStorage, "cloud-storage", "", "S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket)")
+	flag.StringVar(&config.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer")
+	flag.StringVar(&config.RcloneConfigSecret, "rclone-config-secret", "", "K8s Secret name containing rclone.conf for indirect transfer")
 }
+
+var _ = BeforeSuite(func() {
+	Expect(config.ValidateAndLogRunAsFlag()).To(Succeed())
+})
 
 // TestE2E configures Ginkgo and executes the e2e test suite.
 func TestE2E(t *testing.T) {

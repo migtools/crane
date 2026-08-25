@@ -3,7 +3,6 @@ module github.com/konveyor/crane
 go 1.25.0
 
 require (
-	github.com/backube/pvc-transfer v0.0.0-20220810121213-5f9e29a1f6e5
 	github.com/bombsimon/logrusr/v3 v3.0.0
 	github.com/evanphx/json-patch v5.9.11+incompatible
 	github.com/ghodss/yaml v1.0.0
@@ -11,8 +10,9 @@ require (
 	github.com/google/gnostic-models v0.7.0
 	github.com/google/go-cmp v0.7.0
 	github.com/jarcoal/httpmock v1.2.0
-	github.com/konveyor/crane-lib v0.1.6-0.20260618130404-9791be7b44bd
+	github.com/konveyor/crane-lib v0.1.6-0.20260824070743-b8fa732fccd4
 	github.com/migtools/crane-plugin-openshift v0.1.1
+	github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.0
@@ -30,6 +30,7 @@ require (
 	k8s.io/apimachinery v0.35.3
 	k8s.io/cli-runtime v0.35.3
 	k8s.io/client-go v0.35.3
+	k8s.io/component-helpers v0.35.3
 	sigs.k8s.io/controller-runtime v0.23.3
 	sigs.k8s.io/kustomize/api v0.21.1
 	sigs.k8s.io/kustomize/kustomize/v5 v5.8.1

@@ -121,11 +121,11 @@ jobs:
           echo "Full reason: ${{ steps.changed_tests.outputs.full_reason }}"
           case "${{ steps.changed_tests.outputs.full_reason }}" in
             outside_e2e)
-              echo "Running full suite: e2e-tests/tests"
+              echo "Running full suite in parallel: tier0 + tier1"
               echo "Reason: changes outside e2e-tests/ (crane or repo paths)"
               ;;
             e2e_impact)
-              echo "Running full suite: e2e-tests/tests"
+              echo "Running full suite in parallel: tier0 + tier1"
               echo "Reason: impactful non-test file(s) or suite bootstrap changed under e2e-tests/"
               ;;
             focused)
@@ -137,13 +137,36 @@ jobs:
               ;;
           esac
 
-  run-changed-e2e-tests:
+  # Full suite: run tier0 and tier1 in parallel via the reusable workflow
+  # (same path as main/nightly), each with its own 60-minute timeout.
+  e2e-tier0:
     needs: detect-changes
-    if: needs.detect-changes.outputs.run_tests == 'true'
+    if: needs.detect-changes.outputs.run_tests == 'true' && needs.detect-changes.outputs.run_mode == 'all'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-e2e-tier-tests.yml
+    with:
+      checkout_ref: ${{ github.sha }}
+      label_filter: tier0
+
+  e2e-tier1:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_tests == 'true' && needs.detect-changes.outputs.run_mode == 'all'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/reusable-e2e-tier-tests.yml
+    with:
+      checkout_ref: ${{ github.sha }}
+      label_filter: tier1
+
+  # Focused mode: only touched test files (unchanged from prior single-job path).
+  e2e-focused:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_tests == 'true' && needs.detect-changes.outputs.run_mode == 'focused'
     permissions:
       contents: read
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       CRANE_BIN: ${{ github.workspace }}/crane
       E2E_SUITE_DIR: e2e-tests/tests
@@ -174,7 +197,7 @@ jobs:
           python-version: "3.11"
 
       - name: Clone k8s-apps-deployer
-        run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+        run: git clone https://github.com/migtools/k8s-apps-deployer.git
 
       - name: Create venv and install package
         run: |
@@ -200,9 +223,57 @@ jobs:
         run: go build -o "$CRANE_BIN" .
 
       - name: Run touched crane e2e tests
+        env:
+          FOCUS_FILE_REGEX: ${{ needs.detect-changes.outputs.focus_file_regex }}
         run: |
-          if [ "${{ needs.detect-changes.outputs.run_mode }}" = "all" ]; then
-            ginkgo run -v -r --label-filter='!pvc-transfer' "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
-          else
-            ginkgo run -v -r --label-filter='!pvc-transfer' --focus-file="${{ needs.detect-changes.outputs.focus_file_regex }}" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
+          ginkgo run -v -r --focus-file="$FOCUS_FILE_REGEX" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
+
+  # Keep job id run-changed-e2e-tests so existing required checks keep matching.
+  # Pass only when the active path (parallel tiers or focused) succeeded.
+  run-changed-e2e-tests:
+    needs:
+      - detect-changes
+      - e2e-tier0
+      - e2e-tier1
+      - e2e-focused
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.run_tests == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Aggregate E2E results
+        run: |
+          set -euo pipefail
+          run_mode="${{ needs.detect-changes.outputs.run_mode }}"
+          tier0_result="${{ needs.e2e-tier0.result }}"
+          tier1_result="${{ needs.e2e-tier1.result }}"
+          focused_result="${{ needs.e2e-focused.result }}"
+
+          echo "run_mode=${run_mode}"
+          echo "e2e-tier0=${tier0_result}"
+          echo "e2e-tier1=${tier1_result}"
+          echo "e2e-focused=${focused_result}"
+
+          if [ "$run_mode" = "all" ]; then
+            if [ "$tier0_result" != "success" ] || [ "$tier1_result" != "success" ]; then
+              echo "::error::Full E2E failed (tier0=${tier0_result}, tier1=${tier1_result})."
+              exit 1
+            fi
+            echo "Full E2E passed (tier0 + tier1)."
+            exit 0
           fi
+
+          if [ "$run_mode" = "focused" ]; then
+            if [ "$focused_result" != "success" ]; then
+              echo "::error::Focused E2E failed (e2e-focused=${focused_result})."
+              exit 1
+            fi
+            echo "Focused E2E passed."
+            exit 0
+          fi
+
+          echo "::error::Unexpected run_mode=${run_mode}."
+          exit 1

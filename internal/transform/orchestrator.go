@@ -19,6 +19,14 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// StageArtifact wraps a transform artifact with crane-local routing metadata.
+// IsNewResource tells the writer to place this artifact in the new/ directory
+// instead of input/, without polluting the resource with temporary annotations.
+type StageArtifact struct {
+	cranelib.TransformArtifact
+	IsNewResource bool
+}
+
 // Orchestrator coordinates multi-stage transform execution
 type Orchestrator struct {
 	Log            *logrus.Logger
@@ -27,13 +35,55 @@ type Orchestrator struct {
 	PluginDir      string
 	SkipPlugins    []string
 	OptionalFlags  map[string]string
-	Force          bool
+	StageOptionalFlags map[string]map[string]string
+	Overwrite      bool
 	CraneVersion   string
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
 	// This prevents double-write errors when creating a stage and then running it
 	NewlyCreatedStages map[string]bool
 	// KustomizeArgs holds additional arguments for embedded kustomize (e.g. helm options)
 	KustomizeArgs []string
+}
+
+func (o *Orchestrator) validateStageOptionalFlags(stages []Stage) error {
+	if len(o.StageOptionalFlags) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(stages))
+	for _, s := range stages {
+		known[s.PluginName] = true
+	}
+	for name := range o.StageOptionalFlags {
+		if !known[name] {
+			names := make([]string, len(stages))
+			for i, s := range stages {
+				names[i] = s.PluginName
+			}
+			return fmt.Errorf("per-stage optionals reference unknown stage %q (known stages: %s)", name, strings.Join(names, ", "))
+		}
+	}
+	return nil
+}
+
+func (o *Orchestrator) resolveOptionalFlags(stage Stage) map[string]string {
+	if o.StageOptionalFlags == nil {
+		return o.OptionalFlags
+	}
+	stageFlags, ok := o.StageOptionalFlags[stage.PluginName]
+	if !ok {
+		return o.OptionalFlags
+	}
+	if len(o.OptionalFlags) == 0 {
+		return stageFlags
+	}
+	merged := make(map[string]string, len(o.OptionalFlags)+len(stageFlags))
+	for k, v := range o.OptionalFlags {
+		merged[k] = v
+	}
+	for k, v := range stageFlags {
+		merged[k] = v
+	}
+	return merged
 }
 
 // RunMultiStage executes transform with multi-stage pipeline
@@ -57,6 +107,10 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 	if len(selectedStages) == 0 {
 		return fmt.Errorf("no stages found matching selector")
+	}
+
+	if err := o.validateStageOptionalFlags(selectedStages); err != nil {
+		return err
 	}
 
 	opts := file.PathOpts{
@@ -159,25 +213,20 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 	}
 
 	// Determine write behavior based on stage type
-	// Plugin stages: always allow overwrite (auto-regenerate)
-	// Custom stages: require --force flag
-	// Newly created stages: always allow overwrite
+	// Newly created stages: always allow overwrite (just created, safe to populate)
+	// All other stages: respect --overwrite flag
 	var forceWrite bool
 	if o.NewlyCreatedStages != nil && o.NewlyCreatedStages[stage.DirName] {
 		// Stage was just created in this run: safe to populate
 		forceWrite = true
 		o.Log.Debugf("Stage %s: allowing write (newly created in this run)", stage.DirName)
-	} else if strings.HasSuffix(stage.PluginName, "Plugin") {
-		// Plugin-based stage: automatically regenerate
-		forceWrite = true
-		o.Log.Debugf("Stage %s: allowing write (plugin-based stage auto-regeneration)", stage.DirName)
 	} else {
-		// Custom stage: respect --force flag
-		forceWrite = o.Force
+		// All stages (plugin and custom): respect --overwrite flag
+		forceWrite = o.Overwrite
 		if forceWrite {
-			o.Log.Debugf("Stage %s: allowing write (--force flag for custom stage)", stage.DirName)
+			o.Log.Debugf("Stage %s: allowing write (--overwrite flag set)", stage.DirName)
 		} else {
-			o.Log.Debugf("Stage %s: checking for empty directory (custom stage without --force)", stage.DirName)
+			o.Log.Debugf("Stage %s: checking for empty directory (no --overwrite flag)", stage.DirName)
 		}
 	}
 
@@ -190,8 +239,8 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 }
 
 // transformResources runs the plugin (if any) on all input resources
-// Returns transform artifacts ready to be written to the stage directory
-func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plugin, inputResources []unstructured.Unstructured) ([]cranelib.TransformArtifact, error) {
+// Returns stage artifacts ready to be written to the stage directory
+func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plugin, inputResources []unstructured.Unstructured) ([]StageArtifact, error) {
 	// Build plugins list for runner (0 or 1 plugin)
 	// Note: Runner.Run expects a slice, even though we only pass 0 or 1 plugin
 	var plugins []cranelib.Plugin
@@ -204,10 +253,10 @@ func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plug
 	runner := cranelib.Runner{
 		Log:              o.Log,
 		PluginPriorities: nil, // No priorities needed - max 1 plugin per stage
-		OptionalFlags:    o.OptionalFlags,
+		OptionalFlags:    o.resolveOptionalFlags(stage),
 	}
 
-	var artifacts []cranelib.TransformArtifact
+	var artifacts []StageArtifact
 
 	for _, resource := range inputResources {
 		response, err := runner.Run(resource, plugins)
@@ -226,16 +275,53 @@ func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plug
 			}
 		}
 
-		artifact := cranelib.TransformArtifact{
-			Resource:     resource,
-			HaveWhiteOut: response.HaveWhiteOut,
-			Patches:      patches,
-			IgnoredOps:   []cranelib.IgnoredOperation{}, // TODO: Parse IgnoredPatches
-			Target:       cranelib.DeriveTargetFromResource(resource),
-			PluginName:   stage.PluginName,
+		artifact := StageArtifact{
+			TransformArtifact: cranelib.TransformArtifact{
+				Resource:     resource,
+				HaveWhiteOut: response.HaveWhiteOut,
+				Patches:      patches,
+				IgnoredOps:   []cranelib.IgnoredOperation{}, // TODO: Parse IgnoredPatches
+				Target:       cranelib.DeriveTargetFromResource(resource),
+				PluginName:   stage.PluginName,
+			},
 		}
 
 		artifacts = append(artifacts, artifact)
+
+		// Process new resources generated by the plugin
+		for i, newResource := range response.NewResources {
+			if newResource.GetKind() == "" {
+				return nil, fmt.Errorf("stage %s: new resource #%d missing kind", stage.DirName, i)
+			}
+			if newResource.GetName() == "" {
+				return nil, fmt.Errorf("stage %s: new resource #%d (%s) missing name", stage.DirName, i, newResource.GetKind())
+			}
+			if newResource.GetAPIVersion() == "" {
+				return nil, fmt.Errorf("stage %s: new resource #%d (%s/%s) missing apiVersion", stage.DirName, i, newResource.GetKind(), newResource.GetName())
+			}
+
+			skeleton, newPatch, err := cranelib.SplitNewResourceToSkeletonAndPatch(newResource)
+			if err != nil {
+				return nil, fmt.Errorf("stage %s: failed to split new resource %s/%s: %w",
+					stage.DirName, newResource.GetKind(), newResource.GetName(), err)
+			}
+
+			newArtifact := StageArtifact{
+				TransformArtifact: cranelib.TransformArtifact{
+					Resource:     skeleton,
+					HaveWhiteOut: false,
+					Patches:      newPatch,
+					IgnoredOps:   []cranelib.IgnoredOperation{},
+					Target:       cranelib.DeriveTargetFromResource(skeleton),
+					PluginName:   stage.PluginName,
+				},
+				IsNewResource: true,
+			}
+			artifacts = append(artifacts, newArtifact)
+
+			o.Log.Infof("Stage %s: plugin generated new resource: %s/%s/%s",
+				stage.DirName, newResource.GetKind(), newResource.GetNamespace(), newResource.GetName())
+		}
 	}
 
 	return artifacts, nil
