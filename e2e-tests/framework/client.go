@@ -21,6 +21,11 @@ import (
 	nodeaffinity "k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 )
 
+const (
+	defaultStorageClassAnnotation     = "storageclass.kubernetes.io/is-default-class"
+	defaultStorageClassBetaAnnotation = "storageclass.beta.kubernetes.io/is-default-class"
+)
+
 // ListPVCs returns PersistentVolumeClaims from a namespace, optionally filtered
 // by label selector, using the provided kubeconfig context.
 func ListPVCs(namespace string, labelSelector string, contextName string) ([]corev1.PersistentVolumeClaim, error) {
@@ -78,11 +83,16 @@ func DefaultStorageClassName(contextName string) (string, error) {
 		return "", fmt.Errorf("failed listing StorageClasses (context=%q): %w", contextName, err)
 	}
 	for i := range list.Items {
-		if list.Items[i].Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+		if hasDefaultStorageClassAnnotation(list.Items[i]) {
 			return list.Items[i].Name, nil
 		}
 	}
 	return "", fmt.Errorf("no default StorageClass found (context=%q)", contextName)
+}
+
+func hasDefaultStorageClassAnnotation(storageClass storagev1.StorageClass) bool {
+	return storageClass.Annotations[defaultStorageClassAnnotation] == "true" ||
+		storageClass.Annotations[defaultStorageClassBetaAnnotation] == "true"
 }
 
 // ResolvePVCStorageClass returns the PVC's StorageClass, falling back to the
