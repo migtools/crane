@@ -366,6 +366,22 @@ func (k KubectlRunner) ScaleDeploymentIfPresent(ns, appName string, replicas int
 	return k.ScaleDeployment(ns, appName, replicas)
 }
 
+// ScaleStatefulSet scales a StatefulSet by name.
+func (k KubectlRunner) ScaleStatefulSet(ns, name string, replicas int) error {
+	args := []string{"scale", "statefulset", name, "--namespace", ns, "--replicas", strconv.Itoa(replicas)}
+	if k.Context != "" {
+		args = append(args, "--context", k.Context)
+	}
+	logVerboseCommand(k.Bin, args)
+	cmd := exec.Command(k.Bin, args...)
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("kubectl scale statefulset", out)
+	if err != nil {
+		return fmt.Errorf("kubectl scale statefulset failed: %v, output: %s", err, string(out))
+	}
+	return nil
+}
+
 // GetResourceNamesByLabel returns resource names matching a label selector.
 // On OpenShift, Routes are included alongside pods, services, secrets,
 // configmaps, and ingresses.
