@@ -8,7 +8,7 @@ set -x
 # 3) start src on that network, read src IP
 # 4) re-start src with --static-ip=<src-ip>
 # 5) start tgt with --static-ip=<src-ip last-octet + 1>
-# 6) setup ingress on tgt (ssl passthrough + hostPort 443)
+# 6) setup ingress on src/tgt (ssl passthrough + hostPort 443)
 #
 # Config:
 #   NETWORK_NAME       default: minikube-mc
@@ -163,6 +163,36 @@ enable_olm() {
   fi
 }
 
+setup_ingress() {
+  local profile="$1"
+
+  log "Setting up ingress on profile: ${profile}"
+  minikube addons enable ingress -p "$profile"
+  kubectl wait -n ingress-nginx --for=condition=available deployment/ingress-nginx-controller \
+    --timeout="$INGRESS_WAIT" --context="$profile"
+
+  local controller_args=""
+  controller_args="$(kubectl get deployment ingress-nginx-controller -n ingress-nginx --context="$profile" -o jsonpath='{.spec.template.spec.containers[0].args}')"
+  if [[ "$controller_args" != *"--enable-ssl-passthrough"* ]]; then
+    log "Enabling SSL passthrough on profile: ${profile}"
+    kubectl patch deployment ingress-nginx-controller -n ingress-nginx --context="$profile" --type='json' \
+      -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enable-ssl-passthrough"}]'
+  fi
+
+  local https_hostport=""
+  https_hostport="$(kubectl get deployment ingress-nginx-controller -n ingress-nginx --context="$profile" -o jsonpath='{.spec.template.spec.containers[0].ports[?(@.containerPort==443)].hostPort}')"
+  if [[ "$https_hostport" != "443" ]]; then
+    log "Setting hostPort 443 on profile: ${profile}"
+    if ! kubectl patch deployment ingress-nginx-controller -n ingress-nginx --context="$profile" --type='json' \
+      -p='[{"op":"add","path":"/spec/template/spec/containers/0/ports/1/hostPort","value":443}]' >/dev/null 2>&1; then
+      kubectl patch deployment ingress-nginx-controller -n ingress-nginx --context="$profile" --type='json' \
+        -p='[{"op":"add","path":"/spec/template/spec/containers/0/ports/0/hostPort","value":443}]'
+    fi
+  fi
+
+  kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --context="$profile" --timeout="$INGRESS_WAIT"
+}
+
 require_cmd docker
 require_cmd minikube
 require_cmd kubectl
@@ -257,29 +287,10 @@ else
   log "Skipping user creation (CREATE_USERS=${CREATE_USERS})"
 fi
 
-log "Setting up ingress on target profile: ${TGT_PROFILE}"
-minikube addons enable ingress -p "$TGT_PROFILE"
-kubectl wait -n ingress-nginx --for=condition=available deployment/ingress-nginx-controller \
-  --timeout="$INGRESS_WAIT" --context="$TGT_PROFILE"
-
-controller_args="$(kubectl get deployment ingress-nginx-controller -n ingress-nginx --context="$TGT_PROFILE" -o jsonpath='{.spec.template.spec.containers[0].args}')"
-if [[ "$controller_args" != *"--enable-ssl-passthrough"* ]]; then
-  log "Enabling SSL passthrough"
-  kubectl patch deployment ingress-nginx-controller -n ingress-nginx --context="$TGT_PROFILE" --type='json' \
-    -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--enable-ssl-passthrough"}]'
+setup_ingress "$SRC_PROFILE"
+if [[ "$TGT_PROFILE" != "$SRC_PROFILE" ]]; then
+  setup_ingress "$TGT_PROFILE"
 fi
-
-https_hostport="$(kubectl get deployment ingress-nginx-controller -n ingress-nginx --context="$TGT_PROFILE" -o jsonpath='{.spec.template.spec.containers[0].ports[?(@.containerPort==443)].hostPort}')"
-if [[ "$https_hostport" != "443" ]]; then
-  log "Setting hostPort 443"
-  if ! kubectl patch deployment ingress-nginx-controller -n ingress-nginx --context="$TGT_PROFILE" --type='json' \
-    -p='[{"op":"add","path":"/spec/template/spec/containers/0/ports/1/hostPort","value":443}]' >/dev/null 2>&1; then
-    kubectl patch deployment ingress-nginx-controller -n ingress-nginx --context="$TGT_PROFILE" --type='json' \
-      -p='[{"op":"add","path":"/spec/template/spec/containers/0/ports/0/hostPort","value":443}]'
-  fi
-fi
-
-kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --context="$TGT_PROFILE" --timeout="$INGRESS_WAIT"
 
 log "Done."
 log "Profiles: ${SRC_PROFILE}(${actual_src_ip}) ${TGT_PROFILE}(${actual_tgt_ip})"

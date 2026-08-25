@@ -3,9 +3,9 @@ package framework
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
-    "os"
-    "path/filepath"
 
 	"github.com/konveyor/crane/e2e-tests/utils"
 	"github.com/onsi/gomega"
@@ -139,23 +139,33 @@ func ApplyOutputToTargetNonAdmin(kubectlTgt KubectlRunner, outputDir string) err
 	return applyOutputManifests(kubectlTgt, outputDir)
 }
 
-// ApplyOutputToTargetWithNamespaceRemap reads output.yaml, replaces all occurrences
+// ApplyOutputToTargetWithNamespaceRemap remaps namespace references in
+// output.yaml, creates the target namespace, and applies the result there.
 func ApplyOutputToTargetWithNamespaceRemap(kubectl KubectlRunner, srcNamespace, tgtNamespace, outputDir string) error {
-      content, err := os.ReadFile(filepath.Join(outputDir, "output.yaml"))
-      if err != nil {
-          return fmt.Errorf("reading output.yaml: %w", err)
-      }
-      remapped ,err := utils.RemapNamespaceInYAML(content, srcNamespace, tgtNamespace)
-	  if err != nil {
-          return fmt.Errorf("remapping namespace in output: %w", err)
-      }
-      if err := kubectl.CreateNamespace(tgtNamespace); err != nil {
-        return fmt.Errorf("creating target namespace %q: %w", tgtNamespace, err)
-      }
-      if err := kubectl.ApplyYAMLSpec(remapped, tgtNamespace); err != nil {
-        return fmt.Errorf("applying remapped manifests to namespace %q: %w", tgtNamespace, err)
-      }
-return nil
+	remapped, err := remapOutputNamespaces(outputDir, srcNamespace, tgtNamespace)
+	if err != nil {
+		return err
+	}
+	if err := kubectl.CreateNamespace(tgtNamespace); err != nil {
+		return fmt.Errorf("creating target namespace %q: %w", tgtNamespace, err)
+	}
+	if err := kubectl.ApplyYAMLSpec(remapped, tgtNamespace); err != nil {
+		return fmt.Errorf("applying remapped manifests to namespace %q: %w", tgtNamespace, err)
+	}
+	return nil
+}
+
+// ApplyOutputToTargetWithNamespaceRemapNonAdmin validates and applies remapped
+// manifests without creating the target namespace.
+func ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectl KubectlRunner, srcNamespace, tgtNamespace, outputDir string) error {
+	remapped, err := remapOutputNamespaces(outputDir, srcNamespace, tgtNamespace)
+	if err != nil {
+		return err
+	}
+	if err := kubectl.ApplyYAMLSpec(remapped, tgtNamespace); err != nil {
+		return fmt.Errorf("applying remapped manifests to namespace %q: %w", tgtNamespace, err)
+	}
+	return nil
 }
 
 func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
@@ -166,6 +176,20 @@ func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
 		return err
 	}
 	return nil
+}
+
+// remapOutputNamespaces loads output.yaml and rewrites namespace references
+// from srcNamespace to tgtNamespace.
+func remapOutputNamespaces(outputDir, srcNamespace, tgtNamespace string) (string, error) {
+	content, err := os.ReadFile(filepath.Join(outputDir, "output.yaml"))
+	if err != nil {
+		return "", fmt.Errorf("reading output.yaml: %w", err)
+	}
+	remapped, err := utils.RemapNamespaceInYAML(content, srcNamespace, tgtNamespace)
+	if err != nil {
+		return "", fmt.Errorf("remapping namespace in output: %w", err)
+	}
+	return remapped, nil
 }
 
 // checkAndLogStageFiles validates stage output exists and logs the file list.
