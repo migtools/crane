@@ -41,13 +41,14 @@ type Options struct {
 }
 
 type Flags struct {
-	ExportDir         string   `mapstructure:"export-dir"`
-	PluginDir         string   `mapstructure:"plugin-dir"`
-	TransformDir      string   `mapstructure:"transform-dir"`
-	SkipPlugins       []string `mapstructure:"skip-plugins"`
-	OptionalFlags     string   `mapstructure:"optional-flags"`
-	StageOptionals    []string `mapstructure:"stage-optionals"`
-	Overwrite         bool     `mapstructure:"overwrite"`
+	ExportDir      string   `mapstructure:"export-dir"`
+	PluginDir      string   `mapstructure:"plugin-dir"`
+	TransformDir   string   `mapstructure:"transform-dir"`
+	SkipPlugins    []string `mapstructure:"skip-plugins"`
+	OptionalFlags  string   `mapstructure:"optional-flags"`
+	StageOptionals []string `mapstructure:"stage-optionals"`
+	StageKustomize []string `mapstructure:"stage-kustomize"`
+	Overwrite      bool     `mapstructure:"overwrite"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
 	// Instructions file
@@ -170,6 +171,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins (e.g. '{\"registry-replacement\": \"docker.io=quay.io\"}')")
 	cmd.Flags().StringArrayVar(&o.StageOptionals, "stage-optionals", nil, "Per-stage optional flags as StageName=JSON, repeatable (e.g. --stage-optionals 'KubernetesPlugin={\"registry-replacement\":\"docker.io=quay.io\"}')")
+	cmd.Flags().StringArrayVar(&o.StageKustomize, "stage-kustomize", nil, "Per-stage inline kustomize fragment as StageName=YAML|JSON, repeatable. The fragment is merged into the stage's generated kustomization.yaml (resources/patches are appended, other fields override). E.g. --stage-kustomize 'KubernetesPlugin={\"namespace\":\"dest-ns\",\"commonLabels\":{\"app\":\"crane\"}}'")
 
 	// Kustomize arguments
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")
@@ -203,15 +205,19 @@ func (o *Options) run() error {
 	}
 
 	if o.InstructionsFile != "" && len(o.RequestedStages) > 0 {
-    log.Debugf("Cannot use --instructions-file together with positional stage arguments")
+		log.Debugf("Cannot use --instructions-file together with positional stage arguments")
 		return fmt.Errorf("use either --instructions-file or positional stage arguments, not both")
 	}
 	if o.InstructionsFile != "" && len(o.StageOptionals) > 0 {
 		return fmt.Errorf("use either --instructions-file or --stage-optionals, not both")
 	}
+	if o.InstructionsFile != "" && len(o.StageKustomize) > 0 {
+		return fmt.Errorf("use either --instructions-file or --stage-kustomize, not both")
+	}
 
 	var instructionStages []string
 	var instructionStageOptionals map[string]map[string]string
+	var instructionStageKustomize map[string]map[string]interface{}
 	if o.InstructionsFile != "" {
 		instructionsFilePath, err := filepath.Abs(o.InstructionsFile)
 		if err != nil {
@@ -228,6 +234,7 @@ func (o *Options) run() error {
 		if err != nil {
 			return fmt.Errorf("invalid instructions file %q: %w", instructionsFilePath, err)
 		}
+		instructionStageKustomize = cfg.StageKustomize()
 	}
 	// Parse optional flags
 	var optionalFlags map[string]string
@@ -257,6 +264,20 @@ func (o *Options) run() error {
 		stageOptionalFlags = instructionStageOptionals
 	}
 
+	// Parse per-stage kustomize fragments from CLI
+	var stageKustomizeFragments map[string]map[string]interface{}
+	if len(o.StageKustomize) > 0 {
+		stageKustomizeFragments, err = parseStageKustomize(o.StageKustomize)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Use instruction file per-stage kustomize fragments if present, otherwise CLI
+	if instructionStageKustomize != nil {
+		stageKustomizeFragments = instructionStageKustomize
+	}
+
 	// Parse and validate kustomize arguments
 	kustomizeArgs, err := kustomize.ParseAndValidateArgs(o.KustomizeArgs)
 	if err != nil {
@@ -266,17 +287,18 @@ func (o *Options) run() error {
 
 	// Create orchestrator
 	orchestrator := &internalTransform.Orchestrator{
-		Log:                log.WithField("command", "transform").Logger,
-		ExportDir:          exportDir,
-		TransformDir:       transformDir,
-		PluginDir:          pluginDir,
-		SkipPlugins:        o.SkipPlugins,
-		OptionalFlags:      optionalFlags,
-		StageOptionalFlags: stageOptionalFlags,
-		Overwrite:          o.Overwrite,
-		CraneVersion:       "v1.0.0", // TODO: Get from build version
-		NewlyCreatedStages: make(map[string]bool),
-		KustomizeArgs:      kustomizeArgs,
+		Log:                     log.WithField("command", "transform").Logger,
+		ExportDir:               exportDir,
+		TransformDir:            transformDir,
+		PluginDir:               pluginDir,
+		SkipPlugins:             o.SkipPlugins,
+		OptionalFlags:           optionalFlags,
+		StageOptionalFlags:      stageOptionalFlags,
+		Overwrite:               o.Overwrite,
+		CraneVersion:            "v1.0.0", // TODO: Get from build version
+		NewlyCreatedStages:      make(map[string]bool),
+		KustomizeArgs:           kustomizeArgs,
+		StageKustomizeFragments: stageKustomizeFragments,
 	}
 
 	// Determine which stages to run
@@ -414,6 +436,32 @@ func parseStageOptionals(values []string) (map[string]map[string]string, error) 
 			return nil, fmt.Errorf("invalid --stage-optionals for stage %q: %w", stageName, err)
 		}
 		result[stageName] = lower
+	}
+	return result, nil
+}
+
+// parseStageKustomize parses --stage-kustomize values from "StageName=YAML|JSON"
+// format into a map of stage name to inline kustomize fragment.
+func parseStageKustomize(values []string) (map[string]map[string]interface{}, error) {
+	result := make(map[string]map[string]interface{}, len(values))
+	for _, v := range values {
+		stageName, fragStr, found := strings.Cut(v, "=")
+		if !found {
+			return nil, fmt.Errorf("invalid --stage-kustomize value %q: expected format StageName=YAML", v)
+		}
+
+		if stageName == "" {
+			return nil, fmt.Errorf("invalid --stage-kustomize value %q: stage name is empty", v)
+		}
+		if _, exists := result[stageName]; exists {
+			return nil, fmt.Errorf("duplicate --stage-kustomize for stage %q", stageName)
+		}
+
+		fragment, err := kustomize.ParseFragment(fragStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --stage-kustomize for stage %q: %w", stageName, err)
+		}
+		result[stageName] = fragment
 	}
 	return result, nil
 }
