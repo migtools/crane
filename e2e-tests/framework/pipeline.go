@@ -168,6 +168,19 @@ func ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectl KubectlRunner, srcNam
 	return nil
 }
 
+// VerifyPVCReferenceInOutput checks that the rendered output.yaml contains
+// the expected PVC name. Useful for verifying pvc-rename-map transforms
+// updated the workload's claimName after crane apply.
+func VerifyPVCReferenceInOutput(outputDir, expectedPVCName string) {
+	outputFile := filepath.Join(outputDir, "output.yaml")
+	content, err := os.ReadFile(outputFile)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "failed to read %s", outputFile)
+	log.Printf("Checking output.yaml for PVC reference %q", expectedPVCName)
+
+	gomega.Expect(string(content)).To(gomega.ContainSubstring(expectedPVCName),
+		"output.yaml should reference the renamed PVC %q", expectedPVCName)
+}
+
 func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
 	if err := kubectlTgt.ValidateApplyDir(outputDir); err != nil {
 		return err
