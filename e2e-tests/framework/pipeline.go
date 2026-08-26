@@ -168,6 +168,35 @@ func ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectl KubectlRunner, srcNam
 	return nil
 }
 
+// VerifyPVCRenameInOutput checks that the rendered output.yaml contains
+// the new PVC name as a claimName value. This verifies the pvc-rename-map
+// transform rewrote the workload's PVC reference.
+func VerifyPVCRenameInOutput(outputDir, newPVCName string) {
+	outputFile := filepath.Join(outputDir, "output.yaml")
+	content, err := os.ReadFile(outputFile)
+	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "failed to read %s", outputFile)
+
+	log.Printf("Checking output.yaml for claimName: %s", newPVCName)
+
+	gomega.Expect(string(content)).To(gomega.ContainSubstring("claimName: "+newPVCName),
+		"output.yaml should contain claimName: %s", newPVCName)
+}
+
+// AssertNoTransferPVCLeftovers waits until transfer-pvc helper objects labeled
+// for pvcName are gone in the given namespaces. DeleteAllOf in transfer-pvc GC
+// is asynchronous, so the rsync-server pod can still be Terminating for a while
+// after the command exits.
+func AssertNoTransferPVCLeftovers(k KubectlRunner, namespaces []string, pvcName string) {
+	selector := "app.konveyor.io/created-for-pvc=" + pvcName
+	for _, ns := range namespaces {
+		gomega.Eventually(func() (string, error) {
+			out, err := k.GetResourceNamesByLabel(ns, selector)
+			return strings.TrimSpace(out), err
+		}, "2m", "5s").Should(gomega.BeEmpty(),
+			"expected no leftover transfer-pvc resources in namespace %s", ns)
+	}
+}
+
 func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
 	if err := kubectlTgt.ValidateApplyDir(outputDir); err != nil {
 		return err
