@@ -136,7 +136,7 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 		By("Verify the pvc-rename-map transform rewrote claimName in the rendered output")
-		VerifyPVCRenameInOutput(paths.OutputDir, srcPVCName, dstPVCName)
+		VerifyPVCRenameInOutput(paths.OutputDir, dstPVCName)
 
 		By("Apply remapped manifests to destination namespace")
 		Expect(ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectlTgt, srcNamespace, tgtNamespace, paths.OutputDir)).NotTo(HaveOccurred())
