@@ -12,15 +12,16 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
-	It("[MTA-900] Convert a single PVC (Deployment) to a different StorageClass, same cluster", Label("tier0", "pvc-transfer"), func() {
+var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
+	It("[MTA-901] Rename PVC and convert StorageClass with pvc-rename-map transform, same cluster", Label("tier0", "pvc-transfer"), func() {
 		const (
 			appName            = "mongodb"
-			pvcName            = "mongodb-data"
-			fallbackDestSCName = "crane-dest-mta-900"
+			srcPVCName         = "mongodb-data"
+			dstPVCName         = "mongodb-data-new"
+			fallbackDestSCName = "crane-dest-mta-901"
 		)
-		srcNamespace := "mta-900-src"
-		tgtNamespace := "mta-900-tgt"
+		srcNamespace := "mta-901-src"
+		tgtNamespace := "mta-901-tgt"
 
 		scenario := NewMigrationScenario(
 			appName,
@@ -53,7 +54,11 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
-		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		transformOpts := TransformOptions{
+			ExportDir:    paths.ExportDir,
+			TransformDir: paths.TransformDir,
+			OptionalFlags: fmt.Sprintf(`{"pvc-rename-map":"%s:%s"}`, srcPVCName, dstPVCName),
+		}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 
 		var destSCName string
@@ -82,12 +87,12 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
 
 		By("Resolve source StorageClass and choose a distinct destination class")
-		srcPVC, err := GetPVC(srcApp.Context, srcNamespace, pvcName)
+		srcPVC, err := GetPVC(srcApp.Context, srcNamespace, srcPVCName)
 		Expect(err).NotTo(HaveOccurred())
 		srcSC, err := ResolvePVCStorageClass(scenario.SrcApp.Context, *srcPVC)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(srcSC).NotTo(BeEmpty(), "source PVC %s/%s must have a StorageClass", srcNamespace, pvcName)
-		log.Printf("Source PVC %s/%s StorageClass=%s", srcNamespace, pvcName, srcSC)
+		Expect(srcSC).NotTo(BeEmpty(), "source PVC %s/%s must have a StorageClass", srcNamespace, srcPVCName)
+		log.Printf("Source PVC %s/%s StorageClass=%s", srcNamespace, srcPVCName, srcSC)
 
 		destSCName, cleanupDestSC, err = PrepareDestinationStorageClass(scenario.SrcApp.Context, srcSC, fallbackDestSCName)
 		Expect(err).NotTo(HaveOccurred())
@@ -100,32 +105,38 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 		WaitForSourceQuiesce(kubectlSrc, srcNamespace, "name="+appName, appName)
 
-		By("Run crane export/transform/apply pipeline")
-		runner.WorkDir = paths.TempDir
-		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
-
-		By("Transfer PVC onto the destination StorageClass")
+		By("Transfer PVC with rename onto the destination StorageClass")
 		nodeIP, err := GetClusterNodeIP(scenario.SrcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		opts := TransferPVCOptions{
 			SourceContext:    srcApp.Context,
 			TargetContext:    tgtApp.Context,
-			PVCName:          pvcName,
+			PVCName:          fmt.Sprintf("%s:%s", srcPVCName, dstPVCName),
 			PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcNamespace, tgtNamespace),
 			DestStorageClass: destSCName,
 			Subdomain:        fmt.Sprintf("%s.nip.io", nodeIP),
 		}
-		log.Printf("Transferring PVC %s %s -> %s with dest StorageClass %s", pvcName, srcNamespace, tgtNamespace, destSCName)
+		log.Printf("Transferring PVC %s -> %s (%s -> %s) with dest StorageClass %s",
+			srcPVCName, dstPVCName, srcNamespace, tgtNamespace, destSCName)
 		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 
 		By("Wait for transfer-pvc helpers to finish deleting")
-		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
+		AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcNamespace}, srcPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, srcPVCName)
 
-		By("Assert destination PVC uses the converted StorageClass")
-		destPVC, err := GetPVC(tgtApp.Context, tgtNamespace, pvcName)
+		By("Assert destination PVC exists with the new name and converted StorageClass")
+		destPVC, err := GetPVC(tgtApp.Context, tgtNamespace, dstPVCName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(PVCStorageClassName(*destPVC)).To(Equal(destSCName),
 			"destination PVC StorageClass should be %s", destSCName)
+		log.Printf("Destination PVC %s/%s created with StorageClass=%s", tgtNamespace, dstPVCName, destSCName)
+
+		By("Run crane export/transform/apply pipeline with pvc-rename-map")
+		runner.WorkDir = paths.TempDir
+		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
+
+		By("Verify the pvc-rename-map transform rewrote claimName in the rendered output")
+		VerifyPVCRenameInOutput(paths.OutputDir, dstPVCName)
 
 		By("Apply remapped manifests to destination namespace")
 		Expect(ApplyOutputToTargetWithNamespaceRemapNonAdmin(kubectlTgt, srcNamespace, tgtNamespace, paths.OutputDir)).NotTo(HaveOccurred())
@@ -135,12 +146,13 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 
 		By("Assert destination PVC is Bound after the workload starts")
-		destPVC, err = GetPVC(tgtApp.Context, tgtNamespace, pvcName)
+		destPVC, err = GetPVC(tgtApp.Context, tgtNamespace, dstPVCName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(destPVC.Status.Phase).To(Equal(corev1.ClaimBound))
 
 		By("Confirm no leftover transfer-pvc resources")
-		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
+		AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcNamespace}, srcPVCName)
+		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, srcPVCName)
 	})
 })
 
