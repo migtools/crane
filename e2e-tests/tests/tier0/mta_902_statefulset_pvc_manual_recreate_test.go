@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -107,7 +106,7 @@ var _ = Describe("StatefulSet PVC manual recreate conversion", func() {
 
 		By("Transfer the source PVC to a temporary same-namespace PVC on the new StorageClass")
 		Expect(runner.TransferPVC(stageTransfer)).NotTo(HaveOccurred())
-		assertNoTransferPVCLeftoversForNames(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
+		AssertNoTransferPVCLeftovers(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
 
 		tempPVC, err := GetPVC(srcApp.Context, namespace, tempPVCName)
 		Expect(err).NotTo(HaveOccurred())
@@ -120,7 +119,7 @@ var _ = Describe("StatefulSet PVC manual recreate conversion", func() {
 
 		By("Re-run transfer-pvc to capture final source writes into the temporary PVC")
 		Expect(runner.TransferPVC(stageTransfer)).NotTo(HaveOccurred())
-		assertNoTransferPVCLeftoversForNames(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
+		AssertNoTransferPVCLeftovers(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
 
 		By("Delete the StatefulSet while orphaning the temporary PVCs")
 		_, err = kubectl.Run("delete", "statefulset", appName, "-n", namespace, "--cascade=orphan", "--wait=true", "--timeout=120s")
@@ -143,7 +142,7 @@ var _ = Describe("StatefulSet PVC manual recreate conversion", func() {
 
 		By("Copy data from the temporary PVC into the recreated original PVC name")
 		Expect(runner.TransferPVC(finalTransfer)).NotTo(HaveOccurred())
-		assertNoTransferPVCLeftoversForNames(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
+		AssertNoTransferPVCLeftovers(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
 
 		By("Delete the temporary PVC after the final copy")
 		_, err = kubectl.Run("delete", "pvc", tempPVCName, "-n", namespace, "--ignore-not-found=true", "--wait=true", "--timeout=120s")
@@ -161,22 +160,9 @@ var _ = Describe("StatefulSet PVC manual recreate conversion", func() {
 		Expect(finalPVC.Status.Phase).To(Equal(corev1.ClaimBound))
 
 		By("Confirm no leftover transfer-pvc resources remain")
-		assertNoTransferPVCLeftoversForNames(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
+		AssertNoTransferPVCLeftovers(kubectl, []string{namespace}, sourcePVCName, tempPVCName)
 	})
 })
-
-func assertNoTransferPVCLeftoversForNames(k KubectlRunner, namespaces []string, pvcNames ...string) {
-	for _, ns := range namespaces {
-		for _, pvcName := range pvcNames {
-			selector := "app.konveyor.io/created-for-pvc=" + pvcName
-			Eventually(func() (string, error) {
-				out, err := k.GetResourceNamesByLabel(ns, selector)
-				return strings.TrimSpace(out), err
-			}, "2m", "5s").Should(BeEmpty(),
-				"expected no leftover transfer-pvc resources in namespace %s for pvc label %s", ns, pvcName)
-		}
-	}
-}
 
 func applyPVCFromTemplate(k KubectlRunner, namespace, appName, pvcName, storageClass string, template corev1.PersistentVolumeClaim) error {
 	if len(template.Spec.AccessModes) == 0 {
