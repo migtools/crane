@@ -227,3 +227,73 @@ func DeleteVerifierPod(k KubectlRunner, namespace, name string) error {
 	}
 	return nil
 }
+
+// ReadFileFromPod returns trimmed file contents from a pod via kubectl exec.
+func ReadFileFromPod(k KubectlRunner, namespace, podName, filePath string) (string, error) {
+	out, err := k.Run("exec", "-n", namespace, podName, "--", "cat", filePath)
+	if err != nil {
+		return "", fmt.Errorf("read file %q from pod %s/%s: %w", filePath, namespace, podName, err)
+	}
+	return strings.TrimSpace(StripKubectlWarnings(out)), nil
+}
+
+// SeedPodManifest creates a temporary pod that seeds known test data into a PVC.
+func SeedPodManifest(namespace, podName, pvcName string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  restartPolicy: Never
+  containers:
+    - name: seed
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          set -eux
+          mkdir -p /data/testdir
+          echo 'hello-from-source' > /data/hello.txt
+          echo 'unattached-pvc-check' > /data/testdir/nested.txt
+          date -u +"%%Y-%%m-%%dT%%H:%%M:%%SZ" > /data/timestamp.txt
+          sleep 3600
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: %s
+`, podName, namespace, pvcName)
+}
+
+// VerifyPodManifest creates a temporary pod that mounts a PVC for verification.
+func VerifyPodManifest(namespace, podName, pvcName string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  restartPolicy: Never
+  containers:
+    - name: verify
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          set -eux
+          ls -R /data
+          sleep 3600
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: %s
+`, podName, namespace, pvcName)
+}
