@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-app
+  labels:
+    app: multi-doc-test
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: test-app
+data:
+  app.properties: |
+    environment=production
+    version=1.0.0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: test-app
+spec:
+  selector:
+    app: multi-doc-test
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8080
+  type: ClusterIP
