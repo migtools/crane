@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	expectedFSGroup           = "1000"
-	expectedRunAsUser         = "1000"
-	expectedRunAsGroup        = "1000"
-	expectedSupplementalGroup = "1000"
+	expectedFSGroup            = "1000"
+	expectedRunAsUser          = "1000"
+	expectedRunAsGroup         = "1000"
+	expectedSupplementalGroups = "[1000]"
 )
 
 var _ = Describe("PVC transfer with fsGroup / supplementalGroups", func() {
@@ -214,34 +214,29 @@ func getWorkloadSecurityContext(k KubectlRunner, kind, name, namespace string) (
 	readField := func(field string) (string, error) {
 		out, err := k.Run("get", kind, name, "-n", namespace, "-o", fmt.Sprintf(pathFmt, field))
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("read securityContext.%s from %s/%s in namespace %q: %w", field, kind, name, namespace, err)
 		}
 		return strings.TrimSpace(StripKubectlWarnings(out)), nil
 	}
 
-	fsGroup, err := readField("fsGroup")
-	if err != nil {
-		return workloadSecurityContext{}, err
-	}
-	runAsUser, err := readField("runAsUser")
-	if err != nil {
-		return workloadSecurityContext{}, err
-	}
-	runAsGroup, err := readField("runAsGroup")
-	if err != nil {
-		return workloadSecurityContext{}, err
-	}
-	suppGroups, err := readField("supplementalGroups")
-	if err != nil {
-		return workloadSecurityContext{}, err
+	sc := workloadSecurityContext{}
+	for _, field := range []struct {
+		name   string
+		target *string
+	}{
+		{name: "fsGroup", target: &sc.FSGroup},
+		{name: "runAsUser", target: &sc.RunAsUser},
+		{name: "runAsGroup", target: &sc.RunAsGroup},
+		{name: "supplementalGroups", target: &sc.SupplementalGroups},
+	} {
+		value, err := readField(field.name)
+		if err != nil {
+			return workloadSecurityContext{}, err
+		}
+		*field.target = value
 	}
 
-	return workloadSecurityContext{
-		FSGroup:            fsGroup,
-		RunAsUser:          runAsUser,
-		RunAsGroup:         runAsGroup,
-		SupplementalGroups: suppGroups,
-	}, nil
+	return sc, nil
 }
 
 func assertFSGroupSecurityContext(deploySC, podSC workloadSecurityContext, isOpenShift bool) {
@@ -257,10 +252,10 @@ func assertFSGroupSecurityContext(deploySC, podSC workloadSecurityContext, isOpe
 	Expect(deploySC.FSGroup).To(Equal(expectedFSGroup), "Deployment fsGroup")
 	Expect(deploySC.RunAsUser).To(Equal(expectedRunAsUser), "Deployment runAsUser")
 	Expect(deploySC.RunAsGroup).To(Equal(expectedRunAsGroup), "Deployment runAsGroup")
-	Expect(deploySC.SupplementalGroups).To(ContainSubstring(expectedSupplementalGroup), "Deployment supplementalGroups")
+	Expect(deploySC.SupplementalGroups).To(Equal(expectedSupplementalGroups), "Deployment supplementalGroups")
 
 	Expect(podSC.FSGroup).To(Equal(expectedFSGroup), "Pod fsGroup")
 	Expect(podSC.RunAsUser).To(Equal(expectedRunAsUser), "Pod runAsUser")
 	Expect(podSC.RunAsGroup).To(Equal(expectedRunAsGroup), "Pod runAsGroup")
-	Expect(podSC.SupplementalGroups).To(ContainSubstring(expectedSupplementalGroup), "Pod supplementalGroups")
+	Expect(podSC.SupplementalGroups).To(Equal(expectedSupplementalGroups), "Pod supplementalGroups")
 }
