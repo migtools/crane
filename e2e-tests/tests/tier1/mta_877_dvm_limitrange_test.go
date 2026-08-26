@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
+// MTA-877 verifies that DVM rsync pods respect LimitRange constraints.
 const (
 	limitRangeName = "dvm-container-limits"
 	maxCPULimit    = "500m"
@@ -94,11 +95,11 @@ var _ = Describe("DVM pod LimitRange compliance", func() {
 		_, err = kubectlSrcNonAdmin.Run("get", "pvc", pvcName, "-n", namespace)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(seedPodManifest(namespace, seedPodName, pvcName), namespace)).NotTo(HaveOccurred())
+		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(SeedPodManifest(namespace, seedPodName, pvcName), namespace)).NotTo(HaveOccurred())
 		_, err = kubectlSrcNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+seedPodName, "-n", namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 
-		sourceHello, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/hello.txt")
+		sourceHello, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/hello.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceHello).To(Equal("hello-from-source"))
 
@@ -149,11 +150,11 @@ var _ = Describe("DVM pod LimitRange compliance", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(VerifyPVCsExistByName(pvcs, tgtPVCs)).NotTo(HaveOccurred())
 
-		Expect(kubectlTgtNonAdmin.ApplyYAMLSpec(verifyPodManifest(namespace, verifyPodName, pvcName), namespace)).NotTo(HaveOccurred())
+		Expect(kubectlTgtNonAdmin.ApplyYAMLSpec(VerifyPodManifest(namespace, verifyPodName, pvcName), namespace)).NotTo(HaveOccurred())
 		_, err = kubectlTgtNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+verifyPodName, "-n", namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 
-		destHello, err := readFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/hello.txt")
+		destHello, err := ReadFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/hello.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(destHello).To(Equal(sourceHello), "destination file must match source after DVM under LimitRange")
 	})
