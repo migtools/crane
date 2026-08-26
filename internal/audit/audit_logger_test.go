@@ -156,7 +156,7 @@ func TestFileHook_Close_PreventsFurtherWrites(t *testing.T) {
 	}
 }
 
-func TestFileHook_Levels_ReturnsAll(t *testing.T) {
+func TestFileHook_Levels_IncludesDebugExcludesTrace(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	hook, err := NewFileHook(path, nil)
 	if err != nil {
@@ -169,8 +169,20 @@ func TestFileHook_Levels_ReturnsAll(t *testing.T) {
 	}()
 
 	levels := hook.Levels()
-	if len(levels) != len(logrus.AllLevels) {
-		t.Errorf("Levels() returned %d levels, want %d", len(levels), len(logrus.AllLevels))
+	hasDebug, hasTrace := false, false
+	for _, l := range levels {
+		if l == logrus.DebugLevel {
+			hasDebug = true
+		}
+		if l == logrus.TraceLevel {
+			hasTrace = true
+		}
+	}
+	if !hasDebug {
+		t.Error("Levels() should include DebugLevel")
+	}
+	if hasTrace {
+		t.Error("Levels() should not include TraceLevel (logger is set to DebugLevel)")
 	}
 }
 
@@ -213,7 +225,11 @@ func TestNewFileHook_CustomPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileHook with custom path: %v", err)
 	}
-	defer hook.Close()
+	defer func() {
+		if err := hook.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
 
 	if err := hook.Fire(makeEntry("hello", logrus.InfoLevel)); err != nil {
 		t.Fatalf("Fire: %v", err)

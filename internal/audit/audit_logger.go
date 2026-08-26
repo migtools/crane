@@ -32,9 +32,17 @@ func NewFileHook(path string, cmd *string) (*FileHook, error) {
 	}, nil
 }
 
-// Levels returns all log levels so the hook captures everything, including Debug.
+// Levels returns all log levels down to Debug. Trace is excluded because the
+// configured logger is set to DebugLevel and will not emit Trace entries.
 func (h *FileHook) Levels() []logrus.Level {
-	return logrus.AllLevels
+	return []logrus.Level{
+		logrus.PanicLevel,
+		logrus.FatalLevel,
+		logrus.ErrorLevel,
+		logrus.WarnLevel,
+		logrus.InfoLevel,
+		logrus.DebugLevel,
+	}
 }
 
 // Fire is called by logrus for every log entry. It formats the entry as JSON and writes it to the file.

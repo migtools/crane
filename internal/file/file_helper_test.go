@@ -33,6 +33,24 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+func TestReadFilesWithLogger_NilLoggerDoesNotPanic(t *testing.T) {
+	dir := createTestDir(t)
+	writeFile(t, filepath.Join(dir, "cm.yaml"), `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nil-logger-cm
+  namespace: default
+`)
+	// passing nil should not panic
+	files, err := file.ReadFilesWithLogger(context.TODO(), dir, nil)
+	if err != nil {
+		t.Fatalf("unexpected error with nil logger: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+}
+
 func TestReadFilesWithLogger_UsesProvidedLogger(t *testing.T) {
 	dir := createTestDir(t)
 	validYAML := `apiVersion: v1

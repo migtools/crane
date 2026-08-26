@@ -27,6 +27,9 @@ func ReadFiles(ctx context.Context, dir string) ([]File, error) {
 // ReadFilesWithLogger reads Kubernetes resource files from dir using the provided logger.
 // Use this instead of ReadFiles when the caller has an audit-hooked logger.
 func ReadFilesWithLogger(ctx context.Context, dir string, log *logrus.Logger) ([]File, error) {
+	if log == nil {
+		log = logrus.StandardLogger()
+	}
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory %q: %w", dir, err)

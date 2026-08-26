@@ -1,7 +1,9 @@
 package flags
 
 import (
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/konveyor/crane/internal/audit"
 	"github.com/sirupsen/logrus"
@@ -74,7 +76,9 @@ func (g *GlobalFlags) initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err == nil {
-		viper.UnmarshalKey("audit-log", &g.AuditLogPath)
+		if err := viper.UnmarshalKey("audit-log", &g.AuditLogPath); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: invalid audit-log value in %s: %v\n", viper.ConfigFileUsed(), err)
+		}
 		g.GetLogger().Infof("Using config file: %v", viper.ConfigFileUsed())
 	}
 }
