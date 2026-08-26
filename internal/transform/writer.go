@@ -44,11 +44,13 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 	if force {
 		// Force mode - remove existing stage directory completely and recreate
 		if err := os.RemoveAll(stageDir); err != nil && !os.IsNotExist(err) {
+			w.log.Debugf("Failed to remove existing stage directory %s: %v", stageDir, err)
 			return fmt.Errorf("failed to remove existing stage directory: %w", err)
 		}
 	} else {
 		// Safe mode - fail if stage directory is not empty
 		if err := w.checkStageDirectory(stageDir); err != nil {
+			w.log.Errorf("Stage directory check failed for %s: %v", stageDir, err)
 			return err
 		}
 	}
@@ -57,9 +59,11 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 	resourcesDir := w.opts.GetInputDir(w.stageName)
 	patchesDir := w.opts.GetPatchesDir(w.stageName)
 	if err := os.MkdirAll(resourcesDir, 0700); err != nil {
+		w.log.Debugf("Failed to create resources directory %s: %v", resourcesDir, err)
 		return fmt.Errorf("failed to create resources directory: %w", err)
 	}
 	if err := os.MkdirAll(patchesDir, 0700); err != nil {
+		w.log.Debugf("Failed to create patches directory %s: %v", patchesDir, err)
 		return fmt.Errorf("failed to create patches directory: %w", err)
 	}
 
@@ -111,6 +115,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 
 		// Track whiteout status - whiteout resources don't get active references or patches
 		if artifact.HaveWhiteOut {
+			w.log.Debugf("Skipping whiteout resource %s", resourceID)
 			continue
 		}
 
@@ -122,12 +127,16 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 			// Filter out remove operations for non-existent paths to prevent kustomize errors
 			validPatches, err := filterValidRemoveOps(artifact.Resource, artifact.Patches)
 			if err != nil {
+				w.log.Debugf("Failed to filter patches for %s/%s/%s: %v",
+					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
 				return fmt.Errorf("failed to filter patches for %s/%s/%s: %w",
 					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
 			}
 
 			// Skip writing patch file if all operations were filtered out
 			if len(validPatches) == 0 {
+				w.log.Debugf("All patch operations filtered out for %s/%s/%s, skipping patch file",
+					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name)
 				continue
 			}
 
@@ -142,11 +151,14 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 
 			patchYAML, err := kustomize.SerializePatchToYAML(validPatches)
 			if err != nil {
+				w.log.Debugf("Failed to serialize patch for %s/%s/%s: %v",
+					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
 				return fmt.Errorf("failed to serialize patch for %s/%s/%s: %w",
 					artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
 			}
 
 			if err := os.WriteFile(patchPath, patchYAML, 0644); err != nil {
+				w.log.Debugf("Failed to write patch file %s: %v", patchPath, err)
 				return fmt.Errorf("failed to write patch file %s for %s/%s/%s: %w",
 					patchPath, artifact.Target.Kind, artifact.Target.Namespace, artifact.Target.Name, err)
 			}
@@ -191,6 +203,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 		if isNewResourceMap[resourceID] {
 			if !newResourcesDirCreated {
 				if err := os.MkdirAll(newResourcesDir, 0700); err != nil {
+					w.log.Debugf("Failed to create new resources directory %s: %v", newResourcesDir, err)
 					return fmt.Errorf("failed to create new resources directory: %w", err)
 				}
 				newResourcesDirCreated = true
@@ -206,9 +219,11 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 
 		yamlBytes, err := yaml.Marshal(resource.Object)
 		if err != nil {
+			w.log.Debugf("Failed to marshal resource %s to YAML: %v", filename, err)
 			return fmt.Errorf("failed to marshal resource %s to YAML: %w", filename, err)
 		}
 		if err := os.WriteFile(fullPath, yamlBytes, 0644); err != nil {
+			w.log.Debugf("Failed to write resource file %s: %v", fullPath, err)
 			return fmt.Errorf("failed to write resource file %s: %w", filename, err)
 		}
 
@@ -225,11 +240,13 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 	// Generate and write kustomization.yaml with whiteout comments
 	kustomizationYAML, err := w.generateKustomizationWithComments(resourcePaths, patches, whiteoutComments)
 	if err != nil {
+		w.log.Debugf("Failed to generate kustomization.yaml for stage %s: %v", w.stageName, err)
 		return fmt.Errorf("failed to generate kustomization.yaml: %w", err)
 	}
 
 	kustomizationPath := w.opts.GetKustomizationPath(w.stageName)
 	if err := os.WriteFile(kustomizationPath, kustomizationYAML, 0644); err != nil {
+		w.log.Debugf("Failed to write kustomization.yaml for stage %s: %v", w.stageName, err)
 		return fmt.Errorf("failed to write kustomization.yaml: %w", err)
 	}
 
@@ -376,6 +393,7 @@ func (w *KustomizeWriter) generateKustomizationWithComments(resources []string, 
 	// Generate base kustomization YAML
 	baseYAML, err := kustomize.GenerateKustomization(resources, patches)
 	if err != nil {
+		w.log.Errorf("Failed to generate kustomization for stage %s: %v", w.stageName, err)
 		return nil, err
 	}
 
@@ -421,20 +439,24 @@ func (w *KustomizeWriter) checkStageDirectory(stageDir string) error {
 		return nil
 	}
 	if err != nil {
+		w.log.Debugf("Failed to check stage directory %s: %v", stageDir, err)
 		return fmt.Errorf("failed to check stage directory: %w", err)
 	}
 
 	if !info.IsDir() {
+		w.log.Debugf("Stage path exists but is not a directory: %s", stageDir)
 		return fmt.Errorf("stage path exists but is not a directory: %s", stageDir)
 	}
 
 	// Check if directory is empty
 	entries, err := os.ReadDir(stageDir)
 	if err != nil {
+		w.log.Debugf("Failed to read stage directory %s: %v", stageDir, err)
 		return fmt.Errorf("failed to read stage directory: %w", err)
 	}
 
 	if len(entries) > 0 {
+		w.log.Debugf("Stage directory %s is not empty", stageDir)
 		return fmt.Errorf("stage directory %s is not empty (use --overwrite to overwrite)", stageDir)
 	}
 

@@ -38,6 +38,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 		log.Debugf("Scanning directory: %s", dir)
 		if err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
+				log.Errorf("Error accessing path %s: %v", path, err)
 				return err
 			}
 			if d.IsDir() {
@@ -56,6 +57,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 			log.Debugf("Reading manifest file: %s", path)
 			data, err := os.ReadFile(path)
 			if err != nil {
+				log.Debugf("Failed to read manifest file %s: %v", path, err)
 				return fmt.Errorf("read %s: %w", path, err)
 			}
 
@@ -75,6 +77,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 				doc := buf[:n]
 				docIdx++
 				if len(bytes.TrimSpace(doc)) == 0 {
+					log.Debugf("Skipping empty document in %s", path)
 					continue
 				}
 				decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), n+256)
@@ -114,6 +117,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 			}
 			return nil
 		}); err != nil {
+			log.Debugf("Failed to walk directory %s: %v", dir, err)
 			return nil, fmt.Errorf("walking %s: %w", dir, err)
 		}
 	}
