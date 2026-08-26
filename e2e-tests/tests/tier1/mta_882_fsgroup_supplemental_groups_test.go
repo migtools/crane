@@ -11,6 +11,13 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+const (
+	expectedFSGroup           = "1000"
+	expectedRunAsUser         = "1000"
+	expectedRunAsGroup        = "1000"
+	expectedSupplementalGroup = "1000"
+)
+
 var _ = Describe("PVC transfer with fsGroup / supplementalGroups", func() {
 	It("[MTA-882] should migrate group-restricted PVC data and preserve app SecurityContext", Label("tier1", "pvc-transfer"), func() {
 		appName := "pvc-fsgroup"
@@ -100,15 +107,15 @@ var _ = Describe("PVC transfer with fsGroup / supplementalGroups", func() {
 		log.Printf("MTA-882 source securityContext: deploy=%+v pod=%+v\n", srcDeploySC, srcPodSC)
 
 		By("Capture source group-restricted file content, mode, and gid")
-		sourceSecret, err := readFileFromPod(kubectlSrcNonAdmin, namespace, srcPod, dataMountPath+"/"+secretFile)
+		sourceSecret, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, srcPod, dataMountPath+"/"+secretFile)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceSecret).To(Equal(secretContent))
 
-		sourceMode, err := readFileFromPod(kubectlSrcNonAdmin, namespace, srcPod, dataMountPath+"/"+modeFile)
+		sourceMode, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, srcPod, dataMountPath+"/"+modeFile)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceMode).To(Equal("640"))
 
-		sourceGID, err := readFileFromPod(kubectlSrcNonAdmin, namespace, srcPod, dataMountPath+"/"+gidFile)
+		sourceGID, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, srcPod, dataMountPath+"/"+gidFile)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceGID).To(MatchRegexp(`^[0-9]+$`))
 		log.Printf("MTA-882 source snapshot: secret=%q mode=%s gid=%s\n", sourceSecret, sourceMode, sourceGID)
@@ -169,11 +176,11 @@ var _ = Describe("PVC transfer with fsGroup / supplementalGroups", func() {
 		log.Printf("MTA-882 target securityContext: deploy=%+v pod=%+v\n", tgtDeploySC, tgtPodSC)
 
 		By("Confirm target app can read migrated group-restricted data and write to the PVC")
-		targetSecret, err := readFileFromPod(kubectlTgtNonAdmin, namespace, tgtPod, dataMountPath+"/"+secretFile)
+		targetSecret, err := ReadFileFromPod(kubectlTgtNonAdmin, namespace, tgtPod, dataMountPath+"/"+secretFile)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(targetSecret).To(Equal(sourceSecret))
 
-		targetMode, err := readFileFromPod(kubectlTgtNonAdmin, namespace, tgtPod, dataMountPath+"/"+modeFile)
+		targetMode, err := ReadFileFromPod(kubectlTgtNonAdmin, namespace, tgtPod, dataMountPath+"/"+modeFile)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(targetMode).To(Equal("640"))
 
@@ -182,7 +189,7 @@ var _ = Describe("PVC transfer with fsGroup / supplementalGroups", func() {
 			"sh", "-c", "echo mta-882-write-ok > "+dataMountPath+"/mta-882-write.txt && test -s "+dataMountPath+"/mta-882-write.txt",
 		)
 		Expect(err).NotTo(HaveOccurred())
-		writeProbe, err := readFileFromPod(kubectlTgtNonAdmin, namespace, tgtPod, dataMountPath+"/mta-882-write.txt")
+		writeProbe, err := ReadFileFromPod(kubectlTgtNonAdmin, namespace, tgtPod, dataMountPath+"/mta-882-write.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(writeProbe).To(Equal("mta-882-write-ok"))
 	})
@@ -247,13 +254,13 @@ func assertFSGroupSecurityContext(deploySC, podSC workloadSecurityContext, isOpe
 	}
 
 	// Vanilla clusters: pvc-fsgroup sets explicit IDs (defaults to 1000).
-	Expect(deploySC.FSGroup).To(Equal("1000"), "Deployment fsGroup")
-	Expect(deploySC.RunAsUser).To(Equal("1000"), "Deployment runAsUser")
-	Expect(deploySC.RunAsGroup).To(Equal("1000"), "Deployment runAsGroup")
-	Expect(deploySC.SupplementalGroups).To(ContainSubstring("1000"), "Deployment supplementalGroups")
+	Expect(deploySC.FSGroup).To(Equal(expectedFSGroup), "Deployment fsGroup")
+	Expect(deploySC.RunAsUser).To(Equal(expectedRunAsUser), "Deployment runAsUser")
+	Expect(deploySC.RunAsGroup).To(Equal(expectedRunAsGroup), "Deployment runAsGroup")
+	Expect(deploySC.SupplementalGroups).To(ContainSubstring(expectedSupplementalGroup), "Deployment supplementalGroups")
 
-	Expect(podSC.FSGroup).To(Equal("1000"), "Pod fsGroup")
-	Expect(podSC.RunAsUser).To(Equal("1000"), "Pod runAsUser")
-	Expect(podSC.RunAsGroup).To(Equal("1000"), "Pod runAsGroup")
-	Expect(podSC.SupplementalGroups).To(ContainSubstring("1000"), "Pod supplementalGroups")
+	Expect(podSC.FSGroup).To(Equal(expectedFSGroup), "Pod fsGroup")
+	Expect(podSC.RunAsUser).To(Equal(expectedRunAsUser), "Pod runAsUser")
+	Expect(podSC.RunAsGroup).To(Equal(expectedRunAsGroup), "Pod runAsGroup")
+	Expect(podSC.SupplementalGroups).To(ContainSubstring(expectedSupplementalGroup), "Pod supplementalGroups")
 }
