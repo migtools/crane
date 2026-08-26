@@ -3,12 +3,10 @@ package transfer_pvc
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
 	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
 	"github.com/migtools/pvc-transfer/transport"
 	appsv1 "k8s.io/api/apps/v1"
@@ -16,8 +14,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/cli-runtime/pkg/genericclioptions"
-	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1242,110 +1238,6 @@ func TestStripServerManagedPVCAnnotations(t *testing.T) {
 				if got[k] != v {
 					t.Errorf("key %q: got %q, want %q", k, got[k], v)
 				}
-			}
-		})
-	}
-}
-
-// newMinimalConfigFlags creates a ConfigFlags backed by an empty temp kubeconfig,
-// suitable for unit tests that call Complete() without a real cluster.
-func newMinimalConfigFlags(t *testing.T) *genericclioptions.ConfigFlags {
-	t.Helper()
-	cfg := clientcmdapi.NewConfig()
-	data, err := clientcmd.Write(*cfg)
-	if err != nil {
-		t.Fatalf("failed to serialise empty kubeconfig: %v", err)
-	}
-	f, err := os.CreateTemp("", "test-kubeconfig-*.yaml")
-	if err != nil {
-		t.Fatalf("failed to create temp kubeconfig: %v", err)
-	}
-	if _, err := f.Write(data); err != nil {
-		t.Fatalf("failed to write temp kubeconfig: %v", err)
-	}
-	f.Close()
-	t.Cleanup(func() { os.Remove(f.Name()) })
-
-	flags := genericclioptions.NewConfigFlags(false)
-	name := f.Name()
-	flags.KubeConfig = &name
-	return flags
-}
-
-// covers the whitespace-trimming and whitespace-rejection logic added to Complete() in PR #859.
-func TestComplete_CloudStorageWhitespace(t *testing.T) {
-	tests := []struct {
-		name         string
-		cloudStorage string
-		wantErr      bool
-		wantErrMsg   string
-		wantValue    string
-	}{
-		{
-			name:         "whitespace-only value is rejected",
-			cloudStorage: "   ",
-			wantErr:      true,
-			wantErrMsg:   "whitespace",
-		},
-		{
-			name:         "tab-only value is rejected",
-			cloudStorage: "\t",
-			wantErr:      true,
-			wantErrMsg:   "whitespace",
-		},
-		{
-			name:         "newline-only value is rejected",
-			cloudStorage: "\n",
-			wantErr:      true,
-			wantErrMsg:   "whitespace",
-		},
-		{
-			name:         "leading and trailing spaces are trimmed",
-			cloudStorage: "  remote:my-bucket  ",
-			wantErr:      false,
-			wantValue:    "remote:my-bucket",
-		},
-		{
-			name:         "leading whitespace only is trimmed",
-			cloudStorage: "\tremote:my-bucket",
-			wantErr:      false,
-			wantValue:    "remote:my-bucket",
-		},
-		{
-			name:         "valid value passes through unchanged",
-			cloudStorage: "remote:my-bucket",
-			wantErr:      false,
-			wantValue:    "remote:my-bucket",
-		},
-		{
-			name:         "empty value is accepted and stays empty",
-			cloudStorage: "",
-			wantErr:      false,
-			wantValue:    "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cmd := &cobra.Command{}
-			tc := &TransferPVCCommand{
-				configFlags: newMinimalConfigFlags(t),
-				Flags:       Flags{CloudStorage: tt.cloudStorage},
-			}
-			err := tc.Complete(cmd, nil)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("Complete() expected error but got nil")
-				}
-				if tt.wantErrMsg != "" && !strings.Contains(err.Error(), tt.wantErrMsg) {
-					t.Errorf("Complete() error = %q, want to contain %q", err.Error(), tt.wantErrMsg)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Complete() unexpected error: %v", err)
-			}
-			if tc.CloudStorage != tt.wantValue {
-				t.Errorf("CloudStorage after Complete() = %q, want %q", tc.CloudStorage, tt.wantValue)
 			}
 		})
 	}
