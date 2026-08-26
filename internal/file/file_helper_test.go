@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/konveyor/crane/internal/file"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -29,6 +30,29 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write file: %v", err)
+	}
+}
+
+func TestReadFilesWithLogger_UsesProvidedLogger(t *testing.T) {
+	dir := createTestDir(t)
+	validYAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logger-test-cm
+  namespace: default
+`
+	writeFile(t, filepath.Join(dir, "cm.yaml"), validYAML)
+
+	log := logrus.New()
+	files, err := file.ReadFilesWithLogger(context.TODO(), dir, log)
+	if err != nil {
+		t.Fatalf("ReadFilesWithLogger: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	if files[0].Unstructured.GetName() != "logger-test-cm" {
+		t.Errorf("name = %q, want %q", files[0].Unstructured.GetName(), "logger-test-cm")
 	}
 }
 

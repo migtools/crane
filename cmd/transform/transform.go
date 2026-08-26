@@ -107,6 +107,7 @@ func getPluginCompletions(f *flags.GlobalFlags) func(cmd *cobra.Command, args []
 		}
 
 		// Get plugin names using shared function
+		f.SetCmdName("transform")
 		log := f.GetLoggerOrDefault()
 		pluginNames, err := listplugins.GetPluginNames(pluginDir, skipPlugins, log)
 		if err != nil {

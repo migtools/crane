@@ -119,7 +119,7 @@ func (o *Options) Run() error {
 		return err
 	}
 
-	files, err := file.ReadFiles(context.TODO(), exportDir)
+	files, err := file.ReadFilesWithLogger(context.TODO(), exportDir, o.globalFlags.GetLoggerOrDefault())
 	if err != nil {
 		return err
 	}

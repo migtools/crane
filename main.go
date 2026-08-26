@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -20,8 +21,16 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	f := &flags.GlobalFlags{}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close audit log: %v\n", err)
+		}
+	}()
 	root := cobra.Command{
 		Use: filepath.Base(os.Args[0]),
 	}
@@ -37,6 +46,7 @@ func main() {
 	root.AddCommand(version.NewVersionCommand(f))
 	root.AddCommand(validate.NewValidateCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
 	if err := root.Execute(); err != nil {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

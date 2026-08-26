@@ -65,7 +65,9 @@ func TestNewFileHook(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if hook != nil {
-				hook.Close()
+				if err := hook.Close(); err != nil {
+					t.Errorf("Close: %v", err)
+				}
 			}
 			if !tt.wantErr {
 				if _, statErr := os.Stat(tt.path); statErr != nil {
@@ -82,7 +84,11 @@ func TestFileHook_Fire_WritesJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileHook: %v", err)
 	}
-	defer hook.Close()
+	defer func() {
+		if err := hook.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
 
 	if err := hook.Fire(makeEntry("test message", logrus.InfoLevel)); err != nil {
 		t.Fatalf("Fire: %v", err)
@@ -119,7 +125,9 @@ func TestFileHook_AppendMode(t *testing.T) {
 		if err := hook.Fire(makeEntry(msg, logrus.InfoLevel)); err != nil {
 			t.Fatalf("run %d Fire: %v", i, err)
 		}
-		hook.Close()
+		if err := hook.Close(); err != nil {
+			t.Fatalf("run %d Close: %v", i, err)
+		}
 	}
 
 	data, err := os.ReadFile(path)
@@ -154,7 +162,11 @@ func TestFileHook_Levels_ReturnsAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileHook: %v", err)
 	}
-	defer hook.Close()
+	defer func() {
+		if err := hook.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
 
 	levels := hook.Levels()
 	if len(levels) != len(logrus.AllLevels) {
@@ -169,7 +181,11 @@ func TestFileHook_Fire_InjectsCmdField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileHook: %v", err)
 	}
-	defer hook.Close()
+	defer func() {
+		if err := hook.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	}()
 
 	if err := hook.Fire(makeEntry("test", logrus.InfoLevel)); err != nil {
 		t.Fatalf("Fire: %v", err)
@@ -186,6 +202,24 @@ func TestFileHook_Fire_InjectsCmdField(t *testing.T) {
 	}
 	if parsed["cmd"] != "export" {
 		t.Errorf("cmd = %q, want %q", parsed["cmd"], "export")
+	}
+}
+
+func TestNewFileHook_CustomPath(t *testing.T) {
+	dir := t.TempDir()
+	customPath := filepath.Join(dir, "custom", "crane.jsonl")
+	cmd := "export"
+	hook, err := NewFileHook(customPath, &cmd)
+	if err != nil {
+		t.Fatalf("NewFileHook with custom path: %v", err)
+	}
+	defer hook.Close()
+
+	if err := hook.Fire(makeEntry("hello", logrus.InfoLevel)); err != nil {
+		t.Fatalf("Fire: %v", err)
+	}
+	if _, err := os.Stat(customPath); err != nil {
+		t.Fatalf("file not created at custom path %s: %v", customPath, err)
 	}
 }
 

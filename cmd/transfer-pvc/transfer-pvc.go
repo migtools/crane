@@ -297,6 +297,10 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
+	if t.log == nil {
+		t.globalFlags.SetCmdName("transfer-pvc")
+		t.log = t.globalFlags.GetLoggerOrDefault()
+	}
 	if t.Flags.CloudStorage != "" {
 		return t.runIndirect()
 	}

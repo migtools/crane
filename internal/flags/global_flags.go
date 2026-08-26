@@ -60,10 +60,11 @@ func (g *GlobalFlags) GetLogger() *logrus.Logger {
 }
 
 // Close releases the audit log file. Call this when the program exits.
-func (g *GlobalFlags) Close() {
+func (g *GlobalFlags) Close() error {
 	if g.fileHook != nil {
-		g.fileHook.Close()
+		return g.fileHook.Close()
 	}
+	return nil
 }
 
 func (g *GlobalFlags) initConfig() {
@@ -73,6 +74,7 @@ func (g *GlobalFlags) initConfig() {
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err == nil {
+		viper.UnmarshalKey("audit-log", &g.AuditLogPath)
 		g.GetLogger().Infof("Using config file: %v", viper.ConfigFileUsed())
 	}
 }
