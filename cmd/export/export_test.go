@@ -85,6 +85,7 @@ func TestComplete_AsExtras(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
+			log: logrus.StandardLogger(),
 				configFlags: genericclioptions.NewConfigFlags(true),
 				asExtras:    tt.asExtras,
 			}
@@ -180,6 +181,7 @@ func TestValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
 				configFlags:   genericclioptions.NewConfigFlags(true),
+				log:           logrus.StandardLogger(),
 				asExtras:      tt.asExtras,
 				labelSelector: tt.labelSelector,
 			}
@@ -261,6 +263,7 @@ func TestValidate_ContextConflicts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
 				configFlags: genericclioptions.NewConfigFlags(true),
+				log:         logrus.StandardLogger(),
 			}
 			if tt.context != nil {
 				o.configFlags.Context = tt.context
@@ -335,6 +338,7 @@ func TestValidate_CRDGroupConflict(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
+			log: logrus.StandardLogger(),
 				configFlags:      genericclioptions.NewConfigFlags(true),
 				crdSkipGroups:    tt.crdSkipGroups,
 				crdIncludeGroups: tt.crdIncludeGroups,

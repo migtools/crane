@@ -207,6 +207,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 }
 
 func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
+	t.globalFlags.SetCmdName("transfer-pvc")
 	t.log = t.globalFlags.GetLoggerOrDefault()
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
@@ -240,7 +241,10 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 }
 
 func (t *TransferPVCCommand) Validate() error {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
+	if log == nil {
+		log = t.globalFlags.GetLoggerOrDefault()
+	}
 
 	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
 		log.Debugf("--keep-cloud-data requires --cloud-storage")
@@ -337,7 +341,7 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 }
 
 func (t *TransferPVCCommand) run() (retErr error) {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 	logrusLog := logrus.New()
 	logrusLog.SetFormatter(&logrus.JSONFormatter{})

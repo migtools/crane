@@ -22,7 +22,6 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd/api"
-
 )
 
 // ExportOptions holds CLI flags and runtime state for a single export run.
@@ -54,6 +53,7 @@ type ExportOptions struct {
 // Complete loads kubeconfig context, namespace, and parses --as-extras into o.extras.
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
+	o.globalFlags.SetCmdName("export")
 	o.log = o.globalFlags.GetLoggerOrDefault()
 	log := o.log
 
@@ -106,8 +106,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 
 // Validate checks flag combinations (e.g. --as-extras requires impersonation).
 func (o *ExportOptions) Validate() error {
-	log := o.globalFlags.GetLoggerOrDefault()
-
+	log := o.log
 	if o.configFlags.Context != nil && *o.configFlags.Context != "" {
 		for _, f := range []struct {
 			flag string
@@ -205,7 +204,7 @@ func mergeImpersonationExtras(dest, src map[string][]string) map[string][]string
 func (o *ExportOptions) Run() error {
 	var err error
 
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 	log.Infof("Starting export for namespace %q", o.userSpecifiedNamespace)
 
 	restConfig, err := o.configFlags.ToRESTConfig()
@@ -339,10 +338,10 @@ func (o *ExportOptions) Run() error {
 // NewExportCommand builds the cobra export command with flags and viper wiring.
 func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ExportOptions{
-		configFlags: genericclioptions.NewConfigFlags(true),
-
-		IOStreams:        streams,
+		configFlags:      genericclioptions.NewConfigFlags(true),
+		IOStreams:         streams,
 		cobraGlobalFlags: f,
+		log:              logrus.StandardLogger(),
 	}
 	cmd := &cobra.Command{
 		Use:   "export",

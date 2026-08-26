@@ -37,6 +37,7 @@ type ValidateOptions struct {
 // detected later in Run() when discovery is queried.
 // Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
+	o.globalFlags.SetCmdName("validate")
 	o.log = o.globalFlags.GetLoggerOrDefault()
 
 	kubeconfigFlag := c.Flags().Lookup("kubeconfig")
@@ -87,7 +88,7 @@ func determineClusterContext(cf *genericclioptions.ConfigFlags) (string, error) 
 
 // Validate checks that flags have valid values.
 func (o *ValidateOptions) Validate(cmd *cobra.Command) error {
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 
 	info, err := os.Stat(o.inputDir)
 	if err != nil {
@@ -144,7 +145,7 @@ func (o *ValidateOptions) Validate(cmd *cobra.Command) error {
 
 // Run performs the scan, match, and report steps.
 func (o *ValidateOptions) Run() error {
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 
 	log.Infof("Starting validate")
 	log.Debugf("Input directory: %s", o.inputDir)
@@ -263,8 +264,9 @@ func (o *ValidateOptions) Run() error {
 func NewValidateCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ValidateOptions{
 		configFlags:      genericclioptions.NewConfigFlags(true),
-		IOStreams:        streams,
+		IOStreams:         streams,
 		cobraGlobalFlags: f,
+		log:              logrus.StandardLogger(),
 	}
 	cmd := &cobra.Command{
 		Use:   "validate",

@@ -21,6 +21,7 @@ import (
 
 func main() {
 	f := &flags.GlobalFlags{}
+	defer f.Close()
 	root := cobra.Command{
 		Use: filepath.Base(os.Args[0]),
 	}

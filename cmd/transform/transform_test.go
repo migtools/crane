@@ -476,6 +476,7 @@ func TestReconcileInstructionStages_Overwrite(t *testing.T) {
 func TestRun_InstructionsFileAndPositionalArgsConflict(t *testing.T) {
 	o := &Options{
 		globalFlags:     &flags.GlobalFlags{},
+		log:             logrus.StandardLogger(),
 		RequestedStages: []string{"10_KubernetesPlugin"},
 		Flags: Flags{
 			InstructionsFile: "sample-transform-instructor-file.yaml",
@@ -680,6 +681,7 @@ func TestResolveAndValidateStages_MultipleCustomStages(t *testing.T) {
 	log.SetOutput(os.Stderr)
 
 	o := &Options{
+			log: logrus.StandardLogger(),
 		Flags: Flags{
 			SkipPlugins: []string{},
 		},
@@ -823,6 +825,7 @@ func TestResolveAndValidateStages_CustomStageWithPreviousStageOutput(t *testing.
 	log.SetOutput(os.Stderr)
 
 	o := &Options{
+			log: logrus.StandardLogger(),
 		Flags: Flags{
 			SkipPlugins: []string{},
 		},
@@ -1060,6 +1063,7 @@ func TestValidate_ExportDir(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &Options{
+				log: logrus.StandardLogger(),
 				Flags: Flags{
 					ExportDir:    tt.exportDir,
 					PluginDir:    filepath.Join(tmpDir, "plugins"),
@@ -1233,6 +1237,7 @@ func TestParseStageOptionals_MultiFieldJSON(t *testing.T) {
 func TestRun_InstructionsFileAndStageOptionalsConflict(t *testing.T) {
 	o := &Options{
 		globalFlags: &flags.GlobalFlags{},
+		log:         logrus.StandardLogger(),
 		Flags: Flags{
 			InstructionsFile: "instructions.yaml",
 			StageOptionals:   []string{`KubernetesPlugin={"key": "val"}`},
@@ -1253,6 +1258,7 @@ func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
 	transformDir := filepath.Join(tmpDir, "transform")
 
 	o := &Options{
+			log: logrus.StandardLogger(),
 		Flags: Flags{
 			ExportDir:    filepath.Join(tmpDir, "missing-export"),
 			TransformDir: transformDir,

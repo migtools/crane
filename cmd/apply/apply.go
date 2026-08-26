@@ -45,12 +45,14 @@ type Flags struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
+	o.globalFlags.SetCmdName("apply")
 	o.log = o.globalFlags.GetLoggerOrDefault()
+
 	return nil
 }
 
 func (o *Options) Validate() error {
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 	info, err := os.Stat(o.TransformDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -74,6 +76,7 @@ func (o *Options) Run() error {
 func NewApplyCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
 		cobraGlobalFlags: f,
+		log:              logrus.StandardLogger(),
 	}
 	cmd := &cobra.Command{
 		Use:   "apply [stage...]",
@@ -135,7 +138,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 	log.Infof("Starting apply...")
 
 	transformDir, err := filepath.Abs(o.TransformDir)
