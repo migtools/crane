@@ -15,7 +15,7 @@ import (
 // Group/Kind export filter is created, to match the rest of the tier1 suite.
 var _ = Describe("Crane export: filter resources by Group/Kind", func() {
 	const (
-		appName   = "gk-filter-test"
+		appName   = "simple-nginx-nopv"
 		namespace = "gk-filter-test"
 	)
 
