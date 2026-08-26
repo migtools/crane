@@ -27,6 +27,7 @@ func (k KubectlRunner) Run(args ...string) (string, error) {
 func (k KubectlRunner) RunWithStdin(stdin string, args ...string) (string, error) {
 	return k.executeWithStdin(stdin, args...)
 }
+
 // executeWithStdin executes an arbitrary kubectl command using stdin content.
 func (k KubectlRunner) executeWithStdin(stdin string, args ...string) (string, error) {
 	finalArgs := append([]string{}, normalizeKubectlArgs(args...)...)
@@ -363,6 +364,21 @@ func (k KubectlRunner) ScaleDeploymentIfPresent(ns, appName string, replicas int
 		return nil
 	}
 	return k.ScaleDeployment(ns, appName, replicas)
+}
+
+// GetResourceNamesByLabel returns resource names matching a label selector.
+// On OpenShift, Routes are included alongside pods, services, secrets,
+// configmaps, and ingresses.
+func (k KubectlRunner) GetResourceNamesByLabel(namespace, labelSelector string) (string, error) {
+	kinds := "pods,services,secrets,configmaps,ingresses"
+	if k.IsOpenShift() {
+		kinds += ",routes.route.openshift.io"
+	}
+	out, err := k.Run("get", kinds, "-n", namespace, "-l", labelSelector, "-o", "name")
+	if err != nil {
+		return "", fmt.Errorf("get resources by label failed (kinds=%q namespace=%q labelSelector=%q): %w", kinds, namespace, labelSelector, err)
+	}
+	return StripKubectlWarnings(out), nil
 }
 
 func (k KubectlRunner) CanI(verb, resource, namespace string) (bool, error) {

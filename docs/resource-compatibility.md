@@ -43,6 +43,7 @@ These resources are the core of any migration and are moved automatically.
   > **Warning — Namespace renaming:** If the namespace is renamed during migration, NetworkPolicy `namespaceSelector` entries that match the old namespace by label (e.g., `kubernetes.io/metadata.name: old-ns`) are not updated automatically. Manually update them before applying.
 * **Config & Secrets:** ConfigMap, Secret, ServiceAccount.
 * **Storage:** PersistentVolumeClaim (PVC).
+  > **Warning — StorageClass conversion:** `crane transfer-pvc` migrates data to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. Scaling up a StatefulSet after conversion (without recreating it) provisions new replicas on the original StorageClass. Recreate the StatefulSet with `--cascade=orphan` and the updated `storageClassName` to complete the conversion.
 
 ### 3.2 Cluster-Scoped Resources (Conditionally Supported)
 These resources are migrated **only if they are linked to the namespace workload** and the execution context has appropriate permissions.
@@ -74,5 +75,6 @@ For "Conditionally Supported" resources to migrate successfully, the following m
 * [ ] **Operator Readiness:** All required Operators are installed via OperatorHub on the target cluster.
 * [ ] **CRD Check:** Verify if any global CRDs need to be manually applied to the target to avoid "orphan" resources.
 * [ ] **Namespace Renaming:** If renaming the namespace, manually update any ClusterRoleBinding subjects and NetworkPolicy namespaceSelector entries matching the old namespace by label before applying.
+* [ ] **StatefulSet StorageClass Conversion:** If converting a StatefulSet's PVCs to a new StorageClass, recreate the StatefulSet (`--cascade=orphan`) with the updated `storageClassName` in `volumeClaimTemplates` before scaling up.
 
 ---

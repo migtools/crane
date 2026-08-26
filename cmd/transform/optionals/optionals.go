@@ -6,6 +6,7 @@ import (
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -21,6 +22,7 @@ type Options struct {
 	// 2. Flags for the args merged with values from the viper config file
 	cobraFlags Flags
 	Flags
+	log *logrus.Logger
 }
 
 type Flags struct {
@@ -30,6 +32,7 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @sseago
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
@@ -47,9 +50,8 @@ func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 		cobraGlobalFlags: f,
 	}
 	cmd := &cobra.Command{
-		Use:        "optionals",
-		Short:      "Return a list of optional fields accepted by configured plugins",
-		Deprecated: "use custom stages with kustomization patches instead. Optional flags apply globally to all stages and will be removed in a future version.",
+		Use:   "optionals",
+		Short: "Return a list of optional fields accepted by configured plugins",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err
@@ -76,14 +78,17 @@ func NewOptionalsCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (o *Options) run() error {
+	log := o.globalFlags.GetLoggerOrDefault()
+
 	pluginDir, err := filepath.Abs(o.PluginDir)
 	if err != nil {
+		log.Errorf("Failed to resolve plugin directory path %q: %v", o.PluginDir, err)
 		return err
 	}
-	log := o.globalFlags.GetLogger()
 
 	plugins, err := plugin.GetFilteredPlugins(pluginDir, o.SkipPlugins, log)
 	if err != nil {
+		log.Errorf("Failed to load plugins from %q: %v", pluginDir, err)
 		return err
 	}
 

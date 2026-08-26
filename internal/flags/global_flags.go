@@ -9,6 +9,7 @@ import (
 type GlobalFlags struct {
 	ConfigFile string
 	Debug      bool
+	logger     *logrus.Logger
 }
 
 func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
@@ -18,12 +19,22 @@ func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
 	viper.BindPFlags(cmd.PersistentFlags())
 }
 
-func (g *GlobalFlags) GetLogger() *logrus.Logger {
-	log := logrus.New()
-	if g.Debug {
-		log.SetLevel(logrus.DebugLevel)
+// GetLoggerOrDefault returns the configured logger, or logrus.StandardLogger() if GlobalFlags is nil.
+func (g *GlobalFlags) GetLoggerOrDefault() *logrus.Logger {
+	if g == nil {
+		return logrus.StandardLogger()
 	}
-	return log
+	return g.GetLogger()
+}
+
+func (g *GlobalFlags) GetLogger() *logrus.Logger {
+	if g.logger == nil {
+		g.logger = logrus.New()
+		if g.Debug {
+			g.logger.SetLevel(logrus.DebugLevel)
+		}
+	}
+	return g.logger
 }
 
 func (g *GlobalFlags) initConfig() {

@@ -133,7 +133,7 @@ spec:
         - redis-server
         - --requirepass
         - PASSWORD
-        image: redis:latest
+        image: docker.io/library/redis:latest
         imagePullPolicy: Always
         name: redis
         ports:

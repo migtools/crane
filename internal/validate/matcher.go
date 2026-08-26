@@ -78,10 +78,12 @@ func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLo
 	if err != nil {
 		if discovery.IsGroupDiscoveryFailedError(err) {
 			if len(lists) == 0 {
+				log.Debugf("Discovery failed with no usable results: %v", err)
 				return nil, fmt.Errorf("discovery failed with no usable results: %w", err)
 			}
 			log.Warnf("partial discovery failure, continuing with available groups: %v", err)
 		} else {
+			log.Debugf("Discovery failed: %v", err)
 			return nil, fmt.Errorf("discovery failed: %w", err)
 		}
 	}
@@ -96,6 +98,7 @@ func buildDiscoveryIndex(client discovery.DiscoveryInterface, log logrus.FieldLo
 		}
 		for _, res := range list.APIResources {
 			if strings.Contains(res.Name, "/") {
+				log.Debugf("Skipping sub-resource %q in group-version %s", res.Name, gv)
 				continue
 			}
 			index[gv][res.Kind] = discoveryEntry{Resource: res}
