@@ -79,20 +79,20 @@ var _ = Describe("Unattached PVC transfer", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Seed known data into the PVC with a temporary pod")
-		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(seedPodManifest(namespace, seedPodName, pvcName), namespace)).NotTo(HaveOccurred())
+		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(SeedPodManifest(namespace, seedPodName, pvcName), namespace)).NotTo(HaveOccurred())
 		_, err = kubectlSrcNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+seedPodName, "-n", namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(srcApp.Validate()).NotTo(HaveOccurred())
 
-		sourceHello, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/hello.txt")
+		sourceHello, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/hello.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceHello).To(Equal("hello-from-source"))
 
-		sourceNested, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/testdir/nested.txt")
+		sourceNested, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/testdir/nested.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceNested).To(Equal("unattached-pvc-check"))
 
-		sourceTimestamp, err := readFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/timestamp.txt")
+		sourceTimestamp, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/timestamp.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceTimestamp).NotTo(BeEmpty())
 
@@ -142,88 +142,21 @@ var _ = Describe("Unattached PVC transfer", func() {
 		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("Mount the transferred PVC in a verifier pod on the target cluster")
-		Expect(kubectlTgtNonAdmin.ApplyYAMLSpec(verifyPodManifest(namespace, verifyPodName, pvcName), namespace)).NotTo(HaveOccurred())
+		Expect(kubectlTgtNonAdmin.ApplyYAMLSpec(VerifyPodManifest(namespace, verifyPodName, pvcName), namespace)).NotTo(HaveOccurred())
 		_, err = kubectlTgtNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+verifyPodName, "-n", namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Verify the target PVC contents match the source data")
-		targetHello, err := readFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/hello.txt")
+		targetHello, err := ReadFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/hello.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(targetHello).To(Equal(sourceHello))
 
-		targetNested, err := readFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/testdir/nested.txt")
+		targetNested, err := ReadFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/testdir/nested.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(targetNested).To(Equal(sourceNested))
 
-		targetTimestamp, err := readFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/timestamp.txt")
+		targetTimestamp, err := ReadFileFromPod(kubectlTgtNonAdmin, namespace, verifyPodName, "/data/timestamp.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(targetTimestamp).To(Equal(sourceTimestamp))
 	})
 })
-
-func readFileFromPod(k KubectlRunner, namespace, podName, filePath string) (string, error) {
-	out, err := k.Run("exec", "-n", namespace, podName, "--", "cat", filePath)
-	if err != nil {
-		return "", fmt.Errorf("read file %q from pod %s/%s: %w", filePath, namespace, podName, err)
-	}
-	return strings.TrimSpace(StripKubectlWarnings(out)), nil
-}
-
-func seedPodManifest(namespace, podName, pvcName string) string {
-	return fmt.Sprintf(`apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  restartPolicy: Never
-  containers:
-    - name: seed
-      image: busybox:1.36
-      command:
-        - sh
-        - -c
-        - |
-          set -eux
-          mkdir -p /data/testdir
-          echo 'hello-from-source' > /data/hello.txt
-          echo 'unattached-pvc-check' > /data/testdir/nested.txt
-          date -u +"%%Y-%%m-%%dT%%H:%%M:%%SZ" > /data/timestamp.txt
-          sleep 3600
-      volumeMounts:
-        - name: data
-          mountPath: /data
-  volumes:
-    - name: data
-      persistentVolumeClaim:
-        claimName: %s
-`, podName, namespace, pvcName)
-}
-
-func verifyPodManifest(namespace, podName, pvcName string) string {
-	return fmt.Sprintf(`apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  restartPolicy: Never
-  containers:
-    - name: verify
-      image: busybox:1.36
-      command:
-        - sh
-        - -c
-        - |
-          set -eux
-          ls -R /data
-          sleep 3600
-      volumeMounts:
-        - name: data
-          mountPath: /data
-  volumes:
-    - name: data
-      persistentVolumeClaim:
-        claimName: %s
-`, podName, namespace, pvcName)
-}
