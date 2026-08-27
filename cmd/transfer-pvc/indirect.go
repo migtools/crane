@@ -1,6 +1,7 @@
 package transfer_pvc
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -81,7 +82,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 			log.Debugf("Failed to read rclone config file: %v", err)
 			return fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
 		}
-		if len(configData) == 0 {
+		if len(bytes.TrimSpace(configData)) == 0 {
 			return fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
 		}
 
@@ -136,6 +137,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 	destPVC := t.buildDestinationPVC(srcPVC)
 	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {
+		log.Debugf("Unable to create destination PVC %s/%s: %v", destPVC.Namespace, destPVC.Name, err)
 		return fmt.Errorf("unable to create destination PVC: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
@@ -389,10 +391,10 @@ func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcCl
 		if err := check.c.Get(context.TODO(), client.ObjectKey{
 			Name: secretName, Namespace: check.namespace,
 		}, secret); err != nil {
-			return fmt.Errorf("rclone config secret %q not found in namespace %q on %s cluster: %w",
+			return fmt.Errorf("rclone config secret %q (namespace %q, %s cluster): %w",
 				secretName, check.namespace, check.side, err)
 		}
-		if len(secret.Data["rclone.conf"]) == 0 {
+		if len(bytes.TrimSpace(secret.Data["rclone.conf"])) == 0 {
 			return fmt.Errorf("rclone config secret %q in namespace %q on %s cluster is missing the rclone.conf key or it is empty",
 				secretName, check.namespace, check.side)
 		}
