@@ -1955,6 +1955,7 @@ func TestValidateStageOptionalFlags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &Orchestrator{
 				StageOptionalFlags: tt.stageOptionals,
+				Log:                logrus.New(),
 			}
 			err := o.validateStageOptionalFlags(stages)
 			if tt.wantErr {

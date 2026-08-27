@@ -21,7 +21,7 @@ type File struct {
 }
 
 func ReadFiles(ctx context.Context, dir string) ([]File, error) {
-	log := logrus.New()
+	log := logrus.StandardLogger()
 
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
@@ -48,6 +48,7 @@ func readFiles(ctx context.Context, path string, files []os.FileInfo, log *logru
 			}
 			jsonFiles = append(jsonFiles, files...)
 		} else {
+			log.Debugf("Reading file: %s", filePath)
 			data, err := ioutil.ReadFile(filePath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read file %q: %w", filePath, err)
