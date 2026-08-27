@@ -75,6 +75,7 @@ func GetFilteredPlugins(pluginDir string, skipPlugins []string, logger *logrus.L
 	// Start with built-in plugins
 	unfilteredPlugins = append(unfilteredPlugins, &kubernetes.KubernetesTransformPlugin{})
 	unfilteredPlugins = append(unfilteredPlugins, &openshift.OpenShiftTransformPlugin{Log: logger})
+	unfilteredPlugins = append(unfilteredPlugins, NewBuildConfigToBuildsPlugin(logger))
 
 	paths := []string{absPathPluginDir, pluginDir, GlobalPluginDir, PkgPluginDir}
 
