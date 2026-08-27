@@ -33,44 +33,37 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-func TestReadFilesWithLogger_NilLoggerDoesNotPanic(t *testing.T) {
-	dir := createTestDir(t)
-	writeFile(t, filepath.Join(dir, "cm.yaml"), `apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nil-logger-cm
-  namespace: default
-`)
-	// passing nil should not panic
-	files, err := file.ReadFilesWithLogger(context.TODO(), dir, nil)
-	if err != nil {
-		t.Fatalf("unexpected error with nil logger: %v", err)
-	}
-	if len(files) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(files))
-	}
-}
-
-func TestReadFilesWithLogger_UsesProvidedLogger(t *testing.T) {
-	dir := createTestDir(t)
-	validYAML := `apiVersion: v1
+func TestReadFilesWithLogger(t *testing.T) {
+	const validYAML = `apiVersion: v1
 kind: ConfigMap
 metadata:
   name: logger-test-cm
   namespace: default
 `
-	writeFile(t, filepath.Join(dir, "cm.yaml"), validYAML)
+	tests := []struct {
+		name   string
+		logger *logrus.Logger
+	}{
+		{name: "nil logger does not panic", logger: nil},
+		{name: "non-nil logger", logger: logrus.New()},
+	}
 
-	log := logrus.New()
-	files, err := file.ReadFilesWithLogger(context.TODO(), dir, log)
-	if err != nil {
-		t.Fatalf("ReadFilesWithLogger: %v", err)
-	}
-	if len(files) != 1 {
-		t.Fatalf("expected 1 file, got %d", len(files))
-	}
-	if files[0].Unstructured.GetName() != "logger-test-cm" {
-		t.Errorf("name = %q, want %q", files[0].Unstructured.GetName(), "logger-test-cm")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := createTestDir(t)
+			writeFile(t, filepath.Join(dir, "cm.yaml"), validYAML)
+
+			files, err := file.ReadFilesWithLogger(context.TODO(), dir, tt.logger)
+			if err != nil {
+				t.Fatalf("ReadFilesWithLogger: %v", err)
+			}
+			if len(files) != 1 {
+				t.Fatalf("expected 1 file, got %d", len(files))
+			}
+			if files[0].Unstructured.GetName() != "logger-test-cm" {
+				t.Errorf("name = %q, want %q", files[0].Unstructured.GetName(), "logger-test-cm")
+			}
+		})
 	}
 }
 

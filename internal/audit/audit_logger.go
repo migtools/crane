@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -52,10 +53,12 @@ func (h *FileHook) Fire(entry *logrus.Entry) error {
 	}
 	line, err := h.formatter.Format(entry)
 	if err != nil {
-		return err
+		return fmt.Errorf("audit file hook: format entry: %w", err)
 	}
-	_, err = h.file.Write(line)
-	return err
+	if _, err := h.file.Write(line); err != nil {
+		return fmt.Errorf("audit file hook: write to %s: %w", h.file.Name(), err)
+	}
+	return nil
 }
 
 // Close closes the underlying file. Call this when the program exits.
@@ -98,8 +101,10 @@ func (h *ConsoleHook) Levels() []logrus.Level {
 func (h *ConsoleHook) Fire(entry *logrus.Entry) error {
 	line, err := h.formatter.Format(entry)
 	if err != nil {
-		return err
+		return fmt.Errorf("audit console hook: format entry: %w", err)
 	}
-	_, err = h.writer.Write(line)
-	return err
+	if _, err := h.writer.Write(line); err != nil {
+		return fmt.Errorf("audit console hook: write to stderr: %w", err)
+	}
+	return nil
 }

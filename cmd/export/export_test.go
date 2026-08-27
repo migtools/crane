@@ -670,7 +670,8 @@ func TestValidate_GKFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
 				configFlags: genericclioptions.NewConfigFlags(true),
-				globalFlags: nil, // GetLoggerOrDefault handles nil
+				globalFlags: nil,
+				log:         logrus.StandardLogger(),
 				includeGK:   tt.includeGK,
 				excludeGK:   tt.excludeGK,
 			}
