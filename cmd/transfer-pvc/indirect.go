@@ -1,6 +1,7 @@
 package transfer_pvc
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -10,9 +11,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"strings"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -30,31 +32,31 @@ func (t *TransferPVCCommand) runIndirect() error {
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
 	fmt.Fprintf(os.Stderr, "\ncrane transfer-pvc (indirect via cloud storage)\n")
-	fmt.Fprintf(os.Stderr, "source context:      %s\n", t.Flags.SourceContext)
-	fmt.Fprintf(os.Stderr, "destination context: %s\n", t.Flags.DestinationContext)
+	fmt.Fprintf(os.Stderr, "source context:      %s\n", t.SourceContext)
+	fmt.Fprintf(os.Stderr, "destination context: %s\n", t.DestinationContext)
 	fmt.Fprintf(os.Stderr, "PVC:                 %s/%s -> %s/%s\n",
 		t.PVC.Namespace.source, t.PVC.Name.source,
 		t.PVC.Namespace.destination, t.PVC.Name.destination)
-	fmt.Fprintf(os.Stderr, "cloud storage:       %s\n", t.Flags.CloudStorage)
+	fmt.Fprintf(os.Stderr, "cloud storage:       %s\n", t.CloudStorage)
 	fmt.Fprintln(os.Stderr)
 
-	srcClient, err := t.getClientFromContext(t.Flags.SourceContext)
+	srcClient, err := t.getClientFromContext(t.SourceContext)
 	if err != nil {
 		log.Debugf("Unable to get source client: %v", err)
 		return fmt.Errorf("unable to get source client: %w", err)
 	}
-	destClient, err := t.getClientFromContext(t.Flags.DestinationContext)
+	destClient, err := t.getClientFromContext(t.DestinationContext)
 	if err != nil {
 		log.Debugf("Unable to get destination client: %v", err)
 		return fmt.Errorf("unable to get destination client: %w", err)
 	}
 
-	srcCfg, err := t.getRestConfigFromContext(t.Flags.SourceContext)
+	srcCfg, err := t.getRestConfigFromContext(t.SourceContext)
 	if err != nil {
 		log.Debugf("Unable to get source rest config: %v", err)
 		return fmt.Errorf("unable to get source rest config: %w", err)
 	}
-	destCfg, err := t.getRestConfigFromContext(t.Flags.DestinationContext)
+	destCfg, err := t.getRestConfigFromContext(t.DestinationContext)
 	if err != nil {
 		log.Debugf("Unable to get destination rest config: %v", err)
 		return fmt.Errorf("unable to get destination rest config: %w", err)
@@ -73,31 +75,24 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 	fmt.Fprintf(os.Stderr, "[1/6] Reading source PVC ... ok\n")
 
-	// Create destination PVC
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
-	destPVC := t.buildDestinationPVC(srcPVC)
-	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
-		log.Debugf("Unable to create destination PVC %s/%s: %v", t.PVC.Namespace.destination, t.PVC.Name.destination, err)
-		return fmt.Errorf("unable to create destination PVC: %w", err)
-	}
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
-
-	// Resolve rclone config secret name
-	configSecret := t.Flags.RcloneConfigSecret
-	if t.Flags.RcloneConfigFile != "" {
-		configData, err := os.ReadFile(t.Flags.RcloneConfigFile)
+	// Resolve rclone config secret name and validate before creating destination resources
+	configSecret := t.RcloneConfigSecret
+	if t.RcloneConfigFile != "" {
+		configData, err := os.ReadFile(t.RcloneConfigFile)
 		if err != nil {
 			log.Debugf("Failed to read rclone config file: %v", err)
-			return fmt.Errorf("failed to read rclone config file %s: %w", t.Flags.RcloneConfigFile, err)
+			return fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
+		}
+		if len(bytes.TrimSpace(configData)) == 0 {
+			return fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
 		}
 
-		if t.Flags.Encrypt {
+		if t.Encrypt {
 			if strings.Contains(string(configData), "[encrypted]") {
 				log.Debugf("Rclone config already contains an [encrypted] section")
 				return fmt.Errorf("rclone config already contains an [encrypted] section; remove it or omit --encrypt")
 			}
-			remotePath := fmt.Sprintf("%s/%s/%s", t.Flags.CloudStorage, t.PVC.Namespace.source, t.PVC.Name.source)
+			remotePath := fmt.Sprintf("%s/%s/%s", t.CloudStorage, t.PVC.Namespace.source, t.PVC.Name.source)
 			cryptSection, err := generateCryptSection(remotePath, log)
 			if err != nil {
 				return fmt.Errorf("failed to generate encryption config: %w", err)
@@ -110,23 +105,56 @@ func (t *TransferPVCCommand) runIndirect() error {
 		if err != nil {
 			return fmt.Errorf("failed to create rclone config secret on source: %w", err)
 		}
+		defer func() {
+			if err := srcClient.Delete(context.TODO(), &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: t.PVC.Namespace.source},
+			}); err != nil && !errors.IsNotFound(err) {
+				log.Warnf("Failed to delete temp rclone config secret %q in source namespace %q: %v", secretName, t.PVC.Namespace.source, err)
+			}
+		}()
 		configSecret = secretName
 
-		_, err = t.createTempRcloneSecretFromData(destClient, t.PVC.Namespace.destination, configData, t.PVC.Name.destination)
+		destSecretName, err := t.createTempRcloneSecretFromData(destClient, t.PVC.Namespace.destination, configData, t.PVC.Name.destination)
 		if err != nil {
 			return fmt.Errorf("failed to create rclone config secret on destination: %w", err)
 		}
+		defer func() {
+			if err := destClient.Delete(context.TODO(), &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: destSecretName, Namespace: t.PVC.Namespace.destination},
+			}); err != nil && !errors.IsNotFound(err) {
+				log.Warnf("Failed to delete temp rclone config secret %q in destination namespace %q: %v", destSecretName, t.PVC.Namespace.destination, err)
+			}
+		}()
 	}
 
+	// Validate the secret that will actually be used for the transfer, regardless
+	// of whether it came from --rclone-config-secret or was created from
+	// --rclone-config-file
+	if configSecret != "" {
+		if err := t.validateRcloneConfigSecret(configSecret, srcClient, destClient); err != nil {
+			return err
+		}
+	}
+
+	// Create destination PVC
+	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
+	destPVC := t.buildDestinationPVC(srcPVC)
+	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
+	if err != nil && !errors.IsAlreadyExists(err) {
+		log.Debugf("Unable to create destination PVC %s/%s: %v", destPVC.Namespace, destPVC.Name, err)
+		return fmt.Errorf("unable to create destination PVC: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
+
 	// Get security contexts for source and target separately
-	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.Flags.SourceImage)
+	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.SourceImage)
 	if err != nil {
 		log.Warnf("Could not determine source security context: %v", err)
 		uploadSecCtx = &corev1.PodSecurityContext{}
 	}
 
 	// Indirect transfer uses a single Image (SourceImage) for upload and download.
-	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.Flags.SourceImage)
+	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.SourceImage)
 	if err != nil {
 		log.Warnf("Could not determine target security context: %v", err)
 		downloadSecCtx = &corev1.PodSecurityContext{}
@@ -136,11 +164,11 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 
 	transfer := indirect.New(srcClient, destClient, indirect.Options{
-		Image:                   t.Flags.SourceImage,
-		CloudStorage:            t.Flags.CloudStorage,
+		Image:                   t.SourceImage,
+		CloudStorage:            t.CloudStorage,
 		ConfigSecret:            configSecret,
-		Encrypt:                 t.Flags.Encrypt,
-		KeepCloudData:           t.Flags.KeepCloudData,
+		Encrypt:                 t.Encrypt,
+		KeepCloudData:           t.KeepCloudData,
 		UploadSecurityContext:   *uploadSecCtx,
 		DownloadSecurityContext: *downloadSecCtx,
 	})
@@ -182,7 +210,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 
 	// Cleanup cloud data
 	fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ...\n")
-	if t.Flags.KeepCloudData {
+	if t.KeepCloudData {
 		fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
 	} else {
 		cleanupPod, err := transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
@@ -352,6 +380,30 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 
 	log.Debugf("Pod %s/%s failed", namespace, podName)
 	return fmt.Errorf("pod %s/%s failed", namespace, podName)
+}
+
+func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcClient, destClient client.Client) error {
+	for _, check := range []struct {
+		c         client.Client
+		namespace string
+		side      string
+	}{
+		{srcClient, t.PVC.Namespace.source, "source"},
+		{destClient, t.PVC.Namespace.destination, "destination"},
+	} {
+		secret := &corev1.Secret{}
+		if err := check.c.Get(context.TODO(), client.ObjectKey{
+			Name: secretName, Namespace: check.namespace,
+		}, secret); err != nil {
+			return fmt.Errorf("rclone config secret %q (namespace %q, %s cluster): %w",
+				secretName, check.namespace, check.side, err)
+		}
+		if len(bytes.TrimSpace(secret.Data["rclone.conf"])) == 0 {
+			return fmt.Errorf("rclone config secret %q in namespace %q on %s cluster is missing the rclone.conf key or it is empty",
+				secretName, check.namespace, check.side)
+		}
+	}
+	return nil
 }
 
 func (t *TransferPVCCommand) createTempRcloneSecretFromData(c client.Client, namespace string, configData []byte, labelPVCName string) (string, error) {

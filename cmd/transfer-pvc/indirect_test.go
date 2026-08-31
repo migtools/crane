@@ -8,6 +8,10 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestRcloneObscure(t *testing.T) {
@@ -104,6 +108,112 @@ func TestCheckRclonePartialSuccess(t *testing.T) {
 			err := checkRclonePartialSuccess(tt.output, "test-pod", "test-ns", logrus.StandardLogger())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("checkRclonePartialSuccess() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func makeValidateCmd(srcNS, destNS string) *TransferPVCCommand {
+	return &TransferPVCCommand{
+		Flags: Flags{
+			PVC: PvcFlags{
+				Name:      mappedNameVar{source: "my-pvc", destination: "my-pvc"},
+				Namespace: mappedNameVar{source: srcNS, destination: destNS},
+			},
+		},
+	}
+}
+
+func rcloneSecret(name, namespace string, confData []byte) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       map[string][]byte{"rclone.conf": confData},
+	}
+}
+
+func TestValidateRcloneConfigSecret(t *testing.T) {
+	scheme := newTestScheme()
+	validConf := []byte("[my-remote]\ntype = s3\n")
+
+	tests := []struct {
+		name     string
+		srcObjs  []runtime.Object
+		destObjs []runtime.Object
+		wantErr  bool
+		wantMsg  string
+	}{
+		{
+			name:     "both clusters have a valid secret",
+			srcObjs:  []runtime.Object{rcloneSecret("my-secret", "src-ns", validConf)},
+			destObjs: []runtime.Object{rcloneSecret("my-secret", "dest-ns", validConf)},
+			wantErr:  false,
+		},
+		{
+			name:     "secret missing on source cluster",
+			srcObjs:  []runtime.Object{},
+			destObjs: []runtime.Object{rcloneSecret("my-secret", "dest-ns", validConf)},
+			wantErr:  true,
+			wantMsg:  `"my-secret" (namespace "src-ns", source cluster)`,
+		},
+		{
+			name:     "secret missing on destination cluster",
+			srcObjs:  []runtime.Object{rcloneSecret("my-secret", "src-ns", validConf)},
+			destObjs: []runtime.Object{},
+			wantErr:  true,
+			wantMsg:  `"my-secret" (namespace "dest-ns", destination cluster)`,
+		},
+		{
+			name:     "source secret has empty rclone.conf value",
+			srcObjs:  []runtime.Object{rcloneSecret("my-secret", "src-ns", []byte{})},
+			destObjs: []runtime.Object{rcloneSecret("my-secret", "dest-ns", validConf)},
+			wantErr:  true,
+			wantMsg:  "missing",
+		},
+		{
+			name:     "destination secret has empty rclone.conf value",
+			srcObjs:  []runtime.Object{rcloneSecret("my-secret", "src-ns", validConf)},
+			destObjs: []runtime.Object{rcloneSecret("my-secret", "dest-ns", []byte{})},
+			wantErr:  true,
+			wantMsg:  "missing",
+		},
+		{
+			name:     "source secret has whitespace-only rclone.conf value",
+			srcObjs:  []runtime.Object{rcloneSecret("my-secret", "src-ns", []byte("   \n\t  "))},
+			destObjs: []runtime.Object{rcloneSecret("my-secret", "dest-ns", validConf)},
+			wantErr:  true,
+			wantMsg:  "missing",
+		},
+		{
+			name:     "destination secret has whitespace-only rclone.conf value",
+			srcObjs:  []runtime.Object{rcloneSecret("my-secret", "src-ns", validConf)},
+			destObjs: []runtime.Object{rcloneSecret("my-secret", "dest-ns", []byte("   \n\t  "))},
+			wantErr:  true,
+			wantMsg:  "missing",
+		},
+		{
+			name: "source secret has wrong key name instead of rclone.conf",
+			srcObjs: []runtime.Object{&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "src-ns"},
+				Data:       map[string][]byte{"rclone-config": validConf},
+			}},
+			destObjs: []runtime.Object{rcloneSecret("my-secret", "dest-ns", validConf)},
+			wantErr:  true,
+			wantMsg:  "missing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := makeValidateCmd("src-ns", "dest-ns")
+			srcClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tt.srcObjs...).Build()
+			destClient := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tt.destObjs...).Build()
+
+			err := cmd.validateRcloneConfigSecret("my-secret", srcClient, destClient)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateRcloneConfigSecret() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Errorf("validateRcloneConfigSecret() error = %q, want to contain %q", err.Error(), tt.wantMsg)
 			}
 		})
 	}
