@@ -26,6 +26,10 @@ func NewFileHook(path string, cmd *string) (*FileHook, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := f.Chmod(0600); err != nil {
+		f.Close()
+		return nil, err
+	}
 	return &FileHook{
 		file:      f,
 		cmd:       cmd,
@@ -48,12 +52,11 @@ func (h *FileHook) Levels() []logrus.Level {
 
 // Fire is called by logrus for every log entry. It formats the entry as JSON and writes it to the file.
 func (h *FileHook) Fire(entry *logrus.Entry) error {
-	e := entry
 	if h.cmd != nil && *h.cmd != "" {
-		e = entry.Dup()
-		e.Data["cmd"] = *h.cmd
+		entry.Data["cmd"] = *h.cmd
+		defer delete(entry.Data, "cmd")
 	}
-	line, err := h.formatter.Format(e)
+	line, err := h.formatter.Format(entry)
 	if err != nil {
 		return fmt.Errorf("audit file hook: format entry: %w", err)
 	}

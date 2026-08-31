@@ -78,6 +78,28 @@ func TestNewFileHook(t *testing.T) {
 	}
 }
 
+func TestNewFileHook_EnforcesPermissionsOnExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "existing.log")
+	// Create file with permissive 0644 permissions
+	if err := os.WriteFile(path, []byte("old content\n"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	hook, err := NewFileHook(path, nil)
+	if err != nil {
+		t.Fatalf("NewFileHook: %v", err)
+	}
+	if err := hook.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Errorf("permissions = %04o, want 0600", got)
+	}
+}
+
 func TestFileHook_Fire_WritesJSON(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	hook, err := NewFileHook(path, nil)
@@ -199,7 +221,8 @@ func TestFileHook_Fire_InjectsCmdField(t *testing.T) {
 		}
 	}()
 
-	if err := hook.Fire(makeEntry("test", logrus.InfoLevel)); err != nil {
+	entry := makeEntry("test", logrus.InfoLevel)
+	if err := hook.Fire(entry); err != nil {
 		t.Fatalf("Fire: %v", err)
 	}
 

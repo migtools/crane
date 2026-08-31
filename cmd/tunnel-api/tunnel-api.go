@@ -100,15 +100,20 @@ func (t *TunnelAPIOptions) Complete(c *cobra.Command, args []string) error {
 }
 
 func (t *TunnelAPIOptions) Validate() error {
+	log := t.logger
+
 	if t.sourceContext == nil {
+		log.Debugf("Source context %q not found in kubeconfig", t.SourceContext)
 		return fmt.Errorf("cannot evaluate source context")
 	}
 
 	if t.destinationContext == nil {
+		log.Debugf("Destination context %q not found in kubeconfig", t.DestinationContext)
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
 	if t.sourceContext.Cluster == t.destinationContext.Cluster {
+		log.Debugf("Source and destination cluster are the same: %q", t.sourceContext.Cluster)
 		return fmt.Errorf("both source and destination cluster are same, this is not supported")
 	}
 
@@ -154,21 +159,25 @@ func (t *TunnelAPIOptions) run() error {
 
 	srcConfig, err := t.getRestConfigFromContext(t.SourceContext)
 	if err != nil {
-		log.Fatalf("unable to get source config: %v", err)
+		log.Debugf("Unable to get source config: %v", err)
+		return fmt.Errorf("unable to get source config: %w", err)
 	}
 
 	dstConfig, err := t.getRestConfigFromContext(t.DestinationContext)
 	if err != nil {
-		log.Fatalf("unable to get destination config: %v", err)
+		log.Debugf("Unable to get destination config: %v", err)
+		return fmt.Errorf("unable to get destination config: %w", err)
 	}
 
 	_, err = t.getClientFromContext(t.SourceContext)
 	if err != nil {
-		log.Fatalf("unable to get source client: %v", err)
+		log.Debugf("Unable to get source client: %v", err)
+		return fmt.Errorf("unable to get source client: %w", err)
 	}
 	_, err = t.getClientFromContext(t.DestinationContext)
 	if err != nil {
-		log.Fatalf("unable to get destination client: %v", err)
+		log.Debugf("Unable to get destination client: %v", err)
+		return fmt.Errorf("unable to get destination client: %w", err)
 	}
 
 	tunnel.SrcConfig = srcConfig
@@ -183,7 +192,8 @@ func (t *TunnelAPIOptions) run() error {
 
 	err = tunnel_api.Openvpn(tunnel)
 	if err != nil {
-		log.Fatalf("unable to create tunnel: %v", err)
+		log.Debugf("Unable to create tunnel: %v", err)
+		return fmt.Errorf("unable to create tunnel: %w", err)
 	}
 
 	return nil

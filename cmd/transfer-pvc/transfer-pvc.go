@@ -357,7 +357,8 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 func (t *TransferPVCCommand) run() (retErr error) {
 	log := t.log
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
-	logger := logrusr.New(log).WithName("transfer-pvc")
+	ctrlLogger := logrus.New()
+	logger := logrusr.New(ctrlLogger).WithName("transfer-pvc")
 
 	totalPhases := 7
 	if t.isIntraClusterSameNamespace() {
