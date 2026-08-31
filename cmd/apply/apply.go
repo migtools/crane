@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sirupsen/logrus"
 	"github.com/konveyor/crane/internal/apply"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/kustomize"
 	internalTransform "github.com/konveyor/crane/internal/transform"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

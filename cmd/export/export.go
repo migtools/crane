@@ -108,6 +108,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	// Users can override by explicitly using --include-gk Event or --exclude-gk <other-kinds>
 	if len(o.includeGK) == 0 && len(o.excludeGK) == 0 {
 		o.excludeGK = []string{"Event"}
+		log.Debugf("No GK filters specified; applying default exclusion: Event")
 	}
 
 	return nil
@@ -155,7 +156,7 @@ func (o *ExportOptions) Validate() error {
 		}
 	}
 	if _, err := NewGKFilter(o.includeGK, o.excludeGK); err != nil {
-		log.Debugf("Invalid GK filter: %v", err)
+		log.Errorf("Invalid GK filter: %v", err)
 		return err
 	}
 	return nil
@@ -358,7 +359,7 @@ func (o *ExportOptions) Run() error {
 func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ExportOptions{
 		configFlags:      genericclioptions.NewConfigFlags(true),
-		IOStreams:         streams,
+		IOStreams:        streams,
 		cobraGlobalFlags: f,
 		log:              logrus.StandardLogger(),
 	}

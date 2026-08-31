@@ -264,7 +264,7 @@ func (o *ValidateOptions) Run() error {
 func NewValidateCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	o := &ValidateOptions{
 		configFlags:      genericclioptions.NewConfigFlags(true),
-		IOStreams:         streams,
+		IOStreams:        streams,
 		cobraGlobalFlags: f,
 		log:              logrus.StandardLogger(),
 	}

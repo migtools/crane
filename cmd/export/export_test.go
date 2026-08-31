@@ -85,7 +85,7 @@ func TestComplete_AsExtras(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
-			log: logrus.StandardLogger(),
+				log:         logrus.StandardLogger(),
 				configFlags: genericclioptions.NewConfigFlags(true),
 				asExtras:    tt.asExtras,
 			}
@@ -338,7 +338,7 @@ func TestValidate_CRDGroupConflict(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
-			log: logrus.StandardLogger(),
+				log:              logrus.StandardLogger(),
 				configFlags:      genericclioptions.NewConfigFlags(true),
 				crdSkipGroups:    tt.crdSkipGroups,
 				crdIncludeGroups: tt.crdIncludeGroups,
@@ -689,33 +689,33 @@ func TestValidate_GKFilter(t *testing.T) {
 
 func TestComplete_DefaultExcludeEvent(t *testing.T) {
 	tests := []struct {
-		name      string
-		includeGK []string
-		excludeGK []string
+		name        string
+		includeGK   []string
+		excludeGK   []string
 		wantExclude []string
 	}{
 		{
-			name:      "no GK filters - defaults to exclude Event",
-			includeGK: nil,
-			excludeGK: nil,
+			name:        "no GK filters - defaults to exclude Event",
+			includeGK:   nil,
+			excludeGK:   nil,
 			wantExclude: []string{"Event"},
 		},
 		{
-			name:      "explicit include - no default",
-			includeGK: []string{"Deployment"},
-			excludeGK: nil,
+			name:        "explicit include - no default",
+			includeGK:   []string{"Deployment"},
+			excludeGK:   nil,
 			wantExclude: nil,
 		},
 		{
-			name:      "explicit exclude - no default",
-			includeGK: nil,
-			excludeGK: []string{"Secret"},
+			name:        "explicit exclude - no default",
+			includeGK:   nil,
+			excludeGK:   []string{"Secret"},
 			wantExclude: []string{"Secret"},
 		},
 		{
-			name:      "empty slices - defaults to exclude Event",
-			includeGK: []string{},
-			excludeGK: []string{},
+			name:        "empty slices - defaults to exclude Event",
+			includeGK:   []string{},
+			excludeGK:   []string{},
 			wantExclude: []string{"Event"},
 		},
 	}

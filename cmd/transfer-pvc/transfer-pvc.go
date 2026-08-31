@@ -61,7 +61,6 @@ type TransferPVCCommand struct {
 	genericclioptions.IOStreams
 	globalFlags *flags.GlobalFlags
 	log         *logrus.Logger
-	logger      logrus.FieldLogger
 
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
@@ -154,9 +153,8 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams, f *flags.GlobalF
 				StorageRequests: quantityVar{},
 			},
 		},
-		IOStreams:    streams,
+		IOStreams:   streams,
 		globalFlags: f,
-		logger:      logrus.New(),
 	}
 
 	cmd := &cobra.Command{
@@ -313,10 +311,6 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
-	if t.log == nil {
-		t.globalFlags.SetCmdName("transfer-pvc")
-		t.log = t.globalFlags.GetLoggerOrDefault()
-	}
 	if t.CloudStorage != "" {
 		return t.runIndirect()
 	}
@@ -363,9 +357,7 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 func (t *TransferPVCCommand) run() (retErr error) {
 	log := t.log
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
-	logrusLog := logrus.New()
-	logrusLog.SetFormatter(&logrus.JSONFormatter{})
-	logger := logrusr.New(logrusLog).WithName("transfer-pvc")
+	logger := logrusr.New(log).WithName("transfer-pvc")
 
 	totalPhases := 7
 	if t.isIntraClusterSameNamespace() {

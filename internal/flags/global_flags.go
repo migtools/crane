@@ -15,7 +15,7 @@ type GlobalFlags struct {
 	ConfigFile   string
 	Debug        bool
 	AuditLogPath string `mapstructure:"audit-log"`
-	CmdName      string
+	cmdName      string
 	logger       *logrus.Logger
 	fileHook     *audit.FileHook
 }
@@ -31,7 +31,7 @@ func (g *GlobalFlags) ApplyFlags(cmd *cobra.Command) {
 // SetCmdName sets the command name used in audit log entries. Safe to call on a nil GlobalFlags.
 func (g *GlobalFlags) SetCmdName(name string) {
 	if g != nil {
-		g.CmdName = name
+		g.cmdName = name
 	}
 }
 
@@ -43,19 +43,27 @@ func (g *GlobalFlags) GetLoggerOrDefault() *logrus.Logger {
 	return g.GetLogger()
 }
 
+// isCompletionMode returns true when cobra is running a shell completion request.
+// In that case we skip the audit file hook to avoid creating audit/ during tab-completion.
+func isCompletionMode() bool {
+	return len(os.Args) > 1 && (os.Args[1] == "__complete" || os.Args[1] == "__completeNoDesc")
+}
+
 func (g *GlobalFlags) GetLogger() *logrus.Logger {
 	if g.logger == nil {
 		g.logger = logrus.New()
 		g.logger.SetLevel(logrus.DebugLevel)
 		g.logger.SetOutput(io.Discard)
 		consoleHook := audit.NewConsoleHook(g.Debug)
-		fileHook, err := audit.NewFileHook(g.AuditLogPath, &g.CmdName)
 		g.logger.AddHook(consoleHook)
-		if err == nil {
-			g.fileHook = fileHook
-			g.logger.AddHook(fileHook)
-		} else {
-			g.logger.Warnf("Failed to open audit log file %s: %v", g.AuditLogPath, err)
+		if !isCompletionMode() {
+			fileHook, err := audit.NewFileHook(g.AuditLogPath, &g.cmdName)
+			if err == nil {
+				g.fileHook = fileHook
+				g.logger.AddHook(fileHook)
+			} else {
+				g.logger.Warnf("Failed to open audit log file %s: %v", g.AuditLogPath, err)
+			}
 		}
 	}
 	return g.logger

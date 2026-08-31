@@ -2,9 +2,9 @@ package tunnel_api
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/konveyor/crane-lib/connect/tunnel_api"
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -17,8 +17,9 @@ import (
 type TunnelAPIOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
+	globalFlags *flags.GlobalFlags
+	logger      logrus.FieldLogger
 
-	logger             logrus.FieldLogger
 	SourceContext      string
 	DestinationContext string
 	Namespace          string
@@ -32,12 +33,11 @@ type TunnelAPIOptions struct {
 	destinationContext *clientcmdapi.Context
 }
 
-func NewTunnelAPIOptions(streams genericclioptions.IOStreams) *cobra.Command {
+func NewTunnelAPIOptions(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	t := &TunnelAPIOptions{
 		configFlags: genericclioptions.NewConfigFlags(false),
-
-		IOStreams: streams,
-		logger:    logrus.New(),
+		IOStreams:   streams,
+		globalFlags: f,
 	}
 
 	cmd := &cobra.Command{
@@ -75,6 +75,8 @@ func addFlagsForTunnelAPIOptions(t *TunnelAPIOptions, cmd *cobra.Command) {
 }
 
 func (t *TunnelAPIOptions) Complete(c *cobra.Command, args []string) error {
+	t.globalFlags.SetCmdName("tunnel-api")
+	t.logger = t.globalFlags.GetLoggerOrDefault()
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
 	if err != nil {
@@ -134,6 +136,7 @@ func (t *TunnelAPIOptions) getRestConfigFromContext(ctx string) (*rest.Config, e
 }
 
 func (t *TunnelAPIOptions) run() error {
+	log := t.logger
 	tunnel := tunnel_api.Tunnel{}
 
 	fmt.Println("Generating SSL certificates. This may take several minutes.")
@@ -151,21 +154,21 @@ func (t *TunnelAPIOptions) run() error {
 
 	srcConfig, err := t.getRestConfigFromContext(t.SourceContext)
 	if err != nil {
-		log.Fatal(err, "unable to get source config")
+		log.Fatalf("unable to get source config: %v", err)
 	}
 
 	dstConfig, err := t.getRestConfigFromContext(t.DestinationContext)
 	if err != nil {
-		log.Fatal(err, "unable to get destination config")
+		log.Fatalf("unable to get destination config: %v", err)
 	}
 
 	_, err = t.getClientFromContext(t.SourceContext)
 	if err != nil {
-		log.Fatal(err, "unable to get source client")
+		log.Fatalf("unable to get source client: %v", err)
 	}
 	_, err = t.getClientFromContext(t.DestinationContext)
 	if err != nil {
-		log.Fatal(err, "unable to get destination client")
+		log.Fatalf("unable to get destination client: %v", err)
 	}
 
 	tunnel.SrcConfig = srcConfig
@@ -180,7 +183,7 @@ func (t *TunnelAPIOptions) run() error {
 
 	err = tunnel_api.Openvpn(tunnel)
 	if err != nil {
-		log.Fatal(err, "Unable to create Tunnel")
+		log.Fatalf("unable to create tunnel: %v", err)
 	}
 
 	return nil

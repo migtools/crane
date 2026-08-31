@@ -148,7 +148,7 @@ func TestComplete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &Options{
-			log: logrus.StandardLogger(),}
+				log: logrus.StandardLogger()}
 			cmd := &cobra.Command{}
 
 			err := o.Complete(cmd, tt.args)
@@ -334,7 +334,7 @@ func TestValidate_MissingTransformDir_DoesNotCreateOutputDir(t *testing.T) {
 	outputDir := filepath.Join(tmpDir, "output")
 
 	o := &Options{
-			log: logrus.StandardLogger(),
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			TransformDir: missingTransformDir,
 			OutputDir:    outputDir,

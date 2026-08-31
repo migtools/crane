@@ -8,6 +8,7 @@ import (
 
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -18,6 +19,7 @@ type Options struct {
 	// 2. globalFlags for the args merged with values from the viper config file
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
+	log              *logrus.Logger
 	// Two Flags struct fields are needed
 	// 1. cobraFlags for explicit CLI args parsed by cobra
 	// 2. Flags for the args merged with values from the viper config file
@@ -32,6 +34,8 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @jgabani
+	o.globalFlags.SetCmdName("plugin-manager remove")
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
@@ -75,7 +79,7 @@ func NewRemoveCommand(f *flags.GlobalFlags) *cobra.Command {
 }
 
 func (o *Options) run(args []string) error {
-	log := o.globalFlags.GetLogger()
+	log := o.log
 	pluginDir, err := filepath.Abs(fmt.Sprintf("%v/%v", o.PluginDir, o.Repo))
 	if err != nil {
 		return err

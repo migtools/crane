@@ -552,11 +552,11 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			expectError:    false,
 		},
 		{
-            name:           "invalid custom stage name returns wrapped error",
-            requestedStage: "invalid stage name!", 
-            shouldCreate:   false,
-            expectError:    true,
-        },
+			name:           "invalid custom stage name returns wrapped error",
+			requestedStage: "invalid stage name!",
+			shouldCreate:   false,
+			expectError:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -598,24 +598,24 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			)
 
 			if tt.expectError {
-                if err == nil {
-                    t.Fatalf("expected error but got none")
-                }
-                if !strings.Contains(err.Error(), "invalid custom stage name") || strings.Contains(err.Error(), "<nil>") {
-                    t.Errorf("expected error to contain validation context, but got: %v", err)
-                }
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
+				if !strings.Contains(err.Error(), "invalid custom stage name") || strings.Contains(err.Error(), "<nil>") {
+					t.Errorf("expected error to contain validation context, but got: %v", err)
+				}
 
-                stageDir := filepath.Join(subTransformDir, tt.requestedStage)
-                if _, statErr := os.Stat(stageDir); statErr == nil {
-                    t.Errorf("expected directory %s NOT to be created for invalid stage name", stageDir)
-                }
+				stageDir := filepath.Join(subTransformDir, tt.requestedStage)
+				if _, statErr := os.Stat(stageDir); statErr == nil {
+					t.Errorf("expected directory %s NOT to be created for invalid stage name", stageDir)
+				}
 
-                return
-            } else {
-                if err != nil {
-                    t.Fatalf("unexpected error: %v", err)
-                }
-            }
+				return
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
 
 			if len(resolved) != 1 {
 				t.Fatalf("expected 1 resolved stage, got %d", len(resolved))
@@ -681,7 +681,7 @@ func TestResolveAndValidateStages_MultipleCustomStages(t *testing.T) {
 	log.SetOutput(os.Stderr)
 
 	o := &Options{
-			log: logrus.StandardLogger(),
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			SkipPlugins: []string{},
 		},
@@ -825,7 +825,7 @@ func TestResolveAndValidateStages_CustomStageWithPreviousStageOutput(t *testing.
 	log.SetOutput(os.Stderr)
 
 	o := &Options{
-			log: logrus.StandardLogger(),
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			SkipPlugins: []string{},
 		},
@@ -1094,11 +1094,11 @@ func TestValidate_ExportDir(t *testing.T) {
 
 func TestParseStageOptionals(t *testing.T) {
 	tests := []struct {
-		name      string
-		values    []string
-		wantErr   bool
-		errMsg    string
-		expected  map[string]map[string]string
+		name     string
+		values   []string
+		wantErr  bool
+		errMsg   string
+		expected map[string]map[string]string
 	}{
 		{
 			name:   "single stage",
@@ -1258,7 +1258,7 @@ func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
 	transformDir := filepath.Join(tmpDir, "transform")
 
 	o := &Options{
-			log: logrus.StandardLogger(),
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			ExportDir:    filepath.Join(tmpDir, "missing-export"),
 			TransformDir: transformDir,

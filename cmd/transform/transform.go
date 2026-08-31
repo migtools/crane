@@ -41,13 +41,13 @@ type Options struct {
 }
 
 type Flags struct {
-	ExportDir         string   `mapstructure:"export-dir"`
-	PluginDir         string   `mapstructure:"plugin-dir"`
-	TransformDir      string   `mapstructure:"transform-dir"`
-	SkipPlugins       []string `mapstructure:"skip-plugins"`
-	OptionalFlags     string   `mapstructure:"optional-flags"`
-	StageOptionals    []string `mapstructure:"stage-optionals"`
-	Overwrite         bool     `mapstructure:"overwrite"`
+	ExportDir      string   `mapstructure:"export-dir"`
+	PluginDir      string   `mapstructure:"plugin-dir"`
+	TransformDir   string   `mapstructure:"transform-dir"`
+	SkipPlugins    []string `mapstructure:"skip-plugins"`
+	OptionalFlags  string   `mapstructure:"optional-flags"`
+	StageOptionals []string `mapstructure:"stage-optionals"`
+	Overwrite      bool     `mapstructure:"overwrite"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
 	// Instructions file
@@ -206,7 +206,7 @@ func (o *Options) run() error {
 	}
 
 	if o.InstructionsFile != "" && len(o.RequestedStages) > 0 {
-    log.Debugf("Cannot use --instructions-file together with positional stage arguments")
+		log.Debugf("Cannot use --instructions-file together with positional stage arguments")
 		return fmt.Errorf("use either --instructions-file or positional stage arguments, not both")
 	}
 	if o.InstructionsFile != "" && len(o.StageOptionals) > 0 {

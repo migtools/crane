@@ -43,18 +43,18 @@ func TestNewValidateCommand(t *testing.T) {
 
 func TestValidate_Flags(t *testing.T) {
 	tests := []struct {
-		name                     string
-		setup                    func(t *testing.T) *ValidateOptions
-		wantErr                  bool
-		errMatch                 string
-		setMutualExclusionFlags  bool // If true, explicitly mark kubeconfig-related flags as changed
+		name                    string
+		setup                   func(t *testing.T) *ValidateOptions
+		wantErr                 bool
+		errMatch                string
+		setMutualExclusionFlags bool // If true, explicitly mark kubeconfig-related flags as changed
 	}{
 		{
 			name: "missing input-dir",
 			setup: func(t *testing.T) *ValidateOptions {
 				missingDir := filepath.Join(t.TempDir(), "missing")
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     missingDir,
 					outputFormat: "yaml",
 				}
@@ -71,7 +71,7 @@ func TestValidate_Flags(t *testing.T) {
 					t.Fatal(err)
 				}
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     f,
 					outputFormat: "yaml",
 				}
@@ -83,7 +83,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "invalid output format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     t.TempDir(),
 					outputFormat: "xml",
 				}
@@ -95,7 +95,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "valid yaml format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     t.TempDir(),
 					outputFormat: "yaml",
 				}
@@ -106,7 +106,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "valid json format",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     t.TempDir(),
 					outputFormat: "json",
 				}
@@ -117,7 +117,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "uppercase JSON accepted",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     t.TempDir(),
 					outputFormat: "JSON",
 				}
@@ -128,7 +128,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "uppercase YAML accepted",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     t.TempDir(),
 					outputFormat: "YAML",
 				}
@@ -139,7 +139,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "mixed case Json accepted",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:          logrus.StandardLogger(),
 					inputDir:     t.TempDir(),
 					outputFormat: "Json",
 				}
@@ -150,7 +150,7 @@ func TestValidate_Flags(t *testing.T) {
 			name: "api-resources file not found",
 			setup: func(t *testing.T) *ValidateOptions {
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      genericclioptions.NewConfigFlags(true),
 					inputDir:         t.TempDir(),
 					outputFormat:     "json",
@@ -172,7 +172,7 @@ func TestValidate_Flags(t *testing.T) {
 				cf := genericclioptions.NewConfigFlags(true)
 				cf.Context = &ctx
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      cf,
 					inputDir:         dir,
 					outputFormat:     "json",
@@ -195,7 +195,7 @@ func TestValidate_Flags(t *testing.T) {
 				cf := genericclioptions.NewConfigFlags(true)
 				cf.KubeConfig = &kc
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      cf,
 					inputDir:         dir,
 					outputFormat:     "json",
@@ -218,7 +218,7 @@ func TestValidate_Flags(t *testing.T) {
 				cf := genericclioptions.NewConfigFlags(true)
 				cf.APIServer = &server
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      cf,
 					inputDir:         dir,
 					outputFormat:     "json",
@@ -241,7 +241,7 @@ func TestValidate_Flags(t *testing.T) {
 				cf := genericclioptions.NewConfigFlags(true)
 				cf.BearerToken = &token
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      cf,
 					inputDir:         dir,
 					outputFormat:     "json",
@@ -264,7 +264,7 @@ func TestValidate_Flags(t *testing.T) {
 				cf := genericclioptions.NewConfigFlags(true)
 				cf.ClusterName = &cluster
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      cf,
 					inputDir:         dir,
 					outputFormat:     "json",
@@ -287,7 +287,7 @@ func TestValidate_Flags(t *testing.T) {
 				cf := genericclioptions.NewConfigFlags(true)
 				cf.AuthInfoName = &user
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      cf,
 					inputDir:         dir,
 					outputFormat:     "json",
@@ -307,7 +307,7 @@ func TestValidate_Flags(t *testing.T) {
 					t.Fatal(err)
 				}
 				return &ValidateOptions{
-				log: logrus.StandardLogger(),
+					log:              logrus.StandardLogger(),
 					configFlags:      genericclioptions.NewConfigFlags(true),
 					inputDir:         dir,
 					outputFormat:     "json",
@@ -395,7 +395,7 @@ func TestRun_EmptyInputDirReturnsError(t *testing.T) {
 	}
 
 	o := &ValidateOptions{
-				log: logrus.StandardLogger(),
+		log:              logrus.StandardLogger(),
 		configFlags:      genericclioptions.NewConfigFlags(true),
 		IOStreams:        genericclioptions.NewTestIOStreamsDiscard(),
 		inputDir:         emptyDir,
@@ -502,7 +502,7 @@ current-context: existing-context
 	cf.KubeConfig = &kc
 
 	o := &ValidateOptions{
-				log: logrus.StandardLogger(),
+		log:          logrus.StandardLogger(),
 		configFlags:  cf,
 		globalFlags:  &flags.GlobalFlags{},
 		inputDir:     t.TempDir(),
@@ -525,7 +525,7 @@ current-context: existing-context
 
 func TestComplete_SkippedInOfflineMode(t *testing.T) {
 	o := &ValidateOptions{
-				log: logrus.StandardLogger(),
+		log:              logrus.StandardLogger(),
 		configFlags:      genericclioptions.NewConfigFlags(true),
 		globalFlags:      &flags.GlobalFlags{},
 		inputDir:         t.TempDir(),
