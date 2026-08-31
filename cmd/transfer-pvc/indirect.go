@@ -11,9 +11,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/sirupsen/logrus"
 	"strings"
 	"time"
+
+	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -126,7 +127,10 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}()
 	}
 
-	if t.RcloneConfigSecret != "" {
+	// Validate the secret that will actually be used for the transfer, regardless
+	// of whether it came from --rclone-config-secret or was created from
+	// --rclone-config-file
+	if configSecret != "" {
 		if err := t.validateRcloneConfigSecret(configSecret, srcClient, destClient); err != nil {
 			return err
 		}
