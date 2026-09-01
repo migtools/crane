@@ -5,7 +5,7 @@ Migrate a Kubernetes application from a source cluster to a target cluster using
 Crane follows a non-destructive, auditable pipeline:
 
 ```
-export → transform → apply → (transfer-pvc) → kubectl apply
+export → transform → apply → validate → (transfer-pvc) → kubectl apply
 ```
 
 For stateless applications (no PersistentVolumes), skip the `transfer-pvc` step. Everything else is the same.
@@ -16,6 +16,7 @@ For stateless applications (no PersistentVolumes), skip the `transfer-pvc` step.
 - `kubectl` on your PATH
 - Kubeconfig with valid contexts for both source and target clusters
 - Namespace-level access on both clusters (cluster-admin not required)
+- Target namespace must already exist on the target cluster (ask your cluster admin to create it if you do not have namespace-creation privileges)
 - For stateful migration: workload must be scaled down before PVC transfer
 
 Before running any crane commands, make sure your local `kubeconfig` already includes valid contexts for both clusters. Crane runs locally and uses the `--context` flag to talk directly to each cluster using your existing Kubernetes RBAC permissions.
@@ -371,7 +372,18 @@ See [validate command reference](./commands/validate.md) for details.
 
 `crane transfer-pvc` copies PVC data from the source cluster to the target cluster using rsync over an encrypted stunnel connection.
 
-### 5a. Scale down the workload
+### 5a. Ensure the target namespace exists
+
+The target namespace must exist before transferring PVC data. If it does not exist, a cluster admin should create it:
+
+```bash
+# Requires cluster-admin or namespace-creation privileges
+kubectl --context "${TARGET_CONTEXT}" create namespace "${NAMESPACE}"
+```
+
+If you are a non-admin user, ask your cluster admin to create the namespace and grant you the necessary RBAC permissions on it before proceeding.
+
+### 5b. Scale down the workload
 
 The source PVC must be unmounted before transfer. Scale down the workload and wait for all pods to terminate:
 
@@ -387,7 +399,7 @@ kubectl --context "${SOURCE_CONTEXT}" get pods -n "${NAMESPACE}" -l app=mongodb
 # Expected: No resources found
 ```
 
-### 5b. Transfer the PVC
+### 5c. Transfer the PVC
 
 On OpenShift clusters (using Route endpoint):
 
@@ -425,7 +437,7 @@ Key flags:
 
 The transfer creates temporary resources (rsync pods, services, secrets, routes) on both clusters. These are cleaned up automatically when the transfer completes.
 
-### 5c. Verify the transfer
+### 5d. Verify the transfer
 
 Confirm the destination PVC was created and is Bound:
 
@@ -438,7 +450,7 @@ See [transfer-pvc command reference](./commands/transfer-pvc.md) for all flags.
 
 ## Step 6: Apply to Target Cluster
 
-Create the target namespace if it does not already exist:
+Ensure the target namespace exists. For stateful migrations, this was already done in Step 5a. For stateless migrations, create it now (requires cluster-admin or namespace-creation privileges):
 
 ```bash
 kubectl --context "${TARGET_CONTEXT}" create namespace "${NAMESPACE}" --dry-run=client -o yaml | \
