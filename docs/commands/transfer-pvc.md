@@ -30,6 +30,16 @@ crane transfer-pvc --source-context=source --destination-context=destination \
   --pvc-name=data-pvc \
   --cloud-storage=remote:my-bucket/transfer-path \
   --rclone-config-secret=rclone-secret
+```
+
+### Indirect Transfer with Encryption
+```bash
+crane transfer-pvc --source-context=source --destination-context=destination \
+  --pvc-name=data-pvc \
+  --cloud-storage=remote:my-bucket/transfer-path \
+  --rclone-config-file=rclone.conf \
+  --encrypt
+```
 
 ## Flags
 
@@ -94,6 +104,15 @@ For the complete end-to-end workflow including workload reference updates, see t
 ### Indirect Transfer Options
 
 When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
+
+#### Data Encryption
+When performing an indirect transfer, you can enable client-side encryption for data in transit by providing the `--encrypt` flag. 
+
+When `--encrypt` is used:
+1. You must provide the configuration via `--rclone-config-file`. This flag cannot be used with `--rclone-config-secret`.
+2. `crane` automatically generates a secure, ephemeral 32-byte encryption password for the transfer session.
+3. The password is obscured using rclone's native AES-CTR format and appended to the configuration as an `[encrypted]` crypt overlay section.
+4. The generated configuration is used to create temporary secrets on both clusters, ensuring secure end-to-end encryption. The password is discarded after the transfer completes.
 
 #### Sample rclone-config-file
 
