@@ -3,6 +3,8 @@ package framework
 import (
 	"fmt"
 	"os/exec"
+
+	"github.com/konveyor/crane/e2e-tests/config"
 )
 
 type CraneRunner struct {
@@ -13,13 +15,17 @@ type CraneRunner struct {
 
 // TransferPVCOptions contains arguments for the crane transfer-pvc command.
 type TransferPVCOptions struct {
-	SourceContext   string
-	TargetContext   string
-	PVCName         string
-	PVCNamespaceMap string
-	Endpoint        string
-	IngressClass    string
-	Subdomain       string
+	SourceContext      string
+	TargetContext      string
+	PVCName            string
+	PVCNamespaceMap    string
+	DestStorageClass   string
+	Endpoint           string
+	IngressClass       string
+	Subdomain          string
+	CloudStorage       string
+	RcloneConfigFile   string
+	RcloneConfigSecret string
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -41,18 +47,20 @@ type ExportOptions struct {
 	AsExtras         string
 	QPS              float32
 	Burst            int
+	Overwrite        bool
 }
 
 type TransformOptions struct {
-	ExportDir         string
-	TransformDir      string
-	PluginDir         string
-	SkipPlugins       []string
-	OptionalFlags     string
-	Overwrite         bool
-	KustomizeArgs     string
-	InstructionsFile  string
-	Stages            []string
+	ExportDir        string
+	TransformDir     string
+	PluginDir        string
+	SkipPlugins      []string
+	OptionalFlags    string
+	StageOptionals   []string
+	Overwrite        bool
+	KustomizeArgs    string
+	InstructionsFile string
+	Stages           []string
 }
 
 type ApplyOptions struct {
@@ -62,6 +70,7 @@ type ApplyOptions struct {
 	SkipClusterScoped bool
 	Ordered           bool
 	Stages            []string
+	Overwrite         bool
 }
 
 // Export runs crane export for a namespace into the given export directory.
@@ -92,6 +101,9 @@ func (c CraneRunner) Export(opts ExportOptions) error {
 	if opts.Burst > 0 {
 		args = append(args, "--burst", fmt.Sprintf("%d", opts.Burst))
 	}
+	if opts.Overwrite {
+		args = append(args, "--overwrite")
+	}
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir
@@ -121,6 +133,9 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 	}
 	if opts.OptionalFlags != "" {
 		args = append(args, "--optional-flags", opts.OptionalFlags)
+	}
+	for _, so := range opts.StageOptionals {
+		args = append(args, "--stage-optionals", so)
 	}
 	if opts.Overwrite {
 		args = append(args, "--overwrite")
@@ -163,6 +178,9 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 	if opts.Ordered {
 		args = append(args, "--ordered")
 	}
+	if opts.Overwrite {
+		args = append(args, "--overwrite")
+	}
 	args = append(args, opts.Stages...)
 
 	logVerboseCommand(c.Bin, args)
@@ -177,32 +195,57 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 }
 
 // TransferPVC runs crane transfer-pvc with the provided transfer options.
-// If Endpoint is empty, it auto-detects: "route" on OpenShift, "nginx-ingress" on vanilla K8s.
+// If CloudStorage is set (via opts or global config), uses indirect mode via S3.
+// Otherwise uses direct rsync/stunnel.
+// If Endpoint is empty in direct mode, it auto-detects: "route" on OpenShift, "nginx-ingress" on vanilla K8s.
 func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
-	if opts.Endpoint == "" {
-		tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
-		if tgt.IsOpenShift() {
-			opts.Endpoint = "route"
-		} else {
-			opts.Endpoint = "nginx-ingress"
-			if opts.IngressClass == "" {
-				opts.IngressClass = "nginx"
-			}
+	if opts.CloudStorage == "" && config.CloudStorage != "" {
+		opts.CloudStorage = config.CloudStorage
+	}
+	if opts.RcloneConfigFile == "" && opts.RcloneConfigSecret == "" {
+		if config.RcloneConfigSecret != "" {
+			opts.RcloneConfigSecret = config.RcloneConfigSecret
+		} else if config.RcloneConfigFile != "" {
+			opts.RcloneConfigFile = config.RcloneConfigFile
 		}
 	}
 
 	args := []string{"transfer-pvc",
-		"--source-context",
-		opts.SourceContext,
+		"--source-context", opts.SourceContext,
 		"--destination-context", opts.TargetContext,
 		"--pvc-name", opts.PVCName,
 		"--pvc-namespace", opts.PVCNamespaceMap,
-		"--endpoint", opts.Endpoint,
 	}
-	if opts.Endpoint != "route" {
-		args = append(args, "--ingress-class", opts.IngressClass)
-		args = append(args, "--subdomain", opts.Subdomain)
+	if opts.DestStorageClass != "" {
+		args = append(args, "--dest-storage-class", opts.DestStorageClass)
 	}
+
+	if opts.CloudStorage != "" {
+		args = append(args, "--cloud-storage", opts.CloudStorage)
+		if opts.RcloneConfigSecret != "" {
+			args = append(args, "--rclone-config-secret", opts.RcloneConfigSecret)
+		} else if opts.RcloneConfigFile != "" {
+			args = append(args, "--rclone-config-file", opts.RcloneConfigFile)
+		}
+	} else {
+		if opts.Endpoint == "" {
+			tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
+			if tgt.IsOpenShift() {
+				opts.Endpoint = "route"
+			} else {
+				opts.Endpoint = "nginx-ingress"
+				if opts.IngressClass == "" {
+					opts.IngressClass = "nginx"
+				}
+			}
+		}
+		args = append(args, "--endpoint", opts.Endpoint)
+		if opts.Endpoint != "route" {
+			args = append(args, "--ingress-class", opts.IngressClass)
+			args = append(args, "--subdomain", opts.Subdomain)
+		}
+	}
+
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
 	cmd.Dir = c.WorkDir

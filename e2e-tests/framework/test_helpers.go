@@ -140,3 +140,160 @@ func GetSecretData(kubectl KubectlRunner, namespace, secretName string) (map[str
 	}
 	return secretObj.Data, nil
 }
+
+// PodVolumeMount maps a PVC to a mount path inside a VerifierPodOptions pod.
+type PodVolumeMount struct {
+	PVCName   string
+	MountPath string
+}
+
+// VerifierPodOptions configures a disposable pod created by DeployVerifierPod.
+type VerifierPodOptions struct {
+	Name      string
+	Namespace string
+	Image     string
+	Command   []string
+	Volumes   []PodVolumeMount
+	// Labels are applied to the pod's metadata. Useful when the pod needs to
+	// match a Deployment's selector (e.g. simulating the real app briefly)
+	// rather than just being a throwaway inspector.
+	Labels map[string]string
+}
+
+// DeployVerifierPod creates a disposable pod that mounts one or more existing
+// PVCs, so their data can be inspected directly (e.g. via kubectl exec)
+// independent of whatever application normally owns them. This is commonly
+// needed mid-migration: a PVC has been transferred to the target cluster, but
+// the owning application hasn't been deployed there yet, so there's nothing
+// else to mount it and let you look inside.
+//
+// PVCs are typically ReadWriteOnce, so callers must call DeleteVerifierPod
+// before mounting the same PVC anywhere else (a subsequent transfer-pvc run,
+// or the real app).
+func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
+	var labelLines strings.Builder
+	for key, val := range opts.Labels {
+		fmt.Fprintf(&labelLines, "    %s: %q\n", key, val)
+	}
+	labelsBlock := ""
+	if labelLines.Len() > 0 {
+		labelsBlock = "  labels:\n" + labelLines.String()
+	}
+
+	var mounts, volumes strings.Builder
+	for i, v := range opts.Volumes {
+		name := fmt.Sprintf("vol%d", i)
+		fmt.Fprintf(&mounts, "    - name: %s\n      mountPath: %s\n", name, v.MountPath)
+		fmt.Fprintf(&volumes, "  - name: %s\n    persistentVolumeClaim:\n      claimName: %s\n", name, v.PVCName)
+	}
+	mountsBlock, volumesBlock := "", ""
+	if len(opts.Volumes) > 0 {
+		mountsBlock = "    volumeMounts:\n" + mounts.String()
+		volumesBlock = "  volumes:\n" + volumes.String()
+	}
+
+	commandJSON, err := json.Marshal(opts.Command)
+	if err != nil {
+		return fmt.Errorf("marshal verifier pod command: %w", err)
+	}
+
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+%sspec:
+  restartPolicy: Never
+  containers:
+  - name: verifier
+    image: %s
+    command: %s
+%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mountsBlock, volumesBlock)
+
+	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
+		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
+	}
+	if _, err := k.Run("wait", "--for=condition=Ready", "pod/"+opts.Name, "-n", opts.Namespace, "--timeout=120s"); err != nil {
+		return fmt.Errorf("wait for verifier pod %s/%s to become ready: %w", opts.Namespace, opts.Name, err)
+	}
+	return nil
+}
+
+// DeleteVerifierPod deletes a pod created by DeployVerifierPod. Safe to call
+// even if the pod was already removed (e.g. by an earlier DeferCleanup).
+func DeleteVerifierPod(k KubectlRunner, namespace, name string) error {
+	if _, err := k.Run("delete", "pod", name, "-n", namespace, "--ignore-not-found", "--wait=true", "--timeout=120s"); err != nil {
+		return fmt.Errorf("delete verifier pod %s/%s: %w", namespace, name, err)
+	}
+	return nil
+}
+
+// ReadFileFromPod returns trimmed file contents from a pod via kubectl exec.
+func ReadFileFromPod(k KubectlRunner, namespace, podName, filePath string) (string, error) {
+	out, err := k.Run("exec", "-n", namespace, podName, "--", "cat", filePath)
+	if err != nil {
+		return "", fmt.Errorf("read file %q from pod %s/%s: %w", filePath, namespace, podName, err)
+	}
+	return strings.TrimSpace(StripKubectlWarnings(out)), nil
+}
+
+// SeedPodManifest creates a temporary pod that seeds known test data into a PVC.
+func SeedPodManifest(namespace, podName, pvcName string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  restartPolicy: Never
+  containers:
+    - name: seed
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          set -eux
+          mkdir -p /data/testdir
+          echo 'hello-from-source' > /data/hello.txt
+          echo 'unattached-pvc-check' > /data/testdir/nested.txt
+          date -u +"%%Y-%%m-%%dT%%H:%%M:%%SZ" > /data/timestamp.txt
+          sleep 3600
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: %s
+`, podName, namespace, pvcName)
+}
+
+// VerifyPodManifest creates a temporary pod that mounts a PVC for verification.
+func VerifyPodManifest(namespace, podName, pvcName string) string {
+	return fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  restartPolicy: Never
+  containers:
+    - name: verify
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          set -eux
+          ls -R /data
+          sleep 3600
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: %s
+`, podName, namespace, pvcName)
+}

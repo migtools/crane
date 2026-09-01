@@ -476,6 +476,7 @@ func TestReconcileInstructionStages_Overwrite(t *testing.T) {
 func TestRun_InstructionsFileAndPositionalArgsConflict(t *testing.T) {
 	o := &Options{
 		globalFlags:     &flags.GlobalFlags{},
+		log:             logrus.StandardLogger(),
 		RequestedStages: []string{"10_KubernetesPlugin"},
 		Flags: Flags{
 			InstructionsFile: "sample-transform-instructor-file.yaml",
@@ -551,11 +552,11 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			expectError:    false,
 		},
 		{
-            name:           "invalid custom stage name returns wrapped error",
-            requestedStage: "invalid stage name!", 
-            shouldCreate:   false,
-            expectError:    true,
-        },
+			name:           "invalid custom stage name returns wrapped error",
+			requestedStage: "invalid stage name!",
+			shouldCreate:   false,
+			expectError:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -597,24 +598,24 @@ func TestResolveAndValidateStages_CustomStageCreation(t *testing.T) {
 			)
 
 			if tt.expectError {
-                if err == nil {
-                    t.Fatalf("expected error but got none")
-                }
-                if !strings.Contains(err.Error(), "invalid custom stage name") || strings.Contains(err.Error(), "<nil>") {
-                    t.Errorf("expected error to contain validation context, but got: %v", err)
-                }
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
+				if !strings.Contains(err.Error(), "invalid custom stage name") || strings.Contains(err.Error(), "<nil>") {
+					t.Errorf("expected error to contain validation context, but got: %v", err)
+				}
 
-                stageDir := filepath.Join(subTransformDir, tt.requestedStage)
-                if _, statErr := os.Stat(stageDir); statErr == nil {
-                    t.Errorf("expected directory %s NOT to be created for invalid stage name", stageDir)
-                }
+				stageDir := filepath.Join(subTransformDir, tt.requestedStage)
+				if _, statErr := os.Stat(stageDir); statErr == nil {
+					t.Errorf("expected directory %s NOT to be created for invalid stage name", stageDir)
+				}
 
-                return
-            } else {
-                if err != nil {
-                    t.Fatalf("unexpected error: %v", err)
-                }
-            }
+				return
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+			}
 
 			if len(resolved) != 1 {
 				t.Fatalf("expected 1 resolved stage, got %d", len(resolved))
@@ -680,6 +681,7 @@ func TestResolveAndValidateStages_MultipleCustomStages(t *testing.T) {
 	log.SetOutput(os.Stderr)
 
 	o := &Options{
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			SkipPlugins: []string{},
 		},
@@ -823,6 +825,7 @@ func TestResolveAndValidateStages_CustomStageWithPreviousStageOutput(t *testing.
 	log.SetOutput(os.Stderr)
 
 	o := &Options{
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			SkipPlugins: []string{},
 		},
@@ -1060,6 +1063,7 @@ func TestValidate_ExportDir(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &Options{
+				log: logrus.StandardLogger(),
 				Flags: Flags{
 					ExportDir:    tt.exportDir,
 					PluginDir:    filepath.Join(tmpDir, "plugins"),
@@ -1088,11 +1092,173 @@ func TestValidate_ExportDir(t *testing.T) {
 	}
 }
 
+func TestParseStageOptionals(t *testing.T) {
+	tests := []struct {
+		name     string
+		values   []string
+		wantErr  bool
+		errMsg   string
+		expected map[string]map[string]string
+	}{
+		{
+			name:   "single stage",
+			values: []string{`KubernetesPlugin={"registry-replacement": "docker.io=quay.io"}`},
+			expected: map[string]map[string]string{
+				"KubernetesPlugin": {"registry-replacement": "docker.io=quay.io"},
+			},
+		},
+		{
+			name: "multiple stages",
+			values: []string{
+				`KubernetesPlugin={"registry-replacement": "docker.io=quay.io"}`,
+				`RegistryPlugin={"registry-replacement": "quay.io=ghcr.io"}`,
+			},
+			expected: map[string]map[string]string{
+				"KubernetesPlugin": {"registry-replacement": "docker.io=quay.io"},
+				"RegistryPlugin":   {"registry-replacement": "quay.io=ghcr.io"},
+			},
+		},
+		{
+			name:    "missing equals sign",
+			values:  []string{"KubernetesPlugin"},
+			wantErr: true,
+			errMsg:  "expected format StageName=JSON",
+		},
+		{
+			name:    "empty stage name",
+			values:  []string{`={"key": "value"}`},
+			wantErr: true,
+			errMsg:  "stage name is empty",
+		},
+		{
+			name:    "malformed JSON",
+			values:  []string{`KubernetesPlugin=not-json`},
+			wantErr: true,
+			errMsg:  "invalid JSON",
+		},
+		{
+			name: "duplicate stage name",
+			values: []string{
+				`KubernetesPlugin={"key": "val1"}`,
+				`KubernetesPlugin={"key": "val2"}`,
+			},
+			wantErr: true,
+			errMsg:  "duplicate",
+		},
+		{
+			name:   "keys are lowercased",
+			values: []string{`MyPlugin={"Registry-Replacement": "docker.io=quay.io"}`},
+			expected: map[string]map[string]string{
+				"MyPlugin": {"registry-replacement": "docker.io=quay.io"},
+			},
+		},
+		{
+			name:    "null JSON value",
+			values:  []string{`KubernetesPlugin=null`},
+			wantErr: true,
+			errMsg:  "expected a JSON object",
+		},
+		{
+			name:   "JSON value containing equals sign",
+			values: []string{`MyPlugin={"registry-replacement": "docker.io=quay.io,gcr.io=ghcr.io"}`},
+			expected: map[string]map[string]string{
+				"MyPlugin": {"registry-replacement": "docker.io=quay.io,gcr.io=ghcr.io"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := parseStageOptionals(tt.values)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.errMsg) {
+					t.Fatalf("expected error containing %q, got %v", tt.errMsg, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(result) != len(tt.expected) {
+				t.Fatalf("expected %d stages, got %d", len(tt.expected), len(result))
+			}
+			for stage, expectedFlags := range tt.expected {
+				actualFlags, ok := result[stage]
+				if !ok {
+					t.Errorf("missing stage %q", stage)
+					continue
+				}
+				for k, v := range expectedFlags {
+					if actualFlags[k] != v {
+						t.Errorf("stage %q key %q: expected %q, got %q", stage, k, v, actualFlags[k])
+					}
+				}
+			}
+		})
+	}
+}
+
+// Reject case-insensitive duplicate keys in --stage-optionals JSON.
+func TestParseStageOptionals_CaseInsensitiveDuplicateKey(t *testing.T) {
+	values := []string{
+		`MyPlugin={"Registry-Replacement": "docker.io=quay.io", "registry-replacement": "gcr.io=ghcr.io"}`,
+	}
+	_, err := parseStageOptionals(values)
+	if err == nil {
+		t.Fatalf("expected error for case-insensitive duplicate key, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate optional key") {
+		t.Fatalf("expected duplicate key error, got %v", err)
+	}
+}
+
+// Regression: multi-field JSON with commas must not be split by the flag parser.
+// StringArrayVar preserves each value as-is; StringSliceVar would split on commas.
+func TestParseStageOptionals_MultiFieldJSON(t *testing.T) {
+	values := []string{
+		`KubernetesPlugin={"registry-replacement": "docker.io=quay.io", "strip-default-rbac": "false"}`,
+	}
+	result, err := parseStageOptionals(values)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := result["KubernetesPlugin"]
+	if got["registry-replacement"] != "docker.io=quay.io" {
+		t.Errorf("registry-replacement: expected %q, got %q", "docker.io=quay.io", got["registry-replacement"])
+	}
+	if got["strip-default-rbac"] != "false" {
+		t.Errorf("strip-default-rbac: expected %q, got %q", "false", got["strip-default-rbac"])
+	}
+}
+
+func TestRun_InstructionsFileAndStageOptionalsConflict(t *testing.T) {
+	o := &Options{
+		globalFlags: &flags.GlobalFlags{},
+		log:         logrus.StandardLogger(),
+		Flags: Flags{
+			InstructionsFile: "instructions.yaml",
+			StageOptionals:   []string{`KubernetesPlugin={"key": "val"}`},
+		},
+	}
+
+	err := o.run()
+	if err == nil {
+		t.Fatalf("expected conflict error, got nil")
+	}
+	if !strings.Contains(err.Error(), "use either --instructions-file or --stage-optionals, not both") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
 func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
 	tmpDir := t.TempDir()
 	transformDir := filepath.Join(tmpDir, "transform")
 
 	o := &Options{
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			ExportDir:    filepath.Join(tmpDir, "missing-export"),
 			TransformDir: transformDir,

@@ -311,7 +311,7 @@ func TestBuildOptions_ArgMapping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			runner := &Runner{Args: tt.args}
+			runner := &Runner{Args: tt.args, Log: logrus.New()}
 			_, _, err := runner.buildOptions()
 
 			if tt.expectErr && err == nil {

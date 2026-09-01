@@ -2,13 +2,13 @@ package export
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/konveyor/crane/internal/file"
 	"github.com/sirupsen/logrus"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -100,7 +100,7 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 			if obj.GetNamespace() == "" {
 				targetDir = clusterResourceDir
 			}
-			path := filepath.Join(targetDir, getFilePath(obj))
+			path := filepath.Join(targetDir, file.GetResourceFilename(obj))
 			f, err := os.Create(path)
 			if err != nil {
 				errs = append(errs, err)
@@ -172,43 +172,6 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 	return errs
 }
 
-// getFilePath returns a stable filename from kind, group, version, namespace, and name.
-// If the filename exceeds 255 characters, it is truncated and a hash suffix is added.
-func getFilePath(obj unstructured.Unstructured) string {
-	const maxFilenameLength = 255
-
-	namespace := obj.GetNamespace()
-	if namespace == "" {
-		namespace = "clusterscoped"
-	}
-
-	kind := obj.GetKind()
-	group := obj.GetObjectKind().GroupVersionKind().GroupKind().Group
-	version := obj.GetObjectKind().GroupVersionKind().Version
-	name := obj.GetName()
-
-	basename := strings.Join([]string{kind, group, version, namespace, name}, "_")
-	filename := basename + ".yaml"
-
-	if len(filename) <= maxFilenameLength {
-		return filename
-	}
-
-	maxBaseLen := maxFilenameLength - 22 // "_" + 16 hash chars + ".yaml"
-	truncated := basename
-	if len(basename) > maxBaseLen {
-		truncated = basename[:maxBaseLen]
-	}
-
-	hash := sha256.Sum256([]byte(filename))
-	hashStr := fmt.Sprintf("%x", hash[:8])
-
-	if len(truncated) > 0 {
-		return truncated + "_" + hashStr + ".yaml"
-	}
-	return hashStr + ".yaml"
-}
-
 // discoverPreferredResources returns server-preferred API resource lists, filtered to
 // types that support list, create, get, and delete. Partial discovery failures log a
 // warning unless no usable lists remain, in which case it returns an error.
@@ -243,7 +206,7 @@ func discoverPreferredResources(
 // resourceToExtract lists objects for each admitted API type in namespace (or cluster-wide
 // for allowed cluster-scoped kinds: ClusterRoleBinding, ClusterRole, SCC). It returns resources
 // with non-empty lists and a parallel slice of per-type list errors.
-func resourceToExtract(requestTimeout time.Duration, namespace string, labelSelector string, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
+func resourceToExtract(requestTimeout time.Duration, namespace string, labelSelector string, gkFilter *GKFilter, dynamicClient dynamic.Interface, lists []*metav1.APIResourceList, log logrus.FieldLogger) ([]*groupResource, []*groupResourceError) {
 	resources := []*groupResource{}
 	errors := []*groupResourceError{}
 
@@ -263,9 +226,9 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				continue
 			}
 
-			// TODO: alpatel: put this behing a flag
-			if resource.Kind == "Event" {
-				log.Debugf("Skipping extracting events")
+			// Apply GK filter
+			if !gkFilter.ShouldInclude(gv, resource) {
+				log.Debugf("Skipping resource %s.%s: filtered by GK filter", gv.String(), resource.Kind)
 				continue
 			}
 

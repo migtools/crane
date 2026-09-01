@@ -59,6 +59,7 @@ type registrySyncConfig struct {
 type sourceConfig map[string]registrySyncConfig
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
+	o.globalFlags.SetCmdName("skopeo-sync-gen")
 	return nil
 }
 
@@ -119,7 +120,7 @@ func (o *Options) Run() error {
 		return err
 	}
 
-	files, err := file.ReadFiles(context.TODO(), exportDir)
+	files, err := file.ReadFilesWithLogger(context.TODO(), exportDir, o.globalFlags.GetLoggerOrDefault())
 	if err != nil {
 		return err
 	}

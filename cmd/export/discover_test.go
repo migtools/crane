@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	openapi_v2 "github.com/google/gnostic-models/openapiv2"
+	"github.com/konveyor/crane/internal/file"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -24,144 +25,6 @@ import (
 	restclient "k8s.io/client-go/rest"
 	kubetesting "k8s.io/client-go/testing"
 )
-
-// ---------- getFilePath ----------
-
-func TestGetFilePath(t *testing.T) {
-	tests := []struct {
-		name      string
-		obj       unstructured.Unstructured
-		wantParts []string // substrings that must appear
-		maxLen    int      // if > 0, verify length is at most this
-	}{
-		{
-			name: "namespaced object",
-			obj: func() unstructured.Unstructured {
-				u := unstructured.Unstructured{}
-				u.SetKind("Deployment")
-				u.SetName("web")
-				u.SetNamespace("prod")
-				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
-				return u
-			}(),
-			wantParts: []string{"Deployment", "apps", "v1", "prod", "web", ".yaml"},
-		},
-		{
-			name: "cluster-scoped object uses clusterscoped",
-			obj: func() unstructured.Unstructured {
-				u := unstructured.Unstructured{}
-				u.SetKind("ClusterRole")
-				u.SetName("admin")
-				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole"})
-				return u
-			}(),
-			wantParts: []string{"ClusterRole", "rbac.authorization.k8s.io", "v1", "clusterscoped", "admin", ".yaml"},
-		},
-		{
-			name: "resource with max-length name (253 chars) gets truncated",
-			obj: func() unstructured.Unstructured {
-				u := unstructured.Unstructured{}
-				u.SetKind("ConfigMap")
-				u.SetName(strings.Repeat("a", 253)) // Kubernetes max name length
-				u.SetNamespace("my-namespace")
-				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
-				return u
-			}(),
-			wantParts: []string{"ConfigMap", "_v1_", "my-namespace", ".yaml"},
-			maxLen:    255,
-		},
-		{
-			name: "extremely long name gets truncated with hash",
-			obj: func() unstructured.Unstructured {
-				u := unstructured.Unstructured{}
-				u.SetKind("Secret")
-				u.SetName(strings.Repeat("b", 300))
-				u.SetNamespace("production")
-				u.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"})
-				return u
-			}(),
-			wantParts: []string{"Secret", "_v1_", "production", ".yaml"},
-			maxLen:    255,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getFilePath(tt.obj)
-			for _, p := range tt.wantParts {
-				if !strings.Contains(got, p) {
-					t.Errorf("getFilePath() = %q, missing %q", got, p)
-				}
-			}
-			if tt.maxLen > 0 && len(got) > tt.maxLen {
-				t.Errorf("getFilePath() = %q (len=%d), exceeds max length %d", got, len(got), tt.maxLen)
-			}
-		})
-	}
-}
-
-func TestGetFilePath_LongNameCollisionPrevention(t *testing.T) {
-	// Two resources with long names that differ only at the end should produce different filenames
-	name1 := strings.Repeat("a", 253)
-	name2 := strings.Repeat("a", 252) + "b"
-
-	obj1 := unstructured.Unstructured{}
-	obj1.SetKind("ConfigMap")
-	obj1.SetName(name1)
-	obj1.SetNamespace("default")
-	obj1.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
-
-	obj2 := unstructured.Unstructured{}
-	obj2.SetKind("ConfigMap")
-	obj2.SetName(name2)
-	obj2.SetNamespace("default")
-	obj2.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"})
-
-	path1 := getFilePath(obj1)
-	path2 := getFilePath(obj2)
-
-	if path1 == path2 {
-		t.Errorf("getFilePath() produced identical paths for different resources:\npath1=%q\npath2=%q", path1, path2)
-	}
-
-	// Both should be within filesystem limits
-	if len(path1) > 255 {
-		t.Errorf("path1 length %d exceeds 255", len(path1))
-	}
-	if len(path2) > 255 {
-		t.Errorf("path2 length %d exceeds 255", len(path2))
-	}
-}
-
-func TestGetFilePath_LongPrefixAndName(t *testing.T) {
-	// Test with very long namespace + group + long name
-	longNamespace := strings.Repeat("n", 63) // Kubernetes max namespace length
-	longGroup := strings.Repeat("g", 100)
-	longName := strings.Repeat("x", 253)
-
-	obj := unstructured.Unstructured{}
-	obj.SetKind("CustomResource")
-	obj.SetName(longName)
-	obj.SetNamespace(longNamespace)
-	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: longGroup, Version: "v1beta1", Kind: "CustomResource"})
-
-	path := getFilePath(obj)
-
-	// Should not exceed filesystem limit
-	if len(path) > 255 {
-		t.Errorf("path length %d exceeds 255: %q", len(path), path)
-	}
-
-	// Should end with .yaml
-	if !strings.HasSuffix(path, ".yaml") {
-		t.Errorf("path does not end with .yaml: %q", path)
-	}
-
-	// Should contain hash (16 hex chars before .yaml)
-	if len(path) < 22 { // at least "_" + 16 chars + ".yaml"
-		t.Errorf("path too short to contain hash: %q", path)
-	}
-}
 
 // ---------- isAdmittedResource ----------
 
@@ -493,13 +356,13 @@ func TestWriteResources(t *testing.T) {
 	}
 
 	// Namespaced resource written to resourceDir.
-	nsPath := filepath.Join(resourceDir, getFilePath(nsObj))
+	nsPath := filepath.Join(resourceDir, file.GetResourceFilename(nsObj))
 	if _, err := os.Stat(nsPath); err != nil {
 		t.Errorf("namespaced resource file not found: %v", err)
 	}
 
 	// Cluster-scoped resource written to clusterDir.
-	clPath := filepath.Join(clusterDir, getFilePath(clObj))
+	clPath := filepath.Join(clusterDir, file.GetResourceFilename(clObj))
 	if _, err := os.Stat(clPath); err != nil {
 		t.Errorf("cluster-scoped resource file not found: %v", err)
 	}
@@ -774,7 +637,7 @@ func TestWriteResources_createFailsWhenTargetPathIsDirectory(t *testing.T) {
 	nsObj := namespacedObj("ns", "pod-a")
 	nsObj.SetKind("Pod")
 	nsObj.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
-	baseName := getFilePath(nsObj)
+	baseName := file.GetResourceFilename(nsObj)
 	if err := os.Mkdir(filepath.Join(resourceDir, baseName), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -834,7 +697,7 @@ func TestWriteResources_createFailsWhenDestinationFileNotWritable(t *testing.T) 
 	nsObj := namespacedObj("ns", "pod-a")
 	nsObj.SetKind("Pod")
 	nsObj.SetGroupVersionKind(schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"})
-	path := filepath.Join(resourceDir, getFilePath(nsObj))
+	path := filepath.Join(resourceDir, file.GetResourceFilename(nsObj))
 	if err := os.WriteFile(path, []byte("seed"), 0400); err != nil {
 		t.Fatal(err)
 	}
@@ -913,22 +776,52 @@ func TestWriteErrors_jsonMarshalFails(t *testing.T) {
 
 func TestResourceToExtract_SkipsEvents(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := dynamicfake.NewSimpleDynamicClient(scheme)
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
+	obj := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-event", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, obj)
 
 	lists := []*metav1.APIResourceList{
 		{
 			GroupVersion: "v1",
 			APIResources: []metav1.APIResource{
-				{Name: "events", Kind: "Event", Namespaced: true, Verbs: metav1.Verbs{"list", "get"}},
+				{Name: "events", Kind: "Event", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
 			},
 		},
 	}
 
-	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
+	// Test default behavior: Events excluded (simulating default from Complete())
+	filterDefault, err := NewGKFilter(nil, []string{"Event"})
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filterDefault, client, lists, testLogger())
 	for _, r := range resources {
 		if r.APIResource.Kind == "Event" {
-			t.Fatal("Event resources should be skipped")
+			t.Fatal("Event resources should be skipped by default (--exclude-gk Event)")
 		}
+	}
+
+	// Test that Events CAN be included if user explicitly requests them
+	filterInclude, err := NewGKFilter([]string{"Event"}, nil)
+	if err != nil {
+		t.Fatalf("NewGKFilter for include failed: %v", err)
+	}
+
+	resources, _ = resourceToExtract(0, "default", "", filterInclude, client, lists, testLogger())
+	foundEvent := false
+	for _, r := range resources {
+		if r.APIResource.Kind == "Event" {
+			foundEvent = true
+			break
+		}
+	}
+	if !foundEvent {
+		t.Fatal("Event resources should be included when explicitly in --include-gk list")
 	}
 }
 
@@ -945,7 +838,7 @@ func TestResourceToExtract_SkipsClusterScopedNonAdmitted(t *testing.T) {
 		},
 	}
 
-	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, _ := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	for _, r := range resources {
 		if r.APIResource.Kind == "Namespace" {
 			t.Fatal("Namespace resources should be skipped (not admitted)")
@@ -966,7 +859,7 @@ func TestResourceToExtract_SkipsEmptyVerbs(t *testing.T) {
 		},
 	}
 
-	resources, _ := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, _ := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) > 0 {
 		t.Fatal("resources with empty verbs should be skipped")
 	}
@@ -983,9 +876,136 @@ func TestResourceToExtract_SkipsEmptyAPIResources(t *testing.T) {
 		},
 	}
 
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatal("empty APIResources list should produce no resources or errors")
+	}
+}
+
+func TestResourceToExtract_GKFilter_IncludeOnly(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	}
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cm", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, pod, configMap)
+
+	lists := []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+				{Name: "configmaps", Kind: "ConfigMap", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+			},
+		},
+	}
+
+	// Only include Pods
+	filter, err := NewGKFilter([]string{"Pod"}, nil)
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filter, client, lists, testLogger())
+
+	foundPod := false
+	for _, r := range resources {
+		if r.APIResource.Kind == "Pod" {
+			foundPod = true
+		}
+		if r.APIResource.Kind == "ConfigMap" {
+			t.Fatal("ConfigMap should be excluded when not in include list")
+		}
+	}
+	if !foundPod {
+		t.Fatal("Pod should be included in resources")
+	}
+}
+
+func TestResourceToExtract_GKFilter_ExcludeSpecific(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-secret", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, pod, secret)
+
+	lists := []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+				{Name: "secrets", Kind: "Secret", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+			},
+		},
+	}
+
+	// Exclude Secrets
+	filter, err := NewGKFilter(nil, []string{"Secret"})
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filter, client, lists, testLogger())
+
+	foundPod := false
+	for _, r := range resources {
+		if r.APIResource.Kind == "Pod" {
+			foundPod = true
+		}
+		if r.APIResource.Kind == "Secret" {
+			t.Fatal("Secret should be excluded by exclude filter")
+		}
+	}
+	if !foundPod {
+		t.Fatal("Pod should be included in resources")
+	}
+}
+
+func TestResourceToExtract_GKFilter_GroupKindSpecific(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to register client-go scheme: %v", err)
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+	}
+	client := dynamicfake.NewSimpleDynamicClient(scheme, pod)
+
+	lists := []*metav1.APIResourceList{
+		{
+			GroupVersion: "v1",
+			APIResources: []metav1.APIResource{
+				{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: metav1.Verbs{"list", "create", "get", "delete"}},
+			},
+		},
+	}
+
+	// Exclude core group Pods specifically (using empty string for core group)
+	filter, err := NewGKFilter(nil, []string{"/Pod"})
+	if err != nil {
+		t.Fatalf("NewGKFilter failed: %v", err)
+	}
+
+	resources, _ := resourceToExtract(0, "default", "", filter, client, lists, testLogger())
+
+	for _, r := range resources {
+		if r.APIResource.Kind == "Pod" {
+			t.Fatal("Pod from core group should be excluded by /Pod filter")
+		}
 	}
 }
 
@@ -1325,7 +1345,7 @@ func TestResourceToExtract_loadsConfigMaps(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -1348,7 +1368,7 @@ func TestResourceToExtract_loadsClusterRoles(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -1370,7 +1390,7 @@ func TestResourceToExtract_listForbidden(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 {
 		t.Fatalf("expected no resources, got %d", len(resources))
 	}
@@ -1392,7 +1412,7 @@ func TestResourceToExtract_listNotFound(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || !apierrors.IsNotFound(errs[0].Error) {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1413,7 +1433,7 @@ func TestResourceToExtract_timeoutFailsFast(t *testing.T) {
 		},
 	}
 	// Pass non-zero timeout to enable timeout detection
-	resources, errs := resourceToExtract(100, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(100, "default", "", nil, client, lists, testLogger())
 	// Expect: nil resources, exactly 1 timeout error, and no processing of services
 	if resources != nil {
 		t.Fatalf("expected nil resources on timeout, got %d resources", len(resources))
@@ -1440,7 +1460,7 @@ func TestResourceToExtract_listMethodNotSupported(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || !apierrors.IsMethodNotSupported(errs[0].Error) {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1459,7 +1479,7 @@ func TestResourceToExtract_listGenericError(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 1 || errs[0].Error.Error() != "upstream timeout" {
 		t.Fatalf("resources=%d errs=%v", len(resources), errs)
 	}
@@ -1475,7 +1495,7 @@ func TestResourceToExtract_zeroObjectsNotAdded(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatalf("empty list should skip resource (no error), got resources=%d errs=%v", len(resources), errs)
 	}
@@ -1492,7 +1512,7 @@ func TestResourceToExtract_skipsUnparseableGroupVersion(t *testing.T) {
 			},
 		},
 	}
-	resources, errs := resourceToExtract(0, "default", "", client, lists, testLogger())
+	resources, errs := resourceToExtract(0, "default", "", nil, client, lists, testLogger())
 	if len(resources) != 0 || len(errs) != 0 {
 		t.Fatalf("got resources %d errs %d", len(resources), len(errs))
 	}

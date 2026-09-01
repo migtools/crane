@@ -34,6 +34,9 @@ func NewMigrationScenario(appName, namespace, k8sDeployBin, craneBin, srcCtx, tg
 	if config.RunAs == "admin" {
 		srcNonAdminCtx = srcCtx
 		tgtNonAdminCtx = tgtCtx
+	} else if srcCtx == tgtCtx {
+		// Same-cluster scenarios should reuse the source non-admin context on both sides.
+		tgtNonAdminCtx = srcNonAdminCtx
 	}
 
 	return MigrationScenario{
