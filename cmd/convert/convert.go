@@ -71,12 +71,10 @@ func addFlagsForConvertOptions(t *ConvertOptions, cmd *cobra.Command) {
 
 func (t *ConvertOptions) Complete(c *cobra.Command, args []string) error {
 	t.globalFlags.SetCmdName("convert")
-	t.Logger = t.globalFlags.GetLoggerOrDefault()
 	if t.debug {
-		if logger, ok := t.Logger.(*logrus.Logger); ok {
-			logger.SetLevel(logrus.DebugLevel)
-		}
+		t.globalFlags.Debug = true
 	}
+	t.Logger = t.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 

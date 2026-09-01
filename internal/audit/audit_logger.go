@@ -52,11 +52,18 @@ func (h *FileHook) Levels() []logrus.Level {
 
 // Fire is called by logrus for every log entry. It formats the entry as JSON and writes it to the file.
 func (h *FileHook) Fire(entry *logrus.Entry) error {
+	e := entry
 	if h.cmd != nil && *h.cmd != "" {
-		entry.Data["cmd"] = *h.cmd
-		defer delete(entry.Data, "cmd")
+		data := make(logrus.Fields, len(entry.Data)+1)
+		for k, v := range entry.Data {
+			data[k] = v
+		}
+		data["cmd"] = *h.cmd
+		clone := *entry
+		clone.Data = data
+		e = &clone
 	}
-	line, err := h.formatter.Format(entry)
+	line, err := h.formatter.Format(e)
 	if err != nil {
 		return fmt.Errorf("audit file hook: format entry: %w", err)
 	}
