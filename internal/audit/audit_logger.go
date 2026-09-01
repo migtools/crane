@@ -27,7 +27,7 @@ func NewFileHook(path string, cmd *string) (*FileHook, error) {
 		return nil, err
 	}
 	if err := f.Chmod(0600); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	return &FileHook{
