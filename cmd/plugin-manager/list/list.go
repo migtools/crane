@@ -10,6 +10,7 @@ import (
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/olekukonko/tablewriter"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -20,6 +21,7 @@ type Options struct {
 	// 2. globalFlags for the args merged with values from the viper config file
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
+	log              *logrus.Logger
 	// Two Flags struct fields are needed
 	// 1. cobraFlags for explicit CLI args parsed by cobra
 	// 2. Flags for the args merged with values from the viper config file
@@ -45,6 +47,8 @@ type AvailablePlugins struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @jgabani
+	o.globalFlags.SetCmdName("plugin-manager list")
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
@@ -96,7 +100,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLogger()
+	log := o.log
 	if o.Installed {
 		// retrieve list of all the plugins that are installed within plugin dir
 		// TODO: differentiate between multiple repos
@@ -163,7 +167,7 @@ func (o *Options) run() error {
 	return nil
 }
 
-//TODO: this can be merged with printParamsInformation
+// TODO: this can be merged with printParamsInformation
 func printInstalledInformation(plugins []transform2.Plugin) {
 	for _, thisPlugin := range plugins {
 		printTable([][]string{

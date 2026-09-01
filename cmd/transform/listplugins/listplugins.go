@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 
+	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/konveyor/crane/internal/plugin"
-	cranelib "github.com/konveyor/crane-lib/transform"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -33,6 +33,7 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @sseago
+	o.globalFlags.SetCmdName("transform listplugins")
 	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
@@ -106,7 +107,7 @@ func getFilteredPlugins(pluginDir string, skipPlugins []string, log *logrus.Logg
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 
 	plugins, err := getFilteredPlugins(o.PluginDir, o.SkipPlugins, log)
 	if err != nil {

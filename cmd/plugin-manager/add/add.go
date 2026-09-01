@@ -26,6 +26,7 @@ type Options struct {
 
 	cobraGlobalFlags *flags.GlobalFlags
 	globalFlags      *flags.GlobalFlags
+	log              *logrus.Logger
 	// Two Flags struct fields are needed
 	// 1. cobraFlags for explicit CLI args parsed by cobra
 	// 2. Flags for the args merged with values from the viper config file
@@ -42,6 +43,8 @@ type Flags struct {
 
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @jgabani
+	o.globalFlags.SetCmdName("plugin-manager add")
+	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
@@ -96,7 +99,6 @@ func NewAddCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
 		globalFlags: f,
 	}
-	log := o.globalFlags.GetLogger()
 	cmd := &cobra.Command{
 		Use:   "add <name>",
 		Short: "installs the desired plugin",
@@ -105,7 +107,7 @@ func NewAddCommand(f *flags.GlobalFlags) *cobra.Command {
 				return err
 			}
 			if err := o.Validate(args); err != nil {
-				log.Errorf("%s", err.Error())
+				o.log.Errorf("%s", err.Error())
 				return nil
 			}
 			if err := o.Run(args); err != nil {
@@ -130,7 +132,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run(args []string) error {
-	log := o.globalFlags.GetLogger()
+	log := o.log
 
 	manifestMap, err := plugin.BuildManifestMap(log, args[0], o.Repo)
 	if err != nil {

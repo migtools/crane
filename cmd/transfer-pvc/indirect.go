@@ -28,7 +28,7 @@ import (
 )
 
 func (t *TransferPVCCommand) runIndirect() error {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
 	fmt.Fprintf(os.Stderr, "\ncrane transfer-pvc (indirect via cloud storage)\n")
@@ -407,7 +407,7 @@ func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcCl
 }
 
 func (t *TransferPVCCommand) createTempRcloneSecretFromData(c client.Client, namespace string, configData []byte, labelPVCName string) (string, error) {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
 	secretName := fmt.Sprintf("crane-rclone-config-%s", getValidatedResourceName(t.PVC.Name.source))
 
 	secret := &corev1.Secret{

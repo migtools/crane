@@ -61,7 +61,6 @@ type TransferPVCCommand struct {
 	genericclioptions.IOStreams
 	globalFlags *flags.GlobalFlags
 	log         *logrus.Logger
-	logger      logrus.FieldLogger
 
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
@@ -154,9 +153,8 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams, f *flags.GlobalF
 				StorageRequests: quantityVar{},
 			},
 		},
-		IOStreams:    streams,
+		IOStreams:   streams,
 		globalFlags: f,
-		logger:      logrus.New(),
 	}
 
 	cmd := &cobra.Command{
@@ -207,6 +205,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 }
 
 func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
+	t.globalFlags.SetCmdName("transfer-pvc")
 	t.log = t.globalFlags.GetLoggerOrDefault()
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
@@ -245,7 +244,10 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 }
 
 func (t *TransferPVCCommand) Validate() error {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
+	if log == nil {
+		log = t.globalFlags.GetLoggerOrDefault()
+	}
 	cloudStorage := t.CloudStorage
 
 	if t.Encrypt && cloudStorage == "" {
@@ -353,11 +355,10 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 }
 
 func (t *TransferPVCCommand) run() (retErr error) {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
-	logrusLog := logrus.New()
-	logrusLog.SetFormatter(&logrus.JSONFormatter{})
-	logger := logrusr.New(logrusLog).WithName("transfer-pvc")
+	ctrlLogger := logrus.New()
+	logger := logrusr.New(ctrlLogger).WithName("transfer-pvc")
 
 	totalPhases := 7
 	if t.isIntraClusterSameNamespace() {

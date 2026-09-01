@@ -41,13 +41,13 @@ type Options struct {
 }
 
 type Flags struct {
-	ExportDir         string   `mapstructure:"export-dir"`
-	PluginDir         string   `mapstructure:"plugin-dir"`
-	TransformDir      string   `mapstructure:"transform-dir"`
-	SkipPlugins       []string `mapstructure:"skip-plugins"`
-	OptionalFlags     string   `mapstructure:"optional-flags"`
-	StageOptionals    []string `mapstructure:"stage-optionals"`
-	Overwrite         bool     `mapstructure:"overwrite"`
+	ExportDir      string   `mapstructure:"export-dir"`
+	PluginDir      string   `mapstructure:"plugin-dir"`
+	TransformDir   string   `mapstructure:"transform-dir"`
+	SkipPlugins    []string `mapstructure:"skip-plugins"`
+	OptionalFlags  string   `mapstructure:"optional-flags"`
+	StageOptionals []string `mapstructure:"stage-optionals"`
+	Overwrite      bool     `mapstructure:"overwrite"`
 	// Kustomize arguments
 	KustomizeArgs string `mapstructure:"kustomize-args"`
 	// Instructions file
@@ -57,12 +57,13 @@ type Flags struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
+	o.globalFlags.SetCmdName("transform")
 	o.log = o.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 
 func (o *Options) Validate() error {
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 
 	exportDir, err := filepath.Abs(o.ExportDir)
 	if err != nil {
@@ -106,7 +107,8 @@ func getPluginCompletions(f *flags.GlobalFlags) func(cmd *cobra.Command, args []
 		}
 
 		// Get plugin names using shared function
-		log := f.GetLogger()
+		f.SetCmdName("transform")
+		log := f.GetLoggerOrDefault()
 		pluginNames, err := listplugins.GetPluginNames(pluginDir, skipPlugins, log)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
@@ -119,6 +121,7 @@ func getPluginCompletions(f *flags.GlobalFlags) func(cmd *cobra.Command, args []
 func NewTransformCommand(f *flags.GlobalFlags) *cobra.Command {
 	o := &Options{
 		cobraGlobalFlags: f,
+		log:              logrus.StandardLogger(),
 	}
 	cmd := &cobra.Command{
 		Use:   "transform [stage...]",
@@ -181,7 +184,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 }
 
 func (o *Options) run() error {
-	log := o.globalFlags.GetLoggerOrDefault()
+	log := o.log
 
 	log.Infof("Starting transform...")
 	exportDir, err := filepath.Abs(o.ExportDir)
@@ -203,7 +206,7 @@ func (o *Options) run() error {
 	}
 
 	if o.InstructionsFile != "" && len(o.RequestedStages) > 0 {
-    log.Debugf("Cannot use --instructions-file together with positional stage arguments")
+		log.Debugf("Cannot use --instructions-file together with positional stage arguments")
 		return fmt.Errorf("use either --instructions-file or positional stage arguments, not both")
 	}
 	if o.InstructionsFile != "" && len(o.StageOptionals) > 0 {
