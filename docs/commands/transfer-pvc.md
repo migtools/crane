@@ -87,12 +87,35 @@ crane transfer-pvc --source-context=mycluster --destination-context=mycluster \
   --dest-storage-class=gp3 --endpoint=route
 ```
 
-### Indirect Transfer Options
-
-When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
 For the complete end-to-end workflow including workload reference updates, see the [StorageClass Conversion Guide](../storageclass-conversion.md).
 
 > **Warning — StorageClass conversion with StatefulSets:** `crane transfer-pvc` migrates data from existing PVCs to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. If the StatefulSet is scaled up after conversion without being recreated, new replicas will provision PVCs on the original StorageClass. To complete the conversion, delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec.
+
+### Indirect Transfer Options
+
+When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
+
+#### Sample rclone-config-file
+
+**MinIO (self-hosted):**
+```
+[remote]
+type = s3
+provider = Minio
+access_key_id = minioadmin
+secret_access_key = minioadmin
+endpoint = http://minio.minio.svc.cluster.local:9000
+```
+
+**AWS S3:**
+```
+[remote]
+type = s3
+provider = AWS
+access_key_id = <access_key>
+secret_access_key = <secret_key>
+region = us-east-1
+```
 
 ### Endpoint Options
 
