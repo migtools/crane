@@ -11,9 +11,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Indirect transfer with missing rclone config Secret)", func() {
-
-	It("Should fail when the referenced rclone-config-secret does not exist",
+var _ = Describe("Indirect transfer with missing rclone config Secret", func() {
+	It("[MTA-910] Should fail when the referenced rclone-config-secret does not exist",
 		Label("tier1", "pvc-transfer", "indirect"), func() {
 
 			appName := "app-with-empty-pvc"
@@ -66,8 +65,10 @@ var _ = Describe("Indirect transfer with missing rclone config Secret)", func() 
 
 			By("Verify the nonexistent Secret is truly absent")
 			const bogusSecret = "nonexistent-rclone-secret"
-			out, _ := kubectlSrcNonAdmin.Run(
+			out, err := kubectlSrcNonAdmin.Run(
 				"get", "secret", bogusSecret, "-n", namespace, "--ignore-not-found=true")
+			Expect(err).NotTo(HaveOccurred(),
+				"precondition: failed to query Secret %q in namespace %q", bogusSecret, namespace)
 			Expect(strings.TrimSpace(out)).To(BeEmpty(),
 				"precondition: Secret %q should not exist before the test", bogusSecret)
 
@@ -92,29 +93,29 @@ var _ = Describe("Indirect transfer with missing rclone config Secret)", func() 
 
 			Expect(errMsg).To(ContainSubstring("crane transfer-pvc failed"),
 				"error should originate from crane transfer-pvc")
+			Expect(errMsg).To(ContainSubstring(bogusSecret),
+				"error should name the missing rclone config Secret %q", bogusSecret)
+			Expect(errMsg).To(ContainSubstring("not found"),
+				"error should indicate the rclone config Secret was not found, not an unrelated transfer failure")
 
 			By("Verify no orphaned indirect-transfer pods remain on source")
 			podOut, err := kubectlSrcNonAdmin.Run(
 				"get", "pods", "-n", namespace,
 				"-l", "app.kubernetes.io/component=indirect-transfer",
 				"-o", "name")
-			if err == nil && strings.TrimSpace(podOut) != "" {
-				log.Printf("WARNING: orphaned indirect-transfer pods on source: %s",
-					strings.TrimSpace(podOut))
-			} else {
-				log.Printf("No orphaned indirect-transfer pods on source")
-			}
+			Expect(err).NotTo(HaveOccurred(), "failed to query indirect-transfer pods on source")
+			Expect(strings.TrimSpace(podOut)).To(BeEmpty(),
+				"expected no orphaned indirect-transfer pods on source, got: %s", strings.TrimSpace(podOut))
+			log.Printf("No orphaned indirect-transfer pods on source")
 
 			By("Verify no orphaned indirect-transfer Secrets remain on source")
 			secretOut, err := kubectlSrcNonAdmin.Run(
 				"get", "secrets", "-n", namespace,
 				"-l", "app.kubernetes.io/component=indirect-transfer",
 				"-o", "name")
-			if err == nil && strings.TrimSpace(secretOut) != "" {
-				log.Printf("WARNING: orphaned indirect-transfer Secrets on source: %s",
-					strings.TrimSpace(secretOut))
-			} else {
-				log.Printf("No orphaned indirect-transfer Secrets on source")
-			}
+			Expect(err).NotTo(HaveOccurred(), "failed to query indirect-transfer Secrets on source")
+			Expect(strings.TrimSpace(secretOut)).To(BeEmpty(),
+				"expected no orphaned indirect-transfer Secrets on source, got: %s", strings.TrimSpace(secretOut))
+			log.Printf("No orphaned indirect-transfer Secrets on source")
 		})
 })
