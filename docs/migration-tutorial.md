@@ -120,8 +120,7 @@ mkdir -p crane-migration && cd crane-migration
 ```bash
 crane export \
   --context "${SOURCE_CONTEXT}" \
-  -n "${NAMESPACE}" \
-  -e export
+  -n "${NAMESPACE}"
 ```
 
 Example output (abbreviated):
@@ -159,7 +158,7 @@ A stage is one step in the transform pipeline. Think of it like an assembly line
 Example: `10_KubernetesPlugin` runs first, then `25_CustomStage` runs on top of that result.
 
 ```bash
-crane transform -e export -t transform
+crane transform
 ```
 
 Example output (abbreviated):
@@ -217,7 +216,7 @@ If migrating between OpenShift clusters, install the OpenShiftPlugin for additio
 
 ```bash
 crane plugin-manager install OpenShiftPlugin
-crane transform -e export -t transform
+crane transform
 ```
 
 ### Optional: Custom flags
@@ -225,7 +224,7 @@ crane transform -e export -t transform
 Pass optional flags to plugins using `--optional-flags` with a JSON object:
 
 ```bash
-crane transform -e export -t transform \
+crane transform \
   --optional-flags '{"registry-replacement":"docker-registry.default.svc:5000=image-registry.openshift-image-registry.svc:5000"}'
 ```
 
@@ -234,7 +233,7 @@ crane transform -e export -t transform \
 Add a custom pass-through stage for manual edits:
 
 ```bash
-crane transform -e export -t transform 25_CustomStage
+crane transform 25_CustomStage
 ```
 
 This creates `transform/25_CustomStage/` with `input/`, `output/`, and `kustomization.yaml`. Edit resources in this stage, then preview the rendered manifests before applying:
@@ -250,7 +249,7 @@ For a deeper explanation of stage ordering, stage structure, and multi-stage beh
 If a custom stage already contains edits and you need to regenerate stage artifacts (`input/`, `output/`, `kustomization.yaml`), rerun with `--overwrite`:
 
 ```bash
-crane transform -e export -t transform --overwrite
+crane transform --overwrite
 ```
 
 ### Optional: Instructions file
@@ -286,7 +285,7 @@ See [transform command reference](./commands/transform.md) for all options.
 `crane apply` renders the final manifests from transform stages into deployable output files.
 
 ```bash
-crane apply -t transform -o output
+crane apply
 ```
 
 Example output (abbreviated):
@@ -312,7 +311,7 @@ Verify that server-managed fields have been stripped and the manifests look clea
 For non-admin scenarios, skip cluster-scoped resources:
 
 ```bash
-crane apply -t transform -o output --skip-cluster-scoped
+crane apply --skip-cluster-scoped
 ```
 
 See [apply command reference](./commands/apply.md) for details.
@@ -323,9 +322,7 @@ See [apply command reference](./commands/apply.md) for details.
 
 ```bash
 crane validate \
-  --context "${TARGET_CONTEXT}" \
-  -i output \
-  --validate-dir validate
+  --context "${TARGET_CONTEXT}"
 ```
 
 Example output (abbreviated):
@@ -542,7 +539,7 @@ crane transfer-pvc \
   --verify
 
 # Transform with pvc-rename-map to rewrite claimName in Deployments, StatefulSets, etc.
-crane transform -e export -t transform \
+crane transform \
   --optional-flags '{"pvc-rename-map":"mongodb-data:mongodb-data-new"}'
 ```
 
@@ -551,7 +548,7 @@ crane transform -e export -t transform \
 Crane does not require cluster-admin. Namespace-level permissions are sufficient. For non-admin scenarios, skip cluster-scoped resources during apply:
 
 ```bash
-crane apply -t transform -o output --skip-cluster-scoped
+crane apply --skip-cluster-scoped
 ```
 
 See [RBAC requirements](./rbac-scc-requirements.md) for details.
