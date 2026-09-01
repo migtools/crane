@@ -3,6 +3,7 @@ package tunnel_api
 import (
 	"fmt"
 
+	logrusr "github.com/bombsimon/logrusr/v3"
 	"github.com/konveyor/crane-lib/connect/tunnel_api"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/sirupsen/logrus"
@@ -12,6 +13,7 @@ import (
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type TunnelAPIOptions struct {
@@ -142,6 +144,9 @@ func (t *TunnelAPIOptions) getRestConfigFromContext(ctx string) (*rest.Config, e
 
 func (t *TunnelAPIOptions) run() error {
 	log := t.logger
+	ctrlLogger := logrus.New()
+	logger := logrusr.New(ctrlLogger)
+	ctrllog.SetLogger(logger)
 	tunnel := tunnel_api.Tunnel{}
 
 	fmt.Println("Generating SSL certificates. This may take several minutes.")

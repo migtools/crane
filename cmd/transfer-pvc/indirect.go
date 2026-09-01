@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	logrusr "github.com/bombsimon/logrusr/v3"
 	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
@@ -23,12 +24,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/konveyor/crane-lib/state_transfer/transfer/indirect"
 )
 
 func (t *TransferPVCCommand) runIndirect() error {
 	log := t.log
+	ctrlLogger := logrus.New()
+	logger := logrusr.New(ctrlLogger).WithName("transfer-pvc")
+	ctrllog.SetLogger(logger)
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
 	fmt.Fprintf(os.Stderr, "\ncrane transfer-pvc (indirect via cloud storage)\n")

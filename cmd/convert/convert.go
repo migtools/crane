@@ -1,6 +1,7 @@
 package convert
 
 import (
+	logrusr "github.com/bombsimon/logrusr/v3"
 	"github.com/konveyor/crane-lib/convert"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/sirupsen/logrus"
@@ -9,6 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	buildv1 "github.com/openshift/api/build/v1"
 	imagev1 "github.com/openshift/api/image/v1"
@@ -83,6 +85,9 @@ func (t *ConvertOptions) Run() error {
 }
 
 func (t *ConvertOptions) run() error {
+	ctrlLogger := logrus.New()
+	logger := logrusr.New(ctrlLogger)
+	ctrllog.SetLogger(logger)
 	srcClient, err := t.getClientFromContext()
 	if err != nil {
 		return err
