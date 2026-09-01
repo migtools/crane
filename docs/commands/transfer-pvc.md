@@ -30,6 +30,15 @@ crane transfer-pvc --source-context=source --destination-context=destination \
   --pvc-name=data-pvc \
   --cloud-storage=remote:my-bucket/transfer-path \
   --rclone-config-secret=rclone-secret
+```
+
+### Indirect Transfer with Data Retention
+```bash
+crane transfer-pvc --source-context=source --destination-context=destination \
+  --pvc-name=data-pvc \
+  --cloud-storage=remote:my-bucket/transfer-path \
+  --keep-cloud-data=true
+```
 
 ## Flags
 
@@ -52,7 +61,7 @@ crane transfer-pvc --source-context=source --destination-context=destination \
 | `--rclone-config-secret` | string | No | Name of the K8s Secret containing rclone.conf for indirect transfer |
 | `--rclone-config-file` | string | No | Path to local rclone.conf file for indirect transfer |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
-| `--keep-cloud-data` | bool | No | Reserved for cloud-data retention; currently has no effect because cleanup is not implemented |
+| `--keep-cloud-data` | bool | No | If true, preserves cloud storage data after successful transfer (default: false) |
 
 ### PVC Options
 
@@ -94,6 +103,8 @@ For the complete end-to-end workflow including workload reference updates, see t
 ### Indirect Transfer Options
 
 When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
+
+By default, after a successful indirect transfer, `crane` automatically initiates a cleanup process to remove the temporary data from the cloud storage bucket. If the cleanup process fails, the tool issues a warning but marks the overall transfer as successful. You can prevent this automatic cleanup by setting `--keep-cloud-data=true`.
 
 #### Sample rclone-config-file
 
