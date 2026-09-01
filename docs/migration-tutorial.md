@@ -401,23 +401,15 @@ kubectl --context "${SOURCE_CONTEXT}" get pods -n "${NAMESPACE}" -l app=mongodb
 
 ### 5c. Transfer the PVC
 
-On OpenShift clusters (using Route endpoint):
-
-```bash
-crane transfer-pvc \
-  --source-context "${SOURCE_CONTEXT}" \
-  --destination-context "${TARGET_CONTEXT}" \
-  --pvc-name mongodb-data \
-  --pvc-namespace "${NAMESPACE}" \
-  --endpoint route \
-  --verify
-```
-
-On Kubernetes clusters (using nginx-ingress endpoint):
+Get the target cluster's node IP. This IP must be reachable from the source cluster:
 
 ```bash
 NODE_IP=$(kubectl --context "${TARGET_CONTEXT}" get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+```
 
+Transfer the PVC data:
+
+```bash
 crane transfer-pvc \
   --source-context "${SOURCE_CONTEXT}" \
   --destination-context "${TARGET_CONTEXT}" \
@@ -425,17 +417,24 @@ crane transfer-pvc \
   --pvc-namespace "${NAMESPACE}" \
   --endpoint nginx-ingress \
   --subdomain "${NODE_IP}.nip.io" \
+  --ingress-class nginx \
   --verify
 ```
+
+> **Minikube setup:** Both minikube clusters must share the same Docker/Podman network for the InternalIP to be reachable. Use `make setup-minikube-same-network` from this repo, or create clusters with `--network=minikube`. The nip.io wildcard DNS service resolves `<IP>.nip.io` back to the IP, providing a valid hostname for the Ingress without any DNS setup.
+
+> **OpenShift:** Use `--endpoint route` instead of `--endpoint nginx-ingress`. No `--subdomain` or `--ingress-class` flags are needed — the cluster's default router subdomain is used automatically.
 
 Key flags:
 - `--pvc-name` — name of the PVC to transfer (use `source:destination` format to rename, e.g. `mongodb-data:mongodb-data-new`)
 - `--pvc-namespace` — namespace (use `source:destination` format for cross-namespace, e.g. `source-ns:target-ns`)
 - `--dest-storage-class` — provision the destination PVC on a different StorageClass
-- `--endpoint` — `route` for OpenShift, `nginx-ingress` for Kubernetes
+- `--endpoint` — `nginx-ingress` for Kubernetes, `route` for OpenShift
+- `--ingress-class` — ingress class name (required with `nginx-ingress`)
+- `--subdomain` — wildcard DNS subdomain (required with `nginx-ingress`)
 - `--verify` — validates transferred files using checksums after transfer
 
-The transfer creates temporary resources (rsync pods, services, secrets, routes) on both clusters. These are cleaned up automatically when the transfer completes.
+The transfer creates temporary resources (rsync pods, services, secrets, ingresses) on both clusters. These are cleaned up automatically when the transfer completes.
 
 ### 5d. Verify the transfer
 
@@ -533,10 +532,14 @@ Both clusters only need outbound access to the S3 bucket. No endpoint or ingress
 To change the PVC name during migration and update all workload references:
 
 ```bash
-# Transfer with rename
+# Transfer with rename (add your --source-context, --destination-context, --endpoint flags)
 crane transfer-pvc \
+  --source-context "${SOURCE_CONTEXT}" \
+  --destination-context "${TARGET_CONTEXT}" \
   --pvc-name mongodb-data:mongodb-data-new \
-  ...
+  --pvc-namespace "${NAMESPACE}" \
+  --endpoint route \
+  --verify
 
 # Transform with pvc-rename-map to rewrite claimName in Deployments, StatefulSets, etc.
 crane transform -e export -t transform \
