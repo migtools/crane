@@ -15,20 +15,15 @@ import (
 func md5sumFile(k KubectlRunner, namespace, pod, path string) (string, error) {
 	out, err := k.Run("exec", pod, "-n", namespace, "--", "/bin/sh", "-c", fmt.Sprintf("md5sum %s | awk '{print $1}'", path))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("md5sum %q in pod %q (namespace %q): %w", path, pod, namespace, err)
 	}
 	return strings.TrimSpace(StripKubectlWarnings(out)), nil
 }
 
 var _ = Describe("Indirect transfer with a user-provided rclone config Secret", func() {
-	It("Should migrate PVC data via S3 when --rclone-config-secret references an existing Secret",
+	It("[MTA-912] Should migrate PVC data via S3 when --rclone-config-secret references an existing Secret",
 		Label("tier1", "pvc-transfer", "indirect"), func() {
 
-			// This test exercises the --rclone-config-secret path of indirect
-			// (cloud/S3) transfer, where the caller pre-creates the Secret holding
-			// rclone.conf rather than letting crane build a temporary one from a
-			// local file. It requires a working S3-compatible backend, so it only
-			// runs when both --cloud-storage and --rclone-config-file are provided.
 			if config.CloudStorage == "" || config.RcloneConfigFile == "" {
 				Skip("indirect transfer not configured: requires --cloud-storage and --rclone-config-file (source of rclone.conf for the Secret)")
 			}
@@ -62,9 +57,6 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 			}
 
 			By("Grant namespace-admin permissions to the non-admin user on source and target")
-			// SetupActiveKubectlRunners creates the namespace on both clusters and,
-			// in non-admin mode, grants namespace-scoped admin to the non-admin user;
-			// the returned runners are bound to the active (non-admin) contexts.
 			kubectlSrc, kubectlTgt, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(rbacCleanup)
@@ -118,12 +110,21 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 					"failed to create rclone config Secret %q in namespace %q on context %q", rcloneSecret, namespace, k.Context)
 			}
 
-			By("Verify the referenced Secret exists before the transfer")
+			By("Capture the referenced Secret's identity and contents before the transfer")
+			// Snapshot the UID and data.rclone.conf per context so that, after the
+			// transfer, we can assert crane left the caller-provided Secret untouched
+			// (neither replaced nor mutated), not merely still present.
+			preUID := map[string]string{}
+			preData := map[string]string{}
 			for _, k := range []KubectlRunner{kubectlSrc, kubectlTgt} {
-				out, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.data.rclone\\.conf}")
+				uid, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.metadata.uid}")
 				Expect(err).NotTo(HaveOccurred())
-				Expect(strings.TrimSpace(out)).NotTo(BeEmpty(),
+				data, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.data.rclone\\.conf}")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(strings.TrimSpace(data)).NotTo(BeEmpty(),
 					"Secret %q on context %q should contain a rclone.conf key", rcloneSecret, k.Context)
+				preUID[k.Context] = strings.TrimSpace(uid)
+				preData[k.Context] = strings.TrimSpace(data)
 			}
 
 			By("Run crane transfer-pvc in indirect mode using --rclone-config-secret")
@@ -194,15 +195,26 @@ spec:
 			Expect(tgtMD5).To(Equal(srcMD5), "MD5 checksum on the migrated PVC should match source")
 			log.Printf("Source and target MD5 checksums match: %s\n", srcMD5)
 
-			By("Verify the user-provided rclone config Secret was NOT deleted by crane")
+			By("Verify the user-provided rclone config Secret was left intact by crane")
 			// crane creates and cleans up its own temporary Secrets only when
 			// --rclone-config-file is used; a Secret supplied via
-			// --rclone-config-secret is owned by the caller and must be left intact.
+			// --rclone-config-secret is owned by the caller and must be left intact
+			// (not deleted, replaced, or mutated).
 			for _, k := range []KubectlRunner{kubectlSrc, kubectlTgt} {
 				out, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "--ignore-not-found=true", "-o", "name")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(strings.TrimSpace(out)).To(ContainSubstring(rcloneSecret),
 					"user-provided Secret %q on context %q should still exist after transfer", rcloneSecret, k.Context)
+
+				uid, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.metadata.uid}")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(strings.TrimSpace(uid)).To(Equal(preUID[k.Context]),
+					"user-provided Secret %q on context %q should not be replaced (UID changed)", rcloneSecret, k.Context)
+
+				data, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.data.rclone\\.conf}")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(strings.TrimSpace(data)).To(Equal(preData[k.Context]),
+					"user-provided Secret %q on context %q should not be mutated (rclone.conf changed)", rcloneSecret, k.Context)
 			}
 		})
 })
