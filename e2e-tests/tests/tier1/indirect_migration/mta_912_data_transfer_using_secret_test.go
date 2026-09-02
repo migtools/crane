@@ -1,6 +1,8 @@
 package indirect_migration
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strings"
@@ -10,6 +12,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+// sha256Hex returns the hex-encoded SHA-256 digest of s. Used to compare the
+// rclone.conf Secret contents without printing the (credential-bearing) value
+// in an assertion failure message.
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
 
 // md5sumFile returns the MD5 checksum (hash only) of a file inside a pod.
 func md5sumFile(k KubectlRunner, namespace, pod, path string) (string, error) {
@@ -213,7 +223,7 @@ spec:
 
 				data, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.data.rclone\\.conf}")
 				Expect(err).NotTo(HaveOccurred())
-				Expect(strings.TrimSpace(data)).To(Equal(preData[k.Context]),
+				Expect(sha256Hex(strings.TrimSpace(data))).To(Equal(sha256Hex(preData[k.Context])),
 					"user-provided Secret %q on context %q should not be mutated (rclone.conf changed)", rcloneSecret, k.Context)
 			}
 		})
