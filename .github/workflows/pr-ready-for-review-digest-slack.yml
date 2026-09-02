@@ -144,15 +144,28 @@ jobs:
           }
 
           # Fetch open PRs with the ready-for-review-notified label; keep only
-          # non-draft PRs without an outstanding changes-requested review.
+          # non-draft PRs. Hide a PR only when a reviewer's latest review is
+          # CHANGES_REQUESTED on the current head commit (stale reviews on older
+          # commits do not block the digest).
           prs_json="$(gh pr list \
             --repo "${target_repo}" \
             --state open \
             --label ready-for-review-notified \
-            --json number,title,url,author,isDraft,createdAt,reviewDecision \
+            --json number,title,url,author,isDraft,createdAt,headRefOid,reviews \
             --limit 200)"
 
-          prs_json="$(printf '%s' "$prs_json" | jq '[.[] | select(.isDraft == false and .reviewDecision != "CHANGES_REQUESTED")] | sort_by(.createdAt)')"
+          prs_json="$(printf '%s' "$prs_json" | jq '
+            [.[]
+             | select(.isDraft == false)
+             | . as $pr
+             | select(
+                 (($pr.reviews // [])
+                  | group_by(.author.login)
+                  | map(sort_by(.submittedAt) | last)
+                  | map(select(.state == "CHANGES_REQUESTED" and .commit.oid == $pr.headRefOid))
+                  | length) == 0
+               )
+            ] | sort_by(.createdAt)')"
           total="$(printf '%s' "$prs_json" | jq 'length')"
 
           if [[ "${total}" -eq 0 ]]; then
