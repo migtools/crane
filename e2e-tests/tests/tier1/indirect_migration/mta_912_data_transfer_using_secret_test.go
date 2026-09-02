@@ -42,6 +42,10 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 				testFileName = "testfile.txt"
 				rcloneSecret = "crane-rclone-config-e2e"
 			)
+			// "app-with-empty-pvc" is the base k8sdeploy template (its PVC starts
+			// empty); add_data:true below seeds a known file into it, so the PVC is
+			// non-empty at transfer time. That seeded data is what we checksum on
+			// source and verify on target.
 			appName := "app-with-empty-pvc"
 			namespace := "indirect-rclone-secret-k8s"
 
@@ -121,11 +125,13 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 			}
 
 			By("Capture the referenced Secret's identity and contents before the transfer")
-			// Snapshot the UID and data.rclone.conf per context so that, after the
-			// transfer, we can assert crane left the caller-provided Secret untouched
-			// (neither replaced nor mutated), not merely still present.
+			// Snapshot the UID, data.rclone.conf, and labels per context so that,
+			// after the transfer, we can assert crane left the caller-provided Secret
+			// untouched (neither replaced, mutated, nor relabeled), not merely still
+			// present.
 			preUID := map[string]string{}
 			preData := map[string]string{}
+			preLabels := map[string]string{}
 			for _, k := range []KubectlRunner{kubectlSrc, kubectlTgt} {
 				uid, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.metadata.uid}")
 				Expect(err).NotTo(HaveOccurred())
@@ -133,8 +139,11 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(strings.TrimSpace(data)).NotTo(BeEmpty(),
 					"Secret %q on context %q should contain a rclone.conf key", rcloneSecret, k.Context)
+				labels, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.metadata.labels}")
+				Expect(err).NotTo(HaveOccurred())
 				preUID[k.Context] = strings.TrimSpace(uid)
 				preData[k.Context] = strings.TrimSpace(data)
+				preLabels[k.Context] = strings.TrimSpace(labels)
 			}
 
 			By("Run crane transfer-pvc in indirect mode using --rclone-config-secret")
@@ -225,6 +234,13 @@ spec:
 				Expect(err).NotTo(HaveOccurred())
 				Expect(sha256Hex(strings.TrimSpace(data))).To(Equal(sha256Hex(preData[k.Context])),
 					"user-provided Secret %q on context %q should not be mutated (rclone.conf changed)", rcloneSecret, k.Context)
+
+				labels, err := k.Run("get", "secret", rcloneSecret, "-n", namespace, "-o", "jsonpath={.metadata.labels}")
+				Expect(err).NotTo(HaveOccurred())
+				Expect(strings.TrimSpace(labels)).To(Equal(preLabels[k.Context]),
+					"user-provided Secret %q on context %q should not be relabeled by crane", rcloneSecret, k.Context)
+				Expect(labels).NotTo(ContainSubstring("app.kubernetes.io/component"),
+					"crane must not add its indirect-transfer labels to a caller-provided Secret %q on context %q", rcloneSecret, k.Context)
 			}
 		})
 })
