@@ -43,10 +43,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # TEMP(testing): read PRs from upstream while validating this workflow on a fork.
-          # Revert to: target_repo="${GITHUB_REPOSITORY}"
-          target_repo="migtools/crane"
-
           # Classify a PR title using Konveyor release-tools prefixes
           # (shortcodes and emoji forms). Strips optional WIP / [tag] prefixes.
           classify_type() {
@@ -101,7 +97,7 @@ jobs:
           # Pad from the visible label (ignore emoji shortcodes).
           section_heading() {
             local label visible
-            label="$1"
+            label="$(section_label "$1")"
             visible="$(printf '%s' "$label" | sed -E 's/:[a-z0-9_+-]+:[[:space:]]*//')"
             local width=36
             local label_len=${#visible}
@@ -117,36 +113,6 @@ jobs:
             left="$(printf '━%.0s' $(seq 1 "${pad}"))"
             right="$(printf '━%.0s' $(seq 1 "${right_pad}"))"
             printf '%s %s %s' "${left}" "${label}" "${right}"
-          }
-
-          stale_threshold_days=7
-
-          pr_age_days() {
-            local created="$1"
-            local epoch_created epoch_now
-            epoch_created="$(date -d "${created}" +%s)"
-            epoch_now="$(date +%s)"
-            echo $(( (epoch_now - epoch_created) / 86400 ))
-          }
-
-          is_stale_pr() {
-            [[ "$(pr_age_days "$1")" -ge "${stale_threshold_days}" ]]
-          }
-
-          format_pr_block() {
-            local n="$1" safe_title="$2" url="$3" author="$4" age="$5"
-            printf '%s. %s\n%s | @%s | opened %s ago' "${n}" "${safe_title}" "${url}" "${author}" "${age}"
-          }
-
-          append_to_section() {
-            local -n blocks_ref=$1
-            local key="$2"
-            local block="$3"
-            if [[ -n "${blocks_ref[$key]:-}" ]]; then
-              blocks_ref[$key]+=$'\n\n'"${block}"
-            else
-              blocks_ref[$key]="${block}"
-            fi
           }
 
           # Human-readable age from an ISO 8601 timestamp (GNU date on ubuntu-latest).
@@ -178,7 +144,7 @@ jobs:
           # CHANGES_REQUESTED on the current head commit (stale reviews on older
           # commits do not block the digest).
           prs_json="$(gh pr list \
-            --repo "${target_repo}" \
+            --repo "${GITHUB_REPOSITORY}" \
             --state open \
             --label ready-for-review-notified \
             --json number,title,url,author,isDraft,createdAt,headRefOid,reviews \
@@ -204,13 +170,10 @@ jobs:
             exit 0
           fi
 
-          # Group by type (feature first). PRs open longer than stale_threshold_days
-          # go in a global Stale section at the end (still grouped by type there).
+          # Group by type (feature first). Number PRs within each section.
           section_order=(feature breaking bugfix test docs infra nonote other)
           declare -A section_blocks
           declare -A section_counts
-          declare -A stale_section_blocks
-          declare -A stale_section_counts
 
           while IFS= read -r row; do
             title="$(printf '%s' "$row" | jq -r '.title')"
@@ -225,16 +188,13 @@ jobs:
             # Escape & first so we do not double-escape later replacements.
             safe_title="$(printf '%s' "$title" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
 
-            if is_stale_pr "${created_at}"; then
-              stale_section_counts[$pr_type]=$(( ${stale_section_counts[$pr_type]:-0} + 1 ))
-              n="${stale_section_counts[$pr_type]}"
-              block="$(format_pr_block "${n}" "${safe_title}" "${url}" "${author}" "${age}")"
-              append_to_section stale_section_blocks "${pr_type}" "${block}"
+            section_counts[$pr_type]=$(( ${section_counts[$pr_type]:-0} + 1 ))
+            n="${section_counts[$pr_type]}"
+            block="${n}. ${safe_title}"$'\n'"${url} | @${author} | opened ${age} ago"
+            if [[ -n "${section_blocks[$pr_type]:-}" ]]; then
+              section_blocks[$pr_type]+=$'\n\n'"${block}"
             else
-              section_counts[$pr_type]=$(( ${section_counts[$pr_type]:-0} + 1 ))
-              n="${section_counts[$pr_type]}"
-              block="$(format_pr_block "${n}" "${safe_title}" "${url}" "${author}" "${age}")"
-              append_to_section section_blocks "${pr_type}" "${block}"
+              section_blocks[$pr_type]="${block}"
             fi
           done < <(printf '%s' "$prs_json" | jq -c '.[]')
 
@@ -248,28 +208,10 @@ jobs:
             if [[ -z "${section_blocks[$pr_type]:-}" ]]; then
               continue
             fi
-            message+="$(section_heading "$(section_label "$pr_type")")"$'\n\n'
+            message+="$(section_heading "$pr_type")"$'\n\n'
             # Extra blank lines after each section for easier scanning in Slack.
             message+="${section_blocks[$pr_type]}"$'\n\n\n\n\n'
           done
-
-          stale_total=0
-          for pr_type in "${section_order[@]}"; do
-            stale_total=$((stale_total + ${stale_section_counts[$pr_type]:-0}))
-          done
-
-          if [[ "${stale_total}" -gt 0 ]]; then
-            stale_label=":hourglass_flowing_sand: Stale PRs (open > ${stale_threshold_days}d)"
-            message+="$(section_heading "${stale_label}")"$'\n\n'
-
-            for pr_type in "${section_order[@]}"; do
-              if [[ -z "${stale_section_blocks[$pr_type]:-}" ]]; then
-                continue
-              fi
-              message+="$(section_heading "$(section_label "$pr_type")")"$'\n\n'
-              message+="${stale_section_blocks[$pr_type]}"$'\n\n\n\n\n'
-            done
-          fi
 
           # Drop trailing blank lines after the last section.
           while [[ "${message}" == *$'\n\n' ]]; do
