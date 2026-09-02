@@ -8,6 +8,7 @@
 # 3. Add the trigger URL as repository secret SLACK_RFR_DIGEST_WEBHOOK_URL.
 #
 # Refs: https://github.com/migtools/crane/issues/812
+#       https://github.com/migtools/crane/issues/888
 # Prefixes: https://github.com/konveyor/release-tools/blob/main/pkg/pr/prefix.go
 
 name: PR Ready For Review Daily Digest
@@ -114,15 +115,40 @@ jobs:
             printf '%s %s %s' "${left}" "${label}" "${right}"
           }
 
-          # Fetch open, non-draft PRs with the ready-for-review-notified label.
+          # Human-readable age from an ISO 8601 timestamp (GNU date on ubuntu-latest).
+          format_age() {
+            local created="$1"
+            local epoch_created epoch_now diff days hours
+            epoch_created="$(date -d "${created}" +%s)"
+            epoch_now="$(date +%s)"
+            diff=$((epoch_now - epoch_created))
+            days=$((diff / 86400))
+            if [[ "${days}" -ge 30 ]]; then
+              echo "$((days / 30))mo"
+            elif [[ "${days}" -ge 7 ]]; then
+              echo "$((days / 7))w"
+            elif [[ "${days}" -ge 1 ]]; then
+              echo "${days}d"
+            else
+              hours=$((diff / 3600))
+              if [[ "${hours}" -lt 1 ]]; then
+                echo "<1h"
+              else
+                echo "${hours}h"
+              fi
+            fi
+          }
+
+          # Fetch open PRs with the ready-for-review-notified label; keep only
+          # non-draft PRs without an outstanding changes-requested review.
           prs_json="$(gh pr list \
             --repo "${GITHUB_REPOSITORY}" \
             --state open \
             --label ready-for-review-notified \
-            --json number,title,url,author,isDraft \
+            --json number,title,url,author,isDraft,createdAt,reviewDecision \
             --limit 200)"
 
-          prs_json="$(printf '%s' "$prs_json" | jq '[.[] | select(.isDraft == false)]')"
+          prs_json="$(printf '%s' "$prs_json" | jq '[.[] | select(.isDraft == false and .reviewDecision != "CHANGES_REQUESTED")] | sort_by(.createdAt)')"
           total="$(printf '%s' "$prs_json" | jq 'length')"
 
           if [[ "${total}" -eq 0 ]]; then
@@ -140,6 +166,8 @@ jobs:
             title="$(printf '%s' "$row" | jq -r '.title')"
             url="$(printf '%s' "$row" | jq -r '.url')"
             author="$(printf '%s' "$row" | jq -r '.author.login')"
+            created_at="$(printf '%s' "$row" | jq -r '.createdAt')"
+            age="$(format_age "${created_at}")"
             pr_type="$(classify_type "$title")"
 
             # Escape Slack special characters in author-controlled titles so
@@ -149,7 +177,7 @@ jobs:
 
             section_counts[$pr_type]=$(( ${section_counts[$pr_type]:-0} + 1 ))
             n="${section_counts[$pr_type]}"
-            block="${n}. ${safe_title}"$'\n'"${url} | @${author}"
+            block="${n}. ${safe_title}"$'\n'"${url} | @${author} | opened ${age} ago"
             if [[ -n "${section_blocks[$pr_type]:-}" ]]; then
               section_blocks[$pr_type]+=$'\n\n'"${block}"
             else
