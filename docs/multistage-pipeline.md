@@ -77,7 +77,7 @@ The `kubernetes` plugin (from `crane-lib`) automatically removes:
 **How it works**:
 
 1. **Transform phase**: Plugins analyze exported resources and generate JSONPatch operations. Plugins may also generate entirely new resources.
-2. **Patches written**: Operations and new resource skeletons are saved as Kustomize patches in the `patches/` and `new/` directories.
+2. **Patches and resources written**: JSONPatch operations are saved in the `patches/` directory. Generated resource skeletons are saved in the `new/` directory.
 3. **Apply phase**: Embedded kustomize applies patches to resources.
 4. **Result**: Clean, declarative manifests ready for target cluster.
 

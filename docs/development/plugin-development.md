@@ -6,8 +6,8 @@ Crane uses a plugin system for transforming Kubernetes resources during migratio
 
 1. Crane discovers plugin binaries in the plugin directory (`~/.local/share/crane/plugins/` by default)
 2. During transform, each plugin receives a Kubernetes resource on stdin
-3. The plugin analyzes the resource and returns JSONPatch operations on stdout
-4. Crane writes the patches to the stage's `patches/` directory
+3. The plugin analyzes the resource and returns a PluginResponse object on stdout, which contains JSONPatch operations and optional new resources
+4. Crane writes the patches to the stage's `patches/` directory and new resources to the `new/` directory
 5. During apply, the embedded kustomize engine applies the patches to the resources
 
 ## Plugin Interface
@@ -40,7 +40,7 @@ A single Kubernetes resource in JSON format:
 
 ### Output (stdout)
 
-Plugins may return a JSON array of RFC 6902 JSONPatch operations. Additionally, plugins can optionally return entirely new resources to be added to the transformation pipeline.
+Plugins return a PluginResponse object containing an optional array of RFC 6902 JSONPatch operations in the `patches` field. Additionally, plugins can optionally return entirely new resources in the `newResources` field to be added to the transformation pipeline.
 
 ```json
 {
@@ -69,10 +69,10 @@ package main
 
 import (
     "encoding/json"
-    "fmt"
     "os"
 
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    "github.com/evanphx/json-patch"
     cranelib "github.com/konveyor/crane-lib/transform"
 )
 
@@ -82,9 +82,16 @@ func main() {
         os.Exit(1)
     }
 
-    // Example response structure
+    // Build JSONPatch operations
+    patchData := []byte(`[{"op": "add", "path": "/metadata/labels/migrated", "value": "true"}]`)
+    patches, err := jsonpatch.DecodePatch(patchData)
+    if err != nil {
+        os.Exit(1)
+    }
+
     response := cranelib.PluginResponse{
-        Patches: []byte(`[{"op": "add", "path": "/metadata/labels/migrated", "value": "true"}]`),
+        Version: "v1",
+        Patches: patches,
     }
 
     if err := json.NewEncoder(os.Stdout).Encode(response); err != nil {
