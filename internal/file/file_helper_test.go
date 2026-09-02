@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/konveyor/crane/internal/file"
+	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -29,6 +30,40 @@ func writeFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write file: %v", err)
+	}
+}
+
+func TestReadFilesWithLogger(t *testing.T) {
+	const validYAML = `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logger-test-cm
+  namespace: default
+`
+	tests := []struct {
+		name   string
+		logger *logrus.Logger
+	}{
+		{name: "nil logger does not panic", logger: nil},
+		{name: "non-nil logger", logger: logrus.New()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := createTestDir(t)
+			writeFile(t, filepath.Join(dir, "cm.yaml"), validYAML)
+
+			files, err := file.ReadFilesWithLogger(context.TODO(), dir, tt.logger)
+			if err != nil {
+				t.Fatalf("ReadFilesWithLogger: %v", err)
+			}
+			if len(files) != 1 {
+				t.Fatalf("expected 1 file, got %d", len(files))
+			}
+			if files[0].Unstructured.GetName() != "logger-test-cm" {
+				t.Errorf("name = %q, want %q", files[0].Unstructured.GetName(), "logger-test-cm")
+			}
+		})
 	}
 }
 

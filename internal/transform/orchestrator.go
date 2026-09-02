@@ -509,7 +509,7 @@ func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Uns
 
 // loadResourcesFromDirectory loads all Kubernetes resources from a directory
 func (o *Orchestrator) loadResourcesFromDirectory(dir string) ([]unstructured.Unstructured, error) {
-	files, err := file.ReadFiles(context.TODO(), dir)
+	files, err := file.ReadFilesWithLogger(context.TODO(), dir, o.Log)
 	if err != nil {
 		o.Log.Debugf("Failed to read directory %s: %v", dir, err)
 		return nil, fmt.Errorf("failed to read directory %s: %w", dir, err)

@@ -61,7 +61,6 @@ type TransferPVCCommand struct {
 	genericclioptions.IOStreams
 	globalFlags *flags.GlobalFlags
 	log         *logrus.Logger
-	logger      logrus.FieldLogger
 
 	sourceContext      *clientcmdapi.Context
 	destinationContext *clientcmdapi.Context
@@ -154,9 +153,8 @@ func NewTransferPVCCommand(streams genericclioptions.IOStreams, f *flags.GlobalF
 				StorageRequests: quantityVar{},
 			},
 		},
-		IOStreams:    streams,
+		IOStreams:   streams,
 		globalFlags: f,
-		logger:      logrus.New(),
 	}
 
 	cmd := &cobra.Command{
@@ -207,6 +205,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 }
 
 func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
+	t.globalFlags.SetCmdName("transfer-pvc")
 	t.log = t.globalFlags.GetLoggerOrDefault()
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
@@ -236,16 +235,35 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 		t.PVC.Namespace.destination = t.destinationContext.Namespace
 	}
 
+	if t.CloudStorage != "" && strings.TrimSpace(t.CloudStorage) == "" {
+		return fmt.Errorf("--cloud-storage value cannot be empty or whitespace")
+	}
+	t.CloudStorage = strings.TrimSpace(t.CloudStorage)
+
 	return nil
 }
 
 func (t *TransferPVCCommand) Validate() error {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
+	if log == nil {
+		log = t.globalFlags.GetLoggerOrDefault()
+	}
+	cloudStorage := t.CloudStorage
 
-	if t.Flags.KeepCloudData && t.Flags.CloudStorage == "" {
+	if t.Encrypt && cloudStorage == "" {
+		return fmt.Errorf("--encrypt requires --cloud-storage")
+	}
+	if t.KeepCloudData && cloudStorage == "" {
 		log.Debugf("--keep-cloud-data requires --cloud-storage")
 		return fmt.Errorf("--keep-cloud-data requires --cloud-storage")
 	}
+	if t.RcloneConfigSecret != "" && cloudStorage == "" {
+		return fmt.Errorf("--rclone-config-secret requires --cloud-storage")
+	}
+	if t.RcloneConfigFile != "" && cloudStorage == "" {
+		return fmt.Errorf("--rclone-config-file requires --cloud-storage")
+	}
+
 	if t.sourceContext == nil {
 		log.Debugf("Cannot evaluate source context")
 		return fmt.Errorf("cannot evaluate source context")
@@ -267,16 +285,16 @@ func (t *TransferPVCCommand) Validate() error {
 		return err
 	}
 
-	if t.Flags.CloudStorage != "" {
-		if t.Flags.RcloneConfigSecret == "" && t.Flags.RcloneConfigFile == "" {
+	if cloudStorage != "" {
+		if t.RcloneConfigSecret == "" && t.RcloneConfigFile == "" {
 			log.Debugf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
 			return fmt.Errorf("--cloud-storage requires --rclone-config-secret or --rclone-config-file")
 		}
-		if t.Flags.RcloneConfigSecret != "" && t.Flags.RcloneConfigFile != "" {
+		if t.RcloneConfigSecret != "" && t.RcloneConfigFile != "" {
 			log.Debugf("--rclone-config-secret and --rclone-config-file are mutually exclusive")
 			return fmt.Errorf("--rclone-config-secret and --rclone-config-file are mutually exclusive")
 		}
-		if t.Flags.Encrypt && t.Flags.RcloneConfigSecret != "" {
+		if t.Encrypt && t.RcloneConfigSecret != "" {
 			log.Debugf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
 			return fmt.Errorf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
 		}
@@ -293,7 +311,7 @@ func (t *TransferPVCCommand) Validate() error {
 }
 
 func (t *TransferPVCCommand) Run() error {
-	if t.Flags.CloudStorage != "" {
+	if t.CloudStorage != "" {
 		return t.runIndirect()
 	}
 	return t.run()
@@ -337,11 +355,10 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 }
 
 func (t *TransferPVCCommand) run() (retErr error) {
-	log := t.globalFlags.GetLoggerOrDefault()
+	log := t.log
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
-	logrusLog := logrus.New()
-	logrusLog.SetFormatter(&logrus.JSONFormatter{})
-	logger := logrusr.New(logrusLog).WithName("transfer-pvc")
+	ctrlLogger := logrus.New()
+	logger := logrusr.New(ctrlLogger).WithName("transfer-pvc")
 
 	totalPhases := 7
 	if t.isIntraClusterSameNamespace() {

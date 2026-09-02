@@ -2,6 +2,7 @@ package convert
 
 import (
 	"github.com/konveyor/crane-lib/convert"
+	"github.com/konveyor/crane/internal/flags"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -16,6 +17,7 @@ import (
 type ConvertOptions struct {
 	configFlags *genericclioptions.ConfigFlags
 	genericclioptions.IOStreams
+	globalFlags        *flags.GlobalFlags
 	SourceContext      string
 	Namespace          string
 	Logger             logrus.FieldLogger
@@ -27,15 +29,11 @@ type ConvertOptions struct {
 	debug              bool
 }
 
-func NewConvertOptions(streams genericclioptions.IOStreams) *cobra.Command {
-	logger := logrus.New()
-	logger.SetOutput(streams.Out)
-	logger.SetFormatter(&logrus.TextFormatter{})
-
+func NewConvertOptions(streams genericclioptions.IOStreams, f *flags.GlobalFlags) *cobra.Command {
 	t := &ConvertOptions{
 		configFlags: genericclioptions.NewConfigFlags(false),
 		IOStreams:   streams,
-		Logger:      logger,
+		globalFlags: f,
 	}
 
 	cmd := &cobra.Command{
@@ -72,11 +70,11 @@ func addFlagsForConvertOptions(t *ConvertOptions, cmd *cobra.Command) {
 }
 
 func (t *ConvertOptions) Complete(c *cobra.Command, args []string) error {
+	t.globalFlags.SetCmdName("convert")
 	if t.debug {
-		if logger, ok := t.Logger.(*logrus.Logger); ok {
-			logger.SetLevel(logrus.DebugLevel)
-		}
+		t.globalFlags.Debug = true
 	}
+	t.Logger = t.globalFlags.GetLoggerOrDefault()
 	return nil
 }
 

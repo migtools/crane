@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -20,15 +21,24 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	f := &flags.GlobalFlags{}
+	defer func() {
+		if err := f.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close audit log: %v\n", err)
+		}
+	}()
 	root := cobra.Command{
 		Use: filepath.Base(os.Args[0]),
 	}
 	f.ApplyFlags(&root)
 	root.AddCommand(export.NewExportCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
 	root.AddCommand(transfer_pvc.NewTransferPVCCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
-	root.AddCommand(tunnel_api.NewTunnelAPIOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
-	root.AddCommand(convert.NewConvertOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
+	root.AddCommand(tunnel_api.NewTunnelAPIOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
+	root.AddCommand(convert.NewConvertOptions(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
 	root.AddCommand(transform.NewTransformCommand(f))
 	root.AddCommand(skopeo_sync_gen.NewSkopeoSyncGenCommand(f))
 	root.AddCommand(apply.NewApplyCommand(f))
@@ -36,6 +46,7 @@ func main() {
 	root.AddCommand(version.NewVersionCommand(f))
 	root.AddCommand(validate.NewValidateCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))
 	if err := root.Execute(); err != nil {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

@@ -10,17 +10,26 @@ crane transfer-pvc [flags]
 
 ## Description
 
-The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its volume data to a destination cluster. It establishes a connection to the destination cluster by creating a public endpoint of the user's choice in the destination namespace. It then creates a PVC and an rsync daemon Pod in the destination namespace to receive data from the source PVC. Finally, it creates an rsync client Pod in the source namespace which transfers data to the rsync daemon using the endpoint. The connection is encrypted using self-signed certificates created automatically at the time of transfer.
+The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its volume data to a destination cluster. It supports two primary transfer modes:
+
+1. **Direct Mode**: Establishes a direct connection between source and destination clusters by creating a public endpoint (e.g., `route` or `ingress`) in the destination namespace. An rsync client Pod in the source transfers data directly to an rsync daemon Pod in the destination.
+2. **Indirect Mode**: Enables transfers between clusters without direct network connectivity. Data is uploaded to an S3-compatible cloud storage bucket by a source Pod and then downloaded to the destination PVC by a destination Pod.
 
 `transfer-pvc` supports transfers between different clusters or within the same cluster. When performing transfers within the same cluster and namespace, the source and destination PVC names must be different.
 
 ## Example
 
+### Direct Transfer
 ```bash
 crane transfer-pvc --source-context=<source> --destination-context=<destination> --pvc-name=<pvc_name> --endpoint=route
 ```
 
-The above command transfers PVC (along with PV data) named `<pvc_name>` in the namespace specified by `<source>` context into the namespace specified by `<destination>` context. The `--endpoint` argument specifies the kind of public endpoint to use to establish a connection between the source and the destination cluster.
+### Indirect Transfer
+```bash
+crane transfer-pvc --source-context=source --destination-context=destination \
+  --pvc-name=data-pvc \
+  --cloud-storage=remote:my-bucket/transfer-path \
+  --rclone-config-secret=rclone-secret
 
 ## Flags
 
@@ -39,6 +48,11 @@ The above command transfers PVC (along with PV data) named `<pvc_name>` in the n
 | `--subdomain` | string | When endpoint is nginx-ingress | Custom subdomain to use for the endpoint |
 | `--output` | string | No | Output transfer stats in the specified file |
 | `--verify` | bool | No | Verify transferred files using checksums |
+| `--cloud-storage` | string | No | S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket) |
+| `--rclone-config-secret` | string | No | Name of the K8s Secret containing rclone.conf for indirect transfer |
+| `--rclone-config-file` | string | No | Path to local rclone.conf file for indirect transfer |
+| `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
+| `--keep-cloud-data` | bool | No | Reserved for cloud-data retention; currently has no effect because cleanup is not implemented |
 
 ### PVC Options
 
@@ -76,6 +90,32 @@ crane transfer-pvc --source-context=mycluster --destination-context=mycluster \
 For the complete end-to-end workflow including workload reference updates, see the [StorageClass Conversion Guide](../storageclass-conversion.md).
 
 > **Warning — StorageClass conversion with StatefulSets:** `crane transfer-pvc` migrates data from existing PVCs to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. If the StatefulSet is scaled up after conversion without being recreated, new replicas will provision PVCs on the original StorageClass. To complete the conversion, delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec.
+
+### Indirect Transfer Options
+
+When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
+
+#### Sample rclone-config-file
+
+**MinIO (self-hosted):**
+```
+[remote]
+type = s3
+provider = Minio
+access_key_id = minioadmin
+secret_access_key = minioadmin
+endpoint = http://minio.minio.svc.cluster.local:9000
+```
+
+**AWS S3:**
+```
+[remote]
+type = s3
+provider = AWS
+access_key_id = <access_key>
+secret_access_key = <secret_key>
+region = us-east-1
+```
 
 ### Endpoint Options
 
