@@ -50,8 +50,10 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 
 func (o *Options) Validate(args []string) error {
 	// TODO: @jgabani
+	log := o.log
 
 	if len(args) != 1 {
+		log.Warnf("Expected exactly one plugin name, got %d", len(args))
 		return errors.New("please input only one plugin name")
 	}
 
@@ -59,25 +61,30 @@ func (o *Options) Validate(args []string) error {
 		if o.PluginDir == os.Getenv("HOME")+plugin.DefaultLocalPluginDir {
 			o.PluginDir = plugin.GlobalPluginDir
 		} else {
+			log.Warnf("--plugin-dir and --global cannot be used together")
 			return errors.New("--plugin-dir and --global should not be used together.")
 		}
 	}
 
 	pluginDir, err := filepath.Abs(o.PluginDir)
 	if err != nil {
+		log.Errorf("Failed to resolve plugin directory path %q: %v", o.PluginDir, err)
 		return err
 	}
 
 	files, err := ioutil.ReadDir(pluginDir)
 	if err != nil {
 		if os.IsNotExist(err) {
+			log.Debugf("Plugin directory %q does not exist, no installed plugins to check", pluginDir)
 			return nil
 		}
+		log.Errorf("Failed to read plugin directory %q: %v", pluginDir, err)
 		return err
 	}
 
 	paths, err := plugin.LocateBinaryInPluginDir(o.PluginDir, args[0], files)
 	if err != nil {
+		log.Errorf("Failed to locate plugin %s in %q: %v", args[0], o.PluginDir, err)
 		return err
 	}
 
@@ -86,6 +93,7 @@ func (o *Options) Validate(args []string) error {
 		for _, path := range paths {
 			fmt.Printf("%s \n", path)
 		}
+		log.Warnf("Plugin %s is already installed", args[0])
 		return errors.New("the binary is already installed in the above path, either delete the binary or mention a repo from which the binary is needed")
 	}
 	return nil
@@ -134,8 +142,11 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 func (o *Options) run(args []string) error {
 	log := o.log
 
+	log.Infof("Starting plugin-manager add %s...", args[0])
+
 	manifestMap, err := plugin.BuildManifestMap(log, args[0], o.Repo)
 	if err != nil {
+		log.Errorf("Failed to build manifest for plugin %s: %v", args[0], err)
 		return nil
 	}
 
@@ -160,6 +171,7 @@ func (o *Options) run(args []string) error {
 					if value.Name != "" && (o.Version == "" || string(value.Version) == o.Version) {
 						uri, err := binaryURIForPlatform(value)
 						if err != nil {
+							log.Errorf("No binary available for plugin %s on this platform: %v", value.Name, err)
 							return err
 						}
 						return downloadBinary(o.PluginDir, value.Name, uri, log)
@@ -182,6 +194,7 @@ func (o *Options) run(args []string) error {
 					if string(value.Version) == installVersion {
 						uri, err := binaryURIForPlatform(value)
 						if err != nil {
+							log.Errorf("No binary available for plugin %s %s on this platform: %v", value.Name, installVersion, err)
 							return err
 						}
 						return downloadBinary(o.PluginDir, value.Name, uri, log)
@@ -192,12 +205,13 @@ func (o *Options) run(args []string) error {
 			default:
 				// throw error saying that the plugin doest exists
 				log.Errorf("The plugin %s is not found", args[0])
-				fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
+				fmt.Println("Run \"crane plugin-manager list\" to list all the available plugins")
 			}
 		}
 	default:
 		// throw error saying that the plugin doest exists
-		fmt.Println(fmt.Sprintf("Run \"crane plugin-manager list\" to list all the available plugins \n"))
+		log.Warnf("The plugin %s is not found", args[0])
+		fmt.Println("Run \"crane plugin-manager list\" to list all the available plugins")
 		return errors.New(fmt.Sprintf("The plugin %s is not found", args[0]))
 	}
 	return nil
@@ -209,6 +223,7 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	if !isUrl {
 		srcPlugin, err := os.Open(url)
 		if err != nil {
+			log.Errorf("Failed to open local plugin binary %s: %v", url, err)
 			return err
 		}
 		defer srcPlugin.Close()
@@ -217,6 +232,7 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 		// Get the data
 		resp, err := http.Get(url)
 		if err != nil {
+			log.Errorf("Failed to download plugin binary from %s: %v", url, err)
 			return err
 		}
 		defer resp.Body.Close()
@@ -226,6 +242,7 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	if _, err := os.Stat(filepath); os.IsNotExist(err) {
 		err = os.MkdirAll(filepath, os.ModePerm)
 		if err != nil {
+			log.Errorf("Failed to create plugin directory %s: %v", filepath, err)
 			return err
 		}
 	}
@@ -233,6 +250,7 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	// Create the file
 	pluginBinary, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0777)
 	if err != nil {
+		log.Errorf("Failed to create plugin file %s/%s: %v", filepath, filename, err)
 		return err
 	}
 	defer pluginBinary.Close()
@@ -240,10 +258,12 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 	// Write the body to filePluginDir
 	_, err = io.Copy(pluginBinary, binaryContents)
 	if err != nil {
+		log.Errorf("Failed to write plugin binary %s: %v", filename, err)
 		return err
 	}
 	err = pluginBinary.Sync()
 	if err != nil {
+		log.Errorf("Failed to sync plugin binary %s: %v", filename, err)
 		return err
 	}
 	log.Infof("pluginBinary %s added to the path - %s", filename, filepath)
