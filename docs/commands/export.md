@@ -14,6 +14,12 @@ crane export [flags]
 
 Exported resources are written as individual YAML files under `export/resources/<namespace>/`. Cluster-scoped resources related to the namespace (ClusterRoleBindings, ClusterRoles, SCCs) are written to `export/resources/<namespace>/_cluster/`. Any errors encountered during listing are recorded in `export/failures/<namespace>/`.
 
+### Audit Logging
+
+Every `crane` invocation automatically writes a structured JSON Lines audit log to `audit/.crane-audit.log`. This log captures the full execution history and is persistent across runs (append-only). Support engineers can use these logs to replay or troubleshoot past runs.
+
+> **Note:** If you are using a git-based workflow, add the `audit/` directory to your `.gitignore` file.
+
 ### CRD Collection
 
 When custom resources are found in the namespace, Crane automatically collects their corresponding CustomResourceDefinitions. Operator-managed CRDs (identified via owner references) are skipped, since they should be installed by the operator on the target cluster rather than migrated directly. If the migration user lacks permission to read CRDs, Crane logs a warning and continues — the assumption is that the CRDs already exist on the target.
@@ -31,6 +37,7 @@ When custom resources are found in the namespace, Crane automatically collects t
 | `--qps` | `-q` | `100` | Query-per-second rate for API requests |
 | `--burst` | `-b` | `1000` | API burst rate |
 | `--overwrite` | | `false` | Overwrite the export directory if it already exists |
+| `--audit-log` | | `audit/.crane-audit.log` | Path to the audit log file |
 
 Standard kubeconfig flags (`--kubeconfig`, `--context`, `--cluster`, `--as`, `--as-group`, etc.) are also available.
 
@@ -88,6 +95,12 @@ crane export -n my-app --label-selector "app=frontend"
 
 ```bash
 crane export -n my-app --export-dir ./migration/export
+```
+
+### Export with custom audit log path
+
+```bash
+crane export -n my-app --audit-log=/tmp/crane-audit.jsonl
 ```
 
 ### Export with impersonation

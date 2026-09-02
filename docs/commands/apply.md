@@ -24,6 +24,7 @@ Kustomize is embedded directly in the Crane binary (via the krusty API), so no e
 | `--skip-cluster-scoped` | | `false` | Exclude cluster-scoped resources (ClusterRole, ClusterRoleBinding, CRD, etc.) from output. Useful for non-admin migration scenarios |
 | `--overwrite` | | `false` | Overwrite the output directory if it already exists |
 | `--ordered` | | `false` | Prefix resource filenames with a numeric order (e.g., `300_Role_`, `310_RoleBinding_`) so that `kubectl apply -f` processes dependencies before dependents. Useful when first apply fails due to missing referenced resources |
+| `--audit-log` | | `audit/.crane-audit.log` | Path to the audit log file |
 
 Stages are specified as positional arguments (e.g., `crane apply 10_KubernetesPlugin`). Stages can be specified by directory name or plugin name. If no stages are specified, all discovered stages are applied sequentially.
 
@@ -68,6 +69,12 @@ Without `--ordered` (default), filenames have no prefix and `kubectl apply -f` p
 
 ```bash
 crane apply
+```
+
+### Apply with custom audit log path
+
+```bash
+crane apply --audit-log=/var/log/crane-audit.log
 ```
 
 ### Apply with custom directories
