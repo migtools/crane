@@ -79,13 +79,16 @@ func FormatYAML(w io.Writer, report *ValidationReport) error {
 func WriteFailures(failuresDir string, report *ValidationReport, log logrus.FieldLogger) error {
 	incompatible := report.IncompatibleResults()
 	if len(incompatible) == 0 {
+		log.Debugf("No incompatible results, skipping failures directory write")
 		return nil
 	}
 
 	if err := os.RemoveAll(failuresDir); err != nil {
+		log.Debugf("Failed to clear validate failures directory %q: %v", failuresDir, err)
 		return fmt.Errorf("clear validate failures directory %q: %w", failuresDir, err)
 	}
 	if err := os.MkdirAll(failuresDir, 0700); err != nil {
+		log.Debugf("Failed to create validate failures directory %q: %v", failuresDir, err)
 		return fmt.Errorf("create validate failures directory %q: %w", failuresDir, err)
 	}
 

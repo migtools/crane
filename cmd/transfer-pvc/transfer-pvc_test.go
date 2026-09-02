@@ -1,22 +1,43 @@
 package transfer_pvc
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
+	"github.com/migtools/pvc-transfer/transport"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func int64Ptr(v int64) *int64 { return &v }
+
+// TestEndpointFlags_Validate_DefaultPersists proves the value-receiver bug in
+// EndpointFlags.Validate: an empty Type with a valid Subdomain passes validation,
+// but the nginx default assigned inside Validate is lost because the receiver is a
+// value copy. The caller is left with Type == "", which fails later in createEndpoint.
+func TestEndpointFlags_Validate_DefaultPersists(t *testing.T) {
+	flags := EndpointFlags{
+		Type:      "",
+		Subdomain: "my.subdomain.example.com",
+	}
+	if err := flags.Validate(); err != nil {
+		t.Fatalf("EndpointFlags.Validate() unexpected error = %v", err)
+	}
+	if flags.Type != endpointNginx {
+		t.Errorf("EndpointFlags.Validate() did not persist default type: got %q, want %q", flags.Type, endpointNginx)
+	}
+}
 
 func int64PtrEqual(a, b *int64) bool {
 	if a == nil && b == nil {
@@ -631,7 +652,7 @@ func TestGetIDsForNamespace_OCPAnnotation(t *testing.T) {
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(ns).Build()
-	got, err := getIDsForNamespace(c, "ocp-ns", "any-pvc")
+	got, err := getIDsForNamespace(c, "ocp-ns", "any-pvc", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -670,7 +691,7 @@ func TestGetIDsForNamespace_WorkloadFallback(t *testing.T) {
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(ns, deploy).Build()
-	got, err := getIDsForNamespace(c, "k8s-ns", "mysql-data")
+	got, err := getIDsForNamespace(c, "k8s-ns", "mysql-data", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -712,12 +733,104 @@ func TestGetIDsForNamespace_OCPTakesPrecedence(t *testing.T) {
 	}
 
 	c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(ns, deploy).Build()
-	got, err := getIDsForNamespace(c, "ocp-ns", "mysql-data")
+	got, err := getIDsForNamespace(c, "ocp-ns", "mysql-data", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if got.RunAsUser == nil || *got.RunAsUser != 1000700000 {
 		t.Errorf("OCP annotation should take precedence: RunAsUser = %v, want 1000700000", fmtInt64Ptr(got.RunAsUser))
+	}
+}
+
+func TestGetIDsForNamespace_InspectUsesTransferImage(t *testing.T) {
+	tests := []struct {
+		name      string
+		image     string
+		wantImage string
+	}{
+		{
+			name:      "configured image is used on the inspect pod",
+			image:     "example.invalid/rsync-custom:1",
+			wantImage: "example.invalid/rsync-custom:1",
+		},
+		{
+			name:      "empty image falls back to library default",
+			image:     "",
+			wantImage: transport.DefaultRsyncTransferImage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newTestScheme()
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "k8s-ns"}}
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: "app-data", Namespace: "k8s-ns"},
+			}
+			// Workload mounts the PVC but has no runAsUser, so inspect is reached.
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "k8s-ns"},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{Name: "app"}},
+							Volumes: []corev1.Volume{
+								{Name: "data", VolumeSource: corev1.VolumeSource{
+									PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "app-data"},
+								}},
+							},
+						},
+					},
+				},
+			}
+
+			var inspectImage string
+			c := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(ns, pvc, deploy).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, cli client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						if pod, ok := obj.(*corev1.Pod); ok && len(pod.Spec.Containers) > 0 {
+							inspectImage = pod.Spec.Containers[0].Image
+						}
+						return cli.Create(ctx, obj, opts...)
+					},
+					Get: func(ctx context.Context, cli client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if err := cli.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						pod, ok := obj.(*corev1.Pod)
+						if !ok {
+							return nil
+						}
+						pod.Status.Phase = corev1.PodSucceeded
+						pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode: 0,
+									Message:  "27",
+								},
+							},
+						}}
+						return nil
+					},
+				}).
+				Build()
+
+			got, err := getIDsForNamespace(c, "k8s-ns", "app-data", tt.image)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if inspectImage == "" {
+				t.Fatal("inspect pod was not created")
+			}
+			if inspectImage != tt.wantImage {
+				t.Errorf("inspect pod image = %q, want %q", inspectImage, tt.wantImage)
+			}
+			if got.RunAsUser == nil || *got.RunAsUser != 27 {
+				t.Errorf("RunAsUser = %v, want 27 from inspect", fmtInt64Ptr(got.RunAsUser))
+			}
+		})
 	}
 }
 
@@ -967,6 +1080,45 @@ func TestValidateRejectsSameNameIntraCluster(t *testing.T) {
 	}
 }
 
+func TestValidateKeepCloudDataRequiresCloudStorage(t *testing.T) {
+	const guardErrMsg = "--keep-cloud-data requires --cloud-storage"
+	tests := []struct {
+		name           string
+		cmd            TransferPVCCommand
+		wantGuardError bool
+	}{
+		{
+			name: "keep-cloud-data without cloud-storage is rejected",
+			cmd: TransferPVCCommand{
+				Flags: Flags{KeepCloudData: true},
+			},
+			wantGuardError: true,
+		},
+		{
+			name: "keep-cloud-data with cloud-storage set does not trigger guard",
+			cmd: TransferPVCCommand{
+				Flags: Flags{
+					KeepCloudData: true,
+					CloudStorage:  "remote:my-bucket",
+				},
+			},
+			wantGuardError: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			hasGuardErr := err != nil && strings.Contains(err.Error(), guardErrMsg)
+			if tt.wantGuardError && !hasGuardErr {
+				t.Errorf("expected guard error %q but got: %v", guardErrMsg, err)
+			}
+			if !tt.wantGuardError && hasGuardErr {
+				t.Errorf("unexpected guard error: %v", err)
+			}
+		})
+	}
+}
+
 func TestCertSecretNaming(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -1046,10 +1198,10 @@ func TestStripServerManagedPVCAnnotations(t *testing.T) {
 		{
 			name: "only server-managed annotations — all stripped",
 			annotations: map[string]string{
-				"pv.kubernetes.io/bind-completed":                   "yes",
-				"volume.kubernetes.io/storage-provisioner":          "ebs.csi.aws.com",
-				"volume.beta.kubernetes.io/storage-provisioner":     "kubernetes.io/gce-pd",
-				"kubectl.kubernetes.io/last-applied-configuration":  "{}",
+				"pv.kubernetes.io/bind-completed":                  "yes",
+				"volume.kubernetes.io/storage-provisioner":         "ebs.csi.aws.com",
+				"volume.beta.kubernetes.io/storage-provisioner":    "kubernetes.io/gce-pd",
+				"kubectl.kubernetes.io/last-applied-configuration": "{}",
 			},
 			want: nil,
 		},
@@ -1086,6 +1238,170 @@ func TestStripServerManagedPVCAnnotations(t *testing.T) {
 				if got[k] != v {
 					t.Errorf("key %q: got %q, want %q", k, got[k], v)
 				}
+			}
+		})
+	}
+}
+
+// covers the --encrypt guard added in PR #859.
+func TestValidateEncryptRequiresCloudStorage(t *testing.T) {
+	const guardMsg = "--encrypt requires --cloud-storage"
+	tests := []struct {
+		name      string
+		cmd       TransferPVCCommand
+		wantGuard bool
+	}{
+		{
+			name:      "--encrypt without --cloud-storage is rejected",
+			cmd:       TransferPVCCommand{Flags: Flags{Encrypt: true}},
+			wantGuard: true,
+		},
+		{
+			name: "--encrypt with --cloud-storage set passes the encrypt guard",
+			cmd: TransferPVCCommand{
+				Flags: Flags{Encrypt: true, CloudStorage: "remote:my-bucket"},
+			},
+			wantGuard: false,
+		},
+		{
+			name:      "--encrypt=false without --cloud-storage does not trigger guard",
+			cmd:       TransferPVCCommand{Flags: Flags{Encrypt: false}},
+			wantGuard: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			hasGuard := err != nil && strings.Contains(err.Error(), guardMsg)
+			if tt.wantGuard && !hasGuard {
+				t.Errorf("expected guard error %q, got: %v", guardMsg, err)
+			}
+			if !tt.wantGuard && hasGuard {
+				t.Errorf("unexpected guard error: %v", err)
+			}
+		})
+	}
+}
+
+// covers the --rclone-config-secret guard added in PR #859.
+func TestValidateRcloneConfigSecretRequiresCloudStorage(t *testing.T) {
+	const guardMsg = "--rclone-config-secret requires --cloud-storage"
+	tests := []struct {
+		name      string
+		cmd       TransferPVCCommand
+		wantGuard bool
+	}{
+		{
+			name:      "--rclone-config-secret without --cloud-storage is rejected",
+			cmd:       TransferPVCCommand{Flags: Flags{RcloneConfigSecret: "my-secret"}},
+			wantGuard: true,
+		},
+		{
+			name: "--rclone-config-secret with --cloud-storage set passes the guard",
+			cmd: TransferPVCCommand{
+				Flags: Flags{RcloneConfigSecret: "my-secret", CloudStorage: "remote:my-bucket"},
+			},
+			wantGuard: false,
+		},
+		{
+			name:      "empty --rclone-config-secret without --cloud-storage does not trigger guard",
+			cmd:       TransferPVCCommand{Flags: Flags{RcloneConfigSecret: ""}},
+			wantGuard: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			hasGuard := err != nil && strings.Contains(err.Error(), guardMsg)
+			if tt.wantGuard && !hasGuard {
+				t.Errorf("expected guard error %q, got: %v", guardMsg, err)
+			}
+			if !tt.wantGuard && hasGuard {
+				t.Errorf("unexpected guard error: %v", err)
+			}
+		})
+	}
+}
+
+// covers the --rclone-config-file guard added in PR #859.
+func TestValidateRcloneConfigFileRequiresCloudStorage(t *testing.T) {
+	const guardMsg = "--rclone-config-file requires --cloud-storage"
+	tests := []struct {
+		name      string
+		cmd       TransferPVCCommand
+		wantGuard bool
+	}{
+		{
+			name:      "--rclone-config-file without --cloud-storage is rejected",
+			cmd:       TransferPVCCommand{Flags: Flags{RcloneConfigFile: "/etc/rclone.conf"}},
+			wantGuard: true,
+		},
+		{
+			name: "--rclone-config-file with --cloud-storage set passes the guard",
+			cmd: TransferPVCCommand{
+				Flags: Flags{RcloneConfigFile: "/etc/rclone.conf", CloudStorage: "remote:my-bucket"},
+			},
+			wantGuard: false,
+		},
+		{
+			name:      "empty --rclone-config-file without --cloud-storage does not trigger guard",
+			cmd:       TransferPVCCommand{Flags: Flags{RcloneConfigFile: ""}},
+			wantGuard: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.Validate()
+			hasGuard := err != nil && strings.Contains(err.Error(), guardMsg)
+			if tt.wantGuard && !hasGuard {
+				t.Errorf("expected guard error %q, got: %v", guardMsg, err)
+			}
+			if !tt.wantGuard && hasGuard {
+				t.Errorf("unexpected guard error: %v", err)
+			}
+		})
+	}
+}
+
+// verifies that all four indirect-mode flag guards (--encrypt, --keep-cloud-data, --rclone-config-secret,
+// --rclone-config-file) are evaluated before the source/destination context checks.
+func TestValidateIndirectFlagGuardsFireBeforeContextCheck(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     TransferPVCCommand
+		wantMsg string
+	}{
+		{
+			name:    "--encrypt guard fires before source context check",
+			cmd:     TransferPVCCommand{Flags: Flags{Encrypt: true}},
+			wantMsg: "--encrypt requires --cloud-storage",
+		},
+		{
+			name:    "--keep-cloud-data guard fires before source context check",
+			cmd:     TransferPVCCommand{Flags: Flags{KeepCloudData: true}},
+			wantMsg: "--keep-cloud-data requires --cloud-storage",
+		},
+		{
+			name:    "--rclone-config-secret guard fires before source context check",
+			cmd:     TransferPVCCommand{Flags: Flags{RcloneConfigSecret: "my-secret"}},
+			wantMsg: "--rclone-config-secret requires --cloud-storage",
+		},
+		{
+			name:    "--rclone-config-file guard fires before source context check",
+			cmd:     TransferPVCCommand{Flags: Flags{RcloneConfigFile: "/etc/rclone.conf"}},
+			wantMsg: "--rclone-config-file requires --cloud-storage",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// sourceContext and destinationContext are both nil — if the context
+			// check ran first we would get "cannot evaluate source context".
+			err := tt.cmd.Validate()
+			if err == nil {
+				t.Fatal("Validate() expected error but got nil")
+			}
+			if !strings.Contains(err.Error(), tt.wantMsg) {
+				t.Errorf("Validate() error = %q, want to contain %q", err.Error(), tt.wantMsg)
 			}
 		})
 	}

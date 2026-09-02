@@ -85,6 +85,7 @@ func TestComplete_AsExtras(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
+				log:         logrus.StandardLogger(),
 				configFlags: genericclioptions.NewConfigFlags(true),
 				asExtras:    tt.asExtras,
 			}
@@ -180,6 +181,7 @@ func TestValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
 				configFlags:   genericclioptions.NewConfigFlags(true),
+				log:           logrus.StandardLogger(),
 				asExtras:      tt.asExtras,
 				labelSelector: tt.labelSelector,
 			}
@@ -261,6 +263,7 @@ func TestValidate_ContextConflicts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
 				configFlags: genericclioptions.NewConfigFlags(true),
+				log:         logrus.StandardLogger(),
 			}
 			if tt.context != nil {
 				o.configFlags.Context = tt.context
@@ -335,6 +338,7 @@ func TestValidate_CRDGroupConflict(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &ExportOptions{
+				log:              logrus.StandardLogger(),
 				configFlags:      genericclioptions.NewConfigFlags(true),
 				crdSkipGroups:    tt.crdSkipGroups,
 				crdIncludeGroups: tt.crdIncludeGroups,
@@ -606,6 +610,138 @@ func TestAllResourceListsForbidden(t *testing.T) {
 			got := allResourceListsForbidden(tt.resources, tt.resourceErrs)
 			if got != tt.want {
 				t.Fatalf("allResourceListsForbidden() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidate_GKFilter(t *testing.T) {
+	tests := []struct {
+		name      string
+		includeGK []string
+		excludeGK []string
+		wantErr   bool
+	}{
+		{
+			name:      "no filter - ok",
+			includeGK: nil,
+			excludeGK: nil,
+			wantErr:   false,
+		},
+		{
+			name:      "include only - ok",
+			includeGK: []string{"Deployment", "ConfigMap"},
+			excludeGK: nil,
+			wantErr:   false,
+		},
+		{
+			name:      "exclude only - ok",
+			includeGK: nil,
+			excludeGK: []string{"Event", "Secret"},
+			wantErr:   false,
+		},
+		{
+			name:      "both include and exclude - error",
+			includeGK: []string{"Deployment"},
+			excludeGK: []string{"Event"},
+			wantErr:   true,
+		},
+		{
+			name:      "invalid include format - error",
+			includeGK: []string{"apps/v1/Deployment"},
+			excludeGK: nil,
+			wantErr:   true,
+		},
+		{
+			name:      "invalid exclude format - error",
+			includeGK: nil,
+			excludeGK: []string{""},
+			wantErr:   true,
+		},
+		{
+			name:      "valid Group/Kind format - ok",
+			includeGK: []string{"apps/Deployment", "batch/CronJob"},
+			excludeGK: nil,
+			wantErr:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &ExportOptions{
+				configFlags: genericclioptions.NewConfigFlags(true),
+				globalFlags: nil,
+				log:         logrus.StandardLogger(),
+				includeGK:   tt.includeGK,
+				excludeGK:   tt.excludeGK,
+			}
+
+			err := o.Validate()
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestComplete_DefaultExcludeEvent(t *testing.T) {
+	tests := []struct {
+		name        string
+		includeGK   []string
+		excludeGK   []string
+		wantExclude []string
+	}{
+		{
+			name:        "no GK filters - defaults to exclude Event",
+			includeGK:   nil,
+			excludeGK:   nil,
+			wantExclude: []string{"Event"},
+		},
+		{
+			name:        "explicit include - no default",
+			includeGK:   []string{"Deployment"},
+			excludeGK:   nil,
+			wantExclude: nil,
+		},
+		{
+			name:        "explicit exclude - no default",
+			includeGK:   nil,
+			excludeGK:   []string{"Secret"},
+			wantExclude: []string{"Secret"},
+		},
+		{
+			name:        "empty slices - defaults to exclude Event",
+			includeGK:   []string{},
+			excludeGK:   []string{},
+			wantExclude: []string{"Event"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &ExportOptions{
+				configFlags: genericclioptions.NewConfigFlags(true),
+				includeGK:   tt.includeGK,
+				excludeGK:   tt.excludeGK,
+			}
+			emptyKube := ""
+			o.configFlags.KubeConfig = &emptyKube
+
+			err := o.Complete(nil, nil)
+			if err != nil {
+				t.Fatalf("Complete() failed: %v", err)
+			}
+
+			if len(tt.wantExclude) != len(o.excludeGK) {
+				t.Fatalf("excludeGK length = %d, want %d", len(o.excludeGK), len(tt.wantExclude))
+			}
+			for i, want := range tt.wantExclude {
+				if o.excludeGK[i] != want {
+					t.Errorf("excludeGK[%d] = %q, want %q", i, o.excludeGK[i], want)
+				}
 			}
 		})
 	}

@@ -25,16 +25,19 @@ func ParseAPIResourcesJSON(path string, log logrus.FieldLogger) (DiscoveryIndex,
 	log.Debugf("Loading API resources from %s", path)
 	data, err := os.ReadFile(path)
 	if err != nil {
+		log.Debugf("Failed to read api-resources file %q: %v", path, err)
 		return nil, fmt.Errorf("reading api-resources file %q: %w", path, err)
 	}
 	log.Debugf("Read %d bytes from API resources file", len(data))
 
 	var surface apiSurfaceJSON
 	if err := json.Unmarshal(data, &surface); err != nil {
+		log.Debugf("Failed to parse api-resources JSON from %q: %v", path, err)
 		return nil, fmt.Errorf("parsing api-resources JSON from %q: %w", path, err)
 	}
 
 	if len(surface.APIResourceLists) == 0 {
+		log.Debugf("Api-resources file %q contains no API resource lists", path)
 		return nil, fmt.Errorf("api-resources file %q contains no API resource lists", path)
 	}
 	log.Debugf("Parsed %d API resource lists from file", len(surface.APIResourceLists))
@@ -44,7 +47,7 @@ func ParseAPIResourcesJSON(path string, log logrus.FieldLogger) (DiscoveryIndex,
 	for _, list := range surface.APIResourceLists {
 		gv := list.GroupVersion
 		if gv == "" {
-			log.Debugf("Skipping API resource list with empty groupVersion")
+			log.Warnf("Skipping API resource list with empty groupVersion")
 			continue
 		}
 		if _, ok := index[gv]; !ok {
@@ -52,6 +55,7 @@ func ParseAPIResourcesJSON(path string, log logrus.FieldLogger) (DiscoveryIndex,
 		}
 		for _, res := range list.APIResources {
 			if strings.Contains(res.Name, "/") {
+				log.Debugf("Skipping sub-resource %q in group-version %s", res.Name, gv)
 				continue
 			}
 			index[gv][res.Kind] = discoveryEntry{Resource: res}
@@ -60,6 +64,7 @@ func ParseAPIResourcesJSON(path string, log logrus.FieldLogger) (DiscoveryIndex,
 	}
 
 	if len(index) == 0 {
+		log.Debugf("Api-resources file %q contains no usable resources", path)
 		return nil, fmt.Errorf("api-resources file %q contains no usable resources", path)
 	}
 

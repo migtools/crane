@@ -45,6 +45,14 @@ inputs:
     description: Pass verbose logs flag to tests
     required: false
     default: "true"
+  cloud_storage:
+    description: S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket)
+    required: false
+    default: ""
+  rclone_config_file:
+    description: Path to local rclone.conf file for indirect transfer
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -65,7 +73,7 @@ runs:
 
     - name: Clone k8s-apps-deployer
       shell: bash
-      run: git clone https://github.com/stillalearner/k8s-apps-deployer.git
+      run: git clone https://github.com/migtools/k8s-apps-deployer.git
 
     - name: Create venv and install package
       shell: bash
@@ -107,6 +115,13 @@ runs:
 
         if [ "${{ inputs.verbose_logs }}" = "true" ]; then
           GINKGO_ARGS+=(--verbose-logs)
+        fi
+
+        if [ -n "${{ inputs.cloud_storage }}" ]; then
+          GINKGO_ARGS+=(--cloud-storage="${{ inputs.cloud_storage }}")
+        fi
+        if [ -n "${{ inputs.rclone_config_file }}" ]; then
+          GINKGO_ARGS+=(--rclone-config-file="${{ inputs.rclone_config_file }}")
         fi
 
         ginkgo run -v -r --label-filter="${{ inputs.label_filter }}" e2e-tests/tests -- "${GINKGO_ARGS[@]}"

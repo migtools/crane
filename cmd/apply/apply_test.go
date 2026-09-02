@@ -147,7 +147,8 @@ func TestComplete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			o := &Options{}
+			o := &Options{
+				log: logrus.StandardLogger()}
 			cmd := &cobra.Command{}
 
 			err := o.Complete(cmd, tt.args)
@@ -237,6 +238,7 @@ func TestRun_UnresolvedStagesError(t *testing.T) {
 			o := &Options{
 				cobraGlobalFlags: globalFlags,
 				globalFlags:      globalFlags,
+				log:              logrus.StandardLogger(),
 				Flags: Flags{
 					TransformDir: transformDir,
 					OutputDir:    outputDir,
@@ -302,6 +304,7 @@ func TestValidate_TransformDir(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			o := &Options{
+				log: logrus.StandardLogger(),
 				Flags: Flags{
 					TransformDir: tt.transformDir,
 				},
@@ -331,6 +334,7 @@ func TestValidate_MissingTransformDir_DoesNotCreateOutputDir(t *testing.T) {
 	outputDir := filepath.Join(tmpDir, "output")
 
 	o := &Options{
+		log: logrus.StandardLogger(),
 		Flags: Flags{
 			TransformDir: missingTransformDir,
 			OutputDir:    outputDir,
