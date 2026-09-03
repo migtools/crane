@@ -38,7 +38,24 @@ crane transfer-pvc --source-context=source --destination-context=destination \
   --pvc-name=data-pvc \
   --cloud-storage=remote:my-bucket/transfer-path \
   --keep-cloud-data
+  --rclone-config-file=rclone.conf \
 ```
+
+### Indirect Transfer with Encryption
+```bash
+crane transfer-pvc --source-context=source --destination-context=destination \
+  --pvc-name=data-pvc \
+  --cloud-storage=remote:my-bucket/transfer-path \
+  --rclone-config-file=rclone.conf \
+  --encrypt
+```
+
+### Indirect Transfer Options
+
+When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
+
+By default, after a successful indirect transfer, `crane` automatically initiates a cleanup process to remove the temporary data from the cloud storage bucket. If the cleanup process fails, the tool issues a warning but marks the overall transfer as successful. You can prevent this automatic cleanup by setting `--keep-cloud-data`.
+
 
 ## Flags
 
@@ -99,12 +116,6 @@ crane transfer-pvc --source-context=mycluster --destination-context=mycluster \
 For the complete end-to-end workflow including workload reference updates, see the [StorageClass Conversion Guide](../storageclass-conversion.md).
 
 > **Warning — StorageClass conversion with StatefulSets:** `crane transfer-pvc` migrates data from existing PVCs to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. If the StatefulSet is scaled up after conversion without being recreated, new replicas will provision PVCs on the original StorageClass. To complete the conversion, delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec.
-
-### Indirect Transfer Options
-
-When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
-
-By default, after a successful indirect transfer, `crane` automatically initiates a cleanup process to remove the temporary data from the cloud storage bucket. If the cleanup process fails, the tool issues a warning but marks the overall transfer as successful. You can prevent this automatic cleanup by setting `--keep-cloud-data=true`.
 
 #### Sample rclone-config-file
 
