@@ -127,8 +127,8 @@ When using `--cloud-storage`, you must provide rclone credentials using **one** 
 [remote]
 type = s3
 provider = Minio
-access_key_id = minioadmin
-secret_access_key = minioadmin
+access_key_id = <minio-access-key>
+secret_access_key = <minio-secret-key>
 endpoint = http://minio.minio.svc.cluster.local:9000
 ```
 
@@ -137,8 +137,8 @@ endpoint = http://minio.minio.svc.cluster.local:9000
 [remote]
 type = s3
 provider = AWS
-access_key_id = AKIAIOSFODNN7EXAMPLE
-secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+access_key_id = <aws-access-key-id>
+secret_access_key = <aws-secret-access-key>
 region = us-east-1
 ```
 
@@ -147,8 +147,8 @@ region = us-east-1
 [remote]
 type = s3
 provider = GCS
-access_key_id = GOOGEXAMPLE1234
-secret_access_key = example-secret-key
+access_key_id = <gcs-access-key-id>
+secret_access_key = <gcs-secret-access-key>
 endpoint = https://storage.googleapis.com
 ```
 
