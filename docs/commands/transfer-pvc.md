@@ -37,7 +37,7 @@ crane transfer-pvc --source-context=source --destination-context=destination \
 crane transfer-pvc --source-context=source --destination-context=destination \
   --pvc-name=data-pvc \
   --cloud-storage=remote:my-bucket/transfer-path \
-  --keep-cloud-data=true
+  --keep-cloud-data
 ```
 
 ## Flags
