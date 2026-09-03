@@ -73,6 +73,14 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 			By("Grant namespace-admin permissions to the non-admin user on source and target")
 			kubectlSrc, kubectlTgt, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				By("Delete test namespace on source and target (wait for completion)")
+				for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
+					if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
+						log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
+					}
+				}
+			})
 			DeferCleanup(rbacCleanup)
 
 			paths, err := NewScenarioPaths("crane-indirect-rclone-secret-*")
@@ -81,14 +89,6 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 				By("Cleanup source and target resources")
 				if err := CleanupScenario(paths.TempDir, srcApp, tgtApp); err != nil {
 					log.Printf("cleanup: %v", err)
-				}
-			})
-			DeferCleanup(func() {
-				By("Delete test namespace on source and target (wait for completion)")
-				for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
-					if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
-						log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
-					}
 				}
 			})
 
@@ -175,6 +175,14 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 
 			By("Verify the migrated data matches source via a throwaway verifier pod on the target PVC")
 			const verifierPod = "indirect-rclone-secret-verifier"
+			// The verifier image runs as root by default, so runAsNonRoot needs an
+			// explicit runAsUser on plain Kubernetes. On OpenShift a fixed UID may
+			// fall outside the namespace's SCC-assigned range and be rejected at
+			// admission, so omit runAsUser there and let the SCC inject one.
+			runAsUserLine := "      runAsUser: 1000\n"
+			if scenario.KubectlTgt.IsOpenShift() {
+				runAsUserLine = ""
+			}
 			verifierPodYAML := fmt.Sprintf(`
 apiVersion: v1
 kind: Pod
@@ -191,15 +199,14 @@ spec:
       mountPath: /data
     securityContext:
       runAsNonRoot: true
-      runAsUser: 1000
-      allowPrivilegeEscalation: false
+%s      allowPrivilegeEscalation: false
       seccompProfile:
         type: RuntimeDefault
   volumes:
   - name: data
     persistentVolumeClaim:
       claimName: %s
-`, verifierPod, tgtApp.Namespace, pvcName)
+`, verifierPod, tgtApp.Namespace, runAsUserLine, pvcName)
 			Expect(kubectlTgt.ApplyYAMLSpec(verifierPodYAML, tgtApp.Namespace)).NotTo(HaveOccurred())
 			DeferCleanup(func() {
 				if _, err := kubectlTgt.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true"); err != nil {
