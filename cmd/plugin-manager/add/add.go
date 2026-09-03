@@ -217,7 +217,11 @@ func (o *Options) run(args []string) error {
 	return nil
 }
 
-func downloadBinary(filepath string, filename string, url string, log *logrus.Logger) error {
+func downloadBinary(pluginDir string, filename string, url string, log *logrus.Logger) error {
+	if filepath.Base(filename) != filename || filename == "." || filename == ".." {
+		return fmt.Errorf("invalid plugin filename %q", filename)
+	}
+
 	var binaryContents io.Reader
 	isUrl, url := plugin.IsUrl(url)
 	if !isUrl {
@@ -239,18 +243,18 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 		binaryContents = resp.Body
 	}
 	// Create dir if not exists
-	if _, err := os.Stat(filepath); os.IsNotExist(err) {
-		err = os.MkdirAll(filepath, os.ModePerm)
+	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
+		err = os.MkdirAll(pluginDir, os.ModePerm)
 		if err != nil {
-			log.Errorf("Failed to create plugin directory %s: %v", filepath, err)
+			log.Errorf("Failed to create plugin directory %s: %v", pluginDir, err)
 			return err
 		}
 	}
 
 	// Create the file
-	pluginBinary, err := os.OpenFile(filepath+"/"+filename, syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0777)
+	pluginBinary, err := os.OpenFile(filepath.Join(pluginDir, filename), syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0755)
 	if err != nil {
-		log.Errorf("Failed to create plugin file %s/%s: %v", filepath, filename, err)
+		log.Errorf("Failed to create plugin file %s/%s: %v", pluginDir, filename, err)
 		return err
 	}
 	defer pluginBinary.Close()
@@ -266,7 +270,7 @@ func downloadBinary(filepath string, filename string, url string, log *logrus.Lo
 		log.Errorf("Failed to sync plugin binary %s: %v", filename, err)
 		return err
 	}
-	log.Infof("pluginBinary %s added to the path - %s", filename, filepath)
+	log.Infof("pluginBinary %s added to the path - %s", filename, pluginDir)
 	return err
 }
 
