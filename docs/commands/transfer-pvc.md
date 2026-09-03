@@ -56,7 +56,8 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 | `--rclone-config-secret` | string | No | Name of the K8s Secret containing rclone.conf for indirect transfer |
 | `--rclone-config-file` | string | No | Path to local rclone.conf file for indirect transfer |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
-| `--keep-cloud-data` | bool | No | If true, preserves cloud storage data after successful transfer (default: false) |
+| `--keep-cloud-data` | bool | No | Reserved for cloud-data retention; currently has no effect because cleanup is not implemented |
+| `--audit-log` | string | No | Path to the audit log file (defaults to `audit/.crane-audit.log`) |
 
 ### PVC Options
 
@@ -95,6 +96,18 @@ For the complete end-to-end workflow including workload reference updates, see t
 
 > **Warning — StorageClass conversion with StatefulSets:** `crane transfer-pvc` migrates data from existing PVCs to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. If the StatefulSet is scaled up after conversion without being recreated, new replicas will provision PVCs on the original StorageClass. To complete the conversion, delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec.
 
+### Audit Logging
+
+`crane` maintains a persistent, structured JSON Lines audit log of all operations. This file is located at `audit/.crane-audit.log` by default.
+
+To save the audit log to a different location:
+```bash
+crane transfer-pvc --audit-log=/tmp/crane-transfer.log ...
+```
+
+> **Note:** The `audit/` directory is automatically created if it does not exist. It is recommended to add `audit/` to your `.gitignore` file to avoid tracking these logs in version control.
+
+
 ### Endpoint Options
 
 Endpoint enables a connection between the source and destination cluster for data transfer. It is created in the destination cluster. The destination cluster must support the kind of endpoint used.
@@ -116,9 +129,14 @@ When using `--cloud-storage`, you must provide rclone credentials using **one** 
 
 #### Behavior
 
-- **Automatic Cleanup**: By default, crane deletes the temporary data from cloud storage after a successful transfer. If cleanup fails, a warning is issued but the transfer is still marked as successful.
-- **Data Retention**: Use `--keep-cloud-data` to preserve the data in cloud storage after transfer.
-- **Encryption**: Use `--encrypt` to enable client-side encryption during upload/download.
+- **Data Retention**: The `--keep-cloud-data` flag is reserved for cloud-data retention; currently has no effect because cleanup is not implemented.
+- **Encryption**: Use `--encrypt` to enable client-side encryption for data in transit.
+
+When `--encrypt` is used:
+1. You must provide the configuration via `--rclone-config-file`. This flag cannot be used with `--rclone-config-secret`.
+2. `crane` automatically generates a secure, ephemeral 32-byte encryption password for the transfer session.
+3. The password is obscured using rclone's native AES-CTR format and appended to the configuration as an `[encrypted]` crypt overlay section.
+4. The generated configuration is used to create temporary secrets on both clusters, ensuring secure end-to-end encryption. The password is discarded after the transfer completes.
 
 #### Sample rclone.conf
 
