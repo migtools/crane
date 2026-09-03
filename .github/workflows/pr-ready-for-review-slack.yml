@@ -51,10 +51,22 @@ jobs:
             exit 0
           fi
 
+          # Authorization: PR author can always trigger; for bot-authored PRs, require write access
           if [[ "$commenter" != "$pr_author" ]]; then
-            echo "::notice::Ignoring command from @${commenter}; only PR author @${pr_author} can trigger."
-            echo "should_notify=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            if [[ "$pr_author" == "github-actions[bot]" ]]; then
+              # For bot-authored PRs, check if commenter has write access to the repo
+              permission=$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${commenter}/permission" --jq '.permission' 2>/dev/null || echo "none")
+              if [[ "$permission" != "admin" && "$permission" != "write" ]]; then
+                echo "::notice::Ignoring command from @${commenter}; only maintainers with write access can trigger /rfr on bot-authored PRs."
+                echo "should_notify=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "::notice::Allowing @${commenter} (permission: ${permission}) to trigger /rfr on bot-authored PR."
+            else
+              echo "::notice::Ignoring command from @${commenter}; only PR author @${pr_author} can trigger."
+              echo "should_notify=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
           comment_id="$(jq -r '.comment.id' "$GITHUB_EVENT_PATH")"
