@@ -51,7 +51,8 @@ jobs:
             exit 0
           fi
 
-          if [[ "$commenter" != "$pr_author" ]]; then
+          # Allow PR author to trigger, or allow anyone if PR is authored by github-actions[bot]
+          if [[ "$commenter" != "$pr_author" && "$pr_author" != "github-actions[bot]" ]]; then
             echo "::notice::Ignoring command from @${commenter}; only PR author @${pr_author} can trigger."
             echo "should_notify=false" >> "$GITHUB_OUTPUT"
             exit 0
