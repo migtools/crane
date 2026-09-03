@@ -24,7 +24,7 @@ The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its
 crane transfer-pvc --source-context=<source> --destination-context=<destination> --pvc-name=<pvc_name> --endpoint=route
 ```
 
-### Indirect Transfer
+### Indirect Transfer (via S3)
 ```bash
 crane transfer-pvc --source-context=source --destination-context=destination \
   --pvc-name=data-pvc \
@@ -32,29 +32,7 @@ crane transfer-pvc --source-context=source --destination-context=destination \
   --rclone-config-secret=rclone-secret
 ```
 
-### Indirect Transfer with Data Retention
-```bash
-crane transfer-pvc --source-context=source --destination-context=destination \
-  --pvc-name=data-pvc \
-  --cloud-storage=remote:my-bucket/transfer-path \
-  --keep-cloud-data
-  --rclone-config-file=rclone.conf \
-```
-
-### Indirect Transfer with Encryption
-```bash
-crane transfer-pvc --source-context=source --destination-context=destination \
-  --pvc-name=data-pvc \
-  --cloud-storage=remote:my-bucket/transfer-path \
-  --rclone-config-file=rclone.conf \
-  --encrypt
-```
-
-### Indirect Transfer Options
-
-When using `--cloud-storage`, you must provide rclone credentials using either `--rclone-config-secret` (to point to an existing secret in the cluster) or `--rclone-config-file` (to provide a local configuration file that `crane` will convert into a temporary secret). These two flags are mutually exclusive.
-
-By default, after a successful indirect transfer, `crane` automatically initiates a cleanup process to remove the temporary data from the cloud storage bucket. If the cleanup process fails, the tool issues a warning but marks the overall transfer as successful. You can prevent this automatic cleanup by setting `--keep-cloud-data`.
+See [Indirect Transfer Options](#indirect-transfer-options) for detailed configuration.
 
 
 ## Flags
@@ -117,10 +95,35 @@ For the complete end-to-end workflow including workload reference updates, see t
 
 > **Warning — StorageClass conversion with StatefulSets:** `crane transfer-pvc` migrates data from existing PVCs to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. If the StatefulSet is scaled up after conversion without being recreated, new replicas will provision PVCs on the original StorageClass. To complete the conversion, delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec.
 
-#### Sample rclone-config-file
+### Endpoint Options
+
+Endpoint enables a connection between the source and destination cluster for data transfer. It is created in the destination cluster. The destination cluster must support the kind of endpoint used.
+
+By default, `nginx-ingress` is used as endpoint. For nginx-ingress, `--subdomain` and `--ingress-class` are required.
+
+In an OpenShift cluster, `route` endpoint can be used. A subdomain option can be specified but is not required. By default, the cluster's subdomain will be used.
+
+### Indirect Transfer Options
+
+Indirect transfer enables PVC migration between clusters without direct network connectivity. Data is uploaded to an S3-compatible cloud storage bucket by the source cluster and then downloaded by the destination cluster.
+
+#### Configuration
+
+When using `--cloud-storage`, you must provide rclone credentials using **one** of the following (mutually exclusive):
+
+- `--rclone-config-secret` — Name of an existing Kubernetes Secret containing `rclone.conf` in the cluster
+- `--rclone-config-file` — Path to a local `rclone.conf` file (crane creates a temporary Secret automatically)
+
+#### Behavior
+
+- **Automatic Cleanup**: By default, crane deletes the temporary data from cloud storage after a successful transfer. If cleanup fails, a warning is issued but the transfer is still marked as successful.
+- **Data Retention**: Use `--keep-cloud-data` to preserve the data in cloud storage after transfer.
+- **Encryption**: Use `--encrypt` to enable client-side encryption during upload/download.
+
+#### Sample rclone.conf
 
 **MinIO (self-hosted):**
-```
+```ini
 [remote]
 type = s3
 provider = Minio
@@ -130,22 +133,48 @@ endpoint = http://minio.minio.svc.cluster.local:9000
 ```
 
 **AWS S3:**
-```
+```ini
 [remote]
 type = s3
 provider = AWS
-access_key_id = <access_key>
-secret_access_key = <secret_key>
+access_key_id = AKIAIOSFODNN7EXAMPLE
+secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 region = us-east-1
 ```
 
-### Endpoint Options
+**GCS (S3-compatible mode):**
+```ini
+[remote]
+type = s3
+provider = GCS
+access_key_id = GOOGEXAMPLE1234
+secret_access_key = example-secret-key
+endpoint = https://storage.googleapis.com
+```
 
-Endpoint enables a connection between the source and destination cluster for data transfer. It is created in the destination cluster. The destination cluster must support the kind of endpoint used.
+The section name `[remote]` must match the prefix in `--cloud-storage`. For example, `--cloud-storage "remote:my-bucket"` uses the `[remote]` section.
 
-By default, `nginx-ingress` is used as endpoint. For nginx-ingress, `--subdomain` and `--ingress-class` are required.
+#### Examples
 
-In an OpenShift cluster, `route` endpoint can be used. A subdomain option can be specified but is not required. By default, the cluster's subdomain will be used.
+Basic indirect transfer:
+```bash
+crane transfer-pvc \
+  --source-context source --destination-context destination \
+  --pvc-name data-pvc \
+  --cloud-storage remote:my-bucket/transfer-path \
+  --rclone-config-secret rclone-secret
+```
+
+With encryption and data retention:
+```bash
+crane transfer-pvc \
+  --source-context source --destination-context destination \
+  --pvc-name data-pvc \
+  --cloud-storage remote:my-bucket/transfer-path \
+  --rclone-config-file rclone.conf \
+  --encrypt \
+  --keep-cloud-data
+```
 
 ## Next Steps
 
