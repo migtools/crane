@@ -63,6 +63,7 @@ crane transfer-pvc --source-context=source --destination-context=destination \
 | `--rclone-config-file` | string | No | Path to local rclone.conf file for indirect transfer |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
 | `--keep-cloud-data` | bool | No | Reserved for cloud-data retention; currently has no effect because cleanup is not implemented |
+| `--audit-log` | string | No | Path to the audit log file (defaults to `audit/.crane-audit.log`) |
 
 ### PVC Options
 
@@ -135,6 +136,17 @@ access_key_id = <access_key>
 secret_access_key = <secret_key>
 region = us-east-1
 ```
+
+### Audit Logging
+
+`crane` maintains a persistent, structured JSON Lines audit log of all operations. This file is located at `audit/.crane-audit.log` by default.
+
+To save the audit log to a different location:
+```bash
+crane transfer-pvc --audit-log=/tmp/crane-transfer.log ...
+```
+
+> **Note:** The `audit/` directory is automatically created if it does not exist. It is recommended to add `audit/` to your `.gitignore` file to avoid tracking these logs in version control.
 
 ### Endpoint Options
 
