@@ -1,4 +1,4 @@
-package indirect_migration
+package e2e
 
 import (
 	"fmt"
@@ -14,6 +14,10 @@ import (
 var _ = Describe("Indirect transfer with missing rclone config Secret", func() {
 	It("[MTA-910] Should fail when the referenced rclone-config-secret does not exist",
 		Label("tier1", "pvc-transfer", "indirect"), func() {
+
+			if config.CloudStorage == "" {
+				Skip("--cloud-storage not set; skipping in direct transfer mode")
+			}
 
 			appName := "app-with-empty-pvc"
 			namespace := "indirect-missing-secret-k8s"
