@@ -6,6 +6,7 @@ import (
 	"log"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/onsi/ginkgo/v2"
@@ -139,6 +140,56 @@ func GetSecretData(kubectl KubectlRunner, namespace, secretName string) (map[str
 		return nil, fmt.Errorf("failed to parse secret %s JSON: %w", secretName, err)
 	}
 	return secretObj.Data, nil
+}
+
+// MySQLAuthorsCount returns the number of rows in the authors table from a
+// running MySQL pod.
+func MySQLAuthorsCount(k KubectlRunner, namespace, podName string) (int, error) {
+	out, err := k.Run(
+		"exec", podName, "-n", namespace, "--",
+		"sh", "-c",
+		`MYSQL_PWD="$MYSQL_PASSWORD" mysql -N -B -h 127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM authors;"`,
+	)
+	if err != nil {
+		return 0, err
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("parse authors count %q: %w", strings.TrimSpace(out), err)
+	}
+	return count, nil
+}
+
+// WaitForMySQLSocket checks whether the MySQL unix socket exists in the pod.
+func WaitForMySQLSocket(k KubectlRunner, namespace, podName string) error {
+	_, err := k.Run(
+		"exec", podName, "-n", namespace, "--",
+		"sh", "-c",
+		`test -S /var/lib/mysql/mysql.sock`,
+	)
+	return err
+}
+
+// MySQLTestDataMD5 returns the actual and expected md5 values for the seeded
+// MySQL sidecar test file.
+func MySQLTestDataMD5(k KubectlRunner, namespace, podName string) (actual string, expected string, _ error) {
+	actualOut, err := k.Run(
+		"exec", podName, "-n", namespace, "--",
+		"sh", "-c",
+		`md5sum /test-data/test1 | awk '{print $1}'`,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	expectedOut, err := k.Run(
+		"exec", podName, "-n", namespace, "--",
+		"sh", "-c",
+		`awk '{print $1}' /test-data/test1.md5`,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(actualOut), strings.TrimSpace(expectedOut), nil
 }
 
 // PodVolumeMount maps a PVC to a mount path inside a VerifierPodOptions pod.

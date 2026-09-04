@@ -138,7 +138,7 @@ jobs:
           esac
 
   # Full suite: run tier0 and tier1 in parallel via the reusable workflow
-  # (same path as main/nightly), each with its own 60-minute timeout.
+  # (same path as main/nightly), each with its own 90-minute timeout.
   e2e-tier0:
     needs: detect-changes
     if: needs.detect-changes.outputs.run_tests == 'true' && needs.detect-changes.outputs.run_mode == 'all'

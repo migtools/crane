@@ -3,7 +3,6 @@ package e2e
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
@@ -11,51 +10,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-func mysqlAuthorsCount(k KubectlRunner, namespace, podName string) (int, error) {
-	out, err := k.Run(
-		"exec", podName, "-n", namespace, "--",
-		"sh", "-c",
-		`MYSQL_PWD="$MYSQL_PASSWORD" mysql -N -B -h 127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" -e "SELECT COUNT(*) FROM authors;"`,
-	)
-	if err != nil {
-		return 0, err
-	}
-	count, err := strconv.Atoi(strings.TrimSpace(out))
-	if err != nil {
-		return 0, fmt.Errorf("parse authors count %q: %w", strings.TrimSpace(out), err)
-	}
-	return count, nil
-}
-
-func waitForMySQLSocket(k KubectlRunner, namespace, podName string) error {
-	_, err := k.Run(
-		"exec", podName, "-n", namespace, "--",
-		"sh", "-c",
-		`test -S /var/lib/mysql/mysql.sock`,
-	)
-	return err
-}
-
-func mysqlTestDataMD5(k KubectlRunner, namespace, podName string) (actual string, expected string, _ error) {
-	actualOut, err := k.Run(
-		"exec", podName, "-n", namespace, "--",
-		"sh", "-c",
-		`md5sum /test-data/test1 | awk '{print $1}'`,
-	)
-	if err != nil {
-		return "", "", err
-	}
-	expectedOut, err := k.Run(
-		"exec", podName, "-n", namespace, "--",
-		"sh", "-c",
-		`awk '{print $1}' /test-data/test1.md5`,
-	)
-	if err != nil {
-		return "", "", err
-	}
-	return strings.TrimSpace(actualOut), strings.TrimSpace(expectedOut), nil
-}
 
 var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 
@@ -106,11 +60,11 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		srcPodName, err := GetPodNameByLabel(kubectlSrcNonAdmin, srcApp.Namespace, "app="+appName)
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(func() error {
-			return waitForMySQLSocket(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName)
+			return WaitForMySQLSocket(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName)
 		}, "2m", "5s").Should(Succeed())
-		sourceAuthorsCount, err := mysqlAuthorsCount(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName)
+		sourceAuthorsCount, err := MySQLAuthorsCount(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName)
 		Expect(err).NotTo(HaveOccurred())
-		sourceMD5Actual, sourceMD5Expected, err := mysqlTestDataMD5(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName)
+		sourceMD5Actual, sourceMD5Expected, err := MySQLTestDataMD5(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Source validation output: pod=%s authors_count=%d md5_actual=%s md5_expected=%s", srcPodName, sourceAuthorsCount, sourceMD5Actual, sourceMD5Expected)
 		Expect(sourceMD5Actual).To(Equal(sourceMD5Expected), "source test-data checksum should match its md5 file")
@@ -232,12 +186,12 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 			return nil
 		}, "2m", "10s").Should(Succeed())
 		Eventually(func() error {
-			return waitForMySQLSocket(kubectlTgtNonAdmin, tgtApp.Namespace, tgtPodName)
+			return WaitForMySQLSocket(kubectlTgtNonAdmin, tgtApp.Namespace, tgtPodName)
 		}, "2m", "5s").Should(Succeed())
 
-		targetAuthorsCount, err := mysqlAuthorsCount(kubectlTgtNonAdmin, tgtApp.Namespace, tgtPodName)
+		targetAuthorsCount, err := MySQLAuthorsCount(kubectlTgtNonAdmin, tgtApp.Namespace, tgtPodName)
 		Expect(err).NotTo(HaveOccurred())
-		targetMD5Actual, targetMD5Expected, err := mysqlTestDataMD5(kubectlTgtNonAdmin, tgtApp.Namespace, tgtPodName)
+		targetMD5Actual, targetMD5Expected, err := MySQLTestDataMD5(kubectlTgtNonAdmin, tgtApp.Namespace, tgtPodName)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Target validation output: pod=%s authors_count=%d md5_actual=%s md5_expected=%s", tgtPodName, targetAuthorsCount, targetMD5Actual, targetMD5Expected)
 		Expect(targetMD5Actual).To(Equal(targetMD5Expected), "target test-data checksum should match its md5 file")
