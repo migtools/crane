@@ -35,14 +35,15 @@ var _ = Describe("Cross-cluster multi-PVC StorageClass conversion", func() {
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
 
-		isOCP := scenario.KubectlSrc.IsOpenShift()
+		srcIsOCP := scenario.KubectlSrc.IsOpenShift()
+		tgtIsOCP := scenario.KubectlTgt.IsOpenShift()
 		srcApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
-			"has_scc":        isOCP,
+			"has_scc":        srcIsOCP,
 		}
 		tgtApp.ExtraVars = map[string]any{
 			"non_admin_user": "true",
-			"has_scc":        isOCP,
+			"has_scc":        tgtIsOCP,
 		}
 
 		By("Grant namespace admin permissions to the nonadmin user on source and target")
@@ -115,7 +116,7 @@ var _ = Describe("Cross-cluster multi-PVC StorageClass conversion", func() {
 		}
 
 		var destSCName string
-		if scenario.KubectlTgt.IsOpenShift() {
+		if tgtIsOCP {
 			destSCName, cleanupDestSC, err = PrepareDestinationStorageClass(scenario.KubectlTgt.Context, sourceSC, fallbackDestSCName)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(destSCName).NotTo(Equal(sourceSC))
