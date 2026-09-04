@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/konveyor/crane/internal/cli"
 	"github.com/konveyor/crane/internal/flags"
@@ -359,6 +360,7 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 	ctrlLogger := logrus.New()
 	logger := logrusr.New(ctrlLogger).WithName("transfer-pvc")
+	ctrllog.SetLogger(logger)
 
 	totalPhases := 7
 	if t.isIntraClusterSameNamespace() {

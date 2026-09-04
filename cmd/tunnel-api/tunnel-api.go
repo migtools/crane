@@ -5,6 +5,7 @@ import (
 
 	"github.com/konveyor/crane-lib/connect/tunnel_api"
 	"github.com/konveyor/crane/internal/flags"
+	crlog "github.com/konveyor/crane/internal/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -142,6 +143,7 @@ func (t *TunnelAPIOptions) getRestConfigFromContext(ctx string) (*rest.Config, e
 
 func (t *TunnelAPIOptions) run() error {
 	log := t.logger
+	crlog.InitControllerRuntimeLogger("")
 	tunnel := tunnel_api.Tunnel{}
 
 	fmt.Println("Generating SSL certificates. This may take several minutes.")
