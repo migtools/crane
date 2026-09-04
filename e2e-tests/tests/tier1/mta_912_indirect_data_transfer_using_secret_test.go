@@ -1,4 +1,4 @@
-package indirect_migration
+package e2e
 
 import (
 	"crypto/sha256"
@@ -21,8 +21,8 @@ func sha256Hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// md5sumFile returns the MD5 checksum (hash only) of a file inside a pod.
-func md5sumFile(k KubectlRunner, namespace, pod, path string) (string, error) {
+// md5sumFileInPod returns the MD5 checksum (hash only) of a file inside a pod.
+func md5sumFileInPod(k KubectlRunner, namespace, pod, path string) (string, error) {
 	out, err := k.Run("exec", pod, "-n", namespace, "--", "/bin/sh", "-c", fmt.Sprintf("md5sum %s | awk '{print $1}'", path))
 	if err != nil {
 		return "", fmt.Errorf("md5sum %q in pod %q (namespace %q): %w", path, pod, namespace, err)
@@ -96,7 +96,7 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 			Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
 
 			By("Get the source file MD5 checksum")
-			srcMD5, err := md5sumFile(kubectlSrc, srcApp.Namespace, appName, "/data/"+testFileName)
+			srcMD5, err := md5sumFileInPod(kubectlSrc, srcApp.Namespace, appName, "/data/"+testFileName)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(srcMD5).NotTo(BeEmpty(), "expected to compute an MD5 checksum on source")
 			log.Printf("Source MD5 checksum: %s\n", srcMD5)
@@ -216,7 +216,7 @@ spec:
 			_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifierPod, "-n", tgtApp.Namespace, "--timeout=120s")
 			Expect(err).NotTo(HaveOccurred())
 
-			tgtMD5, err := md5sumFile(kubectlTgt, tgtApp.Namespace, verifierPod, "/data/"+testFileName)
+			tgtMD5, err := md5sumFileInPod(kubectlTgt, tgtApp.Namespace, verifierPod, "/data/"+testFileName)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(tgtMD5).To(Equal(srcMD5), "MD5 checksum on the migrated PVC should match source")
 			log.Printf("Source and target MD5 checksums match: %s\n", srcMD5)
