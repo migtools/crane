@@ -183,17 +183,19 @@ func VerifyPVCRenameInOutput(outputDir, newPVCName string) {
 }
 
 // AssertNoTransferPVCLeftovers waits until transfer-pvc helper objects labeled
-// for pvcName are gone in the given namespaces. DeleteAllOf in transfer-pvc GC
-// is asynchronous, so the rsync-server pod can still be Terminating for a while
-// after the command exits.
-func AssertNoTransferPVCLeftovers(k KubectlRunner, namespaces []string, pvcName string) {
-	selector := "app.konveyor.io/created-for-pvc=" + pvcName
-	for _, ns := range namespaces {
-		gomega.Eventually(func() (string, error) {
-			out, err := k.GetResourceNamesByLabel(ns, selector)
-			return strings.TrimSpace(out), err
-		}, "2m", "5s").Should(gomega.BeEmpty(),
-			"expected no leftover transfer-pvc resources in namespace %s", ns)
+// for each pvcName are gone in the given namespaces. DeleteAllOf in transfer-pvc
+// GC is asynchronous, so the rsync-server pod can still be Terminating for a
+// while after the command exits.
+func AssertNoTransferPVCLeftovers(k KubectlRunner, namespaces []string, pvcNames ...string) {
+	for _, pvcName := range pvcNames {
+		selector := "app.konveyor.io/created-for-pvc=" + pvcName
+		for _, ns := range namespaces {
+			gomega.Eventually(func() (string, error) {
+				out, err := k.GetResourceNamesByLabel(ns, selector)
+				return strings.TrimSpace(out), err
+			}, "2m", "5s").Should(gomega.BeEmpty(),
+				"expected no leftover transfer-pvc resources in namespace %s for pvc label %s", ns, pvcName)
+		}
 	}
 }
 
