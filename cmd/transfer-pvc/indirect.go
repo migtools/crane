@@ -139,8 +139,8 @@ func (t *TransferPVCCommand) runIndirect() error {
 	// Create destination PVC
 	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
 	destPVC := t.buildDestinationPVC(srcPVC)
-	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
+	err = t.createDestinationPVC(context.TODO(), destClient, destPVC)
+	if err != nil {
 		log.Debugf("Unable to create destination PVC %s/%s: %v", destPVC.Namespace, destPVC.Name, err)
 		return fmt.Errorf("unable to create destination PVC: %w", err)
 	}

@@ -421,8 +421,8 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	log.Infof("Phase 2: Creating destination PVC")
 	phases.Start("Creating destination PVC")
 	destPVC := t.buildDestinationPVC(srcPVC)
-	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
+	err = t.createDestinationPVC(context.TODO(), destClient, destPVC)
+	if err != nil {
 		log.Errorf("Unable to create destination PVC %s/%s: %v", t.PVC.Namespace.destination, t.PVC.Name.destination, err)
 		return phases.Fail(err, "unable to create destination PVC")
 	}
@@ -1288,6 +1288,35 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	pvc.Spec.VolumeMode = nil
 	pvc.Spec.VolumeName = ""
 	return pvc
+}
+
+// createDestinationPVC creates the destination PVC, validating the storage
+// class of an existing PVC when --dest-storage-class was requested.
+func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
+	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
+		return nil
+	} else if !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("creating destination PVC %q: %w", pvc.Name, err)
+	}
+
+	if t.PVC.StorageClassName == "" {
+		return nil
+	}
+
+	existing := &corev1.PersistentVolumeClaim{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pvc), existing); err != nil {
+		return fmt.Errorf("getting existing destination PVC %q: %w", pvc.Name, err)
+	}
+
+	existingStorageClass := ""
+	if existing.Spec.StorageClassName != nil {
+		existingStorageClass = *existing.Spec.StorageClassName
+	}
+	if existingStorageClass != t.PVC.StorageClassName {
+		return fmt.Errorf("destination PVC %q already exists with StorageClass %q but --dest-storage-class %q was requested; delete the existing PVC or omit --dest-storage-class to use the existing PVC as-is", pvc.Name, existingStorageClass, t.PVC.StorageClassName)
+	}
+
+	return nil
 }
 
 func stripServerManagedPVCAnnotations(annotations map[string]string) map[string]string {

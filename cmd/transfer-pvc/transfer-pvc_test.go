@@ -64,6 +64,53 @@ func newTestScheme() *runtime.Scheme {
 	return s
 }
 
+func TestCreateDestinationPVC(t *testing.T) {
+	storageClass := func(name string) *string { return &name }
+	tests := []struct {
+		name                  string
+		requestedStorageClass string
+		existingStorageClass  *string
+		wantErr               string
+	}{
+		{
+			name:                  "rejects existing PVC with a different requested storage class",
+			requestedStorageClass: "standard-v2",
+			existingStorageClass:  storageClass("crane-sc02-target"),
+			wantErr:               `destination PVC "test-pvc" already exists with StorageClass "crane-sc02-target" but --dest-storage-class "standard-v2" was requested`,
+		},
+		{
+			name:                  "accepts existing PVC with requested storage class",
+			requestedStorageClass: "standard-v2",
+			existingStorageClass:  storageClass("standard-v2"),
+		},
+		{
+			name:                 "accepts existing PVC when no storage class was requested",
+			existingStorageClass: storageClass("crane-sc02-target"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			existing := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pvc", Namespace: "test-ns"},
+				Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: tt.existingStorageClass},
+			}
+			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(existing).Build()
+			cmd := &TransferPVCCommand{Flags: Flags{PVC: PvcFlags{StorageClassName: tt.requestedStorageClass}}}
+
+			err := cmd.createDestinationPVC(context.Background(), c, &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pvc", Namespace: "test-ns"},
+			})
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("createDestinationPVC() unexpected error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Errorf("createDestinationPVC() error = %v, want to contain %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func Test_parseSourceDestinationMapping(t *testing.T) {
 	tests := []struct {
 		name            string
