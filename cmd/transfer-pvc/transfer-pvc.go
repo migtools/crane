@@ -1290,6 +1290,8 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	return pvc
 }
 
+// createDestinationPVC creates the destination PVC, validating the storage
+// class of an existing PVC when --dest-storage-class was requested.
 func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
 	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
 		return nil
