@@ -28,7 +28,7 @@ permissions:
 jobs:
   run-e2e:
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4

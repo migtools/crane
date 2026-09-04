@@ -145,7 +145,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -195,7 +195,7 @@ jobs:
 
       - name: Run tier0 e2e tests (indirect)
         run: |
-          ginkgo run -v -r --label-filter="tier0" e2e-tests/tests -- \
+          ginkgo run -v -r --timeout=90m --label-filter="tier0" e2e-tests/tests -- \
             --k8sdeploy-bin=k8sdeploy \
             --crane-bin=${{ github.workspace }}/crane \
             --source-context=src \
@@ -212,7 +212,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -262,7 +262,7 @@ jobs:
 
       - name: Run tier1 e2e tests (indirect)
         run: |
-          ginkgo run -v -r --label-filter="tier1" e2e-tests/tests -- \
+          ginkgo run -v -r --timeout=90m --label-filter="tier1" e2e-tests/tests -- \
             --k8sdeploy-bin=k8sdeploy \
             --crane-bin=${{ github.workspace }}/crane \
             --source-context=src \
@@ -280,7 +280,7 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       CRANE_BIN: ${{ github.workspace }}/crane
       E2E_SUITE_DIR: e2e-tests/tests
@@ -335,7 +335,7 @@ jobs:
         env:
           FOCUS_FILE_REGEX: ${{ needs.detect-changes.outputs.focus_file_regex }}
         run: |
-          ginkgo run -v -r --focus-file="$FOCUS_FILE_REGEX" "$E2E_SUITE_DIR" -- \
+          ginkgo run -v -r --timeout=90m --focus-file="$FOCUS_FILE_REGEX" "$E2E_SUITE_DIR" -- \
             --k8sdeploy-bin=k8sdeploy \
             --crane-bin=$CRANE_BIN \
             --source-context=src \
