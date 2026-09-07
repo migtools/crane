@@ -108,8 +108,8 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 			}
 			Expect(actualBuildPath).NotTo(BeEmpty(), fmt.Sprintf("Build YAML for %s should be generated", bcName))
 
-			// Golden file path
-			goldenFilePath := filepath.Join("e2e-tests/testdata/buildconfig-test/golden", fmt.Sprintf("%s-golden.yaml", bcName))
+			// Golden file path (relative to tier0 test directory - go up 2 levels to crane root)
+			goldenFilePath := filepath.Join("../../testdata/buildconfig-test/golden", fmt.Sprintf("%s-golden.yaml", bcName))
 
 			// Compare with golden file
 			diffs, err := CompareWithGoldenFile(actualBuildPath, goldenFilePath)
