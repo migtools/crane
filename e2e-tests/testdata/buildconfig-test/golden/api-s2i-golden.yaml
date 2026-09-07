@@ -23,6 +23,9 @@ spec:
     name: builder-image
     secretValue: null
     value: registry.access.redhat.com/ubi8/nodejs-16:latest
+  retention:
+    failedLimit: 5
+    succeededLimit: 5
   source:
     git:
       revision: master

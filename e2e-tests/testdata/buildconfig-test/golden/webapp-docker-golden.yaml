@@ -25,8 +25,10 @@ spec:
     - configMapValue: null
       secretValue: null
       value: PYTHON_VERSION=3.9
+  retention:
+    failedLimit: 5
+    succeededLimit: 5
   source:
-    contextDir: .
     git:
       revision: master
       url: https://github.com/sclorg/django-ex.git

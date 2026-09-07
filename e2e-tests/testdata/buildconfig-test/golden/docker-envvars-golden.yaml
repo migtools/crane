@@ -23,6 +23,9 @@ spec:
     value: http://proxy.example.com:8080
   output:
     image: image-registry.openshift-image-registry.svc:5000/buildconfig-test/docker-envvars:latest
+  retention:
+    failedLimit: 5
+    succeededLimit: 5
   source: null
   strategy:
     kind: ClusterBuildStrategy
