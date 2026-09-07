@@ -129,7 +129,7 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 			Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
 			By(fmt.Sprintf("Verify %s Build exists on target cluster", bcName))
-			out, err = kubectlTgtNonAdmin.Run("get", "build", bcName, "-n", namespace, "-o", "jsonpath={.kind}")
+			out, err = kubectlTgtNonAdmin.Run("get", "build.shipwright.io", bcName, "-n", namespace, "-o", "jsonpath={.kind}")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out).To(Equal("Build"))
 			log.Printf("Build %s exists on target cluster\n", bcName)
