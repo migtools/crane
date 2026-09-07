@@ -165,7 +165,7 @@ spec:
 `, buildRunName, namespace, bc.name)
 
 			log.Printf("Creating BuildRun %s for Build %s\n", buildRunName, bc.name)
-			err := kubectlTgtNonAdmin.Apply(namespace, []byte(buildRunYAML))
+			err := kubectlTgtNonAdmin.ApplyYAMLSpec(buildRunYAML, namespace)
 			Expect(err).NotTo(HaveOccurred())
 		}
 
