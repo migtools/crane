@@ -1667,3 +1667,232 @@ func TestCompareDirectoryYAMLSemanticsUnordered(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPrefixAndSuffix(t *testing.T) {
+	cases := []struct {
+		name       string
+		match      ResourceMatch
+		wantPrefix string
+		wantSuffix string
+	}{
+		{
+			name:       "kind_and_name_only_defaults_to_clusterscoped",
+			match:      ResourceMatch{Kind: "ClusterRoleBinding", Name: "my-crb"},
+			wantPrefix: "ClusterRoleBinding_",
+			wantSuffix: "_clusterscoped_my-crb.yaml",
+		},
+		{
+			name:       "namespace_scoped",
+			match:      ResourceMatch{Kind: "RoleBinding", Name: "my-rb", Scope: "my-ns"},
+			wantPrefix: "RoleBinding_",
+			wantSuffix: "_my-ns_my-rb.yaml",
+		},
+		{
+			name:       "with_group",
+			match:      ResourceMatch{Kind: "ClusterRole", Name: "cr", Group: "rbac.authorization.k8s.io"},
+			wantPrefix: "ClusterRole_rbac.authorization.k8s.io_",
+			wantSuffix: "_clusterscoped_cr.yaml",
+		},
+		{
+			name:       "with_group_and_version",
+			match:      ResourceMatch{Kind: "ClusterRole", Name: "cr", Group: "rbac.authorization.k8s.io", Version: "v1"},
+			wantPrefix: "ClusterRole_rbac.authorization.k8s.io_",
+			wantSuffix: "v1_clusterscoped_cr.yaml",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prefix, suffix := getPrefixAndSuffix(tc.match)
+			if prefix != tc.wantPrefix {
+				t.Fatalf("prefix = %q, want %q", prefix, tc.wantPrefix)
+			}
+			if suffix != tc.wantSuffix {
+				t.Fatalf("suffix = %q, want %q", suffix, tc.wantSuffix)
+			}
+		})
+	}
+}
+
+func TestFileHasPrefixAndSuffix(t *testing.T) {
+	cases := []struct {
+		name   string
+		file   string
+		prefix string
+		suffix string
+		want   bool
+	}{
+		{
+			name:   "match",
+			file:   "ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_my-crb.yaml",
+			prefix: "ClusterRoleBinding_",
+			suffix: "_clusterscoped_my-crb.yaml",
+			want:   true,
+		},
+		{
+			name:   "wrong_prefix",
+			file:   "ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_my-crb.yaml",
+			prefix: "ClusterRoleBinding_",
+			suffix: "_clusterscoped_my-crb.yaml",
+			want:   false,
+		},
+		{
+			name:   "wrong_suffix",
+			file:   "ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_other-crb.yaml",
+			prefix: "ClusterRoleBinding_",
+			suffix: "_clusterscoped_my-crb.yaml",
+			want:   false,
+		},
+		{
+			name:   "namespace_collision_prevented_by_underscore",
+			file:   "ClusterRoleBinding_rbac.authorization.k8s.io_v1_other-ns_my-crb.yaml",
+			prefix: "ClusterRoleBinding_",
+			suffix: "_ns_my-crb.yaml",
+			want:   false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := fileHasPrefixAndSuffix(tc.file, tc.prefix, tc.suffix)
+			if got != tc.want {
+				t.Fatalf("fileHasPrefixAndSuffix(%q, %q, %q) = %v, want %v", tc.file, tc.prefix, tc.suffix, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAssertResourcesExist(t *testing.T) {
+	cases := []struct {
+		name        string
+		files       []string
+		resources   []ResourceMatch
+		wantFound   bool
+		wantErr     bool
+		errContains []string
+	}{
+		{
+			name:  "cluster_scoped_match",
+			files: []string{"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_first-crb.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "first-crb"},
+			},
+			wantFound: true,
+		},
+		{
+			name: "multiple_resources_all_present",
+			files: []string{
+				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_first-crb.yaml",
+				"ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_second-crb.yaml",
+				"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_crane-cluster-role.yaml",
+			},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "first-crb"},
+				{Kind: "ClusterRoleBinding", Name: "second-crb"},
+				{Kind: "ClusterRole", Name: "crane-cluster-role"},
+			},
+			wantFound: true,
+		},
+		{
+			name:  "namespace_scoped_match",
+			files: []string{"RoleBinding_rbac.authorization.k8s.io_v1_my-ns_my-rb.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "RoleBinding", Name: "my-rb", Scope: "my-ns"},
+			},
+			wantFound: true,
+		},
+		{
+			name:  "missing_resource",
+			files: []string{"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_existing.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "missing-crb"},
+			},
+			wantFound: false,
+			wantErr:   true,
+			errContains: []string{"not found"},
+		},
+		{
+			name:  "namespace_collision_no_false_match",
+			files: []string{"ClusterRoleBinding_rbac.authorization.k8s.io_v1_other-ns_my-crb.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "my-crb", Scope: "ns"},
+			},
+			wantFound: false,
+			wantErr:   true,
+			errContains: []string{"not found"},
+		},
+		{
+			name:  "with_group_filter",
+			files: []string{"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_cr.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRole", Name: "cr", Group: "rbac.authorization.k8s.io"},
+			},
+			wantFound: true,
+		},
+		{
+			name:  "with_group_and_version_filter",
+			files: []string{"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_cr.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRole", Name: "cr", Group: "rbac.authorization.k8s.io", Version: "v1"},
+			},
+			wantFound: true,
+		},
+		{
+			name:  "wrong_group_rejected",
+			files: []string{"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_cr.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRole", Name: "cr", Group: "other.group.io"},
+			},
+			wantFound:   false,
+			wantErr:     true,
+			errContains: []string{"not found"},
+		},
+		{
+			name:  "wrong_version_rejected",
+			files: []string{"ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_cr.yaml"},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRole", Name: "cr", Group: "rbac.authorization.k8s.io", Version: "v2"},
+			},
+			wantFound:   false,
+			wantErr:     true,
+			errContains: []string{"not found"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tc.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("placeholder"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			found, err := AssertResourcesExist(dir, tc.resources)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				for _, s := range tc.errContains {
+					if !strings.Contains(err.Error(), s) {
+						t.Fatalf("error %q does not contain %q", err.Error(), s)
+					}
+				}
+			} else if err != nil {
+				t.Fatalf("AssertResourcesExist: %v", err)
+			}
+			if found != tc.wantFound {
+				t.Fatalf("found = %v, want %v", found, tc.wantFound)
+			}
+		})
+	}
+
+	t.Run("missing_directory", func(t *testing.T) {
+		_, err := AssertResourcesExist(filepath.Join(t.TempDir(), "does-not-exist"), []ResourceMatch{
+			{Kind: "ClusterRole", Name: "cr"},
+		})
+		if err == nil {
+			t.Fatal("expected error for missing directory, got nil")
+		}
+	})
+}
