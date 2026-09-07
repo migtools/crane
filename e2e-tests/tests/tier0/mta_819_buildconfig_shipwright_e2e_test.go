@@ -13,7 +13,7 @@ import (
 )
 
 var _ = Describe("BuildConfig to Shipwright conversion", func() {
-	It("[MTA-819] should convert multiple BuildConfig types (Git/S2I/Dockerfile) in single migration", func() {
+	It("[MTA-819] Converted Shipwright Build runs successfully end-to-end", func() {
 		appName := "buildconfig-test"
 		namespace := "buildconfig-test"
 
@@ -148,7 +148,69 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 			log.Printf("✓ Build %s exists on target cluster\n", bc.name)
 		}
 
-		By("Test completed successfully - All BuildConfigs converted to Shipwright Builds in single migration")
-		log.Printf("MTA-819: Successfully migrated 3 BuildConfig types (Git+Docker, S2I, Dockerfile) to Shipwright\n")
+		By("Create BuildRun for each Build to verify end-to-end execution")
+		buildRunNames := make(map[string]string)
+		for _, bc := range buildConfigs {
+			buildRunName := fmt.Sprintf("%s-run-1", bc.name)
+			buildRunNames[bc.name] = buildRunName
+
+			buildRunYAML := fmt.Sprintf(`apiVersion: shipwright.io/v1beta1
+kind: BuildRun
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  build:
+    name: %s
+`, buildRunName, namespace, bc.name)
+
+			log.Printf("Creating BuildRun %s for Build %s\n", buildRunName, bc.name)
+			err := kubectlTgtNonAdmin.Apply(namespace, []byte(buildRunYAML))
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		By("Wait for all BuildRuns to complete")
+		for bcName, buildRunName := range buildRunNames {
+			log.Printf("Waiting for BuildRun %s to complete (timeout: 5 minutes)...\n", buildRunName)
+
+			// Wait for BuildRun to complete (either Succeeded or Failed)
+			// Use kubectl wait with timeout
+			Eventually(func() bool {
+				out, err := kubectlTgtNonAdmin.Run("get", "buildrun", buildRunName, "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='Succeeded')].status}")
+				if err != nil {
+					log.Printf("BuildRun %s not ready yet: %v\n", buildRunName, err)
+					return false
+				}
+				// Check if Succeeded condition is True
+				if out == "True" {
+					log.Printf("✓ BuildRun %s completed successfully\n", buildRunName)
+					return true
+				}
+				// Check if it failed
+				reason, _ := kubectlTgtNonAdmin.Run("get", "buildrun", buildRunName, "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='Succeeded')].reason}")
+				if reason != "" && reason != "Running" && reason != "Pending" {
+					log.Printf("BuildRun %s status: %s (reason: %s)\n", buildRunName, out, reason)
+				}
+				return false
+			}, "5m", "10s").Should(BeTrue(), fmt.Sprintf("BuildRun %s should complete within 5 minutes", buildRunName))
+
+			// Verify the BuildRun succeeded
+			out, err := kubectlTgtNonAdmin.Run("get", "buildrun", buildRunName, "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='Succeeded')].status}")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out).To(Equal("True"), fmt.Sprintf("BuildRun %s should have Succeeded=True", buildRunName))
+
+			reason, err := kubectlTgtNonAdmin.Run("get", "buildrun", buildRunName, "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='Succeeded')].reason}")
+			Expect(err).NotTo(HaveOccurred())
+			log.Printf("✓ BuildRun %s completed with status: Succeeded=True, Reason=%s\n", buildRunName, reason)
+
+			// Log the output image
+			outputImage, _ := kubectlTgtNonAdmin.Run("get", "buildrun", buildRunName, "-n", namespace, "-o", "jsonpath={.status.output.digest}")
+			if outputImage != "" {
+				log.Printf("  Image digest for %s: %s\n", bcName, outputImage)
+			}
+		}
+
+		By("Test completed successfully - All BuildConfigs converted and BuildRuns executed end-to-end")
+		log.Printf("MTA-819: Successfully converted and executed 3 BuildConfig types (Git+Docker, S2I, Dockerfile) end-to-end\n")
 	})
 })
