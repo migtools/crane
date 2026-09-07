@@ -2,7 +2,9 @@ package e2e
 
 import (
 	"fmt"
-	"os"
+	"log"
+	"path/filepath"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -10,165 +12,135 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("BuildConfig to Shipwright end-to-end conversion", func() {
-	It("[MTA-819] Converted Shipwright Build runs successfully end-to-end (issue #191)", Label("tier0", "buildconfig"), func() {
-		const (
-			appName      = "ruby-hello-world"
-			bcName       = "ruby-build"
-			buildName    = "ruby-build" // Shipwright Build name (same as BuildConfig)
-			fallbackSC   = "crane-dest-mta-819"
-		)
-		srcNamespace := "mta-819-bc-src"
-		tgtNamespace := "mta-819-bc-tgt"
+var _ = Describe("BuildConfig to Shipwright conversion", func() {
+	// Table-driven test for multiple BuildConfig scenarios
+	DescribeTable("[MTA-819] should convert BuildConfig to Shipwright Build correctly",
+		func(bcName, description string) {
+			appName := "buildconfig-test"
+			namespace := "buildconfig-test"
 
-		scenario := NewMigrationScenario(
-			appName,
-			srcNamespace,
-			config.K8sDeployBin,
-			config.CraneBin,
-			config.SourceContext,
-			config.TargetContext,
-		)
-		scenario.TgtApp.Namespace = tgtNamespace
+			scenario := NewMigrationScenario(
+				appName,
+				namespace,
+				config.K8sDeployBin,
+				config.CraneBin,
+				config.SourceContext,
+				config.TargetContext,
+			)
 
-		By("Create source namespace and apply BuildConfig")
-		kubectlSrc, cleanupSrc, err := SetupActiveNamespaceAdmin(
-			scenario.KubectlSrc,
-			scenario.KubectlSrcNonAdmin.Context,
-			srcNamespace,
-		)
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(cleanupSrc)
+			srcApp := scenario.SrcAppNonAdmin
+			tgtApp := scenario.TgtAppNonAdmin
+			runner := scenario.CraneNonAdmin
 
-		kubectlTgt, cleanupTgt, err := SetupActiveNamespaceAdmin(
-			scenario.KubectlTgt,
-			scenario.KubectlTgtNonAdmin.Context,
-			tgtNamespace,
-		)
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(cleanupTgt)
-
-		paths, err := NewScenarioPaths("crane-export-*")
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			By("Cleanup source and target namespaces")
-			for _, ns := range []string{srcNamespace, tgtNamespace} {
-				_, _ = scenario.KubectlSrc.Run("delete", "namespace", ns, "--ignore-not-found=true", "--wait=true", "--timeout=60s")
+			srcApp.ExtraVars = map[string]any{
+				"non_admin_user": "true",
 			}
-		})
+			tgtApp.ExtraVars = map[string]any{
+				"non_admin_user": "true",
+			}
 
-		By("Deploy BuildConfig to source namespace")
-		buildConfigYAML := fmt.Sprintf(`
-apiVersion: build.openshift.io/v1
-kind: BuildConfig
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  source:
-    type: Git
-    git:
-      uri: https://github.com/openshift/ruby-hello-world.git
-      ref: master
-  strategy:
-    type: Docker
-    dockerStrategy:
-      dockerfilePath: Dockerfile
-  output:
-    to:
-      kind: ImageStreamTag
-      name: %s:latest
-  triggers:
-    - type: ConfigChange
-`, bcName, srcNamespace, appName)
+			By("Grant namespace admin permissions to nonadmin user on source and target")
+			kubectlSrcNonAdmin, kubectlTgtNonAdmin, cleanup, err := SetupActiveKubectlRunners(scenario, namespace)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				By("Delete test namespace on source and target")
+				for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
+					if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true", "--timeout=60s"); err != nil {
+						log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
+					}
+				}
+			})
+			DeferCleanup(cleanup)
 
-		err = kubectlSrc.Apply(srcNamespace, []byte(buildConfigYAML))
-		Expect(err).NotTo(HaveOccurred())
+			paths, err := NewScenarioPaths("crane-export-*")
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				By("Cleanup temporary directories")
+				if err := CleanupScenario(paths.TempDir, scenario.SrcAppNonAdmin, scenario.TgtAppNonAdmin); err != nil {
+					log.Printf("cleanup: %v", err)
+				}
+			})
 
-		By("Verify BuildConfig exists in source namespace")
-		out, err := kubectlSrc.Run("get", "buildconfig", bcName, "-n", srcNamespace, "-o", "name")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(out).To(ContainSubstring(fmt.Sprintf("buildconfig.build.openshift.io/%s", bcName)))
+			By(fmt.Sprintf("Deploy buildconfig-test app (deploys %s BuildConfig)", bcName))
+			log.Printf("Preparing source app %s in namespace %s\n", srcApp.Name, srcApp.Namespace)
+			Expect(PrepareSourceApp(srcApp, kubectlSrcNonAdmin)).NotTo(HaveOccurred())
+			log.Printf("Source app %s prepared successfully (BuildConfigs deployed)\n", srcApp.Name)
 
-		By("Run crane export on source namespace")
-		exportOpts := ExportOptions{
-			Namespace: srcNamespace,
-			ExportDir: paths.ExportDir,
-		}
-		Expect(scenario.CraneNonAdmin.Export(exportOpts)).NotTo(HaveOccurred())
+			By(fmt.Sprintf("Verify %s BuildConfig exists", bcName))
+			out, err := kubectlSrcNonAdmin.Run("get", "buildconfig", bcName, "-n", namespace, "-o", "name")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out).To(ContainSubstring(fmt.Sprintf("buildconfig.build.openshift.io/%s", bcName)))
+			log.Printf("BuildConfig %s exists in namespace %s\n", bcName, namespace)
 
-		By("Run crane transform with BuildConfig plugin")
-		transformOpts := TransformOptions{
-			ExportDir:    paths.ExportDir,
-			TransformDir: paths.TransformDir,
-			PluginDir:    config.PluginDir, // Use the plugin directory from config
-			Overwrite:    true,
-		}
-		Expect(scenario.CraneNonAdmin.Transform(transformOpts)).NotTo(HaveOccurred())
+			By("Run crane export/transform/apply pipeline with BuildConfig plugin")
+			exportOpts := ExportOptions{
+				Namespace: namespace,
+				ExportDir: paths.ExportDir,
+			}
+			transformOpts := TransformOptions{
+				ExportDir:    paths.ExportDir,
+				TransformDir: paths.TransformDir,
+				PluginDir:    config.PluginDir,
+			}
+			applyOpts := ApplyOptions{
+				TransformDir: paths.TransformDir,
+				OutputDir:    paths.OutputDir,
+			}
 
-		By("Verify Shipwright Build YAML was generated")
-		buildFile := fmt.Sprintf("%s/resources/Build_shipwright.io_v1beta1_%s_%s.yaml",
-			paths.TransformDir, srcNamespace, bcName)
-		buildYAMLBytes, err := os.ReadFile(buildFile)
-		Expect(err).NotTo(HaveOccurred(), "Shipwright Build YAML should be generated")
-		buildYAML := string(buildYAMLBytes)
-		Expect(buildYAML).To(ContainSubstring("kind: Build"))
-		Expect(buildYAML).To(ContainSubstring(fmt.Sprintf("name: %s", buildName)))
+			runner.WorkDir = paths.TempDir
+			log.Printf("Running crane pipeline for namespace %s with plugin directory: %s\n", namespace, config.PluginDir)
+			Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
+			log.Printf("Crane pipeline completed for namespace %s\n", namespace)
 
-		By("Verify original BuildConfig was whited out")
-		bcFile := fmt.Sprintf("%s/resources/BuildConfig_build.openshift.io_v1_%s_%s.yaml",
-			paths.TransformDir, srcNamespace, bcName)
-		bcYAMLBytes, err := os.ReadFile(bcFile)
-		if err == nil {
-			// If the file exists, it should be marked as whiteout
-			bcYAML := string(bcYAMLBytes)
-			Expect(bcYAML).To(ContainSubstring("whiteout"), "BuildConfig should be whited out")
-		}
-		// Note: The file might not exist at all if the plugin deletes it instead of marking it
+			By(fmt.Sprintf("Compare generated Build against golden file for %s", bcName))
+			// Find generated Build YAML
+			buildFilePattern := filepath.Join(paths.OutputDir, "resources", namespace, "Build_shipwright.io_*.yaml")
+			buildMatches, err := filepath.Glob(buildFilePattern)
+			Expect(err).NotTo(HaveOccurred())
 
-		By("Verify Build has conversion annotations")
-		Expect(buildYAML).To(ContainSubstring("crane.konveyor.io/converted-from"))
-		Expect(buildYAML).To(ContainSubstring("buildconfig-to-shipwright/conversion-outcome"))
+			// Find the specific Build for this test case
+			var actualBuildPath string
+			for _, buildPath := range buildMatches {
+				if strings.Contains(buildPath, bcName) {
+					actualBuildPath = buildPath
+					break
+				}
+			}
+			Expect(actualBuildPath).NotTo(BeEmpty(), fmt.Sprintf("Build YAML for %s should be generated", bcName))
 
-		By("Run crane apply to render final manifests")
-		applyOpts := ApplyOptions{
-			TransformDir: paths.TransformDir,
-			OutputDir:    paths.OutputDir,
-			Overwrite:    true,
-		}
-		Expect(scenario.CraneNonAdmin.Apply(applyOpts)).NotTo(HaveOccurred())
+			// Golden file path
+			goldenFilePath := filepath.Join("e2e-tests/testdata/buildconfig-test/golden", fmt.Sprintf("%s-golden.yaml", bcName))
 
-		By("Apply rendered manifests to target cluster")
-		// Apply the Shipwright Build to target namespace
-		finalBuildFile := fmt.Sprintf("%s/resources/Build_shipwright.io_v1beta1_%s_%s.yaml",
-			paths.OutputDir, srcNamespace, bcName)
-		buildManifestBytes, err := os.ReadFile(finalBuildFile)
-		Expect(err).NotTo(HaveOccurred())
-		buildManifest := buildManifestBytes
+			// Compare with golden file
+			diffs, err := CompareWithGoldenFile(actualBuildPath, goldenFilePath)
+			Expect(err).NotTo(HaveOccurred(), "Failed to compare with golden file")
 
-		// Update namespace in manifest to target namespace
-		// Note: In a real test, you'd use crane's namespace mapping or sed
-		err = kubectlTgt.Apply(tgtNamespace, buildManifest)
-		Expect(err).NotTo(HaveOccurred())
+			if len(diffs) > 0 {
+				diffMsg := fmt.Sprintf("Build for %s differs from golden file:\n", bcName)
+				for _, diff := range diffs {
+					diffMsg += fmt.Sprintf("  - %s\n", diff)
+				}
+				Fail(diffMsg)
+			}
+			log.Printf("✓ Build for %s matches golden file perfectly\n", bcName)
 
-		By("Verify Shipwright Build exists in target namespace")
-		out, err = kubectlTgt.Run("get", "build", buildName, "-n", tgtNamespace, "-o", "jsonpath={.kind}")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(out).To(Equal("Build"))
+			By("Apply rendered manifests to target cluster")
+			log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
+			Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
 
-		By("Verify Build has correct conversion metadata")
-		annotations, err := kubectlTgt.Run("get", "build", buildName, "-n", tgtNamespace,
-			"-o", "jsonpath={.metadata.annotations}")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(annotations).To(ContainSubstring("crane.konveyor.io/converted-from"))
-		Expect(annotations).To(ContainSubstring("build.openshift.io/v1/BuildConfig"))
+			By(fmt.Sprintf("Verify %s Build exists on target cluster", bcName))
+			out, err = kubectlTgtNonAdmin.Run("get", "build", bcName, "-n", namespace, "-o", "jsonpath={.kind}")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out).To(Equal("Build"))
+			log.Printf("Build %s exists on target cluster\n", bcName)
 
-		By("Test completed successfully - BuildConfig converted to Shipwright Build")
-		// Note: This test verifies the conversion pipeline end-to-end.
-		// Running an actual BuildRun would require:
-		// 1. Shipwright + Tekton installed on target cluster
-		// 2. ClusterBuildStrategy (buildah or source-to-image)
-		// 3. Registry credentials for image push
-		// Those requirements are beyond the scope of this conversion test.
-	})
+			By("Test completed successfully - BuildConfig converted to Shipwright Build")
+			log.Printf("MTA-819: %s BuildConfig to Shipwright conversion validated\n", bcName)
+		},
+
+		// Test cases - one entry per BuildConfig
+		Entry("Git + Docker + buildArgs", "webapp-docker", "Git source with Docker strategy and buildArgs"),
+		Entry("Git + S2I + env vars", "api-s2i", "Git source with Source (S2I) strategy and environment variables"),
+		Entry("Dockerfile + Docker + env vars", "docker-envvars", "Inline Dockerfile with Docker strategy and environment variables"),
+	)
 })
