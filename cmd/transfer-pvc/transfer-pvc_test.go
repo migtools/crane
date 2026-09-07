@@ -70,6 +70,7 @@ func TestCreateDestinationPVC(t *testing.T) {
 		name                  string
 		requestedStorageClass string
 		existingStorageClass  *string
+		objects               []client.Object
 		wantErr               string
 	}{
 		{
@@ -87,6 +88,24 @@ func TestCreateDestinationPVC(t *testing.T) {
 			name:                 "accepts existing PVC when no storage class was requested",
 			existingStorageClass: storageClass("crane-sc02-target"),
 		},
+		{
+			name: "rejects existing PVC mounted by a running pod without requested storage class",
+			objects: []client.Object{&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "target-app", Namespace: "test-ns"},
+				Spec: corev1.PodSpec{
+					NodeName: "worker-1",
+					Volumes: []corev1.Volume{{
+						Name: "data",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "test-pvc"},
+						},
+					}},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}},
+			existingStorageClass: storageClass("standard-v2"),
+			wantErr:              `destination PVC test-ns/test-pvc is in use by pod "target-app"; scale it down before transferring`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -95,7 +114,8 @@ func TestCreateDestinationPVC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pvc", Namespace: "test-ns"},
 				Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: tt.existingStorageClass},
 			}
-			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(existing).Build()
+			objects := append([]client.Object{existing}, tt.objects...)
+			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objects...).Build()
 			cmd := &TransferPVCCommand{Flags: Flags{PVC: PvcFlags{StorageClassName: tt.requestedStorageClass}}}
 
 			err := cmd.createDestinationPVC(context.Background(), c, &corev1.PersistentVolumeClaim{

@@ -711,26 +711,37 @@ func getValidatedResourceName(name string) string {
 	}
 }
 
-// getNodeNameForPVC returns name of the node on which the PVC is currently mounted on
-// returns name of the node as a string, and an error
-func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string) (string, error) {
+// getRunningPodUsingPVC returns the running pod that mounts pvcName, if any.
+func getRunningPodUsingPVC(c client.Client, namespace string, pvcName string) (*corev1.Pod, error) {
 	podList := corev1.PodList{}
-	err := srcClient.List(context.TODO(), &podList, client.InNamespace(namespace))
-	if err != nil {
-		return "", err
+	if err := c.List(context.TODO(), &podList, client.InNamespace(namespace)); err != nil {
+		return nil, err
 	}
-	for _, pod := range podList.Items {
+	for i := range podList.Items {
+		pod := &podList.Items[i]
 		if pod.Status.Phase == corev1.PodRunning {
 			for _, vol := range pod.Spec.Volumes {
 				if vol.PersistentVolumeClaim != nil {
 					if vol.PersistentVolumeClaim.ClaimName == pvcName {
-						return pod.Spec.NodeName, nil
+						return pod, nil
 					}
 				}
 			}
 		}
 	}
-	return "", nil
+	return nil, nil
+}
+
+// getNodeNameForPVC returns the name of the node on which the PVC is currently mounted.
+func getNodeNameForPVC(c client.Client, namespace string, pvcName string) (string, error) {
+	pod, err := getRunningPodUsingPVC(c, namespace, pvcName)
+	if err != nil {
+		return "", err
+	}
+	if pod == nil {
+		return "", nil
+	}
+	return pod.Spec.NodeName, nil
 }
 
 func getIDsForNamespace(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
@@ -1290,8 +1301,9 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	return pvc
 }
 
-// createDestinationPVC creates the destination PVC, validating the storage
-// class of an existing PVC when --dest-storage-class was requested.
+// createDestinationPVC creates the destination PVC, ensuring an existing PVC
+// is not mounted by a running pod and validating its storage class when
+// --dest-storage-class was requested.
 func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
 	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
 		return nil
@@ -1299,13 +1311,21 @@ func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.
 		return fmt.Errorf("creating destination PVC %q: %w", pvc.Name, err)
 	}
 
-	if t.PVC.StorageClassName == "" {
-		return nil
-	}
-
 	existing := &corev1.PersistentVolumeClaim{}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(pvc), existing); err != nil {
 		return fmt.Errorf("getting existing destination PVC %q: %w", pvc.Name, err)
+	}
+
+	pod, err := getRunningPodUsingPVC(c, existing.Namespace, existing.Name)
+	if err != nil {
+		return fmt.Errorf("checking whether destination PVC %s/%s is in use: %w", existing.Namespace, existing.Name, err)
+	}
+	if pod != nil {
+		return fmt.Errorf("destination PVC %s/%s is in use by pod %q; scale it down before transferring", existing.Namespace, existing.Name, pod.Name)
+	}
+
+	if t.PVC.StorageClassName == "" {
+		return nil
 	}
 
 	existingStorageClass := ""
