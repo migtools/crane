@@ -18,6 +18,7 @@ var (
 	CloudStorage          string
 	RcloneConfigFile      string
 	RcloneConfigSecret    string
+	PluginDir             string
 )
 
 // Validates the --run-as flag value and logs the active mode.
