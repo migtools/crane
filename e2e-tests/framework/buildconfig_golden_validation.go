@@ -3,6 +3,7 @@ package framework
 import (
 	"fmt"
 	"os"
+	"reflect"
 
 	sigsyaml "sigs.k8s.io/yaml"
 )
@@ -119,9 +120,10 @@ func compareValuesForGolden(path string, expected, actual interface{}, diffs *[]
 		}
 
 	default:
-		// Compare scalar values
-		if fmt.Sprintf("%v", expected) != fmt.Sprintf("%v", actual) {
-			*diffs = append(*diffs, fmt.Sprintf("%s: expected '%v', got '%v'", path, expected, actual))
+		// Compare scalar values with type sensitivity
+		// Use reflect.DeepEqual to catch type mismatches (e.g., true vs "true", 1 vs "1")
+		if !reflect.DeepEqual(expected, actual) {
+			*diffs = append(*diffs, fmt.Sprintf("%s: expected '%v' (%T), got '%v' (%T)", path, expected, expected, actual, actual))
 		}
 	}
 }
