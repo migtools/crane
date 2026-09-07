@@ -165,7 +165,8 @@ spec:
 `, buildRunName, namespace, bc.name)
 
 			log.Printf("Creating BuildRun %s for Build %s\n", buildRunName, bc.name)
-			err := kubectlTgtNonAdmin.ApplyYAMLSpec(buildRunYAML, namespace)
+			// Use RunWithStdin with --validate=false because non-admin user can't list CRDs for validation
+			_, err := kubectlTgtNonAdmin.RunWithStdin(buildRunYAML, "apply", "-f", "-", "-n", namespace, "--validate=false")
 			Expect(err).NotTo(HaveOccurred())
 		}
 
