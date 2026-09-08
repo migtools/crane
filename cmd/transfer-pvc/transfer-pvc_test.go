@@ -3,6 +3,7 @@ package transfer_pvc
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -14,6 +15,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1449,6 +1452,95 @@ func TestValidateIndirectFlagGuardsFireBeforeContextCheck(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantMsg) {
 				t.Errorf("Validate() error = %q, want to contain %q", err.Error(), tt.wantMsg)
+			}
+		})
+	}
+}
+
+// writeTempKubeconfig writes a minimal single-context kubeconfig and returns its
+// path, letting Complete()'s kubeconfig load succeed.
+func writeTempKubeconfig(t *testing.T, ctxName string) string {
+	t.Helper()
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["cluster"] = &clientcmdapi.Cluster{Server: "https://example.test:6443"}
+	cfg.AuthInfos["user"] = &clientcmdapi.AuthInfo{Token: "fake-token"}
+	cfg.Contexts[ctxName] = &clientcmdapi.Context{Cluster: "cluster", AuthInfo: "user"}
+	cfg.CurrentContext = ctxName
+
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := clientcmd.WriteToFile(*cfg, path); err != nil {
+		t.Fatalf("failed to write temp kubeconfig: %v", err)
+	}
+	return path
+}
+
+// TestCompleteTrimsCloudStorageWhitespace covers the whitespace handling added to
+// Complete() in PR #859: leading/trailing whitespace is trimmed from --cloud-storage,
+// and a value that is only whitespace is rejected instead of silently accepted.
+func TestCompleteTrimsCloudStorageWhitespace(t *testing.T) {
+	const ctxName = "test-context"
+	kubeconfig := writeTempKubeconfig(t, ctxName)
+
+	tests := []struct {
+		name         string
+		cloudStorage string
+		wantErr      bool
+		wantValue    string // expected CloudStorage after Complete, when no error
+	}{
+		{
+			name:         "surrounding whitespace is trimmed",
+			cloudStorage: "  remote:my-bucket  ",
+			wantErr:      false,
+			wantValue:    "remote:my-bucket",
+		},
+		{
+			name:         "tab and newline are trimmed",
+			cloudStorage: "\tremote:my-bucket\n",
+			wantErr:      false,
+			wantValue:    "remote:my-bucket",
+		},
+		{
+			name:         "whitespace-only value is rejected",
+			cloudStorage: "   ",
+			wantErr:      true,
+		},
+		{
+			name:         "empty value is left empty and accepted",
+			cloudStorage: "",
+			wantErr:      false,
+			wantValue:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configFlags := genericclioptions.NewConfigFlags(false)
+			configFlags.KubeConfig = &kubeconfig
+
+			cmd := &TransferPVCCommand{
+				configFlags: configFlags,
+				Flags: Flags{
+					SourceContext:      ctxName,
+					DestinationContext: ctxName,
+					CloudStorage:       tt.cloudStorage,
+				},
+			}
+
+			err := cmd.Complete(nil, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Complete() expected error for %q, got nil", tt.cloudStorage)
+				}
+				if !strings.Contains(err.Error(), "cannot be empty or whitespace") {
+					t.Errorf("Complete() error = %q, want it to mention whitespace rejection", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Complete() unexpected error: %v", err)
+			}
+			if cmd.CloudStorage != tt.wantValue {
+				t.Errorf("CloudStorage = %q, want %q", cmd.CloudStorage, tt.wantValue)
 			}
 		})
 	}
