@@ -214,6 +214,7 @@ func (o *Options) run() error {
 	}
 
 	var instructionStages []string
+	var instructionPluginStages []string
 	var instructionStageOptionals map[string]map[string]string
 	if o.InstructionsFile != "" {
 		instructionsFilePath, err := filepath.Abs(o.InstructionsFile)
@@ -226,7 +227,8 @@ func (o *Options) run() error {
 			log.Errorf("Failed to load instructions file %q: %v", instructionsFilePath, err)
 			return err
 		}
-		instructionStages = internalTransform.GenerateStageDirNames(cfg.StageNames())
+		instructionPluginStages = cfg.StageNames()
+		instructionStages = internalTransform.GenerateStageDirNames(instructionPluginStages)
 		instructionStageOptionals, err = cfg.StageOptionals()
 		if err != nil {
 			return fmt.Errorf("invalid instructions file %q: %w", instructionsFilePath, err)
@@ -290,7 +292,7 @@ func (o *Options) run() error {
 			log.Errorf("Failed to reconcile instruction stages: %v", err)
 			return err
 		}
-		for _, stageName := range instructionStages {
+		for i, stageName := range instructionStages {
 			stageDir := filepath.Join(transformDir, stageName)
 			_, err := os.Stat(stageDir)
 			stageExists := err == nil
@@ -310,7 +312,9 @@ func (o *Options) run() error {
 				Stages: []string{stageName},
 			}
 			log.Infof("Running stage: %s", stageName)
-			if err := o.runStageWithCleanup(orchestrator, selector, stageDir, !stageExists, log); err != nil {
+			stageOrchestrator := *orchestrator
+			stageOrchestrator.StageOptionalFlags = stageOptionalsForPlugin(instructionStageOptionals, instructionPluginStages[i])
+			if err := o.runStageWithCleanup(&stageOrchestrator, selector, stageDir, !stageExists, log); err != nil {
 				log.Errorf("Failed to run stage %q: %v", stageName, err)
 				return err
 			}
@@ -386,6 +390,16 @@ func (o *Options) run() error {
 	}
 	log.Infof("Transform complete (all stages)")
 	return nil
+}
+
+// stageOptionalsForPlugin restricts instruction optionals to the plugin being
+// run because instructions stages are executed individually.
+func stageOptionalsForPlugin(optionals map[string]map[string]string, pluginName string) map[string]map[string]string {
+	flags, ok := optionals[pluginName]
+	if !ok {
+		return nil
+	}
+	return map[string]map[string]string{pluginName: flags}
 }
 
 // parseStageOptionals parses --stage-optionals values from "StageName=JSON" format
