@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -242,6 +243,41 @@ func VerifyPVCsExistByName(sourcePVCs, targetPVCs []corev1.PersistentVolumeClaim
 		return fmt.Errorf("source PVCs not found in target: %v", missing)
 	}
 	return nil
+}
+
+// VerifyPVCNames checks that the PVC list contains exactly the expected names.
+// It returns an error listing any missing or unexpected names.
+func VerifyPVCNames(pvcs []corev1.PersistentVolumeClaim, expectedNames []string) error {
+	actualNames := make(map[string]struct{}, len(pvcs))
+	for _, pvc := range pvcs {
+		actualNames[pvc.Name] = struct{}{}
+	}
+
+	expectedSet := make(map[string]struct{}, len(expectedNames))
+	for _, name := range expectedNames {
+		expectedSet[name] = struct{}{}
+	}
+
+	var missing []string
+	for _, name := range expectedNames {
+		if _, found := actualNames[name]; !found {
+			missing = append(missing, name)
+		}
+	}
+
+	var unexpected []string
+	for name := range actualNames {
+		if _, expected := expectedSet[name]; !expected {
+			unexpected = append(unexpected, name)
+		}
+	}
+	if len(missing) == 0 && len(unexpected) == 0 {
+		return nil
+	}
+
+	sort.Strings(missing)
+	sort.Strings(unexpected)
+	return fmt.Errorf("PVC names do not match: missing=%v, unexpected=%v", missing, unexpected)
 }
 
 // VerifyPVCHasData mounts a PVC in a temporary pod and checks that the mount
