@@ -25,7 +25,7 @@ func init() {
 	flag.StringVar(&config.CloudStorage, "cloud-storage", "", "S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket)")
 	flag.StringVar(&config.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer")
 	flag.StringVar(&config.RcloneConfigSecret, "rclone-config-secret", "", "K8s Secret name containing rclone.conf for indirect transfer")
-	flag.StringVar(&config.PluginDir, "plugin-dir", "", "Directory containing crane transform plugins (e.g. BuildConfig to Shipwright plugin)")
+	flag.StringVar(&config.PluginDir, "plugin-dir", "", "Directory containing crane transform plugins")
 }
 
 var _ = BeforeSuite(func() {
