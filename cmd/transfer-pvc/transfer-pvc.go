@@ -1289,8 +1289,8 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	return pvc
 }
 
-// createDestinationPVC creates the destination PVC, validating the storage
-// class of an existing PVC when --dest-storage-class was requested.
+// createDestinationPVC creates the destination PVC, validating that an
+// existing PVC is not terminating and its storage class when requested.
 func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
 	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
 		return nil
@@ -1298,13 +1298,16 @@ func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.
 		return fmt.Errorf("creating destination PVC %q: %w", pvc.Name, err)
 	}
 
-	if t.PVC.StorageClassName == "" {
-		return nil
-	}
-
 	existing := &corev1.PersistentVolumeClaim{}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(pvc), existing); err != nil {
 		return fmt.Errorf("getting existing destination PVC %q: %w", pvc.Name, err)
+	}
+	if existing.DeletionTimestamp != nil {
+		return fmt.Errorf("destination PVC %q is terminating; transfer cannot proceed until it has been fully deleted. Remove the finalizer blocking deletion or wait for deletion to complete, then retry", client.ObjectKeyFromObject(existing))
+	}
+
+	if t.PVC.StorageClassName == "" {
+		return nil
 	}
 
 	existingStorageClass := ""

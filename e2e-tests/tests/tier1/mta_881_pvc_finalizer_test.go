@@ -64,19 +64,19 @@ var _ = Describe("PVC transfer with a stuck destination PVC", func() {
 			}
 		})
 
-		By("Create and verify the source PVC")
+		By("Create the source PVC")
 		sourceStorageClass, err := DefaultStorageClassName(scenario.KubectlSrc.Context)
 		Expect(err).NotTo(HaveOccurred())
 		sourceManifest := pvcManifest(namespace, pvcName, sourceStorageClass, storageSize, "")
 		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(sourceManifest, namespace)).NotTo(HaveOccurred())
-		Eventually(func() (string, error) {
-			return pvcPhase(kubectlSrcNonAdmin, namespace, pvcName)
-		}, "2m", "5s").Should(Equal("Bound"), "source PVC %s/%s must be Bound", namespace, pvcName)
 
-		By("Seed and verify known data on the source PVC")
+		By("Mount the source PVC to provision it and seed known data")
 		Expect(kubectlSrcNonAdmin.ApplyYAMLSpec(SeedPodManifest(namespace, seedPodName, pvcName), namespace)).NotTo(HaveOccurred())
 		_, err = kubectlSrcNonAdmin.Run("wait", "--for=condition=Ready", "pod/"+seedPodName, "-n", namespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
+		Eventually(func() (string, error) {
+			return pvcPhase(kubectlSrcNonAdmin, namespace, pvcName)
+		}, "2m", "5s").Should(Equal("Bound"), "source PVC %s/%s must be Bound", namespace, pvcName)
 		sourceData, err := ReadFileFromPod(kubectlSrcNonAdmin, namespace, seedPodName, "/data/hello.txt")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceData).To(Equal("hello-from-source"), "source PVC seed data must be present before transfer")
