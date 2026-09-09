@@ -25,8 +25,8 @@ spec:
     succeededLimit: 5
   source:
     git:
-      revision: master
-      url: https://github.com/sclorg/httpd-ex.git
+      revision: main
+      url: https://github.com/docker/welcome-to-docker.git
     type: Git
   strategy:
     kind: ClusterBuildStrategy
