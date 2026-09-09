@@ -297,3 +297,12 @@ spec:
         claimName: %s
 `, podName, namespace, pvcName)
 }
+
+// MD5SumFile returns the MD5 checksum of a file inside a pod.
+func MD5SumFile(k KubectlRunner, namespace, pod, path string) (string, error) {
+	out, err := k.Run("exec", pod, "-n", namespace, "--", "/bin/sh", "-c", fmt.Sprintf("md5sum %s | awk '{print $1}'", path))
+	if err != nil {
+		return "", fmt.Errorf("md5sum %q in pod %q (namespace %q): %w", path, pod, namespace, err)
+	}
+	return strings.TrimSpace(StripKubectlWarnings(out)), nil
+}

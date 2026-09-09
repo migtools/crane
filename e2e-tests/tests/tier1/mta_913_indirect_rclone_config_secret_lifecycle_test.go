@@ -1,4 +1,4 @@
-package indirect_migration
+package e2e
 
 import (
 	"bytes"
@@ -15,15 +15,6 @@ import (
 )
 
 const indirectTestFileName = "testfile.txt"
-
-// md5sumFile returns the MD5 checksum (hash only) of a file inside a pod.
-func md5sumFile(k KubectlRunner, namespace, pod, path string) (string, error) {
-	out, err := k.Run("exec", pod, "-n", namespace, "--", "/bin/sh", "-c", fmt.Sprintf("md5sum %s | awk '{print $1}'", path))
-	if err != nil {
-		return "", fmt.Errorf("md5sum %q in pod %q (namespace %q): %w", path, pod, namespace, err)
-	}
-	return strings.TrimSpace(StripKubectlWarnings(out)), nil
-}
 
 // secretWatch runs a background `kubectl get secret ... -w --output-watch-events`
 // that records ADDED/DELETED events for a single Secret. It lets a spec prove the
@@ -160,7 +151,7 @@ func deployIndirectApp(namespace, tempPrefix string) indirectApp {
 	Expect(PrepareSourceAppNoQuiesce(srcApp)).NotTo(HaveOccurred())
 
 	By("Get the source file MD5 checksum")
-	srcMD5, err := md5sumFile(kubectlSrc, srcApp.Namespace, appName, "/data/"+indirectTestFileName)
+	srcMD5, err := MD5SumFile(kubectlSrc, srcApp.Namespace, appName, "/data/"+indirectTestFileName)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(srcMD5).NotTo(BeEmpty(), "expected to compute an MD5 checksum on source")
 	log.Printf("Source MD5 checksum: %s\n", srcMD5)
@@ -290,7 +281,7 @@ spec:
 			_, err = app.kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifierPod, "-n", app.tgtApp.Namespace, "--timeout=120s")
 			Expect(err).NotTo(HaveOccurred())
 
-			tgtMD5, err := md5sumFile(app.kubectlTgt, app.tgtApp.Namespace, verifierPod, "/data/"+indirectTestFileName)
+			tgtMD5, err := MD5SumFile(app.kubectlTgt, app.tgtApp.Namespace, verifierPod, "/data/"+indirectTestFileName)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(tgtMD5).To(Equal(app.srcMD5), "MD5 checksum on the migrated PVC should match source")
 			log.Printf("Source and target MD5 checksums match: %s\n", app.srcMD5)
