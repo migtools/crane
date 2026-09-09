@@ -71,8 +71,14 @@ func TestCreateDestinationPVC(t *testing.T) {
 		requestedStorageClass string
 		existingStorageClass  *string
 		objects               []client.Object
+		deletionTimestamp     *metav1.Time
 		wantErr               string
 	}{
+		{
+			name:              "rejects an existing PVC that is terminating",
+			deletionTimestamp: &metav1.Time{},
+			wantErr:           `destination PVC "test-ns/test-pvc" is terminating; transfer cannot proceed until it has been fully deleted`,
+		},
 		{
 			name:                  "rejects existing PVC with a different requested storage class",
 			requestedStorageClass: "standard-v2",
@@ -133,7 +139,22 @@ func TestCreateDestinationPVC(t *testing.T) {
 				Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: tt.existingStorageClass},
 			}
 			objects := append([]client.Object{existing}, tt.objects...)
-			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objects...).Build()
+			builder := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objects...)
+			if tt.deletionTimestamp != nil {
+				builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if err := c.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						if existingPVC, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+							existingPVC.DeletionTimestamp = tt.deletionTimestamp
+							existingPVC.Finalizers = []string{"crane.io/stuck-for-test"}
+						}
+						return nil
+					},
+				})
+			}
+			c := builder.Build()
 			cmd := &TransferPVCCommand{Flags: Flags{PVC: PvcFlags{StorageClassName: tt.requestedStorageClass}}}
 
 			err := cmd.createDestinationPVC(context.Background(), c, &corev1.PersistentVolumeClaim{

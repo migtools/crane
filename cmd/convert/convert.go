@@ -3,6 +3,7 @@ package convert
 import (
 	"github.com/konveyor/crane-lib/convert"
 	"github.com/konveyor/crane/internal/flags"
+	crlog "github.com/konveyor/crane/internal/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -37,8 +38,9 @@ func NewConvertOptions(streams genericclioptions.IOStreams, f *flags.GlobalFlags
 	}
 
 	cmd := &cobra.Command{
-		Use:   "convert",
-		Short: "Convert a deprecated resource to its replacement",
+		Use:        "convert",
+		Short:      "Convert a deprecated resource to its replacement",
+		Deprecated: "it has been replaced by the crane-plugin-buildconfig-to-shipwright plugin (https://github.com/migtools/crane-plugin-buildconfig-to-shipwright). Use it via `crane transform` instead.",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := t.Complete(c, args); err != nil {
 				return err
@@ -83,6 +85,7 @@ func (t *ConvertOptions) Run() error {
 }
 
 func (t *ConvertOptions) run() error {
+	crlog.InitControllerRuntimeLogger("")
 	srcClient, err := t.getClientFromContext()
 	if err != nil {
 		return err

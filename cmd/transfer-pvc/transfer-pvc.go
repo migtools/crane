@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	logrusr "github.com/bombsimon/logrusr/v3"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -37,6 +36,7 @@ import (
 
 	"github.com/konveyor/crane/internal/cli"
 	"github.com/konveyor/crane/internal/flags"
+	crlog "github.com/konveyor/crane/internal/log"
 
 	"github.com/migtools/pvc-transfer/endpoint"
 	ingressendpoint "github.com/migtools/pvc-transfer/endpoint/ingress"
@@ -357,8 +357,7 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 func (t *TransferPVCCommand) run() (retErr error) {
 	log := t.log
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
-	ctrlLogger := logrus.New()
-	logger := logrusr.New(ctrlLogger).WithName("transfer-pvc")
+	logger := crlog.InitControllerRuntimeLogger("transfer-pvc")
 
 	totalPhases := 7
 	if t.isIntraClusterSameNamespace() {
@@ -1318,8 +1317,8 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 }
 
 // createDestinationPVC creates the destination PVC, ensuring an existing PVC
-// is not referenced by a non-terminal pod and validating its storage class when
-// --dest-storage-class was requested.
+// is neither terminating nor referenced by a non-terminal pod, and validating
+// its storage class when --dest-storage-class was requested.
 func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
 	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
 		return nil
@@ -1330,6 +1329,9 @@ func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.
 	existing := &corev1.PersistentVolumeClaim{}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(pvc), existing); err != nil {
 		return fmt.Errorf("getting existing destination PVC %q: %w", pvc.Name, err)
+	}
+	if existing.DeletionTimestamp != nil {
+		return fmt.Errorf("destination PVC %q is terminating; transfer cannot proceed until it has been fully deleted. Remove the finalizer blocking deletion or wait for deletion to complete, then retry", client.ObjectKeyFromObject(existing))
 	}
 
 	pod, err := getActivePodUsingPVC(c, existing.Namespace, existing.Name)

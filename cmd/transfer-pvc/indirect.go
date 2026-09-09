@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	crlog "github.com/konveyor/crane/internal/log"
 	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +30,7 @@ import (
 
 func (t *TransferPVCCommand) runIndirect() error {
 	log := t.log
+	crlog.InitControllerRuntimeLogger("transfer-pvc")
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
 	fmt.Fprintf(os.Stderr, "\ncrane transfer-pvc (indirect via cloud storage)\n")
