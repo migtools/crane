@@ -22,6 +22,45 @@ import (
 
 func int64Ptr(v int64) *int64 { return &v }
 
+func int32Ptr(v int32) *int32 { return &v }
+
+func TestTransferSummaryStatus(t *testing.T) {
+	tests := []struct {
+		name          string
+		retErr        error
+		rsyncExitCode *int32
+		want          string
+	}{
+		{
+			name: "successful rsync",
+			want: "succeeded",
+		},
+		{
+			name:          "partial rsync transfer",
+			rsyncExitCode: int32Ptr(23),
+			want:          "succeeded (with warnings — some files could not be transferred)",
+		},
+		{
+			name:          "unexpected rsync failure",
+			rsyncExitCode: int32Ptr(12),
+			want:          "failed",
+		},
+		{
+			name:   "transfer failure takes precedence over rsync exit code",
+			retErr: fmt.Errorf("cleanup failed"),
+			want:   "failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := transferSummaryStatus(tt.retErr, tt.rsyncExitCode); got != tt.want {
+				t.Errorf("transferSummaryStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestEndpointFlags_Validate_DefaultPersists proves the value-receiver bug in
 // EndpointFlags.Validate: an empty Type with a valid Subdomain passes validation,
 // but the nginx default assigned inside Validate is lost because the receiver is a
