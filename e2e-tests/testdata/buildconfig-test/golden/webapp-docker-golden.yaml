@@ -20,18 +20,13 @@ spec:
     name: dockerfile
     secretValue: null
     value: Dockerfile
-  - name: build-args
-    values:
-    - configMapValue: null
-      secretValue: null
-      value: PYTHON_VERSION=3.9
   retention:
     failedLimit: 5
     succeededLimit: 5
   source:
     git:
       revision: master
-      url: https://github.com/sclorg/django-ex.git
+      url: https://github.com/sclorg/httpd-ex.git
     type: Git
   strategy:
     kind: ClusterBuildStrategy
