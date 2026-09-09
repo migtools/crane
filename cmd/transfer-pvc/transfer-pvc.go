@@ -713,18 +713,34 @@ func getValidatedResourceName(name string) string {
 
 // getRunningPodUsingPVC returns the running pod that mounts pvcName, if any.
 func getRunningPodUsingPVC(c client.Client, namespace string, pvcName string) (*corev1.Pod, error) {
+	return getPodUsingPVC(c, namespace, pvcName, func(pod *corev1.Pod) bool {
+		return pod.Status.Phase == corev1.PodRunning
+	})
+}
+
+// getActivePodUsingPVC returns a non-terminal pod that references pvcName, if any.
+// Pending pods are included because Kubernetes may attach and mount a PVC before
+// an init container or application container starts.
+func getActivePodUsingPVC(c client.Client, namespace string, pvcName string) (*corev1.Pod, error) {
+	return getPodUsingPVC(c, namespace, pvcName, func(pod *corev1.Pod) bool {
+		return pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed
+	})
+}
+
+func getPodUsingPVC(c client.Client, namespace string, pvcName string, include func(*corev1.Pod) bool) (*corev1.Pod, error) {
 	podList := corev1.PodList{}
 	if err := c.List(context.TODO(), &podList, client.InNamespace(namespace)); err != nil {
 		return nil, err
 	}
 	for i := range podList.Items {
 		pod := &podList.Items[i]
-		if pod.Status.Phase == corev1.PodRunning {
-			for _, vol := range pod.Spec.Volumes {
-				if vol.PersistentVolumeClaim != nil {
-					if vol.PersistentVolumeClaim.ClaimName == pvcName {
-						return pod, nil
-					}
+		if !include(pod) {
+			continue
+		}
+		for _, vol := range pod.Spec.Volumes {
+			if vol.PersistentVolumeClaim != nil {
+				if vol.PersistentVolumeClaim.ClaimName == pvcName {
+					return pod, nil
 				}
 			}
 		}
@@ -1302,7 +1318,7 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 }
 
 // createDestinationPVC creates the destination PVC, ensuring an existing PVC
-// is not mounted by a running pod and validating its storage class when
+// is not referenced by a non-terminal pod and validating its storage class when
 // --dest-storage-class was requested.
 func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
 	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
@@ -1316,7 +1332,7 @@ func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.
 		return fmt.Errorf("getting existing destination PVC %q: %w", pvc.Name, err)
 	}
 
-	pod, err := getRunningPodUsingPVC(c, existing.Namespace, existing.Name)
+	pod, err := getActivePodUsingPVC(c, existing.Namespace, existing.Name)
 	if err != nil {
 		return fmt.Errorf("checking whether destination PVC %s/%s is in use: %w", existing.Namespace, existing.Name, err)
 	}
