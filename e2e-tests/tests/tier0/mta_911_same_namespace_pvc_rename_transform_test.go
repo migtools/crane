@@ -85,7 +85,7 @@ var _ = Describe("Same-namespace PVC rename transform", func() {
 			"--quiet",
 		)
 		Expect(err).NotTo(HaveOccurred())
-		sourceDocumentCount, err := mongoDocumentCount(kubectl, namespace, srcPodName)
+		sourceDocumentCount, err := MongoDocumentCount(kubectl, namespace, srcPodName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sourceDocumentCount).To(Equal(expectedDocumentCount),
 			"source MongoDB should contain the two deployer seed documents and two test documents")
@@ -163,7 +163,7 @@ var _ = Describe("Same-namespace PVC rename transform", func() {
 			if err != nil {
 				return 0, err
 			}
-			return mongoDocumentCount(kubectl, namespace, targetPodName)
+			return MongoDocumentCount(kubectl, namespace, targetPodName)
 		}, "5m", "10s").Should(Equal(sourceDocumentCount),
 			"destination MongoDB should contain the same documents after mounting the renamed PVC")
 

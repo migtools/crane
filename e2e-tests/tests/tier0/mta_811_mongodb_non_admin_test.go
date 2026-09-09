@@ -3,7 +3,6 @@ package e2e
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
@@ -11,25 +10,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
-
-// mongoDocumentCount returns the number of documents in sampledb.test_db via
-// mongosh exec into the given pod.
-func mongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error) {
-	out, err := k.Run(
-		"exec", podName, "-n", namespace, "--",
-		"mongosh", "sampledb",
-		"--eval", "db.test_db.countDocuments()",
-		"--quiet",
-	)
-	if err != nil {
-		return 0, err
-	}
-	count, err := strconv.Atoi(strings.TrimSpace(out))
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse document count %q: %w", strings.TrimSpace(out), err)
-	}
-	return count, nil
-}
 
 var _ = Describe("MongoDB Migration", func() {
 	It("[BUG #213][MTA-811] Should migrate a MongoDB resource with data intact as nonadmin user", Label("BUG #213", "tier0", "pvc-transfer"), func() {
@@ -106,7 +86,7 @@ var _ = Describe("MongoDB Migration", func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Test data seeded into source MongoDB")
-		srcCount, err := mongoDocumentCount(kubectlSrcNonAdmin, namespace, srcPodName)
+		srcCount, err := MongoDocumentCount(kubectlSrcNonAdmin, namespace, srcPodName)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Source document count: %d", srcCount)
 
@@ -182,11 +162,11 @@ var _ = Describe("MongoDB Migration", func() {
 
 		By("Verify data integrity on destination")
 		Eventually(func() (int, error) {
-			return mongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
+			return MongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
 		}, "2m", "10s").Should(BeNumerically("==", srcCount),
 			"expected destination document count to match source after migration")
 
-		tgtCount, err := mongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
+		tgtCount, err := MongoDocumentCount(kubectlTgtNonAdmin, namespace, tgtPodName)
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Destination document count: %d — migration verified", tgtCount)
 	})
