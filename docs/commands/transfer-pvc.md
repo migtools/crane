@@ -53,10 +53,10 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 | `--output` | string | No | Output transfer stats in the specified file |
 | `--verify` | bool | No | Verify transferred files using checksums |
 | `--cloud-storage` | string | No | S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket) |
-| `--rclone-config-secret` | string | No | Name of the K8s Secret containing rclone.conf for indirect transfer |
-| `--rclone-config-file` | string | No | Path to local rclone.conf file for indirect transfer |
+| `--rclone-config-secret` | string | No | Name of a Secret containing `rclone.conf` in both transfer namespaces |
+| `--rclone-config-file` | string | No | Local path to `rclone.conf`; crane creates temporary Secrets on both clusters |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
-| `--keep-cloud-data` | bool | No | Reserved for cloud-data retention; currently has no effect because cleanup is not implemented |
+| `--keep-cloud-data` | bool | No | Retain the uploaded object prefix after the transfer instead of cleaning it up |
 | `--audit-log` | string | No | Path to the audit log file (defaults to `audit/.crane-audit.log`) |
 
 ### PVC Options
@@ -122,32 +122,76 @@ Indirect transfer enables PVC migration between clusters without direct network 
 
 #### Configuration
 
-When using `--cloud-storage`, you must provide rclone credentials using **one** of the following (mutually exclusive):
+When using `--cloud-storage`, provide rclone configuration using **one** of the following mutually exclusive options. In either case, the rclone remote named in `--cloud-storage` must be usable from Pods in **both** clusters and must grant each side access to the same bucket and prefix.
 
-- `--rclone-config-secret` — Name of an existing Kubernetes Secret containing `rclone.conf` in the cluster
-- `--rclone-config-file` — Path to a local `rclone.conf` file (crane creates a temporary Secret automatically)
+- `--rclone-config-file` — A local file on the machine running `crane`. Crane reads it, creates temporary Secrets containing it in the source and destination PVC namespaces, validates both Secrets, and deletes those temporary Secrets when the command finishes. No manually created Secrets are needed. The identity running Crane needs permission to create, read, and delete Secrets in both namespaces.
+- `--rclone-config-secret` — The name of an existing Secret. You must create that Secret in **both clusters**: once in the source PVC namespace and once in the destination PVC namespace. The Secrets must have the same name (the one passed to the flag) and each must contain a non-empty `rclone.conf` key. Crane does not copy or create a user-managed Secret.
+
+The two Secrets may use different credentials when appropriate, but both `rclone.conf` files must define the remote name used by `--cloud-storage` and their credentials must be authorized for the transfer path.
+
+For example, for `--cloud-storage remote:my-bucket/transfer-path`, both configurations need a `[remote]` section. A MinIO endpoint expressed as an in-cluster DNS name is normally reachable only from that cluster; use an endpoint that is reachable from Pods on both clusters.
+
+#### Using a local config file
+
+```bash
+crane transfer-pvc \
+  --source-context source --destination-context destination \
+  --pvc-name data-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage remote:my-bucket/transfer-path \
+  --rclone-config-file /secure/path/rclone.conf
+```
+
+`rclone.conf` is not read from either cluster. It is read locally by the Crane CLI and its contents are made available to both transfer Pods through temporary Secrets.
+
+#### Using pre-created Secrets
+
+Create the Secret in each PVC namespace before starting the transfer. The Secret name is deliberately identical because the command accepts one name:
+
+```bash
+kubectl --context source -n source-ns create secret generic rclone-secret \
+  --from-file=rclone.conf=/secure/path/source-rclone.conf
+
+kubectl --context destination -n destination-ns create secret generic rclone-secret \
+  --from-file=rclone.conf=/secure/path/destination-rclone.conf
+```
+
+Then run:
+
+```bash
+crane transfer-pvc \
+  --source-context source --destination-context destination \
+  --pvc-name data-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage remote:my-bucket/transfer-path \
+  --rclone-config-secret rclone-secret
+```
+
+Do not use `--rclone-config-file` with `--rclone-config-secret`.
 
 #### Behavior
 
-- **Data Retention**: The `--keep-cloud-data` flag is reserved for cloud-data retention; currently has no effect because cleanup is not implemented.
-- **Encryption**: Use `--encrypt` to enable client-side encryption for data in transit.
+- **Data Retention**: By default, Crane runs a cloud cleanup after download. `--keep-cloud-data` skips that cleanup and leaves the transferred object prefix in the bucket. Cleanup failures are reported as non-fatal warnings.
+- **Encryption**: `--encrypt` enables rclone client-side encryption of data stored in the intermediate bucket. It is separate from transport encryption and any bucket-side encryption.
 
 When `--encrypt` is used:
 1. You must provide the configuration via `--rclone-config-file`. This flag cannot be used with `--rclone-config-secret`.
-2. `crane` automatically generates a secure, ephemeral 32-byte encryption password for the transfer session.
+2. `crane` automatically generates a secure, ephemeral 32-byte encryption password for that transfer session.
 3. The password is obscured using rclone's native AES-CTR format and appended to the configuration as an `[encrypted]` crypt overlay section.
-4. The generated configuration is used to create temporary secrets on both clusters, ensuring secure end-to-end encryption. The password is discarded after the transfer completes.
+4. The generated configuration is used to create temporary Secrets on both clusters. The password is discarded after the transfer completes.
+
+Because the automatic password is new for every invocation, do not combine automatic `--encrypt` with repeat runs that retain cloud data for rclone incrementality. Use bucket-side encryption, or supply a stable user-managed rclone `crypt` configuration without `--encrypt`, for that use case.
 
 #### Sample rclone.conf
 
-**MinIO (self-hosted):**
+**MinIO (self-hosted, endpoint reachable from both clusters):**
 ```ini
 [remote]
 type = s3
 provider = Minio
 access_key_id = <minio-access-key>
 secret_access_key = <minio-secret-key>
-endpoint = http://minio.minio.svc.cluster.local:9000
+endpoint = https://minio.example.com
 ```
 
 **AWS S3:**
@@ -174,7 +218,7 @@ The section name `[remote]` must match the prefix in `--cloud-storage`. For exam
 
 #### Examples
 
-Basic indirect transfer:
+Basic indirect transfer using pre-created Secrets (create the Secret on both clusters as shown above):
 ```bash
 crane transfer-pvc \
   --source-context source --destination-context destination \
@@ -183,7 +227,7 @@ crane transfer-pvc \
   --rclone-config-secret rclone-secret
 ```
 
-With encryption and data retention:
+With automatic encryption and retained cloud data:
 ```bash
 crane transfer-pvc \
   --source-context source --destination-context destination \
