@@ -90,9 +90,14 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
 			Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 		}
+		waitForTransferCleanup := func() {
+			AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcApp.Namespace}, pvcName)
+			AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtApp.Namespace}, pvcName)
+		}
 
 		By("Run the first stage transfer-pvc while the app is still running on source")
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
+		waitForTransferCleanup()
 
 		By("Verify the source app is unaffected and still running after the stage sync")
 		srcPhase, err := kubectlSrc.Run("get", "pod", srcPodName, "-n", srcApp.Namespace, "-o", "jsonpath={.status.phase}")
@@ -153,6 +158,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
 			By("Skipping incremental sync verification for indirect mode (pods are ephemeral)")
 		}
+		waitForTransferCleanup()
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
 		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
@@ -187,6 +193,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		Expect(runner.Export(exportOpts)).NotTo(HaveOccurred())
 		Expect(runner.Transform(transformOpts)).NotTo(HaveOccurred())
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
+		waitForTransferCleanup()
 		Expect(runner.Apply(applyOpts)).NotTo(HaveOccurred())
 
 		By("Verify rendered output excludes the PVC: it is migrated separately via transfer-pvc")
