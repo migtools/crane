@@ -189,8 +189,8 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
 		Expect(runner.Apply(applyOpts)).NotTo(HaveOccurred())
 
-		By("Verify rendered output excludes the PVC: it is migrated separately via transfer-pvc")
-		Expect(utils.AssertNoKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
+		By("Verify rendered output includes a declarative PVC manifest")
+		Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
 
 		By("Apply rendered manifests to target and scale the app back up")
 		Expect(ApplyOutputToTarget(kubectlTgt, tgtApp.Namespace, paths.OutputDir)).NotTo(HaveOccurred())
