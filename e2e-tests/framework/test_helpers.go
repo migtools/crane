@@ -228,6 +228,12 @@ type VerifierPodOptions struct {
 	// match a Deployment's selector (e.g. simulating the real app briefly)
 	// rather than just being a throwaway inspector.
 	Labels map[string]string
+	// Restricted, when true, adds a hardened container securityContext
+	// (runAsNonRoot, runAsUser 1000, no privilege escalation, RuntimeDefault
+	// seccomp) so the pod is admissible in namespaces enforcing the restricted
+	// Pod Security Admission profile — i.e. non-admin scenarios. Leave false for
+	// cluster-admin contexts where a securityContext is not required.
+	Restricted bool
 }
 
 // DeployVerifierPod creates a disposable pod that mounts one or more existing
@@ -267,6 +273,17 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 		return fmt.Errorf("marshal verifier pod command: %w", err)
 	}
 
+	securityBlock := ""
+	if opts.Restricted {
+		securityBlock = `    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      allowPrivilegeEscalation: false
+      seccompProfile:
+        type: RuntimeDefault
+`
+	}
+
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata:
@@ -278,7 +295,7 @@ metadata:
   - name: verifier
     image: %s
     command: %s
-%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mountsBlock, volumesBlock)
+%s%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), securityBlock, mountsBlock, volumesBlock)
 
 	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
 		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
