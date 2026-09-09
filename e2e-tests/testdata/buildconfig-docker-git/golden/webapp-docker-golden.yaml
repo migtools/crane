@@ -20,13 +20,9 @@ spec:
     name: dockerfile
     secretValue: null
     value: Dockerfile
-  - configMapValue: null
-    name: registries-insecure
-    secretValue: null
+  - name: registries-insecure
     values:
-    - configMapValue: null
-      secretValue: null
-      value: image-registry.openshift-image-registry.svc:5000
+    - value: image-registry.openshift-image-registry.svc:5000
   retention:
     failedLimit: 5
     succeededLimit: 5
