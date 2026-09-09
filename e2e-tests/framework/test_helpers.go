@@ -23,7 +23,7 @@ func MongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error)
 		"--quiet",
 	)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("count MongoDB documents in pod %q in namespace %q: %w", podName, namespace, err)
 	}
 	count, err := strconv.Atoi(strings.TrimSpace(out))
 	if err != nil {
