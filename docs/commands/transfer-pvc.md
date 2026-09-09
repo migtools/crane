@@ -174,13 +174,55 @@ Do not use `--rclone-config-file` with `--rclone-config-secret`.
 - **Data Retention**: By default, Crane runs a cloud cleanup after download. `--keep-cloud-data` skips that cleanup and leaves the transferred object prefix in the bucket. Cleanup failures are reported as non-fatal warnings.
 - **Encryption**: `--encrypt` enables rclone client-side encryption of data stored in the intermediate bucket. It is separate from transport encryption and any bucket-side encryption.
 
+`--encrypt` applies only to indirect (`--cloud-storage`) transfers. It does not change direct rsync transfers: direct mode sends rsync traffic through Crane's TLS stunnel tunnel, so its network traffic is already encrypted in transit. Indirect mode has no direct cluster-to-cluster rsync connection; `--encrypt` protects the temporary bucket objects and their names with rclone crypt.
+
 When `--encrypt` is used:
 1. You must provide the configuration via `--rclone-config-file`. This flag cannot be used with `--rclone-config-secret`.
 2. `crane` automatically generates a secure, ephemeral 32-byte encryption password for that transfer session.
 3. The password is obscured using rclone's native AES-CTR format and appended to the configuration as an `[encrypted]` crypt overlay section.
 4. The generated configuration is used to create temporary Secrets on both clusters. The password is discarded after the transfer completes.
 
-Because the automatic password is new for every invocation, do not combine automatic `--encrypt` with repeat runs that retain cloud data for rclone incrementality. Use bucket-side encryption, or supply a stable user-managed rclone `crypt` configuration without `--encrypt`, for that use case.
+> **Note:** Because the automatic password is new for every invocation, do not combine automatic `--encrypt` with repeat runs that retain cloud data for rclone incrementality. Use bucket-side encryption, or supply a stable user-managed rclone `crypt` configuration without `--encrypt`, for that use case.
+
+#### Encrypted incremental transfers with a stable user-managed key
+
+To retain client-side encryption *and* let rclone reuse unchanged data across repeat transfers, define the `crypt` remote yourself and keep its password unchanged. Generate an obscured value once with a standard rclone installation:
+
+```bash
+rclone obscure 'choose-a-strong-stable-password'
+```
+
+Store the output as the `password` value below. `rclone obscure` prevents accidental plaintext disclosure in the file; the resulting value must still be treated as a credential.
+
+```ini
+[remote]
+type = s3
+provider = AWS
+access_key_id = <access-key-id>
+secret_access_key = <secret-access-key>
+region = <region>
+
+[encrypted]
+type = crypt
+remote = remote:<bucket>/<stable-transfer-prefix>
+password = <output-from-rclone-obscure>
+```
+
+Invoke Crane with the crypt remote and **omit** `--encrypt`:
+
+```bash
+crane transfer-pvc \
+  --source-context source --destination-context destination \
+  --pvc-name data-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage encrypted: \
+  --rclone-config-file /secure/path/stable-rclone.conf \
+  --keep-cloud-data
+```
+
+Crane appends the source namespace and PVC name below `encrypted:`. Since the `[encrypted]` remote, backing bucket prefix, and crypt password remain stable, rclone can identify unchanged encrypted objects and uploads only added or changed files. Changed files transfer in full; rclone does not perform block-level deltas through object storage.
+
+If using `--rclone-config-secret` instead of `--rclone-config-file`, create the same stable crypt configuration in the Secret on both clusters as described above. Do not change the `password` or backing `remote` path between repeat transfers.
 
 #### Sample rclone.conf
 
