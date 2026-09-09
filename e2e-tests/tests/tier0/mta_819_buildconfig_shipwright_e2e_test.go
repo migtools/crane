@@ -88,9 +88,10 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 			ExportDir: paths.ExportDir,
 		}
 		transformOpts := TransformOptions{
-			ExportDir:    paths.ExportDir,
-			TransformDir: paths.TransformDir,
-			PluginDir:    config.PluginDir,
+			ExportDir:     paths.ExportDir,
+			TransformDir:  paths.TransformDir,
+			PluginDir:     config.PluginDir,
+			OptionalFlags: "--insecure-registries=image-registry.openshift-image-registry.svc:5000",
 		}
 		applyOpts := ApplyOptions{
 			TransformDir: paths.TransformDir,

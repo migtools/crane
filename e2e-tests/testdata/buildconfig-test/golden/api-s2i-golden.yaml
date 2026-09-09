@@ -23,6 +23,13 @@ spec:
     name: builder-image
     secretValue: null
     value: registry.access.redhat.com/ubi8/nodejs-16:latest
+  - configMapValue: null
+    name: registries-insecure
+    secretValue: null
+    values:
+    - configMapValue: null
+      secretValue: null
+      value: image-registry.openshift-image-registry.svc:5000
   retention:
     failedLimit: 5
     succeededLimit: 5
