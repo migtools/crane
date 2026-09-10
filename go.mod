@@ -2,7 +2,7 @@ module github.com/konveyor/crane
 
 go 1.25.0
 
-replace github.com/konveyor/crane-lib => github.com/aufi/crane-lib v0.0.0-20260904125352-15e04c4b1ef9
+replace github.com/konveyor/crane-lib => github.com/aufi/crane-lib v0.0.0-20260909123528-92875874f73d
 
 require (
 	github.com/bombsimon/logrusr/v3 v3.0.0
