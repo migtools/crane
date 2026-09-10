@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/konveyor/crane/e2e-tests/config"
 	"github.com/konveyor/crane/e2e-tests/framework"
 	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
@@ -21,7 +22,7 @@ var _ = Describe("Audit logging multi-command accumulation", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		runner := &framework.CraneRunner{
-			Bin:     "crane",
+			Bin:     config.CraneBin,
 			WorkDir: paths.TempDir,
 		}
 
