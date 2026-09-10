@@ -364,13 +364,10 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		totalPhases = 8
 	}
 	phases := cli.NewPhaseTracker(t.ErrOut, totalPhases)
+	var rsyncExitCode *int32
 	defer func() {
-		status := "succeeded"
-		if retErr != nil {
-			status = "failed"
-		}
 		cli.PrintTransferSummary(t.ErrOut, &cli.TransferSummary{
-			Status:   status,
+			Status:   transferSummaryStatus(retErr, rsyncExitCode),
 			Duration: phases.Elapsed(),
 		})
 	}()
@@ -652,15 +649,15 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		return phases.Fail(err, "failed to create rsync client")
 	}
 
-	exitCode, err := followClientLogs(
+	rsyncExitCode, err = followClientLogs(
 		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, clientLabels, t.ProgressOutput, log)
 	if err != nil {
 		log.Errorf("Error following rsync client logs: %v", err)
 		return phases.Fail(err, "error following rsync client logs")
 	}
 	detail := ""
-	if exitCode != nil {
-		detail = fmt.Sprintf("exit=%d", *exitCode)
+	if rsyncExitCode != nil {
+		detail = fmt.Sprintf("exit=%d", *rsyncExitCode)
 	}
 	phases.End("finished", detail)
 
@@ -691,6 +688,19 @@ func (t *TransferPVCCommand) run() (retErr error) {
 
 	log.Infof("PVC transfer complete: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 	return nil
+}
+
+func transferSummaryStatus(retErr error, rsyncExitCode *int32) string {
+	if retErr != nil {
+		return "failed"
+	}
+	if rsyncExitCode != nil && *rsyncExitCode == 23 {
+		return "succeeded (with warnings — some files could not be transferred)"
+	}
+	if rsyncExitCode != nil && *rsyncExitCode != 0 {
+		return "failed"
+	}
+	return "succeeded"
 }
 
 func certificateSecretName(serverSecret, srcPVCName, destPVCName string) string {
