@@ -1,0 +1,40 @@
+apiVersion: shipwright.io/v1beta1
+kind: Build
+metadata:
+  annotations:
+    buildconfig-to-shipwright/conversion-outcome: converted-with-warnings
+    crane.konveyor.io/conversion-warnings: |-
+      [buildconfig-test/webapp-docker] Output ImageStreamTag "webapp-docker:latest" resolved to fallback URL: image-registry.openshift-image-registry.svc:5000/buildconfig-test/webapp-docker:latest
+      [buildconfig-test/webapp-docker] No explicit pushSecret found for ImageStreamTag output. Ensure the BuildRun uses a ServiceAccount with internal registry push access.
+      [buildconfig-test/webapp-docker] BuildConfig webapp-docker uses runPolicy "Serial", which is dropped: OpenShift queued its builds and ran them one at a time, but Shipwright BuildRuns run concurrently. Serialize the runs in your CI/CD pipeline if build ordering matters, for example when several BuildRuns push the same image tag
+    crane.konveyor.io/converted-from: build.openshift.io/v1/BuildConfig/webapp-docker
+  labels:
+    app: webapp
+  name: webapp-docker
+  namespace: buildconfig-test
+spec:
+  output:
+    image: image-registry.openshift-image-registry.svc:5000/buildconfig-test/webapp-docker:latest
+  paramValues:
+  - configMapValue: null
+    name: dockerfile
+    secretValue: null
+    value: Dockerfile
+  - configMapValue: null
+    name: registries-insecure
+    secretValue: null
+    values:
+    - configMapValue: null
+      secretValue: null
+      value: image-registry.openshift-image-registry.svc:5000
+  retention:
+    failedLimit: 5
+    succeededLimit: 5
+  source:
+    git:
+      revision: main
+      url: https://github.com/docker/welcome-to-docker.git
+    type: Git
+  strategy:
+    kind: ClusterBuildStrategy
+    name: buildah
