@@ -100,7 +100,9 @@ func runTransferPVCProgressScenario(indirect bool) {
 			"Downloading data from cloud storage", "Cleaning up cloud storage", "Cleaning up transfer pods",
 		}
 	} else {
-		targetIP, err := GetClusterNodeIP(tgtApp.Context)
+		// Node discovery is cluster-scoped, so use the scenario's admin context.
+		// transfer-pvc itself continues to run through the namespace-admin runner.
+		targetIP, err := GetClusterNodeIP(scenario.KubectlTgt.Context)
 		Expect(err).NotTo(HaveOccurred())
 		options.Subdomain = fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, targetIP)
 		totalPhases = 7
