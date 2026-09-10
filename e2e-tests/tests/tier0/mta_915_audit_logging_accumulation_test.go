@@ -17,12 +17,13 @@ var _ = Describe("Audit logging multi-command accumulation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Created temp directory: %s\n", paths.TempDir)
 
+		testdataExportDir, err := utils.TestdataFilePath("audit-log-export")
+		Expect(err).NotTo(HaveOccurred())
+
 		runner := &framework.CraneRunner{
 			Bin:     "crane",
 			WorkDir: paths.TempDir,
 		}
-
-		testdataExportDir := filepath.Join("e2e-tests", "testdata", "audit-log-export")
 
 		transformOpts := framework.TransformOptions{
 			ExportDir:    testdataExportDir,

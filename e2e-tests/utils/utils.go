@@ -1449,3 +1449,36 @@ func AssertResourcesDontExist(dir string, resources []ResourceMatch) (bool, erro
 	}
 	return true, nil
 }
+
+// ReadAuditLogEntries reads a JSON Lines audit log file and returns a slice of entries.
+// Validates that each line is valid JSON with required fields: cmd, level, msg, time.
+func ReadAuditLogEntries(path string) ([]map[string]interface{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read audit log: %w", err)
+	}
+
+	var entries []map[string]interface{}
+	lines := bytes.Split(bytes.TrimRight(data, "\n"), []byte("\n"))
+
+	for i, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		var entry map[string]interface{}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			return nil, fmt.Errorf("line %d: invalid JSON: %w", i+1, err)
+		}
+
+		requiredFields := []string{"cmd", "level", "msg", "time"}
+		for _, field := range requiredFields {
+			if _, ok := entry[field]; !ok {
+				return nil, fmt.Errorf("line %d: missing required field %q", i+1, field)
+			}
+		}
+
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
