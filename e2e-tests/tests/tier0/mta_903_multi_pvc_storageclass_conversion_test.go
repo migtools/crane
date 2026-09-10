@@ -97,7 +97,7 @@ var _ = Describe("Cross-cluster multi-PVC StorageClass conversion", func() {
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).To(HaveLen(len(expectedPVCNames)), "expected exactly %d PVCs in namespace %q", len(expectedPVCNames), srcApp.Namespace)
-		expectPVCNames(pvcs, expectedPVCNames)
+		Expect(VerifyPVCNames(pvcs, expectedPVCNames)).NotTo(HaveOccurred())
 
 		By("Resolve the source StorageClass and choose a distinct destination class on target")
 		var sourceSC string
@@ -242,17 +242,3 @@ var _ = Describe("Cross-cluster multi-PVC StorageClass conversion", func() {
 		}
 	})
 })
-
-func expectPVCNames(pvcs []corev1.PersistentVolumeClaim, expectedNames []string) {
-	GinkgoHelper()
-
-	actualNames := make(map[string]bool, len(pvcs))
-	for _, pvc := range pvcs {
-		actualNames[pvc.Name] = true
-	}
-
-	for _, expectedName := range expectedNames {
-		Expect(actualNames).To(HaveKey(expectedName),
-			"expected PVC %q to exist in the MySQL app PVC set", expectedName)
-	}
-}
