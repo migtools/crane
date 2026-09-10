@@ -173,6 +173,20 @@ Do not use `--rclone-config-file` with `--rclone-config-secret`.
 
 - **Data Retention**: By default, Crane runs a cloud cleanup after download. `--keep-cloud-data` skips that cleanup and leaves the transferred object prefix in the bucket. Cleanup failures are reported as non-fatal warnings.
 - **Encryption**: `--encrypt` enables rclone client-side encryption of data stored in the intermediate bucket. It is separate from transport encryption and any bucket-side encryption.
+- **File ownership**: Indirect mode preserves file **contents**, **permissions (mode bits)**, and **directory structure**, but **not** file ownership (UID/GID). See [Limitation: file ownership is not preserved](#limitation-file-ownership-uidgid-is-not-preserved) below.
+
+##### Limitation: file ownership (UID/GID) is not preserved
+
+In indirect mode, restored files do **not** keep their original owner/group. On download, files are written with the UID/GID of the destination (mover) Pod; when that Pod runs with no explicit `runAsUser`, ownership defaults to **65534 (nobody)**.
+
+This is intentional. rclone treats a failed `chown` as a fatal error and discards the file, and a non-root mover Pod cannot restore an arbitrary source UID/GID, so ownership is normalized to the Pod's own identity to let the transfer complete. Direct mode (rsync) is not affected by this limitation.
+
+**Impact:** workloads that depend on specific file ownership — for example, a database that expects its data directory owned by a service UID, or files that must be group-readable by a specific GID — may fail to start or misbehave after an indirect transfer until ownership is corrected on the destination.
+
+**Workarounds:**
+- Run the destination workload with an `fsGroup`/`runAsUser` that matches the mover-Pod identity.
+- `chown` the restored data on the destination PVC before starting the workload.
+- Use direct mode (`--endpoint`) when file ownership must be preserved.
 
 `--encrypt` applies only to indirect (`--cloud-storage`) transfers. It does not change direct rsync transfers: direct mode sends rsync traffic through Crane's TLS stunnel tunnel, so its network traffic is already encrypted in transit. Indirect mode has no direct cluster-to-cluster rsync connection; `--encrypt` protects the temporary bucket objects and their names with rclone crypt.
 
