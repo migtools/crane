@@ -177,16 +177,19 @@ Do not use `--rclone-config-file` with `--rclone-config-secret`.
 
 ##### Limitation: file ownership (UID/GID) is not preserved
 
-In indirect mode, restored files do **not** keep their original owner/group. On download, files are written with the UID/GID of the destination (mover) Pod; when that Pod runs with no explicit `runAsUser`, ownership defaults to **65534 (nobody)**.
+In indirect mode, restored files do **not** keep their original owner/group. During the download step, crane-lib rewrites every file's ownership to the resolved download security context by appending `--metadata-set uid=<N> --metadata-set gid=<N>` to the rclone `sync` command that runs in the destination (mover) Pod. The values are derived as follows:
 
-This is intentional. rclone treats a failed `chown` as a fatal error and discards the file, and a non-root mover Pod cannot restore an arbitrary source UID/GID, so ownership is normalized to the Pod's own identity to let the transfer complete. Direct mode (rsync) is not affected by this limitation.
+- **UID** is `RunAsUser` when it is set, otherwise it falls back to **65534 (nobody)**.
+- **GID** is `RunAsGroup` when set, otherwise `FSGroup` when set, otherwise the resolved UID above (so **65534** only when `RunAsUser` is also unset).
+
+This is intentional. rclone treats a failed `chown` as a fatal error and discards the file, and a non-root mover Pod cannot restore an arbitrary source UID/GID, so ownership is normalized to the resolved download security context (the UID/GID rules above) to let the transfer complete.
 
 **Impact:** workloads that depend on specific file ownership — for example, a database that expects its data directory owned by a service UID, or files that must be group-readable by a specific GID — may fail to start or misbehave after an indirect transfer until ownership is corrected on the destination.
 
 **Workarounds:**
-- Run the destination workload with an `fsGroup`/`runAsUser` that matches the mover-Pod identity.
+- When the workload needs to **own** the files, run it with `runAsUser` set to the mover Pod's file UID (see the UID rule above).
+- When the workload only needs **group access** to the files, set `fsGroup` to the mover Pod's file GID (see the GID rule above); note that `fsGroup` changes group ownership and grants group access, not file UID ownership.
 - `chown` the restored data on the destination PVC before starting the workload.
-- Use direct mode (`--endpoint`) when file ownership must be preserved.
 
 `--encrypt` applies only to indirect (`--cloud-storage`) transfers. It does not change direct rsync transfers: direct mode sends rsync traffic through Crane's TLS stunnel tunnel, so its network traffic is already encrypted in transit. Indirect mode has no direct cluster-to-cluster rsync connection; `--encrypt` protects the temporary bucket objects and their names with rclone crypt.
 
