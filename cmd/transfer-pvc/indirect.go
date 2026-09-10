@@ -90,7 +90,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 
 		if t.Encrypt {
-			if strings.Contains(string(configData), "[encrypted]") {
+			if hasRcloneSection(configData, "encrypted") {
 				log.Debugf("Rclone config already contains an [encrypted] section")
 				return fmt.Errorf("rclone config already contains an [encrypted] section; remove it or omit --encrypt")
 			}
@@ -234,6 +234,30 @@ func (t *TransferPVCCommand) runIndirect() error {
 	fmt.Fprintf(os.Stderr, "Done.\n")
 
 	return nil
+}
+
+// hasRcloneSection reports whether configData contains an INI section with the
+// given name. It deliberately examines section-header lines rather than using
+// a whole-file substring search, so comments and ordinary setting values may
+// safely mention a section name.
+func hasRcloneSection(configData []byte, name string) bool {
+	header := "[" + name + "]"
+	for _, line := range strings.Split(string(configData), "\n") {
+		line = strings.TrimSpace(line)
+		if line == header {
+			return true
+		}
+
+		// INI permits a comment after a section header. Do not accept a prefix
+		// such as "[encrypted]-backup" as the generated "encrypted" remote.
+		if strings.HasPrefix(line, header) {
+			remainder := strings.TrimSpace(strings.TrimPrefix(line, header))
+			if strings.HasPrefix(remainder, "#") || strings.HasPrefix(remainder, ";") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger) error {
