@@ -1058,6 +1058,87 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string, 
 	return &uid, nil
 }
 
+// verifyRcloneInImage runs a short-lived pod that execs "rclone --version" with
+// the given image and the mover pod's security context, confirming the image
+// ships a runnable rclone binary before crane commits any side effects.
+func verifyRcloneInImage(c client.Client, namespace string, image string, secCtx corev1.PodSecurityContext) error {
+	resolved := rsyncTransferImage(image)
+	podName := fmt.Sprintf("crane-rclone-check-%x", sha256.Sum256([]byte(resolved)))
+	if len(podName) > 63 {
+		podName = podName[:63]
+	}
+
+	nsName := types.NamespacedName{Name: podName, Namespace: namespace}
+	checkPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy:   corev1.RestartPolicyNever,
+			SecurityContext: &secCtx,
+			Containers: []corev1.Container{
+				{
+					Name:    "rclone-check",
+					Image:   resolved,
+					Command: []string{"rclone", "--version"},
+				},
+			},
+		},
+	}
+
+	// Best-effort removal of any stale check pod from a previous run so Create
+	// succeeds (the pod name is deterministic per image).
+	_ = c.Delete(context.TODO(), checkPod)
+	_ = wait.PollUntilContextTimeout(context.TODO(), time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		return errors.IsNotFound(c.Get(ctx, nsName, &corev1.Pod{})), nil
+	})
+
+	if err := c.Create(context.TODO(), checkPod); err != nil {
+		return fmt.Errorf("creating rclone-check pod: %w", err)
+	}
+	defer func() {
+		_ = c.Delete(context.TODO(), checkPod)
+	}()
+
+	// Allow generous time for a cold image pull; once pulled, "rclone version"
+	// (or its StartError when the binary is missing) resolves in seconds.
+	if err := wait.PollUntilContextTimeout(context.TODO(), 2*time.Second, 180*time.Second, true, func(ctx context.Context) (bool, error) {
+		pod := &corev1.Pod{}
+		if err := c.Get(ctx, nsName, pod); err != nil {
+			return false, nil
+		}
+		return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed, nil
+	}); err != nil {
+		// Surface a stuck-container reason (e.g. ErrImagePull) if we have one.
+		pod := &corev1.Pod{}
+		if getErr := c.Get(context.TODO(), nsName, pod); getErr == nil && len(pod.Status.ContainerStatuses) > 0 {
+			if w := pod.Status.ContainerStatuses[0].State.Waiting; w != nil {
+				return fmt.Errorf("timed out verifying rclone in image %q: container waiting (%s): %s",
+					resolved, w.Reason, strings.TrimSpace(w.Message))
+			}
+		}
+		return fmt.Errorf("timed out verifying rclone in image %q: %w", resolved, err)
+	}
+
+	pod := &corev1.Pod{}
+	if err := c.Get(context.TODO(), nsName, pod); err != nil {
+		return fmt.Errorf("getting rclone-check pod status: %w", err)
+	}
+	if len(pod.Status.ContainerStatuses) == 0 || pod.Status.ContainerStatuses[0].State.Terminated == nil {
+		return fmt.Errorf("could not verify rclone in image %q: rclone-check pod %s/%s did not terminate normally",
+			resolved, namespace, podName)
+	}
+
+	terminated := pod.Status.ContainerStatuses[0].State.Terminated
+	if terminated.ExitCode != 0 {
+		return fmt.Errorf(
+			"image %q cannot run rclone, which indirect transfer (--cloud-storage) requires (reason %q): %s; use an rsync-transfer image that includes the rclone binary",
+			resolved, terminated.Reason, strings.TrimSpace(terminated.Message))
+	}
+	return nil
+}
+
 func getSourcePodSecurityContext(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
 	return getIDsForNamespace(c, namespace, pvcName, image)
 }

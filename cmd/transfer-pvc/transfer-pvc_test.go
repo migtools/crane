@@ -902,6 +902,107 @@ func TestGetIDsForNamespace_InspectUsesTransferImage(t *testing.T) {
 	}
 }
 
+func TestVerifyRcloneInImage(t *testing.T) {
+	tests := []struct {
+		name       string
+		image      string
+		terminated *corev1.ContainerStateTerminated
+		phase      corev1.PodPhase
+		wantErr    bool
+		wantErrHas string
+		wantImage  string
+	}{
+		{
+			name:       "rclone present: probe exits 0",
+			image:      "example.invalid/rsync-custom:has-rclone",
+			phase:      corev1.PodSucceeded,
+			terminated: &corev1.ContainerStateTerminated{ExitCode: 0},
+			wantErr:    false,
+			wantImage:  "example.invalid/rsync-custom:has-rclone",
+		},
+		{
+			name:  "rclone absent: container cannot start",
+			image: "example.invalid/rsync-custom:no-rclone",
+			phase: corev1.PodFailed,
+			terminated: &corev1.ContainerStateTerminated{
+				ExitCode: 128,
+				Reason:   "StartError",
+				Message:  `exec: "rclone": executable file not found in $PATH`,
+			},
+			wantErr:    true,
+			wantErrHas: "executable file not found",
+			wantImage:  "example.invalid/rsync-custom:no-rclone",
+		},
+		{
+			name:       "empty image falls back to library default",
+			image:      "",
+			phase:      corev1.PodSucceeded,
+			terminated: &corev1.ContainerStateTerminated{ExitCode: 0},
+			wantErr:    false,
+			wantImage:  transport.DefaultRsyncTransferImage,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scheme := newTestScheme()
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "probe-ns"}}
+
+			var gotImage string
+			var gotCommand []string
+			c := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithRuntimeObjects(ns).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, cli client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						if pod, ok := obj.(*corev1.Pod); ok && len(pod.Spec.Containers) > 0 {
+							gotImage = pod.Spec.Containers[0].Image
+							gotCommand = pod.Spec.Containers[0].Command
+						}
+						return cli.Create(ctx, obj, opts...)
+					},
+					Get: func(ctx context.Context, cli client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if err := cli.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						pod, ok := obj.(*corev1.Pod)
+						if !ok {
+							return nil
+						}
+						pod.Status.Phase = tt.phase
+						pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+							State: corev1.ContainerState{Terminated: tt.terminated},
+						}}
+						return nil
+					},
+				}).
+				Build()
+
+			err := verifyRcloneInImage(c, "probe-ns", tt.image, corev1.PodSecurityContext{})
+			if tt.wantErr && err == nil {
+				t.Fatal("expected an error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.wantErr {
+				if !strings.Contains(err.Error(), tt.wantErrHas) {
+					t.Errorf("error %q should contain %q", err.Error(), tt.wantErrHas)
+				}
+				if !strings.Contains(err.Error(), tt.wantImage) {
+					t.Errorf("error %q should name the image %q", err.Error(), tt.wantImage)
+				}
+			}
+			if gotImage != tt.wantImage {
+				t.Errorf("probe pod image = %q, want %q", gotImage, tt.wantImage)
+			}
+			if len(gotCommand) != 2 || gotCommand[0] != "rclone" || gotCommand[1] != "--version" {
+				t.Errorf("probe pod command = %v, want [rclone --version]", gotCommand)
+			}
+		})
+	}
+}
+
 func TestGetSecurityContextFromWorkload_NoWorkloads(t *testing.T) {
 	scheme := newTestScheme()
 

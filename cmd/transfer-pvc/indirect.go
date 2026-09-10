@@ -138,6 +138,24 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 	}
 
+	// Compute the source pod security context now so the rclone-image probe
+	// below runs with the same context the upload pod will use, and reuse it
+	// when building the transfer.
+	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.SourceImage)
+	if err != nil {
+		log.Warnf("Could not determine source security context: %v", err)
+		uploadSecCtx = &corev1.PodSecurityContext{}
+	}
+
+	// Indirect transfer runs rclone as the pod entrypoint. Verify SourceImage
+	// provides rclone before creating the destination PVC, so an image without it
+	// fails clearly here rather than later with an opaque pod failure.
+	fmt.Fprintf(os.Stderr, "Verifying rclone is available in the transfer image ...\n")
+	if err := verifyRcloneInImage(srcClient, srcPVC.Namespace, t.SourceImage, *uploadSecCtx); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Verifying rclone is available in the transfer image ... ok\n")
+
 	// Create destination PVC
 	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
 	destPVC := t.buildDestinationPVC(srcPVC)
@@ -148,14 +166,9 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
 
-	// Get security contexts for source and target separately
-	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.SourceImage)
-	if err != nil {
-		log.Warnf("Could not determine source security context: %v", err)
-		uploadSecCtx = &corev1.PodSecurityContext{}
-	}
-
-	// Indirect transfer uses a single Image (SourceImage) for upload and download.
+	// Get the target security context (uploadSecCtx was computed earlier for the
+	// rclone-image probe). Indirect transfer uses a single Image (SourceImage)
+	// for upload and download.
 	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.SourceImage)
 	if err != nil {
 		log.Warnf("Could not determine target security context: %v", err)
