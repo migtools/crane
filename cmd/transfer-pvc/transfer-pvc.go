@@ -132,7 +132,7 @@ func (p *PvcFlags) Validate() error {
 		return fmt.Errorf("source pvc name cannot be empty")
 	}
 	if p.Name.destination == "" {
-		return fmt.Errorf("destnation pvc name cannot be empty")
+		return fmt.Errorf("destination pvc name cannot be empty")
 	}
 	if p.Namespace.source == "" {
 		return fmt.Errorf("source pvc namespace cannot be empty")
