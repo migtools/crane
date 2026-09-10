@@ -70,6 +70,7 @@ func TestCreateDestinationPVC(t *testing.T) {
 		name                  string
 		requestedStorageClass string
 		existingStorageClass  *string
+		objects               []client.Object
 		deletionTimestamp     *metav1.Time
 		wantErr               string
 	}{
@@ -93,6 +94,42 @@ func TestCreateDestinationPVC(t *testing.T) {
 			name:                 "accepts existing PVC when no storage class was requested",
 			existingStorageClass: storageClass("crane-sc02-target"),
 		},
+		{
+			name: "rejects existing PVC mounted by a running pod without requested storage class",
+			objects: []client.Object{&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "target-app", Namespace: "test-ns"},
+				Spec: corev1.PodSpec{
+					NodeName: "worker-1",
+					Volumes: []corev1.Volume{{
+						Name: "data",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "test-pvc"},
+						},
+					}},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}},
+			existingStorageClass: storageClass("standard-v2"),
+			wantErr:              `destination PVC test-ns/test-pvc is in use by pod "target-app"; scale it down before transferring`,
+		},
+		{
+			name: "rejects existing PVC referenced by a pending pod with an init container",
+			objects: []client.Object{&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "target-app-initializing", Namespace: "test-ns"},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{{Name: "init", Image: "busybox:1.36"}},
+					Volumes: []corev1.Volume{{
+						Name: "data",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "test-pvc"},
+						},
+					}},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodPending},
+			}},
+			existingStorageClass: storageClass("standard-v2"),
+			wantErr:              `destination PVC test-ns/test-pvc is in use by pod "target-app-initializing"; scale it down before transferring`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -101,7 +138,8 @@ func TestCreateDestinationPVC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pvc", Namespace: "test-ns"},
 				Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: tt.existingStorageClass},
 			}
-			builder := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(existing)
+			objects := append([]client.Object{existing}, tt.objects...)
+			builder := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objects...)
 			if tt.deletionTimestamp != nil {
 				builder.WithInterceptorFuncs(interceptor.Funcs{
 					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {

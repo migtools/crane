@@ -710,26 +710,53 @@ func getValidatedResourceName(name string) string {
 	}
 }
 
-// getNodeNameForPVC returns name of the node on which the PVC is currently mounted on
-// returns name of the node as a string, and an error
-func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string) (string, error) {
+// getRunningPodUsingPVC returns the running pod that mounts pvcName, if any.
+func getRunningPodUsingPVC(c client.Client, namespace string, pvcName string) (*corev1.Pod, error) {
+	return getPodUsingPVC(c, namespace, pvcName, func(pod *corev1.Pod) bool {
+		return pod.Status.Phase == corev1.PodRunning
+	})
+}
+
+// getActivePodUsingPVC returns a non-terminal pod that references pvcName, if any.
+// Pending pods are included because Kubernetes may attach and mount a PVC before
+// an init container or application container starts.
+func getActivePodUsingPVC(c client.Client, namespace string, pvcName string) (*corev1.Pod, error) {
+	return getPodUsingPVC(c, namespace, pvcName, func(pod *corev1.Pod) bool {
+		return pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed
+	})
+}
+
+func getPodUsingPVC(c client.Client, namespace string, pvcName string, include func(*corev1.Pod) bool) (*corev1.Pod, error) {
 	podList := corev1.PodList{}
-	err := srcClient.List(context.TODO(), &podList, client.InNamespace(namespace))
-	if err != nil {
-		return "", err
+	if err := c.List(context.TODO(), &podList, client.InNamespace(namespace)); err != nil {
+		return nil, err
 	}
-	for _, pod := range podList.Items {
-		if pod.Status.Phase == corev1.PodRunning {
-			for _, vol := range pod.Spec.Volumes {
-				if vol.PersistentVolumeClaim != nil {
-					if vol.PersistentVolumeClaim.ClaimName == pvcName {
-						return pod.Spec.NodeName, nil
-					}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if !include(pod) {
+			continue
+		}
+		for _, vol := range pod.Spec.Volumes {
+			if vol.PersistentVolumeClaim != nil {
+				if vol.PersistentVolumeClaim.ClaimName == pvcName {
+					return pod, nil
 				}
 			}
 		}
 	}
-	return "", nil
+	return nil, nil
+}
+
+// getNodeNameForPVC returns the name of the node on which the PVC is currently mounted.
+func getNodeNameForPVC(c client.Client, namespace string, pvcName string) (string, error) {
+	pod, err := getRunningPodUsingPVC(c, namespace, pvcName)
+	if err != nil {
+		return "", err
+	}
+	if pod == nil {
+		return "", nil
+	}
+	return pod.Spec.NodeName, nil
 }
 
 func getIDsForNamespace(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
@@ -1289,8 +1316,9 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	return pvc
 }
 
-// createDestinationPVC creates the destination PVC, validating that an
-// existing PVC is not terminating and its storage class when requested.
+// createDestinationPVC creates the destination PVC, ensuring an existing PVC
+// is neither terminating nor referenced by a non-terminal pod, and validating
+// its storage class when --dest-storage-class was requested.
 func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
 	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
 		return nil
@@ -1304,6 +1332,14 @@ func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.
 	}
 	if existing.DeletionTimestamp != nil {
 		return fmt.Errorf("destination PVC %q is terminating; transfer cannot proceed until it has been fully deleted. Remove the finalizer blocking deletion or wait for deletion to complete, then retry", client.ObjectKeyFromObject(existing))
+	}
+
+	pod, err := getActivePodUsingPVC(c, existing.Namespace, existing.Name)
+	if err != nil {
+		return fmt.Errorf("checking whether destination PVC %s/%s is in use: %w", existing.Namespace, existing.Name, err)
+	}
+	if pod != nil {
+		return fmt.Errorf("destination PVC %s/%s is in use by pod %q; scale it down before transferring", existing.Namespace, existing.Name, pod.Name)
 	}
 
 	if t.PVC.StorageClassName == "" {
