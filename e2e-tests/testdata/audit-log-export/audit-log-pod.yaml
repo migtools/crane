@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: validate-core-v1-plural-pod
+  namespace: validate-core-v1-plural
+spec:
+  containers:
+    - name: busybox
+      image: busybox:latest
+      command: ["sh", "-c", "exit 0"]
+  restartPolicy: Never
