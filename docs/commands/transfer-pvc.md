@@ -173,22 +173,24 @@ Do not use `--rclone-config-file` with `--rclone-config-secret`.
 
 - **Data Retention**: By default, Crane runs a cloud cleanup after download. `--keep-cloud-data` skips that cleanup and leaves the transferred object prefix in the bucket. Cleanup failures are reported as non-fatal warnings.
 - **Encryption**: `--encrypt` enables rclone client-side encryption of data stored in the intermediate bucket. It is separate from transport encryption and any bucket-side encryption.
-- **File ownership**: Indirect mode preserves file **contents**, **permissions (mode bits)**, and **directory structure**, but **not** file ownership (UID/GID). See [Limitation: file ownership is not preserved](#limitation-file-ownership-uidgid-is-not-preserved) below.
+- **File ownership**: Both transfer modes preserve file **contents**, **permissions (mode bits)**, and **directory structure**. Original file ownership (UID/GID) is generally **not** preserved when the mover Pod runs as non-root, which is the norm. See [Note: file ownership (UID/GID) is normalized on transfer](#note-file-ownership-uidgid-is-normalized-on-transfer) below.
 
-##### Limitation: file ownership (UID/GID) is not preserved
+##### Note: file ownership (UID/GID) is normalized on transfer
 
-In indirect mode, restored files do **not** keep their original owner/group. During the download step, crane-lib rewrites every file's ownership to the resolved download security context by appending `--metadata-set uid=<N> --metadata-set gid=<N>` to the rclone `sync` command that runs in the destination (mover) Pod. The values are derived as follows:
+Preserving original UID/GID requires the receiving process to run as root, which crane's mover Pods normally do not. As a result, restored files generally do **not** keep their original owner/group. This affects both transfer modes, and changing UIDs is expected when moving data between clusters. The two modes differ in *how* ownership is resolved:
 
-- **UID** is `RunAsUser` when it is set, otherwise it falls back to **65534 (nobody)**.
-- **GID** is `RunAsGroup` when set, otherwise `FSGroup` when set, otherwise the resolved UID above (so **65534** only when `RunAsUser` is also unset).
+- **Direct mode** runs rsync with `--owner`/`--group`. As root these preserve the original UID/GID; as a non-root Pod (the common case) rsync cannot restore arbitrary owners and silently maps files to the UID it runs as. The transfer still succeeds.
+- **Indirect mode** explicitly rewrites ownership. During download, crane-lib appends `--metadata-set uid=<N> --metadata-set gid=<N>` to the rclone `sync` command in the destination (mover) Pod, so files are always set to the resolved download security context, never the original owner. The values are derived as follows:
+  - **UID** is `RunAsUser` when it is set, otherwise it falls back to **65534 (nobody)**.
+  - **GID** is `RunAsGroup` when set, otherwise `FSGroup` when set, otherwise the resolved UID above (so **65534** only when `RunAsUser` is also unset).
 
-This is intentional. rclone treats a failed `chown` as a fatal error and discards the file, and a non-root mover Pod cannot restore an arbitrary source UID/GID, so ownership is normalized to the resolved download security context (the UID/GID rules above) to let the transfer complete.
+  This is intentional: rclone treats a failed `chown` as a fatal error and discards the file, and a non-root mover Pod cannot restore an arbitrary source UID/GID, so ownership is normalized to let the transfer complete.
 
-**Impact:** workloads that depend on specific file ownership — for example, a database that expects its data directory owned by a service UID, or files that must be group-readable by a specific GID — may fail to start or misbehave after an indirect transfer until ownership is corrected on the destination.
+**Impact:** In most cases the migrated workload can access its data regardless of the exact owning UID, so no action is needed. Ownership only matters for workloads that require a specific owner — for example, a database that expects its data directory owned by a service UID, or files that must be group-readable by a specific GID — which may fail to start or misbehave until ownership is corrected on the destination.
 
-**Workarounds:**
-- When the workload needs to **own** the files, run it with `runAsUser` set to the mover Pod's file UID (see the UID rule above).
-- When the workload only needs **group access** to the files, set `fsGroup` to the mover Pod's file GID (see the GID rule above); note that `fsGroup` changes group ownership and grants group access, not file UID ownership.
+**If your workload requires specific ownership:**
+- When the workload needs to **own** the files, run it with `runAsUser` set to the mover Pod's file UID (see the indirect-mode UID rule above).
+- When the workload only needs **group access** to the files, set `fsGroup` to the mover Pod's file GID (see the indirect-mode GID rule above); note that `fsGroup` changes group ownership and grants group access, not file UID ownership.
 - `chown` the restored data on the destination PVC before starting the workload.
 
 `--encrypt` applies only to indirect (`--cloud-storage`) transfers. It does not change direct rsync transfers: direct mode sends rsync traffic through Crane's TLS stunnel tunnel, so its network traffic is already encrypted in transit. Indirect mode has no direct cluster-to-cluster rsync connection; `--encrypt` protects the temporary bucket objects and their names with rclone crypt.
