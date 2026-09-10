@@ -501,11 +501,14 @@ current-context: existing-context
 	}
 	cf.KubeConfig = &kc
 
+	tempDir := t.TempDir()
 	o := &ValidateOptions{
 		log:          logrus.StandardLogger(),
 		configFlags:  cf,
-		globalFlags:  &flags.GlobalFlags{},
-		inputDir:     t.TempDir(),
+		globalFlags: &flags.GlobalFlags{
+			AuditLogPath: filepath.Join(tempDir, "test-audit.log"),
+		},
+		inputDir:     tempDir,
 		outputFormat: "json",
 	}
 
@@ -524,11 +527,14 @@ current-context: existing-context
 }
 
 func TestComplete_SkippedInOfflineMode(t *testing.T) {
+	tempDir := t.TempDir()
 	o := &ValidateOptions{
 		log:              logrus.StandardLogger(),
 		configFlags:      genericclioptions.NewConfigFlags(true),
-		globalFlags:      &flags.GlobalFlags{},
-		inputDir:         t.TempDir(),
+		globalFlags: &flags.GlobalFlags{
+			AuditLogPath: filepath.Join(tempDir, "test-audit.log"),
+		},
+		inputDir:         tempDir,
 		outputFormat:     "json",
 		apiResourcesFile: "/some/file.json",
 	}

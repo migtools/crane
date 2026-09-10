@@ -42,7 +42,7 @@ func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize audit logger: %w", err)
 	}
-    o.log=log
+	o.log = log
 
 	kubeconfigFlag := c.Flags().Lookup("kubeconfig")
 	if kubeconfigFlag == nil || !kubeconfigFlag.Changed {

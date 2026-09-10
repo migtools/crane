@@ -60,7 +60,7 @@ func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize audit logger: %w", err)
 	}
-    o.log=logger
+	o.log = logger
 	log := o.log
 
 	if c != nil {
