@@ -13,6 +13,25 @@ import (
 	"github.com/onsi/ginkgo/v2/types"
 )
 
+// MongoDocumentCount returns the number of documents in sampledb.test_db via
+// mongosh exec into the given pod.
+func MongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error) {
+	out, err := k.Run(
+		"exec", podName, "-n", namespace, "--",
+		"mongosh", "sampledb",
+		"--eval", "db.test_db.countDocuments()",
+		"--quiet",
+	)
+	if err != nil {
+		return 0, fmt.Errorf("count MongoDB documents in pod %q in namespace %q: %w", podName, namespace, err)
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse document count %q: %w", strings.TrimSpace(out), err)
+	}
+	return count, nil
+}
+
 // mtaIDPattern matches MTA ticket references like [MTA-801] in spec descriptions.
 var mtaIDPattern = regexp.MustCompile(`\[MTA-\d+\]`)
 
