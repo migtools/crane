@@ -180,7 +180,7 @@ Do not use `--rclone-config-file` with `--rclone-config-secret`.
 Preserving original UID/GID requires the receiving process to run as root, which crane's mover Pods normally do not. As a result, restored files generally do **not** keep their original owner/group. This affects both transfer modes, and changing UIDs is expected when moving data between clusters. The two modes differ in *how* ownership is resolved:
 
 - **Direct mode** runs rsync with `--owner`/`--group`. As root these preserve the original UID/GID; as a non-root Pod (the common case) rsync cannot restore arbitrary owners and silently maps files to the UID it runs as. The transfer still succeeds.
-- **Indirect mode** explicitly rewrites ownership. During download, crane-lib appends `--metadata-set uid=<N> --metadata-set gid=<N>` to the rclone `sync` command in the destination (mover) Pod, so files are always set to the resolved download security context, never the original owner. The values are derived as follows:
+- **Indirect mode** explicitly rewrites ownership. Internally (not a user-facing option), crane sets ownership metadata on every downloaded file so files always match the resolved download security context, not the original owner. The values are derived as follows:
   - **UID** is `RunAsUser` when it is set, otherwise it falls back to **65534 (nobody)**.
   - **GID** is `RunAsGroup` when set, otherwise `FSGroup` when set, otherwise the resolved UID above (so **65534** only when `RunAsUser` is also unset).
 
