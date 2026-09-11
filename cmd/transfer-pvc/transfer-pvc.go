@@ -1063,16 +1063,10 @@ func inspectPVCFileOwnership(c client.Client, namespace string, pvcName string, 
 // ships a runnable rclone binary before crane commits any side effects.
 func verifyRcloneInImage(c client.Client, namespace string, image string, secCtx corev1.PodSecurityContext) error {
 	resolved := rsyncTransferImage(image)
-	podName := fmt.Sprintf("crane-rclone-check-%x", sha256.Sum256([]byte(resolved)))
-	if len(podName) > 63 {
-		podName = podName[:63]
-	}
-
-	nsName := types.NamespacedName{Name: podName, Namespace: namespace}
 	checkPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName,
-			Namespace: namespace,
+			GenerateName: "crane-rclone-check-",
+			Namespace:    namespace,
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:   corev1.RestartPolicyNever,
@@ -1087,18 +1081,15 @@ func verifyRcloneInImage(c client.Client, namespace string, image string, secCtx
 		},
 	}
 
-	// Best-effort removal of any stale check pod from a previous run so Create
-	// succeeds (the pod name is deterministic per image).
-	_ = c.Delete(context.TODO(), checkPod)
-	_ = wait.PollUntilContextTimeout(context.TODO(), time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
-		return errors.IsNotFound(c.Get(ctx, nsName, &corev1.Pod{})), nil
-	})
-
 	if err := c.Create(context.TODO(), checkPod); err != nil {
 		return fmt.Errorf("creating rclone-check pod: %w", err)
 	}
+	podName := checkPod.Name
+	nsName := types.NamespacedName{Name: podName, Namespace: namespace}
 	defer func() {
-		_ = c.Delete(context.TODO(), checkPod)
+		if err := c.Delete(context.TODO(), checkPod); err != nil && !errors.IsNotFound(err) {
+			log.Printf("failed to delete rclone-check pod %s/%s: %v", namespace, podName, err)
+		}
 	}()
 
 	// Allow generous time for a cold image pull; once pulled, "rclone version"
