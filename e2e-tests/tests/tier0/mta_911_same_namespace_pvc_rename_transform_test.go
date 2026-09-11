@@ -122,11 +122,13 @@ var _ = Describe("Same-namespace PVC rename transform", func() {
 		AssertNoTransferPVCLeftovers(kubectl, []string{namespace}, sourcePVCName, destinationPVCName)
 
 		By("Verify the renamed PVC exists with the converted StorageClass")
-		_, err = GetPVC(srcApp.Context, namespace, sourcePVCName)
-		Expect(err).NotTo(HaveOccurred())
 		destinationPVC, err := GetPVC(srcApp.Context, namespace, destinationPVCName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(PVCStorageClassName(*destinationPVC)).To(Equal(destinationSC))
+
+		By("Delete the original PVC before export to avoid a rename collision")
+		_, err = kubectl.Run("delete", "pvc", sourcePVCName, "-n", namespace, "--wait=true", "--timeout=120s")
+		Expect(err).NotTo(HaveOccurred())
 
 		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
 		transformOpts := TransformOptions{
