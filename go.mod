@@ -2,8 +2,6 @@ module github.com/konveyor/crane
 
 go 1.25.0
 
-replace github.com/konveyor/crane-lib => github.com/aufi/crane-lib v0.0.0-20260909123528-92875874f73d
-
 require (
 	github.com/bombsimon/logrusr/v3 v3.0.0
 	github.com/evanphx/json-patch v5.9.11+incompatible
@@ -12,7 +10,7 @@ require (
 	github.com/google/gnostic-models v0.7.0
 	github.com/google/go-cmp v0.7.0
 	github.com/jarcoal/httpmock v1.2.0
-	github.com/konveyor/crane-lib v0.1.6-0.20260904122213-e20819ac61ad
+	github.com/konveyor/crane-lib v0.1.6-0.20260911111740-f8e16a055cd6
 	github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/onsi/ginkgo/v2 v2.28.1
