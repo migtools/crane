@@ -29,20 +29,24 @@ type StageArtifact struct {
 
 // Orchestrator coordinates multi-stage transform execution
 type Orchestrator struct {
-	Log            *logrus.Logger
-	ExportDir      string
-	TransformDir   string
-	PluginDir      string
-	SkipPlugins    []string
-	OptionalFlags  map[string]string
+	Log                *logrus.Logger
+	ExportDir          string
+	TransformDir       string
+	PluginDir          string
+	SkipPlugins        []string
+	OptionalFlags      map[string]string
 	StageOptionalFlags map[string]map[string]string
-	Overwrite      bool
-	CraneVersion   string
+	Overwrite          bool
+	CraneVersion       string
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
 	// This prevents double-write errors when creating a stage and then running it
 	NewlyCreatedStages map[string]bool
 	// KustomizeArgs holds additional arguments for embedded kustomize (e.g. helm options)
 	KustomizeArgs []string
+	// StageKustomizeFragments holds per-stage inline kustomize fragments, keyed by
+	// stage plugin/base name (e.g. "KubernetesPlugin"). Each fragment is merged
+	// into the generated kustomization.yaml for that stage.
+	StageKustomizeFragments map[string]map[string]interface{}
 }
 
 func (o *Orchestrator) validateStageOptionalFlags(stages []Stage) error {
@@ -64,6 +68,35 @@ func (o *Orchestrator) validateStageOptionalFlags(stages []Stage) error {
 		}
 	}
 	return nil
+}
+
+func (o *Orchestrator) validateStageKustomizeFragments(stages []Stage) error {
+	if len(o.StageKustomizeFragments) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(stages))
+	for _, s := range stages {
+		known[s.PluginName] = true
+	}
+	for name := range o.StageKustomizeFragments {
+		if !known[name] {
+			names := make([]string, len(stages))
+			for i, s := range stages {
+				names[i] = s.PluginName
+			}
+			return fmt.Errorf("per-stage kustomize fragment references unknown stage %q (known stages: %s)", name, strings.Join(names, ", "))
+		}
+	}
+	return nil
+}
+
+// resolveKustomizeFragment returns the inline kustomize fragment configured for
+// the given stage, or nil if none is defined.
+func (o *Orchestrator) resolveKustomizeFragment(stage Stage) map[string]interface{} {
+	if o.StageKustomizeFragments == nil {
+		return nil
+	}
+	return o.StageKustomizeFragments[stage.PluginName]
 }
 
 func (o *Orchestrator) resolveOptionalFlags(stage Stage) map[string]string {
@@ -115,6 +148,10 @@ func (o *Orchestrator) RunMultiStage(stageSelector StageSelector) error {
 
 	if err := o.validateStageOptionalFlags(selectedStages); err != nil {
 		o.Log.Errorf("Invalid stage optional flags: %v", err)
+		return err
+	}
+
+	if err := o.validateStageKustomizeFragments(selectedStages); err != nil {
 		return err
 	}
 
@@ -244,6 +281,7 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 	}
 
 	writer := NewKustomizeWriter(opts, stage.DirName, o.Log)
+	writer.kustomizeFragment = o.resolveKustomizeFragment(stage)
 	if err := writer.WriteStage(artifacts, forceWrite); err != nil {
 		o.Log.Errorf("Stage %s: failed to write stage: %v", stage.DirName, err)
 		return err

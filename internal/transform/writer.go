@@ -11,6 +11,7 @@ import (
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/konveyor/crane-lib/transform/kustomize"
 	"github.com/konveyor/crane/internal/file"
+	internalkustomize "github.com/konveyor/crane/internal/kustomize"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
@@ -21,6 +22,9 @@ type KustomizeWriter struct {
 	opts      file.PathOpts
 	stageName string
 	log       *logrus.Logger
+	// kustomizeFragment is an optional inline kustomize fragment merged into the
+	// generated kustomization.yaml for this stage. Nil means no fragment.
+	kustomizeFragment map[string]interface{}
 }
 
 // NewKustomizeWriter creates a new KustomizeWriter for a specific stage
@@ -391,6 +395,16 @@ func (w *KustomizeWriter) generateKustomizationWithComments(resources []string, 
 	if err != nil {
 		w.log.Errorf("Failed to generate kustomization for stage %s: %v", w.stageName, err)
 		return nil, err
+	}
+
+	// Merge an optional user-provided kustomize fragment into the generated
+	// kustomization.yaml. When no fragment is configured the base is unchanged,
+	// preserving the exact output (and golden manifests) for the common case.
+	if len(w.kustomizeFragment) > 0 {
+		baseYAML, err = internalkustomize.MergeFragment(baseYAML, w.kustomizeFragment)
+		if err != nil {
+			return nil, fmt.Errorf("failed to merge kustomize fragment for stage %s: %w", w.stageName, err)
+		}
 	}
 
 	// If no whiteout comments, return as-is

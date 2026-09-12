@@ -26,8 +26,9 @@ var rootSequenceInstructionsRegex = regexp.MustCompile(`line ([0-9]+): cannot un
 // It can be specified as either a plain string (just the name) or an object
 // with name and optional per-stage flags.
 type StageEntry struct {
-	Name      string            `yaml:"name"`
-	Optionals map[string]string `yaml:"optionals,omitempty"`
+	Name      string                 `yaml:"name"`
+	Optionals map[string]string      `yaml:"optionals,omitempty"`
+	Kustomize map[string]interface{} `yaml:"kustomize,omitempty"`
 }
 
 type InstructionsFile struct {
@@ -70,8 +71,8 @@ func (f *InstructionsFile) UnmarshalYAML(value *yamlv3.Node) error {
 			// Check for unknown keys in the stage entry
 			for j := 0; j+1 < len(node.Content); j += 2 {
 				key := node.Content[j].Value
-				if key != "name" && key != "optionals" {
-					return fmt.Errorf("stage at index %d: unknown field %q (supported fields: name, optionals)", i, key)
+				if key != "name" && key != "optionals" && key != "kustomize" {
+					return fmt.Errorf("stage at index %d: unknown field %q (supported fields: name, optionals, kustomize)", i, key)
 				}
 			}
 			f.Stages = append(f.Stages, entry)
@@ -190,6 +191,19 @@ func (f *InstructionsFile) StageOptionals() (map[string]map[string]string, error
 		}
 	}
 	return result, nil
+}
+
+// StageKustomize returns a map of stage name to inline kustomize fragment for
+// stages that have a per-stage kustomize fragment defined. Stages without a
+// fragment are omitted.
+func (f *InstructionsFile) StageKustomize() map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{})
+	for _, s := range f.Stages {
+		if len(s.Kustomize) > 0 {
+			result[s.Name] = s.Kustomize
+		}
+	}
+	return result
 }
 
 // GenerateStageDirNames converts ordered stage tokens into deterministic stage
