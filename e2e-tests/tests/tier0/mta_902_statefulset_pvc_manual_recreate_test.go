@@ -86,11 +86,12 @@ var _ = Describe("StatefulSet PVC manual recreate conversion", func() {
 		destSCName, cleanupDestSC, err = PrepareDestinationStorageClass(scenario.SrcApp.Context, srcSC, fallbackDestSCName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(destSCName).NotTo(Equal(srcSC))
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, srcSC, destSCName)
 
 		By("Render crane output for the migrated namespace")
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
-		Expect(utils.AssertNoKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
+		Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
 
 		nodeIP, err := GetClusterNodeIP(scenario.SrcApp.Context)
 		Expect(err).NotTo(HaveOccurred())

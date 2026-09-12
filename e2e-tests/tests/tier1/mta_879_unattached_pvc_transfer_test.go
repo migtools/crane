@@ -117,8 +117,8 @@ var _ = Describe("Unattached PVC transfer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.Join(exportFiles, "\n")).To(ContainSubstring("PersistentVolumeClaim"))
 
-		By("Verify output excludes PVC manifests because PVCs are migrated separately")
-		Expect(utils.AssertNoKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
+		By("Verify output includes the unattached PVC manifest")
+		Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
 
 		By("Transfer the unattached PVC explicitly")
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)

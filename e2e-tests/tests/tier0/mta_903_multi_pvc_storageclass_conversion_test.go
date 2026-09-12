@@ -9,6 +9,7 @@ import (
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -154,9 +155,14 @@ var _ = Describe("Cross-cluster multi-PVC StorageClass conversion", func() {
 
 		By("Run crane export/transform/apply pipeline")
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
-		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		transformOpts := TransformOptions{
+			ExportDir:     paths.ExportDir,
+			TransformDir:  paths.TransformDir,
+			OptionalFlags: fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceSC, destSCName),
+		}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
+		Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
 
 		By("Transfer each MySQL PVC sequentially onto the destination StorageClass")
 		tgtIP, err := GetClusterNodeIP(scenario.KubectlTgt.Context)
