@@ -58,7 +58,11 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
 	o.globalFlags.SetCmdName("transform")
-	o.log = o.globalFlags.GetLoggerOrDefault()
+	logger, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return fmt.Errorf("failed to initialize audit logger: %w", err)
+	}
+	o.log = logger
 	return nil
 }
 
@@ -108,7 +112,10 @@ func getPluginCompletions(f *flags.GlobalFlags) func(cmd *cobra.Command, args []
 
 		// Get plugin names using shared function
 		f.SetCmdName("transform")
-		log := f.GetLoggerOrDefault()
+		log, err := f.GetLoggerOrDefault()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
 		pluginNames, err := listplugins.GetPluginNames(pluginDir, skipPlugins, log)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError

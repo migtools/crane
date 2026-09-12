@@ -36,9 +36,9 @@ func (g *GlobalFlags) SetCmdName(name string) {
 }
 
 // GetLoggerOrDefault returns the configured logger, or logrus.StandardLogger() if GlobalFlags is nil.
-func (g *GlobalFlags) GetLoggerOrDefault() *logrus.Logger {
+func (g *GlobalFlags) GetLoggerOrDefault() (*logrus.Logger, error) {
 	if g == nil {
-		return logrus.StandardLogger()
+		return logrus.StandardLogger(), nil
 	}
 	return g.GetLogger()
 }
@@ -49,7 +49,7 @@ func isCompletionMode() bool {
 	return len(os.Args) > 1 && (os.Args[1] == "__complete" || os.Args[1] == "__completeNoDesc")
 }
 
-func (g *GlobalFlags) GetLogger() *logrus.Logger {
+func (g *GlobalFlags) GetLogger() (*logrus.Logger, error) {
 	if g.logger == nil {
 		g.logger = logrus.New()
 		g.logger.SetLevel(logrus.DebugLevel)
@@ -63,10 +63,11 @@ func (g *GlobalFlags) GetLogger() *logrus.Logger {
 				g.logger.AddHook(fileHook)
 			} else {
 				g.logger.Warnf("Failed to open audit log file %s: %v", g.AuditLogPath, err)
+				return g.logger, err
 			}
 		}
 	}
-	return g.logger
+	return g.logger, nil
 }
 
 // Close releases the audit log file. Call this when the program exits.
@@ -87,6 +88,11 @@ func (g *GlobalFlags) initConfig() {
 		if err := viper.UnmarshalKey("audit-log", &g.AuditLogPath); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: invalid audit-log value in %s: %v\n", viper.ConfigFileUsed(), err)
 		}
-		g.GetLogger().Infof("Using config file: %v", viper.ConfigFileUsed())
+		logger, err := g.GetLogger()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to initialize audit logger: %v\n", err)
+		} else {
+			logger.Infof("Using config file: %v", viper.ConfigFileUsed())
+		}
 	}
 }

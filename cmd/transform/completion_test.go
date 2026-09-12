@@ -139,6 +139,7 @@ func TestGetPluginCompletions(t *testing.T) {
 
 			// Get the completion function
 			f := &flags.GlobalFlags{}
+			f.AuditLogPath = filepath.Join(t.TempDir(), "test-audit.log")
 			log := logrus.New()
 			log.SetOutput(os.Stderr)
 
@@ -175,7 +176,9 @@ func TestGetPluginCompletions_Integration(t *testing.T) {
 		t.Fatalf("failed to create plugin dir: %v", err)
 	}
 
-	f := &flags.GlobalFlags{}
+	f := &flags.GlobalFlags{
+		AuditLogPath: filepath.Join(tempDir, "test-audit.log"),
+	}
 
 	t.Run("default plugin is included", func(t *testing.T) {
 		cmd := &cobra.Command{Use: "test"}
