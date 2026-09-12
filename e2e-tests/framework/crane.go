@@ -3,6 +3,7 @@ package framework
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 )
@@ -26,6 +27,10 @@ type TransferPVCOptions struct {
 	CloudStorage       string
 	RcloneConfigFile   string
 	RcloneConfigSecret string
+	// DisableCloudStorage prevents the runner from inheriting the suite-wide
+	// cloud storage configuration. It is useful when direct and indirect
+	// transfer coverage run in the same E2E invocation.
+	DisableCloudStorage bool
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -199,7 +204,14 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 // Otherwise uses direct rsync/stunnel.
 // If Endpoint is empty in direct mode, it auto-detects: "route" on OpenShift, "nginx-ingress" on vanilla K8s.
 func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
-	if opts.CloudStorage == "" && config.CloudStorage != "" {
+	_, err := c.TransferPVCWithOutput(opts)
+	return err
+}
+
+// TransferPVCWithOutput runs crane transfer-pvc and returns its combined stdout
+// and stderr. This permits E2E tests to assert CLI progress and summary output.
+func (c CraneRunner) TransferPVCWithOutput(opts TransferPVCOptions) (string, error) {
+	if !opts.DisableCloudStorage && opts.CloudStorage == "" && config.CloudStorage != "" {
 		opts.CloudStorage = config.CloudStorage
 	}
 	if opts.RcloneConfigFile == "" && opts.RcloneConfigSecret == "" {
@@ -252,7 +264,31 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 	out, err := cmd.CombinedOutput()
 	logVerboseOutput("crane transfer-pvc", out)
 	if err != nil {
-		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
+		return string(out), fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
+	}
+	return string(out), nil
+}
+
+// AssertTransferPVCProgressOutput verifies that transfer-pvc emitted every
+// numbered phase and a successful final summary. Phase names intentionally
+// omit the completion suffix because the data-copy phase ends with "finished"
+// while the setup and cleanup phases end with "ok".
+func AssertTransferPVCProgressOutput(output string, totalPhases int, phaseNames []string, summary string) error {
+	for i, name := range phaseNames {
+		phase := fmt.Sprintf("[%d/%d] %s", i+1, totalPhases, name)
+		if !strings.Contains(output, phase) {
+			return fmt.Errorf("transfer-pvc output is missing progress phase %q", phase)
+		}
+	}
+
+	if !strings.Contains(output, "Summary\n-------") {
+		return fmt.Errorf("transfer-pvc output is missing the final summary")
+	}
+	if !strings.Contains(output, summary) {
+		return fmt.Errorf("transfer-pvc output is missing summary status %q", summary)
+	}
+	if !strings.Contains(output, "Done.") {
+		return fmt.Errorf("transfer-pvc output is missing completion marker")
 	}
 	return nil
 }
