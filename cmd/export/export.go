@@ -56,11 +56,8 @@ type ExportOptions struct {
 func (o *ExportOptions) Complete(c *cobra.Command, args []string) error {
 	var err error
 	o.globalFlags.SetCmdName("export")
-	logger, err := o.globalFlags.GetLoggerOrDefault()
-	if err != nil {
-		return fmt.Errorf("failed to initialize audit logger: %w", err)
-	}
-    o.log=logger
+	logger, _ := o.globalFlags.GetLoggerOrDefault()
+	o.log = logger
 	log := o.log
 
 	if c != nil {

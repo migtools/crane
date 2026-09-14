@@ -17,6 +17,7 @@ type GlobalFlags struct {
 	AuditLogPath string `mapstructure:"audit-log"`
 	cmdName      string
 	logger       *logrus.Logger
+	loggerErr    error
 	fileHook     *audit.FileHook
 }
 
@@ -63,11 +64,11 @@ func (g *GlobalFlags) GetLogger() (*logrus.Logger, error) {
 				g.logger.AddHook(fileHook)
 			} else {
 				g.logger.Warnf("Failed to open audit log file %s: %v", g.AuditLogPath, err)
-				return g.logger, err
+				g.loggerErr = err
 			}
 		}
 	}
-	return g.logger, nil
+	return g.logger, g.loggerErr
 }
 
 // Close releases the audit log file. Call this when the program exits.
@@ -88,6 +89,10 @@ func (g *GlobalFlags) initConfig() {
 		if err := viper.UnmarshalKey("audit-log", &g.AuditLogPath); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: invalid audit-log value in %s: %v\n", viper.ConfigFileUsed(), err)
 		}
+		// Note: initConfig() warns on audit logger failure but continues loading config.
+		// Complete() will fail hard if audit logging cannot be initialized, providing
+		// the actual enforcement. This asymmetry is intentional: config loading is
+		// prerequisite-level and should not fail on audit setup issues.
 		logger, err := g.GetLogger()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to initialize audit logger: %v\n", err)

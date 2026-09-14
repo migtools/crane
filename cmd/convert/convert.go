@@ -1,8 +1,6 @@
 package convert
 
 import (
-	"fmt"
-	
 	"github.com/konveyor/crane-lib/convert"
 	"github.com/konveyor/crane/internal/flags"
 	crlog "github.com/konveyor/crane/internal/log"
@@ -78,11 +76,8 @@ func (t *ConvertOptions) Complete(c *cobra.Command, args []string) error {
 	if t.debug {
 		t.globalFlags.Debug = true
 	}
-	logger, err := t.globalFlags.GetLoggerOrDefault()
-	if err != nil {
-		return fmt.Errorf("failed to initialize audit logger: %w", err)
-	}
-    t.Logger=logger
+	logger, _ := t.globalFlags.GetLoggerOrDefault()
+	t.Logger = logger
 	return nil
 }
 

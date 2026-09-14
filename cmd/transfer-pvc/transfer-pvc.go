@@ -206,10 +206,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 
 func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 	t.globalFlags.SetCmdName("transfer-pvc")
-	logger, err := t.globalFlags.GetLoggerOrDefault()
-	if err != nil {
-		return fmt.Errorf("failed to initialize audit logger: %w", err)
-	}
+	logger, _ := t.globalFlags.GetLoggerOrDefault()
 	t.log = logger
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
@@ -250,12 +247,8 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 func (t *TransferPVCCommand) Validate() error {
 	log := t.log
 	if log == nil {
-		logger, err := t.globalFlags.GetLoggerOrDefault()
-		if err != nil {
-			return fmt.Errorf("failed to initialize audit logger: %w", err)
-		}
+		logger, _ := t.globalFlags.GetLoggerOrDefault()
 		log = logger
-
 	}
 	cloudStorage := t.CloudStorage
 

@@ -48,11 +48,8 @@ type AvailablePlugins struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @jgabani
 	o.globalFlags.SetCmdName("plugin-manager list")
-	logger, err := o.globalFlags.GetLoggerOrDefault()
-	if err != nil {
-		return fmt.Errorf("failed to initialize audit logger: %w", err)
-	}
-    o.log=logger
+	logger, _ := o.globalFlags.GetLoggerOrDefault()
+	o.log = logger
 	return nil
 }
 

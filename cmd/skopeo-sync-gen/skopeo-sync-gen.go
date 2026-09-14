@@ -3,7 +3,6 @@ package skopeo_sync_gen
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,10 +119,7 @@ func (o *Options) Run() error {
 		return err
 	}
 
-	logger, err := o.globalFlags.GetLoggerOrDefault()
-	if err != nil {
-		return fmt.Errorf("failed to initialize audit logger: %w", err)
-	}
+	logger, _ := o.globalFlags.GetLoggerOrDefault()
 	files, err := file.ReadFilesWithLogger(context.TODO(), exportDir, logger)
 	if err != nil {
 		return err
