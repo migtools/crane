@@ -77,7 +77,10 @@ func addFlagsForTunnelAPIOptions(t *TunnelAPIOptions, cmd *cobra.Command) {
 
 func (t *TunnelAPIOptions) Complete(c *cobra.Command, args []string) error {
 	t.globalFlags.SetCmdName("tunnel-api")
-	logger, _ := t.globalFlags.GetLoggerOrDefault()
+	logger, err := t.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
 	t.logger = logger
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()

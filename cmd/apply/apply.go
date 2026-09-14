@@ -46,7 +46,10 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
 	o.globalFlags.SetCmdName("apply")
-	logger, _ := o.globalFlags.GetLoggerOrDefault()
+	logger, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
 	o.log = logger
 	return nil
 }
@@ -106,7 +109,7 @@ If no stages specified, all discovered stages are applied.`,
 		PreRun: func(cmd *cobra.Command, args []string) {
 			viper.BindPFlags(cmd.Flags())
 			viper.Unmarshal(&o.Flags)
-			viper.Unmarshal(&o.globalFlags)
+			viper.Unmarshal(o.cobraGlobalFlags)
 		},
 	}
 

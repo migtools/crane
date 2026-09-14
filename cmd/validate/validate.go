@@ -38,9 +38,11 @@ type ValidateOptions struct {
 // Skipped in offline mode (--api-resources).
 func (o *ValidateOptions) Complete(c *cobra.Command, args []string) error {
 	o.globalFlags.SetCmdName("validate")
-	log, _ := o.globalFlags.GetLoggerOrDefault()
+	log, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
 	o.log = log
-	var err error
 
 	kubeconfigFlag := c.Flags().Lookup("kubeconfig")
 	if kubeconfigFlag == nil || !kubeconfigFlag.Changed {

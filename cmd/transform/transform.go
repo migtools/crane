@@ -58,7 +58,10 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
 	o.globalFlags.SetCmdName("transform")
-	logger, _ := o.globalFlags.GetLoggerOrDefault()
+	logger, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
 	o.log = logger
 	return nil
 }

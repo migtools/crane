@@ -33,7 +33,10 @@ type Flags struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @sseago
 	o.globalFlags.SetCmdName("transform optionals")
-	logger, _ := o.globalFlags.GetLoggerOrDefault()
+	logger, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
 	o.log = logger
 	return nil
 }
