@@ -242,7 +242,12 @@ func (t *TransferPVCCommand) runIndirect() error {
 // safely mention a section name.
 func hasRcloneSection(configData []byte, name string) bool {
 	header := "[" + name + "]"
-	for _, line := range strings.Split(string(configData), "\n") {
+	for i, line := range strings.Split(string(configData), "\n") {
+		// A UTF-8 BOM is permitted at the start of an INI file, but it is not
+		// whitespace, so strings.TrimSpace does not remove it.
+		if i == 0 {
+			line = strings.TrimPrefix(line, "\uFEFF")
+		}
 		line = strings.TrimSpace(line)
 		if line == header {
 			return true
