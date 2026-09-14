@@ -57,7 +57,7 @@ func (g *GlobalFlags) GetLogger() (*logrus.Logger, error) {
 		g.logger.SetOutput(io.Discard)
 		consoleHook := audit.NewConsoleHook(g.Debug)
 		g.logger.AddHook(consoleHook)
-		if !isCompletionMode() {
+		if !isCompletionMode() && g.AuditLogPath != "" {
 			fileHook, err := audit.NewFileHook(g.AuditLogPath, &g.cmdName)
 			if err == nil {
 				g.fileHook = fileHook
