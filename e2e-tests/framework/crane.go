@@ -26,6 +26,8 @@ type TransferPVCOptions struct {
 	CloudStorage       string
 	RcloneConfigFile   string
 	RcloneConfigSecret string
+	Encrypt            bool
+	KeepCloudData      bool
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -226,6 +228,12 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 			args = append(args, "--rclone-config-secret", opts.RcloneConfigSecret)
 		} else if opts.RcloneConfigFile != "" {
 			args = append(args, "--rclone-config-file", opts.RcloneConfigFile)
+		}
+		if opts.Encrypt {
+			args = append(args, "--encrypt")
+		}
+		if opts.KeepCloudData {
+			args = append(args, "--keep-cloud-data")
 		}
 	} else {
 		if opts.Endpoint == "" {
