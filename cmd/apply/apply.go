@@ -109,7 +109,7 @@ If no stages specified, all discovered stages are applied.`,
 		PreRun: func(cmd *cobra.Command, args []string) {
 			viper.BindPFlags(cmd.Flags())
 			viper.Unmarshal(&o.Flags)
-			viper.Unmarshal(o.cobraGlobalFlags)
+			viper.Unmarshal(&o.globalFlags)
 		},
 	}
 
