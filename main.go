@@ -33,6 +33,10 @@ func run() int {
 	}()
 	root := cobra.Command{
 		Use: filepath.Base(os.Args[0]),
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			_, err := f.GetLoggerOrDefault()
+			return err
+		},
 	}
 	f.ApplyFlags(&root)
 	root.AddCommand(export.NewExportCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))

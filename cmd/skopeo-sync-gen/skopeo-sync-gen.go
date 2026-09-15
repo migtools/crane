@@ -3,7 +3,6 @@ package skopeo_sync_gen
 import (
 	"context"
 	"encoding/json"
-	// "fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,7 +119,11 @@ func (o *Options) Run() error {
 		return err
 	}
 
-	files, err := file.ReadFilesWithLogger(context.TODO(), exportDir, o.globalFlags.GetLoggerOrDefault())
+	logger, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
+	files, err := file.ReadFilesWithLogger(context.TODO(), exportDir, logger)
 	if err != nil {
 		return err
 	}
