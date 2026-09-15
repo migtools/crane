@@ -74,7 +74,7 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		srcMD5s := make(map[string]string, volumeCount)
 		for i := 1; i <= volumeCount; i++ {
 			vol := fmt.Sprintf("volume%d", i)
-			md5, err := md5sumFile(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName, fmt.Sprintf("/mnt/%s/random-data", vol))
+			md5, err := MD5SumFile(kubectlSrcNonAdmin, srcApp.Namespace, srcPodName, fmt.Sprintf("/mnt/%s/random-data", vol))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(md5).NotTo(BeEmpty())
 			srcMD5s[vol] = md5
@@ -177,7 +177,7 @@ func assertVolumesMatchSource(k KubectlRunner, namespace, pod string, volumeCoun
 	GinkgoHelper()
 	for i := 1; i <= volumeCount; i++ {
 		vol := fmt.Sprintf("volume%d", i)
-		md5, err := md5sumFile(k, namespace, pod, fmt.Sprintf("/mnt/%s/random-data", vol))
+		md5, err := MD5SumFile(k, namespace, pod, fmt.Sprintf("/mnt/%s/random-data", vol))
 		Expect(err).NotTo(HaveOccurred(), "md5sum of %s in pod %q (namespace %q) failed", vol, pod, namespace)
 		Expect(md5).To(Equal(srcMD5s[vol]), msgFormat+" (pod %q)", vol, pod)
 	}
