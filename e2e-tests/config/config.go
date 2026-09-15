@@ -18,6 +18,7 @@ var (
 	CloudStorage          string
 	RcloneConfigFile      string
 	RcloneConfigSecret    string
+	RsyncImage            string
 	PluginDir             string
 )
 

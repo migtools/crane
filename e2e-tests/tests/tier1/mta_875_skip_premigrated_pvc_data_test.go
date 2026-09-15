@@ -60,7 +60,11 @@ var _ = Describe("Skip PV migration when PV data was already migrated ahead of t
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
-		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		transformOpts := TransformOptions{
+			ExportDir:     paths.ExportDir,
+			TransformDir:  paths.TransformDir,
+			OptionalFlags: `{"whiteout-pvc":"true"}`,
+		}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 		DeferCleanup(func() {
 			By("Cleanup source and target resources")

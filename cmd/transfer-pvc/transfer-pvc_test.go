@@ -2,17 +2,23 @@ package transfer_pvc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane-lib/transform/kubernetes"
 	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
 	"github.com/migtools/pvc-transfer/transport"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,6 +27,45 @@ import (
 )
 
 func int64Ptr(v int64) *int64 { return &v }
+
+func int32Ptr(v int32) *int32 { return &v }
+
+func TestTransferSummaryStatus(t *testing.T) {
+	tests := []struct {
+		name          string
+		retErr        error
+		rsyncExitCode *int32
+		want          string
+	}{
+		{
+			name: "successful rsync",
+			want: "succeeded",
+		},
+		{
+			name:          "partial rsync transfer",
+			rsyncExitCode: int32Ptr(23),
+			want:          "succeeded (with warnings — some files could not be transferred)",
+		},
+		{
+			name:          "unexpected rsync failure",
+			rsyncExitCode: int32Ptr(12),
+			want:          "failed",
+		},
+		{
+			name:   "transfer failure takes precedence over rsync exit code",
+			retErr: fmt.Errorf("cleanup failed"),
+			want:   "failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := transferSummaryStatus(tt.retErr, tt.rsyncExitCode); got != tt.want {
+				t.Errorf("transferSummaryStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
 
 // TestEndpointFlags_Validate_DefaultPersists proves the value-receiver bug in
 // EndpointFlags.Validate: an empty Type with a valid Subdomain passes validation,
@@ -70,8 +115,15 @@ func TestCreateDestinationPVC(t *testing.T) {
 		name                  string
 		requestedStorageClass string
 		existingStorageClass  *string
+		objects               []client.Object
+		deletionTimestamp     *metav1.Time
 		wantErr               string
 	}{
+		{
+			name:              "rejects an existing PVC that is terminating",
+			deletionTimestamp: &metav1.Time{},
+			wantErr:           `destination PVC "test-ns/test-pvc" is terminating; transfer cannot proceed until it has been fully deleted`,
+		},
 		{
 			name:                  "rejects existing PVC with a different requested storage class",
 			requestedStorageClass: "standard-v2",
@@ -87,6 +139,42 @@ func TestCreateDestinationPVC(t *testing.T) {
 			name:                 "accepts existing PVC when no storage class was requested",
 			existingStorageClass: storageClass("crane-sc02-target"),
 		},
+		{
+			name: "rejects existing PVC mounted by a running pod without requested storage class",
+			objects: []client.Object{&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "target-app", Namespace: "test-ns"},
+				Spec: corev1.PodSpec{
+					NodeName: "worker-1",
+					Volumes: []corev1.Volume{{
+						Name: "data",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "test-pvc"},
+						},
+					}},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodRunning},
+			}},
+			existingStorageClass: storageClass("standard-v2"),
+			wantErr:              `destination PVC test-ns/test-pvc is in use by pod "target-app"; scale it down before transferring`,
+		},
+		{
+			name: "rejects existing PVC referenced by a pending pod with an init container",
+			objects: []client.Object{&corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "target-app-initializing", Namespace: "test-ns"},
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{{Name: "init", Image: "busybox:1.36"}},
+					Volumes: []corev1.Volume{{
+						Name: "data",
+						VolumeSource: corev1.VolumeSource{
+							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "test-pvc"},
+						},
+					}},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodPending},
+			}},
+			existingStorageClass: storageClass("standard-v2"),
+			wantErr:              `destination PVC test-ns/test-pvc is in use by pod "target-app-initializing"; scale it down before transferring`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -95,7 +183,23 @@ func TestCreateDestinationPVC(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pvc", Namespace: "test-ns"},
 				Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: tt.existingStorageClass},
 			}
-			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(existing).Build()
+			objects := append([]client.Object{existing}, tt.objects...)
+			builder := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objects...)
+			if tt.deletionTimestamp != nil {
+				builder.WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						if err := c.Get(ctx, key, obj, opts...); err != nil {
+							return err
+						}
+						if existingPVC, ok := obj.(*corev1.PersistentVolumeClaim); ok {
+							existingPVC.DeletionTimestamp = tt.deletionTimestamp
+							existingPVC.Finalizers = []string{"crane.io/stuck-for-test"}
+						}
+						return nil
+					},
+				})
+			}
+			c := builder.Build()
 			cmd := &TransferPVCCommand{Flags: Flags{PVC: PvcFlags{StorageClassName: tt.requestedStorageClass}}}
 
 			err := cmd.createDestinationPVC(context.Background(), c, &corev1.PersistentVolumeClaim{
@@ -108,6 +212,84 @@ func TestCreateDestinationPVC(t *testing.T) {
 				t.Errorf("createDestinationPVC() error = %v, want to contain %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestBuildDestinationPVCMatchesKubernetesPluginFilesystemCleanup(t *testing.T) {
+	storageClass := "standard"
+	filesystem := corev1.PersistentVolumeFilesystem
+	source := &corev1.PersistentVolumeClaim{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "PersistentVolumeClaim"},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "source-pvc",
+			Namespace:       "source-ns",
+			Labels:          map[string]string{"app": "example"},
+			Annotations:     map[string]string{"keep": "value", "pv.kubernetes.io/bind-completed": "yes", "kubectl.kubernetes.io/last-applied-configuration": "{}"},
+			Finalizers:      []string{"kubernetes.io/pvc-protection"},
+			ResourceVersion: "123",
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			StorageClassName: &storageClass,
+			VolumeMode:       &filesystem,
+			VolumeName:       "pvc-source-id",
+			Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceStorage: resource.MustParse("1Gi"),
+			}},
+		},
+	}
+
+	object, err := runtime.DefaultUnstructuredConverter.ToUnstructured(source)
+	if err != nil {
+		t.Fatalf("convert source PVC to unstructured: %v", err)
+	}
+	response, err := (&kubernetes.KubernetesTransformPlugin{}).Run(transform.PluginRequest{
+		Unstructured: unstructured.Unstructured{Object: object},
+	})
+	if err != nil {
+		t.Fatalf("run KubernetesPlugin: %v", err)
+	}
+	if response.IsWhiteOut {
+		t.Fatal("KubernetesPlugin unexpectedly whiteouted PVC")
+	}
+
+	sourceJSON, err := json.Marshal(source)
+	if err != nil {
+		t.Fatalf("marshal source PVC: %v", err)
+	}
+	cleanedJSON, err := response.Patches.Apply(sourceJSON)
+	if err != nil {
+		t.Fatalf("apply KubernetesPlugin patches: %v", err)
+	}
+	var cleaned corev1.PersistentVolumeClaim
+	if err := json.Unmarshal(cleanedJSON, &cleaned); err != nil {
+		t.Fatalf("unmarshal cleaned PVC: %v", err)
+	}
+
+	transferred := (&TransferPVCCommand{Flags: Flags{PVC: PvcFlags{
+		Name:      mappedNameVar{destination: "target-pvc"},
+		Namespace: mappedNameVar{destination: "target-ns"},
+	}}}).buildDestinationPVC(source)
+
+	if cleaned.Spec.VolumeMode == nil || *cleaned.Spec.VolumeMode != corev1.PersistentVolumeFilesystem {
+		t.Fatalf("KubernetesPlugin volumeMode = %v, want Filesystem", cleaned.Spec.VolumeMode)
+	}
+	if transferred.Spec.VolumeMode != nil {
+		t.Fatalf("transfer-pvc volumeMode = %v, want nil to use Kubernetes Filesystem default", *transferred.Spec.VolumeMode)
+	}
+	cleaned.Spec.VolumeMode = nil
+
+	if diff := cmp.Diff(cleaned.Labels, transferred.Labels); diff != "" {
+		t.Errorf("labels differ (-KubernetesPlugin +transfer-pvc):\n%s", diff)
+	}
+	if diff := cmp.Diff(cleaned.Annotations, transferred.Annotations); diff != "" {
+		t.Errorf("annotations differ (-KubernetesPlugin +transfer-pvc):\n%s", diff)
+	}
+	if diff := cmp.Diff(cleaned.Spec, transferred.Spec); diff != "" {
+		t.Errorf("PVC spec differs after cleanup (-KubernetesPlugin +transfer-pvc):\n%s", diff)
+	}
+	if len(cleaned.Finalizers) != 0 || len(transferred.Finalizers) != 0 {
+		t.Errorf("finalizers must be removed: KubernetesPlugin=%v transfer-pvc=%v", cleaned.Finalizers, transferred.Finalizers)
 	}
 }
 

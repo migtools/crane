@@ -31,6 +31,7 @@ type TransferPVCOptions struct {
 	// cloud storage configuration. It is useful when direct and indirect
 	// transfer coverage run in the same E2E invocation.
 	DisableCloudStorage bool
+	RsyncImage          string
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -221,12 +222,45 @@ func (c CraneRunner) TransferPVCWithOutput(opts TransferPVCOptions) (string, err
 			opts.RcloneConfigFile = config.RcloneConfigFile
 		}
 	}
+	if opts.RsyncImage == "" {
+		opts.RsyncImage = config.RsyncImage
+	}
 
+	if opts.CloudStorage == "" {
+		if opts.Endpoint == "" {
+			tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
+			if tgt.IsOpenShift() {
+				opts.Endpoint = "route"
+			} else {
+				opts.Endpoint = "nginx-ingress"
+				if opts.IngressClass == "" {
+					opts.IngressClass = "nginx"
+				}
+			}
+		}
+	}
+	args := buildTransferPVCArgs(opts)
+
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane transfer-pvc", out)
+	if err != nil {
+		return string(out), fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
+	}
+	return string(out), nil
+}
+
+func buildTransferPVCArgs(opts TransferPVCOptions) []string {
 	args := []string{"transfer-pvc",
 		"--source-context", opts.SourceContext,
 		"--destination-context", opts.TargetContext,
 		"--pvc-name", opts.PVCName,
 		"--pvc-namespace", opts.PVCNamespaceMap,
+	}
+	if opts.RsyncImage != "" {
+		args = append(args, "--source-image", opts.RsyncImage, "--destination-image", opts.RsyncImage)
 	}
 	if opts.DestStorageClass != "" {
 		args = append(args, "--dest-storage-class", opts.DestStorageClass)
@@ -240,33 +274,13 @@ func (c CraneRunner) TransferPVCWithOutput(opts TransferPVCOptions) (string, err
 			args = append(args, "--rclone-config-file", opts.RcloneConfigFile)
 		}
 	} else {
-		if opts.Endpoint == "" {
-			tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
-			if tgt.IsOpenShift() {
-				opts.Endpoint = "route"
-			} else {
-				opts.Endpoint = "nginx-ingress"
-				if opts.IngressClass == "" {
-					opts.IngressClass = "nginx"
-				}
-			}
-		}
 		args = append(args, "--endpoint", opts.Endpoint)
 		if opts.Endpoint != "route" {
 			args = append(args, "--ingress-class", opts.IngressClass)
 			args = append(args, "--subdomain", opts.Subdomain)
 		}
 	}
-
-	logVerboseCommand(c.Bin, args)
-	cmd := exec.Command(c.Bin, args...)
-	cmd.Dir = c.WorkDir
-	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane transfer-pvc", out)
-	if err != nil {
-		return string(out), fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
-	}
-	return string(out), nil
+	return args
 }
 
 // AssertTransferPVCProgressOutput verifies that transfer-pvc emitted every
