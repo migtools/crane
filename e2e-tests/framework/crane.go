@@ -26,6 +26,7 @@ type TransferPVCOptions struct {
 	CloudStorage       string
 	RcloneConfigFile   string
 	RcloneConfigSecret string
+	RsyncImage         string
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -209,12 +210,45 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 			opts.RcloneConfigFile = config.RcloneConfigFile
 		}
 	}
+	if opts.RsyncImage == "" {
+		opts.RsyncImage = config.RsyncImage
+	}
 
+	if opts.CloudStorage == "" {
+		if opts.Endpoint == "" {
+			tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
+			if tgt.IsOpenShift() {
+				opts.Endpoint = "route"
+			} else {
+				opts.Endpoint = "nginx-ingress"
+				if opts.IngressClass == "" {
+					opts.IngressClass = "nginx"
+				}
+			}
+		}
+	}
+	args := buildTransferPVCArgs(opts)
+
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane transfer-pvc", out)
+	if err != nil {
+		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
+	}
+	return nil
+}
+
+func buildTransferPVCArgs(opts TransferPVCOptions) []string {
 	args := []string{"transfer-pvc",
 		"--source-context", opts.SourceContext,
 		"--destination-context", opts.TargetContext,
 		"--pvc-name", opts.PVCName,
 		"--pvc-namespace", opts.PVCNamespaceMap,
+	}
+	if opts.RsyncImage != "" {
+		args = append(args, "--source-image", opts.RsyncImage, "--destination-image", opts.RsyncImage)
 	}
 	if opts.DestStorageClass != "" {
 		args = append(args, "--dest-storage-class", opts.DestStorageClass)
@@ -228,33 +262,13 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 			args = append(args, "--rclone-config-file", opts.RcloneConfigFile)
 		}
 	} else {
-		if opts.Endpoint == "" {
-			tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
-			if tgt.IsOpenShift() {
-				opts.Endpoint = "route"
-			} else {
-				opts.Endpoint = "nginx-ingress"
-				if opts.IngressClass == "" {
-					opts.IngressClass = "nginx"
-				}
-			}
-		}
 		args = append(args, "--endpoint", opts.Endpoint)
 		if opts.Endpoint != "route" {
 			args = append(args, "--ingress-class", opts.IngressClass)
 			args = append(args, "--subdomain", opts.Subdomain)
 		}
 	}
-
-	logVerboseCommand(c.Bin, args)
-	cmd := exec.Command(c.Bin, args...)
-	cmd.Dir = c.WorkDir
-	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane transfer-pvc", out)
-	if err != nil {
-		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
-	}
-	return nil
+	return args
 }
 
 // Validate runs crane validate and returns command output or an error.
