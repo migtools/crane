@@ -22,14 +22,18 @@ func NewFileHook(path string, cmd *string) (*FileHook, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, err
 	}
+	fileInfo, _ := os.Stat(path)
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, err
 	}
-	if err := f.Chmod(0600); err != nil {
-		_ = f.Close()
-		return nil, err
+	if fileInfo != nil && fileInfo.Mode().IsRegular() {
+		if err := f.Chmod(0600); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
 	}
+
 	return &FileHook{
 		file:      f,
 		cmd:       cmd,
