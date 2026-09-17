@@ -67,6 +67,7 @@ type TransformOptions struct {
 	KustomizeArgs    string
 	InstructionsFile string
 	Stages           []string
+	AuditLogPath     string
 }
 
 type ApplyOptions struct {
@@ -151,6 +152,9 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 	}
 	if opts.InstructionsFile != "" {
 		args = append(args, "--instructions-file", opts.InstructionsFile)
+	}
+	if opts.AuditLogPath != "" {
+		args = append(args, "--audit-log", opts.AuditLogPath)
 	}
 	args = append(args, opts.Stages...)
 
