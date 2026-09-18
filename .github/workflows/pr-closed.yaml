@@ -5,15 +5,20 @@ on:
       - main
     types:
       - closed
+      - labeled
 
 jobs:
   branches:
-    if: github.event.pull_request.merged == true
+    if: >-
+      github.event.pull_request.merged == true && (
+        github.event.action == 'closed' ||
+        (github.event.action == 'labeled' && startsWith(github.event.label.name, 'cherry-pick/'))
+      )
     runs-on: ubuntu-latest
     outputs:
       branches: ${{ steps.cherry_pick_branches.outputs.result }}
     steps:
-      - name: Check for cherry-pick labels
+      - name: Check for cherry-pick labels and validate target branches
         id: cherry_pick_branches
         uses: actions/github-script@v7
         with:
@@ -24,14 +29,45 @@ jobs:
               repo: context.repo.repo,
             });
 
-            const labels = issue.labels.map(label => label.name);
-            console.log(`Labels: ${labels}`);
+            let candidateBranches = [];
 
-            const branches = labels.filter(label => label.startsWith('cherry-pick/'))
-              .map(label => label.substr(12));
-            console.log(`Branches: ${branches}`);
+            if (context.eventName === 'pull_request_target' && context.payload.action === 'labeled') {
+              const addedLabel = context.payload.label ? context.payload.label.name : '';
+              if (addedLabel.startsWith('cherry-pick/')) {
+                candidateBranches = [addedLabel.substr(12)];
+              }
+            } else {
+              const labels = issue.labels.map(label => label.name);
+              console.log(`Labels found: ${labels.join(', ')}`);
+              candidateBranches = labels
+               .filter(label => label.startsWith('cherry-pick/'))
+               .map(label => label.substr(12));
+            }
 
-            return branches
+            console.log(`Candidate branches from labels: ${candidateBranches.join(', ')}`);
+
+            const validBranches = [];
+
+            for (const branch of candidateBranches) {
+              try {
+                await github.rest.repos.getBranch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  branch: branch,
+                });
+                validBranches.push(branch);
+                console.log(`Branch '${branch}' exists in repo.`);
+              } catch (error) {
+                if (error.status === 404) {
+                  console.warn(`Branch '${branch}' does NOT exist in the repo. Skipping cherry-pick for this branch.`);
+                } else {
+                  throw error;
+                }
+              }
+            }
+
+            console.log(`Valid target branches for cherry-pick: ${validBranches.join(', ')}`);
+            return validBranches;   
 
   cherry-pick:
     runs-on: ubuntu-latest
@@ -66,7 +102,7 @@ jobs:
           git config --global user.email "noreply@github.com"
           git config --global user.name "Cherry Picker"
           git checkout -b "${BRANCH_NAME}"
-          git cherry-pick -s ${{ github.sha }}
+          git cherry-pick -s -m 1 ${{ github.event.pull_request.merge_commit_sha }}
           git push origin "${BRANCH_NAME}"
           PR_URL=$(gh pr create --base "${{ matrix.branch }}" --fill)
           echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
