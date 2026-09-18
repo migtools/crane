@@ -29,12 +29,20 @@ jobs:
               repo: context.repo.repo,
             });
 
-            const labels = issue.labels.map(label => label.name);
-            console.log(`Labels found: ${labels.join(', ')}`);
+            let candidateBranches = [];
 
-            const candidateBranches = labels
-              .filter(label => label.startsWith('cherry-pick/'))
-              .map(label => label.substr(12));
+            if (context.eventName === 'pull_request_target' && context.payload.action === 'labeled') {
+              const addedLabel = context.payload.label ? context.payload.label.name : '';
+              if (addedLabel.startsWith('cherry-pick/')) {
+                candidateBranches = [addedLabel.substr(12)];
+              }
+            } else {
+              const labels = issue.labels.map(label => label.name);
+              console.log(`Labels found: ${labels.join(', ')}`);
+              candidateBranches = labels
+               .filter(label => label.startsWith('cherry-pick/'))
+               .map(label => label.substr(12));
+            }
 
             console.log(`Candidate branches from labels: ${candidateBranches.join(', ')}`);
 
@@ -50,12 +58,16 @@ jobs:
                 validBranches.push(branch);
                 console.log(`Branch '${branch}' exists in repo.`);
               } catch (error) {
-                console.warn(`Branch '${branch}' does NOT exist in the repo. Skipping cherry-pick for this branch.`);
+                if (error.status === 404) {
+                  console.warn(`Branch '${branch}' does NOT exist in the repo. Skipping cherry-pick for this branch.`);
+                } else {
+                  throw error;
+                }
               }
             }
 
             console.log(`Valid target branches for cherry-pick: ${validBranches.join(', ')}`);
-            return validBranches;
+            return validBranches;   
 
   cherry-pick:
     runs-on: ubuntu-latest
