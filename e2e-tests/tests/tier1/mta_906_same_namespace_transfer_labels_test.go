@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -118,9 +116,11 @@ var _ = Describe("Same-namespace transfer-pvc resources", func() {
 			ExportDir:    paths.ExportDir,
 			TransformDir: paths.TransformDir,
 			OptionalFlags: fmt.Sprintf(
-				`{"pvc-rename-map":"%s:%s"}`,
+				`{"pvc-rename-map":"%s:%s","pvc-storage-class-map":"%s:%s"}`,
 				sourcePVCName,
 				destinationPVCName,
+				sourceSC,
+				destinationSC,
 			),
 		}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
@@ -165,7 +165,7 @@ var _ = Describe("Same-namespace transfer-pvc resources", func() {
 		AssertNoTransferPVCLeftovers(kubectl, []string{namespace}, sourcePVCName, destinationPVCName)
 
 		By("Apply the renamed workload and verify the transferred data")
-		Expect(applyTransformedDeployment(kubectl, paths.OutputDir, namespace)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(kubectl, paths.OutputDir)).NotTo(HaveOccurred())
 		Expect(kubectl.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 		Eventually(func() (int, error) {
 			targetPodName, err := GetPodNameByLabel(kubectl, namespace, "name="+appName)
@@ -177,21 +177,6 @@ var _ = Describe("Same-namespace transfer-pvc resources", func() {
 			"destination MongoDB should contain the same documents after the renamed same-namespace transfer")
 	})
 })
-
-func applyTransformedDeployment(k KubectlRunner, outputDir, namespace string) error {
-	manifests, err := filepath.Glob(filepath.Join(outputDir, "resources", namespace, "Deployment_*.yaml"))
-	if err != nil {
-		return fmt.Errorf("find transformed Deployment manifests: %w", err)
-	}
-	if len(manifests) != 1 {
-		return fmt.Errorf("expected one transformed Deployment manifest in %q, found %d", filepath.Join(outputDir, "resources", namespace), len(manifests))
-	}
-	manifest, err := os.ReadFile(manifests[0])
-	if err != nil {
-		return fmt.Errorf("read transformed Deployment manifest %q: %w", manifests[0], err)
-	}
-	return k.ApplyYAMLSpec(string(manifest), namespace)
-}
 
 type labeledResource struct {
 	Name   string
