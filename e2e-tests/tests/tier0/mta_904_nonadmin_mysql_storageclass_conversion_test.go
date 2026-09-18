@@ -144,7 +144,15 @@ var _ = Describe("Non-admin MySQL StorageClass conversion", func() {
 
 		By("Run export, transform, and apply rendering through the non-admin Crane runner")
 		exportOpts := ExportOptions{Namespace: srcApp.Namespace, ExportDir: paths.ExportDir}
-		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
+		transformOpts := TransformOptions{
+			ExportDir:    paths.ExportDir,
+			TransformDir: paths.TransformDir,
+			OptionalFlags: fmt.Sprintf(
+				`{"pvc-storage-class-map":"%s:%s"}`,
+				sourceSC,
+				destinationSC,
+			),
+		}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
