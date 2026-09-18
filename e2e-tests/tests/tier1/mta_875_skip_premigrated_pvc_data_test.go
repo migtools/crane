@@ -168,7 +168,9 @@ spec:
 		}
 
 		By("Deploy/scale up the app on the target cluster, reusing the pre-migrated PVC")
-		Expect(ApplyOutputToTarget(kubectlTgt, tgtApp.Namespace, paths.OutputDir)).NotTo(HaveOccurred())
+		outputYAML, err := os.ReadFile(filepath.Join(paths.OutputDir, "output.yaml"))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(kubectlTgt.ApplyYAMLSpec(string(outputYAML), tgtApp.Namespace)).NotTo(HaveOccurred())
 		Eventually(tgtApp.Validate, "5m", "10s").Should(Succeed())
 
 		By("Verify the app reads the pre-migrated data with no data loss")
