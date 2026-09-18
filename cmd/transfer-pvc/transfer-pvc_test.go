@@ -1782,6 +1782,78 @@ func writeTempKubeconfig(t *testing.T, ctxName string) string {
 	return path
 }
 
+// TestCompleteTrimsCloudStorageWhitespace covers the whitespace handling added to
+// Complete() in PR #859: leading/trailing whitespace is trimmed from --cloud-storage,
+// and a value that is only whitespace is rejected instead of silently accepted.
+func TestCompleteTrimsCloudStorageWhitespace(t *testing.T) {
+	const ctxName = "test-context"
+	kubeconfig := writeTempKubeconfig(t, ctxName)
+
+	tests := []struct {
+		name         string
+		cloudStorage string
+		wantErr      bool
+		wantValue    string // expected CloudStorage after Complete, when no error
+	}{
+		{
+			name:         "surrounding whitespace is trimmed",
+			cloudStorage: "  remote:my-bucket  ",
+			wantErr:      false,
+			wantValue:    "remote:my-bucket",
+		},
+		{
+			name:         "tab and newline are trimmed",
+			cloudStorage: "\tremote:my-bucket\n",
+			wantErr:      false,
+			wantValue:    "remote:my-bucket",
+		},
+		{
+			name:         "whitespace-only value is rejected",
+			cloudStorage: "   ",
+			wantErr:      true,
+		},
+		{
+			name:         "empty value is left empty and accepted",
+			cloudStorage: "",
+			wantErr:      false,
+			wantValue:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configFlags := genericclioptions.NewConfigFlags(false)
+			configFlags.KubeConfig = &kubeconfig
+
+			cmd := &TransferPVCCommand{
+				configFlags: configFlags,
+				Flags: Flags{
+					SourceContext:      ctxName,
+					DestinationContext: ctxName,
+					CloudStorage:       tt.cloudStorage,
+				},
+			}
+
+			err := cmd.Complete(nil, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Complete() expected error for %q, got nil", tt.cloudStorage)
+				}
+				if !strings.Contains(err.Error(), "cannot be empty or whitespace") {
+					t.Errorf("Complete() error = %q, want it to mention whitespace rejection", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Complete() unexpected error: %v", err)
+			}
+			if cmd.CloudStorage != tt.wantValue {
+				t.Errorf("CloudStorage = %q, want %q", cmd.CloudStorage, tt.wantValue)
+			}
+		})
+	}
+}
+
 func TestUploadOnlyDoesNotRequireDestinationContext(t *testing.T) {
 	const sourceContext = "source"
 	kubeconfig := writeTempKubeconfig(t, sourceContext)
