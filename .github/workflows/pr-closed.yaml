@@ -102,7 +102,7 @@ jobs:
           git config --global user.email "noreply@github.com"
           git config --global user.name "Cherry Picker"
           git checkout -b "${BRANCH_NAME}"
-          git cherry-pick -s ${{ github.sha }}
+          git cherry-pick -s -m 1 ${{ github.event.pull_request.merge_commit_sha }}
           git push origin "${BRANCH_NAME}"
           PR_URL=$(gh pr create --base "${{ matrix.branch }}" --fill)
           echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
