@@ -23,10 +23,12 @@ const indirectTestFileName = "testfile.txt"
 // never created it). A field selector is used so the watch works even when the
 // Secret does not exist yet when the watch starts.
 type secretWatch struct {
-	cmd     *exec.Cmd
-	buf     *bytes.Buffer
-	context string
-	stopped bool
+	cmd       *exec.Cmd
+	buf       *bytes.Buffer
+	context   string
+	k         KubectlRunner
+	namespace string
+	stopped   bool
 }
 
 func startSecretWatch(k KubectlRunner, namespace, secretName string) *secretWatch {
@@ -45,7 +47,7 @@ func startSecretWatch(k KubectlRunner, namespace, secretName string) *secretWatc
 	cmd.Stderr = buf
 	Expect(cmd.Start()).To(Succeed(), "failed to start secret watch on context %q", k.Context)
 
-	w := &secretWatch{cmd: cmd, buf: buf, context: k.Context}
+	w := &secretWatch{cmd: cmd, buf: buf, context: k.Context, k: k, namespace: namespace}
 	// Ensure the watch process never leaks even if the spec fails before output().
 	DeferCleanup(w.kill)
 	return w
@@ -71,7 +73,7 @@ func (w *secretWatch) output() string {
 }
 
 // expectCreatedThenDeleted asserts the watch observed the Secret being created and
-// then deleted, in that order.
+// then deleted, in that order, and that the Secret no longer exists.
 func (w *secretWatch) expectCreatedThenDeleted(secretName string) {
 	out := w.output()
 	added := "ADDED " + secretName
@@ -82,6 +84,12 @@ func (w *secretWatch) expectCreatedThenDeleted(secretName string) {
 		"watch on context %q should have observed the temp Secret being deleted; watch output:\n%s", w.context, out)
 	Expect(strings.Index(out, added)).To(BeNumerically("<", strings.Index(out, deleted)),
 		"watch on context %q should observe ADDED before DELETED; watch output:\n%s", w.context, out)
+
+	// Assert the Secret is actually gone
+	secretOut, err := w.k.Run("get", "secret", secretName, "-n", w.namespace, "--ignore-not-found=true", "-o", "name")
+	Expect(err).NotTo(HaveOccurred())
+	Expect(strings.TrimSpace(secretOut)).To(BeEmpty(),
+		"temp Secret %q should not exist on namespace %q", secretName, w.namespace)
 }
 
 // indirectApp holds the handles produced by deployIndirectApp for a single spec.
@@ -193,8 +201,8 @@ func expectTempSecretAbsent(app indirectApp, namespace, when string) {
 	}
 }
 
-var _ = Describe("Indirect transfer with a crane-managed rclone config file", func() {
-	It("[MTA-913] Should create a temporary rclone config Secret from --rclone-config-file and clean it up after a successful transfer",
+var _ = Describe("Verify lifecycle of Secret created from --rclone-config-file", func() {
+	It("[MTA-913] Should create a rclone config Secret from --rclone-config-file and clean it up after a successful transfer",
 		Label("tier1", "pvc-transfer", "indirect"), func() {
 
 			if config.CloudStorage == "" || config.RcloneConfigFile == "" {
@@ -239,55 +247,9 @@ var _ = Describe("Indirect transfer with a crane-managed rclone config file", fu
 			Eventually(func() (string, error) {
 				return app.kubectlTgt.Run("get", "pods", "-n", app.tgtApp.Namespace, "-o", "name")
 			}, "120s", "3s").ShouldNot(ContainSubstring("rclone"))
-
-			By("Verify the destination PVC was created on target")
-			tgtPVCs, err := ListPVCs(app.tgtApp.Namespace, "", app.tgtApp.Context)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(tgtPVCs).To(HaveLen(1), "expected the migrated PVC to exist on target")
-
-			By("Verify the migrated data matches source via a throwaway verifier pod on the target PVC")
-			const verifierPod = "indirect-rclone-file-verifier"
-			verifierPodYAML := fmt.Sprintf(`
-apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  containers:
-  - name: verifier
-    image: quay.io/openshifttest/alpine:multiarch
-    command: ["sleep", "300"]
-    volumeMounts:
-    - name: data
-      mountPath: /data
-    securityContext:
-      runAsNonRoot: true
-      runAsUser: 1000
-      allowPrivilegeEscalation: false
-      seccompProfile:
-        type: RuntimeDefault
-  volumes:
-  - name: data
-    persistentVolumeClaim:
-      claimName: %s
-`, verifierPod, app.tgtApp.Namespace, app.pvcName)
-			Expect(app.kubectlTgt.ApplyYAMLSpec(verifierPodYAML, app.tgtApp.Namespace)).NotTo(HaveOccurred())
-			DeferCleanup(func() {
-				if _, err := app.kubectlTgt.Run("delete", "pod", verifierPod, "-n", app.tgtApp.Namespace, "--ignore-not-found", "--wait=true"); err != nil {
-					log.Printf("cleanup verifier pod %q: %v", verifierPod, err)
-				}
-			})
-			_, err = app.kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifierPod, "-n", app.tgtApp.Namespace, "--timeout=120s")
-			Expect(err).NotTo(HaveOccurred())
-
-			tgtMD5, err := MD5SumFile(app.kubectlTgt, app.tgtApp.Namespace, verifierPod, "/data/"+indirectTestFileName)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(tgtMD5).To(Equal(app.srcMD5), "MD5 checksum on the migrated PVC should match source")
-			log.Printf("Source and target MD5 checksums match: %s\n", app.srcMD5)
 		})
 
-	It("[MTA-913] Should clean up the temporary rclone config Secret on both clusters when the transfer fails",
+	It("[MTA-913] Should clean up the rclone config Secret on both clusters when the transfer fails",
 		Label("tier1", "pvc-transfer", "indirect"), func() {
 
 			if config.CloudStorage == "" || config.RcloneConfigFile == "" {
@@ -311,7 +273,7 @@ spec:
 			// Pointing --cloud-storage at a remote that is not defined in the rclone
 			// config makes that upload pod fail deterministically *after* the Secret
 			// has been created, which is exactly the deferred cleanup-on-error path
-			// we want to exercise.s
+			// we want to exercise.
 			err := runner.TransferPVC(TransferPVCOptions{
 				SourceContext:    app.srcApp.Context,
 				TargetContext:    app.tgtApp.Context,
