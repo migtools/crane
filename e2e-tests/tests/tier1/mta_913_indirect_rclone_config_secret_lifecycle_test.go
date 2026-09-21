@@ -6,7 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
-	"time"
+	"sync"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -16,32 +16,53 @@ import (
 
 const indirectTestFileName = "testfile.txt"
 
+// syncBuffer is a goroutine-safe bytes.Buffer. os/exec copies a command's stdout
+// into the buffer from a background goroutine, so a spec that reads the buffer
+// while the watch is still running (as waitUntilReady does) must synchronize
+// access to avoid a data race.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // secretWatch runs a background `kubectl get secret ... -w --output-watch-events`
-// that records ADDED/DELETED events for a single Secret. It lets a spec prove the
-// Secret was actually created and then deleted during a transfer, rather than only
-// checking that it is absent before and after (which would also pass if crane
-// never created it). A field selector is used so the watch works even when the
-// Secret does not exist yet when the watch starts.
+// that records ADDED/DELETED events for the Secrets in a namespace. It lets a spec
+// prove a Secret was actually created and then deleted during a transfer, rather
+// than only checking that it is absent before and after (which would also pass if
+// crane never created it). The watch is not filtered by name so that waitUntilReady
+// can confirm the watch is live via a throwaway sentinel Secret; the create/delete
+// assertions match on the specific Secret name instead.
 type secretWatch struct {
 	cmd       *exec.Cmd
-	buf       *bytes.Buffer
+	buf       *syncBuffer
 	context   string
 	k         KubectlRunner
 	namespace string
 	stopped   bool
 }
 
-func startSecretWatch(k KubectlRunner, namespace, secretName string) *secretWatch {
+func startSecretWatch(k KubectlRunner, namespace string) *secretWatch {
 	args := []string{
 		"get", "secret", "-n", namespace,
-		"--field-selector", "metadata.name=" + secretName,
 		"--output-watch-events", "-w",
 		"-o", `jsonpath={.type} {.object.metadata.name}{"\n"}`,
 	}
 	if k.Context != "" {
 		args = append(args, "--context", k.Context)
 	}
-	buf := &bytes.Buffer{}
+	buf := &syncBuffer{}
 	cmd := exec.Command(k.Bin, args...)
 	cmd.Stdout = buf
 	cmd.Stderr = buf
@@ -50,7 +71,30 @@ func startSecretWatch(k KubectlRunner, namespace, secretName string) *secretWatc
 	w := &secretWatch{cmd: cmd, buf: buf, context: k.Context, k: k, namespace: namespace}
 	// Ensure the watch process never leaks even if the spec fails before output().
 	DeferCleanup(w.kill)
+	// Block until the watch is actually delivering events, so the caller can create
+	// the temp Secret knowing its ADDED event will be captured.
+	w.waitUntilReady()
 	return w
+}
+
+// readySentinelName is a throwaway Secret used only to confirm the background
+// watch is delivering events. Its name differs from crane's temp Secret.
+const readySentinelName = "crane-e2e-watch-ready-sentinel"
+
+// waitUntilReady blocks until the watch has observed an event, proving it is
+// registered and streaming. It creates a throwaway sentinel Secret and waits to
+// see its ADDED event in the watch output, then deletes it. This replaces a fixed
+// sleep with a deterministic readiness handshake.
+func (w *secretWatch) waitUntilReady() {
+	GinkgoHelper()
+	_, err := w.k.Run("create", "secret", "generic", readySentinelName, "-n", w.namespace)
+	Expect(err).NotTo(HaveOccurred(),
+		"failed to create readiness sentinel Secret on context %q", w.context)
+	Eventually(w.buf.String, "30s", "200ms").Should(ContainSubstring("ADDED "+readySentinelName),
+		"watch on context %q should observe the readiness sentinel Secret, proving the watch is live", w.context)
+	if _, err := w.k.Run("delete", "secret", readySentinelName, "-n", w.namespace, "--ignore-not-found=true"); err != nil {
+		log.Printf("delete readiness sentinel Secret %q on namespace %q: %v", readySentinelName, w.namespace, err)
+	}
 }
 
 // kill terminates the watch process and waits for its output to be flushed. It is
@@ -216,11 +260,10 @@ var _ = Describe("Verify lifecycle of Secret created from --rclone-config-file",
 			expectTempSecretAbsent(app, namespace, "before transfer")
 
 			By("Start watching the temp Secret on both clusters to observe its create/delete lifecycle")
-			watchSrc := startSecretWatch(app.kubectlSrc, namespace, app.tmpSecret)
-			watchTgt := startSecretWatch(app.kubectlTgt, namespace, app.tmpSecret)
-			// Give the watch connections a moment to establish before crane creates
-			// the Secret, so the ADDED event is captured.
-			time.Sleep(2 * time.Second)
+			// startSecretWatch blocks until each watch is confirmed live, so the temp
+			// Secret's ADDED event is guaranteed to be captured once crane creates it.
+			watchSrc := startSecretWatch(app.kubectlSrc, namespace)
+			watchTgt := startSecretWatch(app.kubectlTgt, namespace)
 
 			By("Run crane transfer-pvc in indirect mode using --rclone-config-file")
 			runner := app.scenario.CraneNonAdmin
@@ -263,9 +306,8 @@ var _ = Describe("Verify lifecycle of Secret created from --rclone-config-file",
 			expectTempSecretAbsent(app, namespace, "before transfer")
 
 			By("Start watching the temp Secret on both clusters to observe its create/delete lifecycle")
-			watchSrc := startSecretWatch(app.kubectlSrc, namespace, app.tmpSecret)
-			watchTgt := startSecretWatch(app.kubectlTgt, namespace, app.tmpSecret)
-			time.Sleep(2 * time.Second)
+			watchSrc := startSecretWatch(app.kubectlSrc, namespace)
+			watchTgt := startSecretWatch(app.kubectlTgt, namespace)
 
 			By("Run crane transfer-pvc with a valid config file but an unknown cloud-storage remote")
 			runner := app.scenario.CraneNonAdmin
