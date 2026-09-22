@@ -85,7 +85,7 @@ spec:
 		} else {
 			By("Using bundled OpenShiftPlugin")
 			// Plugin is packaged with the binary, verify it's available
-			listOut, _ := exec.Command(config.CraneBin, "transform", "listplugins").CombinedOutput()
+			listOut, _ := exec.Command(config.CraneBin, "transform", "list-plugins").CombinedOutput()
 			Expect(string(listOut)).To(ContainSubstring("OpenShiftPlugin"),
 				"expected OpenShiftPlugin to be bundled, but it's not listed:\n%s", string(listOut))
 		}
