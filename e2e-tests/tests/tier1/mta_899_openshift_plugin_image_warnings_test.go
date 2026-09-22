@@ -69,18 +69,38 @@ spec:
 			[]byte(imageStreamYAML), 0o644,
 		)).NotTo(HaveOccurred())
 
-		By("Install OpenShiftPlugin into an isolated plugin dir")
+		// Detect if plugin-manager is available (upstream) or plugin is bundled (downstream)
 		pluginDir := filepath.Join(paths.TempDir, "plugins")
-		Expect(os.MkdirAll(pluginDir, 0o755)).NotTo(HaveOccurred())
-		installOut, err := exec.Command(config.CraneBin, "plugin-manager", "add", "OpenShiftPlugin", "--plugin-dir", pluginDir).CombinedOutput()
-		Expect(err).NotTo(HaveOccurred(), "failed to install OpenShiftPlugin: %s", string(installOut))
+		helpOut, _ := exec.Command(config.CraneBin, "--help").CombinedOutput()
+		hasPluginManager := false
+		if len(helpOut) > 0 {
+			hasPluginManager = exec.Command(config.CraneBin, "plugin-manager", "--help").Run() == nil
+		}
+
+		if hasPluginManager {
+			By("Install OpenShiftPlugin into an isolated plugin dir")
+			Expect(os.MkdirAll(pluginDir, 0o755)).NotTo(HaveOccurred())
+			installOut, err := exec.Command(config.CraneBin, "plugin-manager", "add", "OpenShiftPlugin", "--plugin-dir", pluginDir).CombinedOutput()
+			Expect(err).NotTo(HaveOccurred(), "failed to install OpenShiftPlugin: %s", string(installOut))
+		} else {
+			By("Using bundled OpenShiftPlugin")
+			// Plugin is packaged with the binary, verify it's available
+			listOut, _ := exec.Command(config.CraneBin, "transform", "listplugins").CombinedOutput()
+			Expect(string(listOut)).To(ContainSubstring("OpenShiftPlugin"),
+				"expected OpenShiftPlugin to be bundled, but it's not listed:\n%s", string(listOut))
+		}
 
 		By("Run crane transform and verify it warns about the ImageStream")
-		transformOut, _ := exec.Command(config.CraneBin, "transform",
+		transformCmd := exec.Command(config.CraneBin, "transform",
 			"--export-dir", paths.ExportDir,
 			"--transform-dir", paths.TransformDir,
-			"--plugin-dir", pluginDir,
-		).CombinedOutput()
+		)
+		if hasPluginManager {
+			// Upstream: use the isolated plugin directory
+			transformCmd.Args = append(transformCmd.Args, "--plugin-dir", pluginDir)
+		}
+		// Downstream: no --plugin-dir needed, uses bundled plugin location
+		transformOut, _ := transformCmd.CombinedOutput()
 
 		output := string(transformOut)
 		Expect(output).To(ContainSubstring(fmt.Sprintf("ImageStream '%s/demo-app' detected", namespace)),
