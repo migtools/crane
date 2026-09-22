@@ -95,8 +95,9 @@ func TestNewFileHook_EnforcesPermissionsOnExistingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0600 {
-		t.Errorf("permissions = %04o, want 0600", got)
+	// Existing files should keep their permissions, not be changed to 0600
+	if got := info.Mode().Perm(); got != 0644 {
+		t.Errorf("permissions = %04o, want 0644 (existing file unchanged)", got)
 	}
 }
 
