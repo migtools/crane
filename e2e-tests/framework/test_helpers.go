@@ -275,13 +275,22 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 
 	securityBlock := ""
 	if opts.Restricted {
-		securityBlock = `    securityContext:
+		// Vanilla k8s needs an explicit non-root runAsUser for root-based images
+		// (e.g. alpine); OpenShift's restricted SCC rejects out-of-range UIDs, so
+		// omit it there and let the SCC assign one.
+		runAsUserLine := ""
+		if !k.IsOpenShift() {
+			runAsUserLine = "      runAsUser: 1000\n"
+		}
+		securityBlock = fmt.Sprintf(`    securityContext:
       runAsNonRoot: true
-      runAsUser: 1000
-      allowPrivilegeEscalation: false
+%s      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
       seccompProfile:
         type: RuntimeDefault
-`
+`, runAsUserLine)
 	}
 
 	manifest := fmt.Sprintf(`apiVersion: v1

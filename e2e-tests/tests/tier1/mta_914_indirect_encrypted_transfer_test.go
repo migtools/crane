@@ -203,6 +203,13 @@ var _ = Describe("Encrypted indirect transfer (--rclone-config-file --encrypt)",
 				"-n", namespace, "--from-file=rclone.conf="+config.RcloneConfigFile)
 			Expect(err).NotTo(HaveOccurred(), "failed to create rclone inspect Secret")
 
+			// Vanilla k8s needs an explicit non-root runAsUser for the root-based
+			// rclone image; OpenShift's restricted SCC rejects out-of-range UIDs, so
+			// omit it there and let the SCC assign one.
+			inspectRunAsUser := ""
+			if !kubectlTgt.IsOpenShift() {
+				inspectRunAsUser = "      runAsUser: 1000\n"
+			}
 			inspectPodYAML := fmt.Sprintf(`
 apiVersion: v1
 kind: Pod
@@ -225,7 +232,10 @@ spec:
       mountPath: /tmp
     securityContext:
       runAsNonRoot: true
-      allowPrivilegeEscalation: false
+%s      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
       seccompProfile:
         type: RuntimeDefault
   volumes:
@@ -234,7 +244,7 @@ spec:
       secretName: %s
   - name: tmp
     emptyDir: {}
-`, inspectS3Pod, namespace, rcloneInspectImage, inspectSecret)
+`, inspectS3Pod, namespace, rcloneInspectImage, inspectRunAsUser, inspectSecret)
 			Expect(kubectlTgt.ApplyYAMLSpec(inspectPodYAML, namespace)).NotTo(HaveOccurred())
 			DeferCleanup(func() {
 				if _, err := kubectlTgt.Run("delete", "pod", inspectS3Pod, "-n", namespace, "--ignore-not-found", "--wait=true"); err != nil {
@@ -255,7 +265,7 @@ spec:
 			// still-running inspect pod so the bucket does not accumulate stale objects
 			// across runs. Registered after the pod-delete cleanup, so it runs first.
 			DeferCleanup(func() {
-				purge := fmt.Sprintf("export HOME=/tmp; rclone --config /cfg/rclone.conf purge %q || true",
+				purge := fmt.Sprintf("export HOME=/tmp; rclone --config /cfg/rclone.conf purge %q",
 					fmt.Sprintf("%s/%s", config.CloudStorage, srcApp.Namespace))
 				if _, err := kubectlTgt.Run("exec", inspectS3Pod, "-n", namespace, "--", "/bin/sh", "-c", purge); err != nil {
 					log.Printf("cleanup: failed to purge cloud objects at %q/%s: %v", config.CloudStorage, srcApp.Namespace, err)
