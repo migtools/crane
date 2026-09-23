@@ -95,6 +95,10 @@ var _ = Describe("Custom paths work: simple and nested directories with auto-cre
 		})).NotTo(HaveOccurred())
 		log.Printf("Transform completed successfully\n")
 
+		By("Verify audit log file does not exist at default path")
+		defaultAuditLog2 := filepath.Join(paths2.TempDir, "audit", ".crane-audit.log")
+		Expect(defaultAuditLog2).NotTo(BeAnExistingFile())
+
 		By("Verify nested subdirectory was auto-created")
 		info, err := os.Stat(filepath.Join(paths2.TempDir, "new", "nested", "subdir"))
 		Expect(err).NotTo(HaveOccurred())
