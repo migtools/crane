@@ -228,6 +228,12 @@ type VerifierPodOptions struct {
 	// match a Deployment's selector (e.g. simulating the real app briefly)
 	// rather than just being a throwaway inspector.
 	Labels map[string]string
+	// Restricted, when true, adds a hardened container securityContext
+	// (runAsNonRoot, runAsUser 1000, no privilege escalation, RuntimeDefault
+	// seccomp) so the pod is admissible in namespaces enforcing the restricted
+	// Pod Security Admission profile — i.e. non-admin scenarios. Leave false for
+	// cluster-admin contexts where a securityContext is not required.
+	Restricted bool
 }
 
 // DeployVerifierPod creates a disposable pod that mounts one or more existing
@@ -267,6 +273,26 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 		return fmt.Errorf("marshal verifier pod command: %w", err)
 	}
 
+	securityBlock := ""
+	if opts.Restricted {
+		// Vanilla k8s needs an explicit non-root runAsUser for root-based images
+		// (e.g. alpine); OpenShift's restricted SCC rejects out-of-range UIDs, so
+		// omit it there and let the SCC assign one.
+		runAsUserLine := ""
+		if !k.IsOpenShift() {
+			runAsUserLine = "      runAsUser: 1000\n"
+		}
+		securityBlock = fmt.Sprintf(`    securityContext:
+      runAsNonRoot: true
+%s      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      seccompProfile:
+        type: RuntimeDefault
+`, runAsUserLine)
+	}
+
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata:
@@ -278,7 +304,7 @@ metadata:
   - name: verifier
     image: %s
     command: %s
-%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mountsBlock, volumesBlock)
+%s%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), securityBlock, mountsBlock, volumesBlock)
 
 	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
 		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
