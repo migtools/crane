@@ -2045,3 +2045,107 @@ func TestFileHasPrefixAndSuffix(t *testing.T) {
 		})
 	}
 }
+
+func TestReadAuditLogEntries(t *testing.T) {
+	cases := []struct {
+		name        string
+		content     string
+		wantCount   int
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid_entries",
+			content: `{"cmd":"transform","level":"info","msg":"test1","time":"2026-09-10T21:00:00+00:00"}
+{"cmd":"apply","level":"info","msg":"test2","time":"2026-09-10T21:00:01+00:00"}`,
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name: "valid_entries_with_trailing_newline",
+			content: `{"cmd":"transform","level":"info","msg":"test","time":"2026-09-10T21:00:00+00:00"}
+`,
+			wantCount: 1,
+			wantErr:   false,
+		},
+		{
+			name:        "blank_lines_ignored",
+			content:     `{"cmd":"transform","level":"info","msg":"test","time":"2026-09-10T21:00:00+00:00"}
+
+{"cmd":"apply","level":"info","msg":"test2","time":"2026-09-10T21:00:01+00:00"}`,
+			wantCount: 2,
+			wantErr:   false,
+		},
+		{
+			name:        "invalid_json",
+			content:     `{"cmd":"transform","level":"info","msg":"test"`,
+			wantErr:     true,
+			errContains: "invalid JSON",
+		},
+		{
+			name:        "missing_required_field_cmd",
+			content:     `{"level":"info","msg":"test","time":"2026-09-10T21:00:00+00:00"}`,
+			wantErr:     true,
+			errContains: "missing required field",
+		},
+		{
+			name:        "missing_required_field_level",
+			content:     `{"cmd":"transform","msg":"test","time":"2026-09-10T21:00:00+00:00"}`,
+			wantErr:     true,
+			errContains: "missing required field",
+		},
+		{
+			name:        "missing_required_field_msg",
+			content:     `{"cmd":"transform","level":"info","time":"2026-09-10T21:00:00+00:00"}`,
+			wantErr:     true,
+			errContains: "missing required field",
+		},
+		{
+			name:        "missing_required_field_time",
+			content:     `{"cmd":"transform","level":"info","msg":"test"}`,
+			wantErr:     true,
+			errContains: "missing required field",
+		},
+		{
+			name:        "file_not_found",
+			content:     "",
+			wantErr:     true,
+			errContains: "read audit log",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			tmpFile := t.TempDir()
+			var logPath string
+
+			if tc.name != "file_not_found" {
+				logPath = filepath.Join(tmpFile, "audit.log")
+				if err := os.WriteFile(logPath, []byte(tc.content), 0644); err != nil {
+					t.Fatalf("setup: write temp file: %v", err)
+				}
+			} else {
+				logPath = filepath.Join(tmpFile, "nonexistent.log")
+			}
+
+			entries, err := ReadAuditLogEntries(logPath)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				if tc.errContains != "" && !strings.Contains(err.Error(), tc.errContains) {
+					t.Fatalf("error = %v, want to contain %q", err, tc.errContains)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if len(entries) != tc.wantCount {
+					t.Fatalf("got %d entries, want %d", len(entries), tc.wantCount)
+				}
+			}
+		})
+	}
+}
