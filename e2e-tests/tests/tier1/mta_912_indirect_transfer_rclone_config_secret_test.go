@@ -214,6 +214,13 @@ var _ = Describe("Indirect transfer with a user-provided rclone config Secret", 
 			// bytes without needing to boot MySQL on the copied data dir (rclone does
 			// not reconstruct a live datadir the way the direct/rsync path does).
 			const verifierPod = "indirect-mysql-verifier"
+			// Vanilla k8s needs an explicit non-root runAsUser for the root-based
+			// alpine image; OpenShift's restricted SCC rejects out-of-range UIDs, so
+			// omit it there and let the SCC assign one.
+			verifierRunAsUser := ""
+			if !kubectlTgt.IsOpenShift() {
+				verifierRunAsUser = "      runAsUser: 1000\n"
+			}
 			verifierPodYAML := fmt.Sprintf(`
 apiVersion: v1
 kind: Pod
@@ -230,15 +237,14 @@ spec:
       mountPath: /test-data
     securityContext:
       runAsNonRoot: true
-      runAsUser: 1000
-      allowPrivilegeEscalation: false
+%s      allowPrivilegeEscalation: false
       seccompProfile:
         type: RuntimeDefault
   volumes:
   - name: data
     persistentVolumeClaim:
       claimName: %s
-`, verifierPod, tgtApp.Namespace, dataPVC)
+`, verifierPod, tgtApp.Namespace, verifierRunAsUser, dataPVC)
 			Expect(kubectlTgt.ApplyYAMLSpec(verifierPodYAML, tgtApp.Namespace)).NotTo(HaveOccurred())
 			DeferCleanup(func() {
 				if _, err := kubectlTgt.Run("delete", "pod", verifierPod, "-n", tgtApp.Namespace, "--ignore-not-found", "--wait=true"); err != nil {
