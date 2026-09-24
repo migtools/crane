@@ -91,6 +91,11 @@ var _ = Describe("PVC transfer with fsGroup / supplementalGroups", func() {
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", srcApp.Namespace)
+		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 		_, err = kubectlSrcNonAdmin.Run("get", "pvc", pvcName, "-n", namespace)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -135,11 +140,12 @@ var _ = Describe("PVC transfer with fsGroup / supplementalGroups", func() {
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		opts := TransferPVCOptions{
-			SourceContext:   srcApp.Context,
-			TargetContext:   tgtApp.Context,
-			PVCName:         pvcName,
-			PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-			Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
+			SourceContext:    srcApp.Context,
+			TargetContext:    tgtApp.Context,
+			PVCName:          pvcName,
+			PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+			DestStorageClass: targetStorageClass,
+			Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
 		}
 		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 

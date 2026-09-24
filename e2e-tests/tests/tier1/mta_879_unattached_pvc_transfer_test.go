@@ -57,7 +57,6 @@ var _ = Describe("Unattached PVC transfer", func() {
 		runner.WorkDir = paths.TempDir
 
 		exportOpts := ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir}
-		transformOpts := TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 
 		DeferCleanup(func() {
@@ -109,6 +108,16 @@ var _ = Describe("Unattached PVC transfer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.TrimSpace(StripKubectlWarnings(sourceWorkloads))).To(BeEmpty())
 
+		sourceStorageClass, err := ResolvePVCStorageClass(scenario.KubectlSrc.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts := TransformOptions{
+			ExportDir:     paths.ExportDir,
+			TransformDir:  paths.TransformDir,
+			OptionalFlags: fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass),
+		}
+
 		By("Run crane export, transform, and apply for the namespace")
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
@@ -124,11 +133,12 @@ var _ = Describe("Unattached PVC transfer", func() {
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		opts := TransferPVCOptions{
-			SourceContext:   srcApp.Context,
-			TargetContext:   tgtApp.Context,
-			PVCName:         pvcName,
-			PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-			Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
+			SourceContext:    srcApp.Context,
+			TargetContext:    tgtApp.Context,
+			PVCName:          pvcName,
+			PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+			DestStorageClass: targetStorageClass,
+			Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
 		}
 		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
 

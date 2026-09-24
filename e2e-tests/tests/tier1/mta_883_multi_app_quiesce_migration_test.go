@@ -91,22 +91,29 @@ var _ = Describe("Multi-app namespace migration with pod quiesce", func() {
 		WaitForSourceQuiesce(kubectlSrcNonAdmin, namespace, "app="+nginxAppName, nginxServiceName)
 		WaitForSourceQuiesce(kubectlSrcNonAdmin, namespace, "name="+redisAppName, redisAppName)
 
+		pvcs, err := ListPVCs(namespace, "", srcRedis.Context)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", namespace)
+		sourceStorageClass, err := ResolvePVCStorageClass(srcRedis.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
+
 		By("Run crane export/transform/apply pipeline once for the shared namespace")
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
 
 		By("Transfer PVCs in the namespace to the target cluster")
-		pvcs, err := ListPVCs(namespace, "", srcRedis.Context)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", namespace)
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		for _, pvc := range pvcs {
 			opts := TransferPVCOptions{
-				SourceContext:   srcRedis.Context,
-				TargetContext:   tgtRedis.Context,
-				PVCName:         pvc.Name,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", namespace, namespace),
-				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, namespace, tgtIP),
+				SourceContext:    srcRedis.Context,
+				TargetContext:    tgtRedis.Context,
+				PVCName:          pvc.Name,
+				PVCNamespaceMap:  fmt.Sprintf("%s:%s", namespace, namespace),
+				DestStorageClass: targetStorageClass,
+				Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvc.Name, namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())

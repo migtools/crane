@@ -122,6 +122,8 @@ var _ = Describe("Encrypted indirect transfer (--rclone-config-file --encrypt)",
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in namespace %q", srcApp.Namespace)
 			log.Printf("Found %d PVCs in namespace %q", len(pvcs), srcApp.Namespace)
+			targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+			Expect(err).NotTo(HaveOccurred())
 
 			By("Transfer each PVC in indirect mode with client-side encryption")
 			runner := scenario.CraneNonAdmin
@@ -132,6 +134,7 @@ var _ = Describe("Encrypted indirect transfer (--rclone-config-file --encrypt)",
 					TargetContext:    tgtApp.Context,
 					PVCName:          pvc.Name,
 					PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+					DestStorageClass: targetStorageClass,
 					CloudStorage:     config.CloudStorage,
 					RcloneConfigFile: config.RcloneConfigFile,
 					Encrypt:          true,
