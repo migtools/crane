@@ -39,6 +39,9 @@ func NewKustomizeWriter(opts file.PathOpts, stageName string, log *logrus.Logger
 // WriteStage writes all artifacts for a stage to disk
 func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) error {
 	stageDir := w.opts.GetStageDir(w.stageName)
+	if err := internalkustomize.ValidateFragmentPaths(stageDir, w.kustomizeFragment); err != nil {
+		return fmt.Errorf("invalid kustomize fragment for stage %s: %w", w.stageName, err)
+	}
 
 	// Handle directory preparation based on force flag
 	if force {

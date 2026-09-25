@@ -143,7 +143,7 @@ func TestWriteStage_KustomizeFragmentMerged(t *testing.T) {
 	writer.kustomizeFragment = map[string]interface{}{
 		"namespace":    "dest-ns",
 		"commonLabels": map[string]interface{}{"app": "crane"},
-		"resources":    []interface{}{"extra/manual.yaml"},
+		"resources":    []interface{}{"https://github.com/example/manifests//base?ref=v1.0.0"},
 	}
 
 	if err := writer.WriteStage([]StageArtifact{artifact}, true); err != nil {
@@ -157,7 +157,7 @@ func TestWriteStage_KustomizeFragmentMerged(t *testing.T) {
 	}
 	content := string(data)
 
-	for _, want := range []string{"namespace: dest-ns", "commonLabels", "app: crane", "extra/manual.yaml"} {
+	for _, want := range []string{"namespace: dest-ns", "commonLabels", "app: crane", "https://github.com/example/manifests//base?ref=v1.0.0"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("kustomization.yaml missing %q:\n%s", want, content)
 		}
@@ -165,6 +165,32 @@ func TestWriteStage_KustomizeFragmentMerged(t *testing.T) {
 	// apiVersion/kind must remain the generated kustomize ones.
 	if !strings.Contains(content, "kind: Kustomization") {
 		t.Errorf("kustomization.yaml lost kind: Kustomization:\n%s", content)
+	}
+}
+
+func TestWriteStage_RejectsFragmentPathInsideStageBeforeOverwrite(t *testing.T) {
+	tmpDir := t.TempDir()
+	transformDir := filepath.Join(tmpDir, "transform")
+	stageName := "10_test"
+	stageDir := filepath.Join(transformDir, stageName)
+	if err := os.MkdirAll(stageDir, 0o700); err != nil {
+		t.Fatalf("failed to create stage directory: %v", err)
+	}
+	markerPath := filepath.Join(stageDir, "marker")
+	if err := os.WriteFile(markerPath, []byte("keep"), 0o600); err != nil {
+		t.Fatalf("failed to write marker: %v", err)
+	}
+
+	writer := NewKustomizeWriter(file.PathOpts{TransformDir: transformDir}, stageName, logrus.New())
+	writer.kustomizeFragment = map[string]interface{}{
+		"resources": []interface{}{"extra/manual.yaml"},
+	}
+	err := writer.WriteStage(nil, true)
+	if err == nil || !strings.Contains(err.Error(), "inside generated stage directory") {
+		t.Fatalf("expected path validation error, got %v", err)
+	}
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Fatalf("stage was modified before fragment validation: %v", err)
 	}
 }
 

@@ -1,6 +1,7 @@
 package kustomize
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -128,8 +129,9 @@ func TestMergeFragment_AddsScalarAndMapFields(t *testing.T) {
 }
 
 func TestMergeFragment_AppendsResources(t *testing.T) {
+	remote := "https://github.com/example/manifests//base?ref=v1.0.0"
 	fragment := map[string]interface{}{
-		"resources": []interface{}{"input/b.yaml", "extra/c.yaml"},
+		"resources": []interface{}{remote, remote},
 	}
 
 	out, err := MergeFragment([]byte(baseKustomization), fragment)
@@ -142,8 +144,8 @@ func TestMergeFragment_AppendsResources(t *testing.T) {
 	if !ok {
 		t.Fatalf("resources not a list: %T", m["resources"])
 	}
-	// input/b.yaml is de-duplicated; extra/c.yaml appended.
-	want := []string{"input/a.yaml", "input/b.yaml", "extra/c.yaml"}
+	// Duplicate fragment resources are appended once.
+	want := []string{"input/a.yaml", "input/b.yaml", remote}
 	if len(resources) != len(want) {
 		t.Fatalf("expected %d resources, got %d: %v", len(want), len(resources), resources)
 	}
@@ -158,7 +160,7 @@ func TestMergeFragment_AppendsPatches(t *testing.T) {
 	fragment := map[string]interface{}{
 		"patches": []interface{}{
 			map[string]interface{}{
-				"path": "patches/p2.yaml",
+				"patch": "- op: replace\n  path: /spec/type\n  value: ClusterIP\n",
 				"target": map[string]interface{}{
 					"kind": "Service",
 					"name": "web",
@@ -179,6 +181,63 @@ func TestMergeFragment_AppendsPatches(t *testing.T) {
 	}
 	if len(patches) != 2 {
 		t.Fatalf("expected 2 patches, got %d: %v", len(patches), patches)
+	}
+}
+
+func TestValidateFragmentPaths(t *testing.T) {
+	stageDir := filepath.Join(t.TempDir(), "transform", "10_test")
+	tests := []struct {
+		name     string
+		fragment map[string]interface{}
+		wantErr  string
+	}{
+		{
+			name:     "resource inside stage",
+			fragment: map[string]interface{}{"resources": []interface{}{"extra/deployment.yaml"}},
+			wantErr:  "inside generated stage directory",
+		},
+		{
+			name:     "resource outside stage",
+			fragment: map[string]interface{}{"resources": []interface{}{"../../shared/base"}},
+		},
+		{
+			name:     "remote resource",
+			fragment: map[string]interface{}{"resources": []interface{}{"oci://registry.example.com/manifests:v1"}},
+		},
+		{
+			name: "patch inside stage",
+			fragment: map[string]interface{}{"patches": []interface{}{
+				map[string]interface{}{"path": "patches/update.yaml"},
+			}},
+			wantErr: "inside generated stage directory",
+		},
+		{
+			name: "patch outside stage",
+			fragment: map[string]interface{}{"patches": []interface{}{
+				map[string]interface{}{"path": "../../shared/update.yaml"},
+			}},
+		},
+		{
+			name: "inline patch",
+			fragment: map[string]interface{}{"patches": []interface{}{
+				map[string]interface{}{"patch": "- op: replace\n  path: /spec/replicas\n  value: 2"},
+			}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateFragmentPaths(stageDir, tt.fragment)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("expected error containing %q, got %v", tt.wantErr, err)
+			}
+		})
 	}
 }
 

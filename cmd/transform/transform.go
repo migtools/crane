@@ -181,7 +181,7 @@ func addFlagsForOptions(o *Flags, cmd *cobra.Command) {
 
 	cmd.Flags().StringVar(&o.OptionalFlags, "optional-flags", "", "JSON string holding flag value pairs to be passed to all plugins (e.g. '{\"registry-replacement\": \"docker.io=quay.io\"}')")
 	cmd.Flags().StringArrayVar(&o.StageOptionals, "stage-optionals", nil, "Per-stage optional flags as StageName=JSON, repeatable (e.g. --stage-optionals 'KubernetesPlugin={\"registry-replacement\":\"docker.io=quay.io\"}')")
-	cmd.Flags().StringArrayVar(&o.StageKustomize, "stage-kustomize", nil, "Per-stage inline kustomize fragment as StageName=YAML|JSON, repeatable. The fragment is merged into the stage's generated kustomization.yaml (resources/patches are appended, other fields override). E.g. --stage-kustomize 'KubernetesPlugin={\"namespace\":\"dest-ns\",\"commonLabels\":{\"app\":\"crane\"}}'")
+	cmd.Flags().StringArrayVar(&o.StageKustomize, "stage-kustomize", nil, "Per-stage inline kustomize fragment as StageName=YAML|JSON, repeatable. Resources and patches are appended; other fields override. Local paths must resolve outside the generated stage directory. E.g. --stage-kustomize 'KubernetesPlugin={\"namespace\":\"dest-ns\",\"commonLabels\":{\"app\":\"crane\"}}'")
 
 	// Kustomize arguments
 	cmd.Flags().StringVar(&o.KustomizeArgs, "kustomize-args", "", "Additional arguments for kustomize (e.g., '--enable-helm --helm-command=helm3')")

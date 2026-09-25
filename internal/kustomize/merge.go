@@ -2,6 +2,8 @@ package kustomize
 
 import (
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -93,7 +95,6 @@ func appendList(key string, base, fragment interface{}) (interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	result := make([]interface{}, 0, len(baseList)+len(fragList))
 	result = append(result, baseList...)
 
@@ -134,4 +135,72 @@ func toList(key string, v interface{}, allowNil bool) ([]interface{}, error) {
 		return nil, fmt.Errorf("kustomize fragment field %q must be a list, got %T", key, v)
 	}
 	return list, nil
+}
+
+// ValidateFragmentPaths rejects local references inside the generated stage
+// because WriteStage removes that directory before regenerating its contents.
+func ValidateFragmentPaths(stageDir string, fragment map[string]interface{}) error {
+	stageDir, err := filepath.Abs(stageDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve stage directory %q: %w", stageDir, err)
+	}
+
+	if resources, ok := fragment["resources"].([]interface{}); ok {
+		for i, item := range resources {
+			resource, ok := item.(string)
+			if !ok || isRemoteReference(resource) {
+				continue
+			}
+			if err := validatePathOutsideStage(stageDir, resource); err != nil {
+				return fmt.Errorf("kustomize fragment field %q item %d: %w", "resources", i, err)
+			}
+		}
+	}
+
+	if patches, ok := fragment["patches"].([]interface{}); ok {
+		for i, item := range patches {
+			patch, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			path, ok := patch["path"].(string)
+			if !ok || isRemoteReference(path) {
+				continue
+			}
+			if err := validatePathOutsideStage(stageDir, path); err != nil {
+				return fmt.Errorf("kustomize fragment field %q item %d: %w", "patches", i, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func validatePathOutsideStage(stageDir, reference string) error {
+	resolved := reference
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(stageDir, resolved)
+	}
+	resolved = filepath.Clean(resolved)
+	relative, err := filepath.Rel(stageDir, resolved)
+	if err != nil {
+		return fmt.Errorf("failed to resolve local path %q: %w", reference, err)
+	}
+	if relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))) {
+		return fmt.Errorf("local path %q resolves inside generated stage directory %q", reference, stageDir)
+	}
+	return nil
+}
+
+func isRemoteReference(reference string) bool {
+	if strings.HasPrefix(reference, "git::") {
+		return true
+	}
+	parsed, err := url.Parse(reference)
+	if err == nil && parsed.Scheme != "" {
+		return true
+	}
+	at := strings.Index(reference, "@")
+	colon := strings.Index(reference, ":")
+	return at > 0 && colon > at
 }

@@ -121,10 +121,12 @@ Crane first generates each stage's `kustomization.yaml`, then merges its
 
 A stage without a `kustomize` block keeps the standard generated output.
 
-Prefer inline patch content, as shown above. A path in `resources` or
-`patches.path` must exist when Kustomize builds the stage. Stage regeneration
-removes files kept manually inside that stage, so local referenced files are
-not suitable as undeclared inputs to a repeatable instructions-file workflow.
+Remote resources are passed to Kustomize without restricting their URL scheme.
+Local `resources` and `patches.path` values are resolved relative to the stage
+directory and must point outside that generated directory, for example
+`../../shared/base` or `../../shared/patches/update.yaml`. Files inside a stage
+are rejected because stage regeneration removes that directory. Inline patches,
+as shown above, do not reference a file and remain supported.
 
 ## CLI alternative
 
@@ -151,7 +153,9 @@ Crane rejects an instructions file when:
 - a stage entry contains a field other than `name`, `optionals`, or
   `kustomize`;
 - a Kustomize fragment references a stage outside the configured pipeline;
-- `resources` or `patches` is not a list.
+- `resources` or `patches` is not a list;
+- a local `resources` or `patches.path` value resolves inside the generated
+  stage directory.
 
 Kustomize reports schema errors and missing referenced resources while building
 the affected stage.
