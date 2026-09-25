@@ -59,7 +59,11 @@ func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// Store positional arguments as requested stages
 	o.RequestedStages = args
 	o.globalFlags.SetCmdName("transform")
-	o.log = o.globalFlags.GetLoggerOrDefault()
+	logger, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
+	o.log = logger
 	return nil
 }
 
@@ -109,7 +113,10 @@ func getPluginCompletions(f *flags.GlobalFlags) func(cmd *cobra.Command, args []
 
 		// Get plugin names using shared function
 		f.SetCmdName("transform")
-		log := f.GetLoggerOrDefault()
+		log, err := f.GetLoggerOrDefault()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
 		pluginNames, err := listplugins.GetPluginNames(pluginDir, skipPlugins, log)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveError
@@ -219,7 +226,7 @@ func (o *Options) run() error {
 	}
 
 	var instructionStages []string
-	var instructionStageNames []string
+	var instructionPluginStages []string
 	var instructionStageOptionals map[string]map[string]string
 	var instructionStageKustomize map[string]map[string]interface{}
 	if o.InstructionsFile != "" {
@@ -233,8 +240,8 @@ func (o *Options) run() error {
 			log.Errorf("Failed to load instructions file %q: %v", instructionsFilePath, err)
 			return err
 		}
-		instructionStageNames = cfg.StageNames()
-		instructionStages = internalTransform.GenerateStageDirNames(instructionStageNames)
+		instructionPluginStages = cfg.StageNames()
+		instructionStages = internalTransform.GenerateStageDirNames(instructionPluginStages)
 		instructionStageOptionals, err = cfg.StageOptionals()
 		if err != nil {
 			return fmt.Errorf("invalid instructions file %q: %w", instructionsFilePath, err)
@@ -333,17 +340,11 @@ func (o *Options) run() error {
 			selector = internalTransform.StageSelector{
 				Stages: []string{stageName},
 			}
-			baseName := instructionStageNames[i]
-			orchestrator.StageOptionalFlags = nil
-			if optionals, ok := instructionStageOptionals[baseName]; ok {
-				orchestrator.StageOptionalFlags = map[string]map[string]string{baseName: optionals}
-			}
-			orchestrator.StageKustomizeFragments = nil
-			if fragment, ok := instructionStageKustomize[baseName]; ok {
-				orchestrator.StageKustomizeFragments = map[string]map[string]interface{}{baseName: fragment}
-			}
 			log.Infof("Running stage: %s", stageName)
-			if err := o.runStageWithCleanup(orchestrator, selector, stageDir, !stageExists, log); err != nil {
+			stageOrchestrator := *orchestrator
+			stageOrchestrator.StageOptionalFlags = stageOptionalsForPlugin(instructionStageOptionals, instructionPluginStages[i])
+			stageOrchestrator.StageKustomizeFragments = stageKustomizeForPlugin(instructionStageKustomize, instructionPluginStages[i])
+			if err := o.runStageWithCleanup(&stageOrchestrator, selector, stageDir, !stageExists, log); err != nil {
 				log.Errorf("Failed to run stage %q: %v", stageName, err)
 				return err
 			}
@@ -419,6 +420,26 @@ func (o *Options) run() error {
 	}
 	log.Infof("Transform complete (all stages)")
 	return nil
+}
+
+// stageOptionalsForPlugin restricts instruction optionals to the plugin being
+// run because instructions stages are executed individually.
+func stageOptionalsForPlugin(optionals map[string]map[string]string, pluginName string) map[string]map[string]string {
+	flags, ok := optionals[pluginName]
+	if !ok {
+		return nil
+	}
+	return map[string]map[string]string{pluginName: flags}
+}
+
+// stageKustomizeForPlugin restricts instruction fragments to the plugin being
+// run because instructions stages are executed individually.
+func stageKustomizeForPlugin(fragments map[string]map[string]interface{}, pluginName string) map[string]map[string]interface{} {
+	fragment, ok := fragments[pluginName]
+	if !ok {
+		return nil
+	}
+	return map[string]map[string]interface{}{pluginName: fragment}
 }
 
 // parseStageOptionals parses --stage-optionals values from "StageName=JSON" format

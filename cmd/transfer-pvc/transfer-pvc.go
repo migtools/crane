@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	logrusr "github.com/bombsimon/logrusr/v3"
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -37,6 +36,7 @@ import (
 
 	"github.com/konveyor/crane/internal/cli"
 	"github.com/konveyor/crane/internal/flags"
+	crlog "github.com/konveyor/crane/internal/log"
 
 	"github.com/migtools/pvc-transfer/endpoint"
 	ingressendpoint "github.com/migtools/pvc-transfer/endpoint/ingress"
@@ -206,7 +206,11 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 
 func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 	t.globalFlags.SetCmdName("transfer-pvc")
-	t.log = t.globalFlags.GetLoggerOrDefault()
+	logger, err := t.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
+	t.log = logger
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
 	if err != nil {
@@ -246,7 +250,11 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 func (t *TransferPVCCommand) Validate() error {
 	log := t.log
 	if log == nil {
-		log = t.globalFlags.GetLoggerOrDefault()
+		logger, err := t.globalFlags.GetLoggerOrDefault()
+		if err != nil {
+			return err
+		}
+		log = logger
 	}
 	cloudStorage := t.CloudStorage
 
@@ -357,21 +365,17 @@ func (t *TransferPVCCommand) getRestConfigFromContext(ctx string) (*rest.Config,
 func (t *TransferPVCCommand) run() (retErr error) {
 	log := t.log
 	log.Infof("Starting PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
-	ctrlLogger := logrus.New()
-	logger := logrusr.New(ctrlLogger).WithName("transfer-pvc")
+	logger := crlog.InitControllerRuntimeLogger("transfer-pvc")
 
 	totalPhases := 7
 	if t.isIntraClusterSameNamespace() {
 		totalPhases = 8
 	}
 	phases := cli.NewPhaseTracker(t.ErrOut, totalPhases)
+	var rsyncExitCode *int32
 	defer func() {
-		status := "succeeded"
-		if retErr != nil {
-			status = "failed"
-		}
 		cli.PrintTransferSummary(t.ErrOut, &cli.TransferSummary{
-			Status:   status,
+			Status:   transferSummaryStatus(retErr, rsyncExitCode),
 			Duration: phases.Elapsed(),
 		})
 	}()
@@ -421,8 +425,8 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	log.Infof("Phase 2: Creating destination PVC")
 	phases.Start("Creating destination PVC")
 	destPVC := t.buildDestinationPVC(srcPVC)
-	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
+	err = t.createDestinationPVC(context.TODO(), destClient, destPVC)
+	if err != nil {
 		log.Errorf("Unable to create destination PVC %s/%s: %v", t.PVC.Namespace.destination, t.PVC.Name.destination, err)
 		return phases.Fail(err, "unable to create destination PVC")
 	}
@@ -653,15 +657,15 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		return phases.Fail(err, "failed to create rsync client")
 	}
 
-	exitCode, err := followClientLogs(
+	rsyncExitCode, err = followClientLogs(
 		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, clientLabels, t.ProgressOutput, log)
 	if err != nil {
 		log.Errorf("Error following rsync client logs: %v", err)
 		return phases.Fail(err, "error following rsync client logs")
 	}
 	detail := ""
-	if exitCode != nil {
-		detail = fmt.Sprintf("exit=%d", *exitCode)
+	if rsyncExitCode != nil {
+		detail = fmt.Sprintf("exit=%d", *rsyncExitCode)
 	}
 	phases.End("finished", detail)
 
@@ -694,6 +698,19 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	return nil
 }
 
+func transferSummaryStatus(retErr error, rsyncExitCode *int32) string {
+	if retErr != nil {
+		return "failed"
+	}
+	if rsyncExitCode != nil && *rsyncExitCode == 23 {
+		return "succeeded (with warnings — some files could not be transferred)"
+	}
+	if rsyncExitCode != nil && *rsyncExitCode != 0 {
+		return "failed"
+	}
+	return "succeeded"
+}
+
 func certificateSecretName(serverSecret, srcPVCName, destPVCName string) string {
 	if srcPVCName != destPVCName {
 		return fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(srcPVCName))
@@ -711,26 +728,53 @@ func getValidatedResourceName(name string) string {
 	}
 }
 
-// getNodeNameForPVC returns name of the node on which the PVC is currently mounted on
-// returns name of the node as a string, and an error
-func getNodeNameForPVC(srcClient client.Client, namespace string, pvcName string) (string, error) {
+// getRunningPodUsingPVC returns the running pod that mounts pvcName, if any.
+func getRunningPodUsingPVC(c client.Client, namespace string, pvcName string) (*corev1.Pod, error) {
+	return getPodUsingPVC(c, namespace, pvcName, func(pod *corev1.Pod) bool {
+		return pod.Status.Phase == corev1.PodRunning
+	})
+}
+
+// getActivePodUsingPVC returns a non-terminal pod that references pvcName, if any.
+// Pending pods are included because Kubernetes may attach and mount a PVC before
+// an init container or application container starts.
+func getActivePodUsingPVC(c client.Client, namespace string, pvcName string) (*corev1.Pod, error) {
+	return getPodUsingPVC(c, namespace, pvcName, func(pod *corev1.Pod) bool {
+		return pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed
+	})
+}
+
+func getPodUsingPVC(c client.Client, namespace string, pvcName string, include func(*corev1.Pod) bool) (*corev1.Pod, error) {
 	podList := corev1.PodList{}
-	err := srcClient.List(context.TODO(), &podList, client.InNamespace(namespace))
-	if err != nil {
-		return "", err
+	if err := c.List(context.TODO(), &podList, client.InNamespace(namespace)); err != nil {
+		return nil, err
 	}
-	for _, pod := range podList.Items {
-		if pod.Status.Phase == corev1.PodRunning {
-			for _, vol := range pod.Spec.Volumes {
-				if vol.PersistentVolumeClaim != nil {
-					if vol.PersistentVolumeClaim.ClaimName == pvcName {
-						return pod.Spec.NodeName, nil
-					}
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if !include(pod) {
+			continue
+		}
+		for _, vol := range pod.Spec.Volumes {
+			if vol.PersistentVolumeClaim != nil {
+				if vol.PersistentVolumeClaim.ClaimName == pvcName {
+					return pod, nil
 				}
 			}
 		}
 	}
-	return "", nil
+	return nil, nil
+}
+
+// getNodeNameForPVC returns the name of the node on which the PVC is currently mounted.
+func getNodeNameForPVC(c client.Client, namespace string, pvcName string) (string, error) {
+	pod, err := getRunningPodUsingPVC(c, namespace, pvcName)
+	if err != nil {
+		return "", err
+	}
+	if pod == nil {
+		return "", nil
+	}
+	return pod.Spec.NodeName, nil
 }
 
 func getIDsForNamespace(c client.Client, namespace string, pvcName string, image string) (*corev1.PodSecurityContext, error) {
@@ -1288,6 +1332,47 @@ func (t *TransferPVCCommand) buildDestinationPVC(sourcePVC *corev1.PersistentVol
 	pvc.Spec.VolumeMode = nil
 	pvc.Spec.VolumeName = ""
 	return pvc
+}
+
+// createDestinationPVC creates the destination PVC, ensuring an existing PVC
+// is neither terminating nor referenced by a non-terminal pod, and validating
+// its storage class when --dest-storage-class was requested.
+func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
+	if err := c.Create(ctx, pvc, &client.CreateOptions{}); err == nil {
+		return nil
+	} else if !errors.IsAlreadyExists(err) {
+		return fmt.Errorf("creating destination PVC %q: %w", pvc.Name, err)
+	}
+
+	existing := &corev1.PersistentVolumeClaim{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pvc), existing); err != nil {
+		return fmt.Errorf("getting existing destination PVC %q: %w", pvc.Name, err)
+	}
+	if existing.DeletionTimestamp != nil {
+		return fmt.Errorf("destination PVC %q is terminating; transfer cannot proceed until it has been fully deleted. Remove the finalizer blocking deletion or wait for deletion to complete, then retry", client.ObjectKeyFromObject(existing))
+	}
+
+	pod, err := getActivePodUsingPVC(c, existing.Namespace, existing.Name)
+	if err != nil {
+		return fmt.Errorf("checking whether destination PVC %s/%s is in use: %w", existing.Namespace, existing.Name, err)
+	}
+	if pod != nil {
+		return fmt.Errorf("destination PVC %s/%s is in use by pod %q; scale it down before transferring", existing.Namespace, existing.Name, pod.Name)
+	}
+
+	if t.PVC.StorageClassName == "" {
+		return nil
+	}
+
+	existingStorageClass := ""
+	if existing.Spec.StorageClassName != nil {
+		existingStorageClass = *existing.Spec.StorageClassName
+	}
+	if existingStorageClass != t.PVC.StorageClassName {
+		return fmt.Errorf("destination PVC %q already exists with StorageClass %q but --dest-storage-class %q was requested; delete the existing PVC or omit --dest-storage-class to use the existing PVC as-is", pvc.Name, existingStorageClass, t.PVC.StorageClassName)
+	}
+
+	return nil
 }
 
 func stripServerManagedPVCAnnotations(annotations map[string]string) map[string]string {

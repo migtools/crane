@@ -6,8 +6,8 @@ Crane uses a plugin system for transforming Kubernetes resources during migratio
 
 1. Crane discovers plugin binaries in the plugin directory (`~/.local/share/crane/plugins/` by default)
 2. During transform, each plugin receives a Kubernetes resource on stdin
-3. The plugin analyzes the resource and returns JSONPatch operations on stdout
-4. Crane writes the patches to the stage's `patches/` directory
+3. The plugin analyzes the resource and returns a PluginResponse object on stdout, which contains JSONPatch operations and optional new resources
+4. Crane writes the patches to the stage's `patches/` directory and new resources to the `new/` directory
 5. During apply, the embedded kustomize engine applies the patches to the resources
 
 ## Plugin Interface
@@ -40,18 +40,27 @@ A single Kubernetes resource in JSON format:
 
 ### Output (stdout)
 
-A JSON array of RFC 6902 JSONPatch operations:
+Plugins return a PluginResponse object containing an optional array of RFC 6902 JSONPatch operations in the `patches` field. Additionally, plugins can optionally return entirely new resources in the `newResources` field to be added to the transformation pipeline.
 
 ```json
-[
-  {"op": "remove", "path": "/metadata/uid"},
-  {"op": "remove", "path": "/metadata/resourceVersion"},
-  {"op": "remove", "path": "/status"},
-  {"op": "add", "path": "/metadata/labels/migrated", "value": "true"}
-]
+{
+  "version": "v1",
+  "isWhiteOut": false,
+  "patches": [
+    {"op": "remove", "path": "/metadata/uid"}
+  ],
+  "newResources": [
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {"name": "generated-config", "namespace": "default"},
+      "data": {"key": "value"}
+    }
+  ]
+}
 ```
 
-Return an empty array `[]` if no transformations are needed.
+Return an empty array for `patches` if no transformations are needed. `newResources` is optional; if provided, each resource must contain a valid `kind`, `name`, and `apiVersion`.
 
 ## Writing a Plugin in Go
 
@@ -60,52 +69,32 @@ package main
 
 import (
     "encoding/json"
-    "fmt"
     "os"
 
     "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+    "github.com/evanphx/json-patch"
+    cranelib "github.com/konveyor/crane-lib/transform"
 )
-
-type PatchOp struct {
-    Op    string      `json:"op"`
-    Path  string      `json:"path"`
-    Value interface{} `json:"value,omitempty"`
-}
 
 func main() {
     var resource unstructured.Unstructured
     if err := json.NewDecoder(os.Stdin).Decode(&resource); err != nil {
-        fmt.Fprintf(os.Stderr, "failed to decode resource: %v\n", err)
         os.Exit(1)
     }
 
-    var patches []PatchOp
-
-    // Example: add a migration label (ensure parent object exists first)
-    patches = append(patches, PatchOp{
-        Op:    "add",
-        Path:  "/metadata/labels",
-        Value: map[string]interface{}{},
-    })
-    patches = append(patches, PatchOp{
-        Op:    "add",
-        Path:  "/metadata/labels/migrated-by",
-        Value: "my-plugin",
-    })
-
-    // Example: remove a specific annotation
-    annotations := resource.GetAnnotations()
-    if annotations != nil {
-        if _, ok := annotations["source-cluster-only"]; ok {
-            patches = append(patches, PatchOp{
-                Op:   "remove",
-                Path: "/metadata/annotations/source-cluster-only",
-            })
-        }
+    // Build JSONPatch operations
+    patchData := []byte(`[{"op": "add", "path": "/metadata/labels/migrated", "value": "true"}]`)
+    patches, err := jsonpatch.DecodePatch(patchData)
+    if err != nil {
+        os.Exit(1)
     }
 
-    if err := json.NewEncoder(os.Stdout).Encode(patches); err != nil {
-        fmt.Fprintf(os.Stderr, "failed to encode patches: %v\n", err)
+    response := cranelib.PluginResponse{
+        Version: "v1",
+        Patches: patches,
+    }
+
+    if err := json.NewEncoder(os.Stdout).Encode(response); err != nil {
         os.Exit(1)
     }
 }
@@ -121,14 +110,11 @@ go build -o ~/.local/share/crane/plugins/MyCustomPlugin
 
 ```bash
 #!/bin/bash
-# Simple plugin that adds a label to all resources
-# Note: ensure /metadata/labels exists before adding child keys
-
+# Simple plugin that returns patches
 cat <<EOF
-[
-  {"op": "add", "path": "/metadata/labels", "value": {}},
-  {"op": "add", "path": "/metadata/labels/environment", "value": "production"}
-]
+{
+  "patches": [{"op": "add", "path": "/metadata/labels/environment", "value": "production"}]
+}
 EOF
 ```
 

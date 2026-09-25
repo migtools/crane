@@ -124,4 +124,4 @@ runs:
           GINKGO_ARGS+=(--rclone-config-file="${{ inputs.rclone_config_file }}")
         fi
 
-        ginkgo run -v -r --label-filter="${{ inputs.label_filter }}" e2e-tests/tests -- "${GINKGO_ARGS[@]}"
+        ginkgo run -v -r --timeout=90m --label-filter="${{ inputs.label_filter }}" e2e-tests/tests -- "${GINKGO_ARGS[@]}"

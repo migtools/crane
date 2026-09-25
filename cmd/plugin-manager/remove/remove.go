@@ -35,7 +35,11 @@ type Flags struct {
 func (o *Options) Complete(c *cobra.Command, args []string) error {
 	// TODO: @jgabani
 	o.globalFlags.SetCmdName("plugin-manager remove")
-	o.log = o.globalFlags.GetLoggerOrDefault()
+	logger, err := o.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
+	o.log = logger
 	return nil
 }
 
@@ -80,25 +84,31 @@ func NewRemoveCommand(f *flags.GlobalFlags) *cobra.Command {
 
 func (o *Options) run(args []string) error {
 	log := o.log
+
+	log.Infof("Starting plugin-manager remove %s...", args[0])
+
 	pluginDir, err := filepath.Abs(fmt.Sprintf("%v/%v", o.PluginDir, o.Repo))
 	if err != nil {
+		log.Errorf("Failed to resolve plugin directory path: %v", err)
 		return err
 	}
 
 	files, err := ioutil.ReadDir(pluginDir)
 	if err != nil {
+		log.Errorf("Failed to read plugin directory %s: %v", pluginDir, err)
 		return err
 	}
 
 	paths, err := plugin.LocateBinaryInPluginDir(pluginDir, args[0], files)
 	if err != nil {
+		log.Errorf("Failed to locate plugin %s in %s: %v", args[0], pluginDir, err)
 		return err
 	}
 
 	if len(paths) > 1 {
 		// fail and ask for a specific repo
-		log.Errorf("The binary is installed from multiple source, please specify repository from which you want to remove the plugin using --repo \n")
-		fmt.Printf("The binary is present in the following path")
+		log.Errorf("The binary is installed from multiple sources, please specify repository from which you want to remove the plugin using --repo")
+		fmt.Println("The binary is present in the following path")
 		for _, path := range paths {
 			fmt.Printf("%s \n", path)
 		}
@@ -108,6 +118,7 @@ func (o *Options) run(args []string) error {
 	} else {
 		err = os.Remove(paths[0])
 		if err != nil {
+			log.Errorf("Failed to remove plugin %s from %s: %v", args[0], paths[0], err)
 			return err
 		}
 		log.Infof("The plugin %s removed from path - %s", args[0], paths[0])

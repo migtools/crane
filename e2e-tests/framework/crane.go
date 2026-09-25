@@ -3,6 +3,7 @@ package framework
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 )
@@ -26,6 +27,11 @@ type TransferPVCOptions struct {
 	CloudStorage       string
 	RcloneConfigFile   string
 	RcloneConfigSecret string
+	// DisableCloudStorage prevents the runner from inheriting the suite-wide
+	// cloud storage configuration. It is useful when direct and indirect
+	// transfer coverage run in the same E2E invocation.
+	DisableCloudStorage bool
+	RsyncImage          string
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -61,6 +67,7 @@ type TransformOptions struct {
 	KustomizeArgs    string
 	InstructionsFile string
 	Stages           []string
+	AuditLogPath     string
 }
 
 type ApplyOptions struct {
@@ -146,6 +153,9 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 	if opts.InstructionsFile != "" {
 		args = append(args, "--instructions-file", opts.InstructionsFile)
 	}
+	if opts.AuditLogPath != "" {
+		args = append(args, "--audit-log", opts.AuditLogPath)
+	}
 	args = append(args, opts.Stages...)
 
 	logVerboseCommand(c.Bin, args)
@@ -199,7 +209,14 @@ func (c CraneRunner) Apply(opts ApplyOptions) error {
 // Otherwise uses direct rsync/stunnel.
 // If Endpoint is empty in direct mode, it auto-detects: "route" on OpenShift, "nginx-ingress" on vanilla K8s.
 func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
-	if opts.CloudStorage == "" && config.CloudStorage != "" {
+	_, err := c.TransferPVCWithOutput(opts)
+	return err
+}
+
+// TransferPVCWithOutput runs crane transfer-pvc and returns its combined stdout
+// and stderr. This permits E2E tests to assert CLI progress and summary output.
+func (c CraneRunner) TransferPVCWithOutput(opts TransferPVCOptions) (string, error) {
+	if !opts.DisableCloudStorage && opts.CloudStorage == "" && config.CloudStorage != "" {
 		opts.CloudStorage = config.CloudStorage
 	}
 	if opts.RcloneConfigFile == "" && opts.RcloneConfigSecret == "" {
@@ -209,12 +226,45 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 			opts.RcloneConfigFile = config.RcloneConfigFile
 		}
 	}
+	if opts.RsyncImage == "" {
+		opts.RsyncImage = config.RsyncImage
+	}
 
+	if opts.CloudStorage == "" {
+		if opts.Endpoint == "" {
+			tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
+			if tgt.IsOpenShift() {
+				opts.Endpoint = "route"
+			} else {
+				opts.Endpoint = "nginx-ingress"
+				if opts.IngressClass == "" {
+					opts.IngressClass = "nginx"
+				}
+			}
+		}
+	}
+	args := buildTransferPVCArgs(opts)
+
+	logVerboseCommand(c.Bin, args)
+	cmd := exec.Command(c.Bin, args...)
+	cmd.Dir = c.WorkDir
+	out, err := cmd.CombinedOutput()
+	logVerboseOutput("crane transfer-pvc", out)
+	if err != nil {
+		return string(out), fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
+	}
+	return string(out), nil
+}
+
+func buildTransferPVCArgs(opts TransferPVCOptions) []string {
 	args := []string{"transfer-pvc",
 		"--source-context", opts.SourceContext,
 		"--destination-context", opts.TargetContext,
 		"--pvc-name", opts.PVCName,
 		"--pvc-namespace", opts.PVCNamespaceMap,
+	}
+	if opts.RsyncImage != "" {
+		args = append(args, "--source-image", opts.RsyncImage, "--destination-image", opts.RsyncImage)
 	}
 	if opts.DestStorageClass != "" {
 		args = append(args, "--dest-storage-class", opts.DestStorageClass)
@@ -228,31 +278,35 @@ func (c CraneRunner) TransferPVC(opts TransferPVCOptions) error {
 			args = append(args, "--rclone-config-file", opts.RcloneConfigFile)
 		}
 	} else {
-		if opts.Endpoint == "" {
-			tgt := KubectlRunner{Bin: "kubectl", Context: opts.TargetContext}
-			if tgt.IsOpenShift() {
-				opts.Endpoint = "route"
-			} else {
-				opts.Endpoint = "nginx-ingress"
-				if opts.IngressClass == "" {
-					opts.IngressClass = "nginx"
-				}
-			}
-		}
 		args = append(args, "--endpoint", opts.Endpoint)
 		if opts.Endpoint != "route" {
 			args = append(args, "--ingress-class", opts.IngressClass)
 			args = append(args, "--subdomain", opts.Subdomain)
 		}
 	}
+	return args
+}
 
-	logVerboseCommand(c.Bin, args)
-	cmd := exec.Command(c.Bin, args...)
-	cmd.Dir = c.WorkDir
-	out, err := cmd.CombinedOutput()
-	logVerboseOutput("crane transfer-pvc", out)
-	if err != nil {
-		return fmt.Errorf("crane transfer-pvc failed: %v, output: %s", err, string(out))
+// AssertTransferPVCProgressOutput verifies that transfer-pvc emitted every
+// numbered phase and a successful final summary. Phase names intentionally
+// omit the completion suffix because the data-copy phase ends with "finished"
+// while the setup and cleanup phases end with "ok".
+func AssertTransferPVCProgressOutput(output string, totalPhases int, phaseNames []string, summary string) error {
+	for i, name := range phaseNames {
+		phase := fmt.Sprintf("[%d/%d] %s", i+1, totalPhases, name)
+		if !strings.Contains(output, phase) {
+			return fmt.Errorf("transfer-pvc output is missing progress phase %q", phase)
+		}
+	}
+
+	if !strings.Contains(output, "Summary\n-------") {
+		return fmt.Errorf("transfer-pvc output is missing the final summary")
+	}
+	if !strings.Contains(output, summary) {
+		return fmt.Errorf("transfer-pvc output is missing summary status %q", summary)
+	}
+	if !strings.Contains(output, "Done.") {
+		return fmt.Errorf("transfer-pvc output is missing completion marker")
 	}
 	return nil
 }

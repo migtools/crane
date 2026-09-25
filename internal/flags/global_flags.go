@@ -17,6 +17,7 @@ type GlobalFlags struct {
 	AuditLogPath string `mapstructure:"audit-log"`
 	cmdName      string
 	logger       *logrus.Logger
+	loggerErr    error
 	fileHook     *audit.FileHook
 }
 
@@ -36,9 +37,9 @@ func (g *GlobalFlags) SetCmdName(name string) {
 }
 
 // GetLoggerOrDefault returns the configured logger, or logrus.StandardLogger() if GlobalFlags is nil.
-func (g *GlobalFlags) GetLoggerOrDefault() *logrus.Logger {
+func (g *GlobalFlags) GetLoggerOrDefault() (*logrus.Logger, error) {
 	if g == nil {
-		return logrus.StandardLogger()
+		return logrus.StandardLogger(), nil
 	}
 	return g.GetLogger()
 }
@@ -49,24 +50,25 @@ func isCompletionMode() bool {
 	return len(os.Args) > 1 && (os.Args[1] == "__complete" || os.Args[1] == "__completeNoDesc")
 }
 
-func (g *GlobalFlags) GetLogger() *logrus.Logger {
+func (g *GlobalFlags) GetLogger() (*logrus.Logger, error) {
 	if g.logger == nil {
 		g.logger = logrus.New()
 		g.logger.SetLevel(logrus.DebugLevel)
 		g.logger.SetOutput(io.Discard)
 		consoleHook := audit.NewConsoleHook(g.Debug)
 		g.logger.AddHook(consoleHook)
-		if !isCompletionMode() {
+		if !isCompletionMode() && g.AuditLogPath != "" {
 			fileHook, err := audit.NewFileHook(g.AuditLogPath, &g.cmdName)
 			if err == nil {
 				g.fileHook = fileHook
 				g.logger.AddHook(fileHook)
 			} else {
 				g.logger.Warnf("Failed to open audit log file %s: %v", g.AuditLogPath, err)
+				g.loggerErr = err
 			}
 		}
 	}
-	return g.logger
+	return g.logger, g.loggerErr
 }
 
 // Close releases the audit log file. Call this when the program exits.
@@ -87,6 +89,15 @@ func (g *GlobalFlags) initConfig() {
 		if err := viper.UnmarshalKey("audit-log", &g.AuditLogPath); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: invalid audit-log value in %s: %v\n", viper.ConfigFileUsed(), err)
 		}
-		g.GetLogger().Infof("Using config file: %v", viper.ConfigFileUsed())
+		// Note: initConfig() warns on audit logger failure but continues loading config.
+		// Complete() will fail hard if audit logging cannot be initialized, providing
+		// the actual enforcement. This asymmetry is intentional: config loading is
+		// prerequisite-level and should not fail on audit setup issues.
+		logger, err := g.GetLogger()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to initialize audit logger: %v\n", err)
+		} else {
+			logger.Infof("Using config file: %v", viper.ConfigFileUsed())
+		}
 	}
 }

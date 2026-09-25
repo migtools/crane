@@ -5,6 +5,7 @@ import (
 
 	"github.com/konveyor/crane-lib/connect/tunnel_api"
 	"github.com/konveyor/crane/internal/flags"
+	crlog "github.com/konveyor/crane/internal/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -76,7 +77,11 @@ func addFlagsForTunnelAPIOptions(t *TunnelAPIOptions, cmd *cobra.Command) {
 
 func (t *TunnelAPIOptions) Complete(c *cobra.Command, args []string) error {
 	t.globalFlags.SetCmdName("tunnel-api")
-	t.logger = t.globalFlags.GetLoggerOrDefault()
+	logger, err := t.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
+	t.logger = logger
 	config := t.configFlags.ToRawKubeConfigLoader()
 	rawConfig, err := config.RawConfig()
 	if err != nil {
@@ -142,6 +147,7 @@ func (t *TunnelAPIOptions) getRestConfigFromContext(ctx string) (*rest.Config, e
 
 func (t *TunnelAPIOptions) run() error {
 	log := t.logger
+	crlog.InitControllerRuntimeLogger("")
 	tunnel := tunnel_api.Tunnel{}
 
 	fmt.Println("Generating SSL certificates. This may take several minutes.")

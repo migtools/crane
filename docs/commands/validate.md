@@ -16,6 +16,12 @@ This is the final step in the Crane migration pipeline: **export â†’ transform â
 
 Incompatible resources are written to a `failures/` directory under the validate-dir for auditability.
 
+### Audit Logging
+
+Every `crane` invocation creates a persistent, structured audit log in JSON Lines format. This allows for post-run analysis and troubleshooting.
+
+By default, the audit log is stored at `audit/.crane-audit.log`. You can customize this location using the `--audit-log` flag. Note that the `audit/` directory should be added to your `.gitignore` to prevent committing log files to version control.
+
 ### Offline Validation
 
 Use `--api-resources` to validate offline against a captured API surface JSON file when the target cluster is not directly reachable. This is mutually exclusive with `--context`, `--kubeconfig`, `--server`, `--token`, `--cluster`, and `--user`.
@@ -66,6 +72,7 @@ crane validate --api-resources api-surface.json
 | `--output` | `-o` | `json` | Report file format: `json` or `yaml` |
 | `--api-resources` | | | Path to API surface JSON file for offline validation (mutually exclusive with `--context`/`--kubeconfig`/`--server`/`--token`/`--cluster`/`--user`) |
 | `--overwrite` | | `false` | Overwrite the validate directory if it already exists |
+| `--audit-log` | | `audit/.crane-audit.log` | Path to the audit log file |
 
 Standard kubeconfig flags (`--kubeconfig`, `--context`, `--cluster`, etc.) are also available to specify the target cluster for live validation.
 
@@ -97,6 +104,12 @@ crane validate
 
 ```bash
 crane validate --context target-cluster
+```
+
+### Validate with custom audit log path
+
+```bash
+crane validate --audit-log=/tmp/crane-audit.json
 ```
 
 ### Validate with custom input directory

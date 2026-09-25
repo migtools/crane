@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	crlog "github.com/konveyor/crane/internal/log"
 	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +30,7 @@ import (
 
 func (t *TransferPVCCommand) runIndirect() error {
 	log := t.log
+	crlog.InitControllerRuntimeLogger("transfer-pvc")
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
 	fmt.Fprintf(os.Stderr, "\ncrane transfer-pvc (indirect via cloud storage)\n")
@@ -88,7 +90,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 
 		if t.Encrypt {
-			if strings.Contains(string(configData), "[encrypted]") {
+			if hasRcloneSection(configData, "encrypted") {
 				log.Debugf("Rclone config already contains an [encrypted] section")
 				return fmt.Errorf("rclone config already contains an [encrypted] section; remove it or omit --encrypt")
 			}
@@ -139,8 +141,8 @@ func (t *TransferPVCCommand) runIndirect() error {
 	// Create destination PVC
 	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
 	destPVC := t.buildDestinationPVC(srcPVC)
-	err = destClient.Create(context.TODO(), destPVC, &client.CreateOptions{})
-	if err != nil && !errors.IsAlreadyExists(err) {
+	err = t.createDestinationPVC(context.TODO(), destClient, destPVC)
+	if err != nil {
 		log.Debugf("Unable to create destination PVC %s/%s: %v", destPVC.Namespace, destPVC.Name, err)
 		return fmt.Errorf("unable to create destination PVC: %w", err)
 	}
@@ -232,6 +234,35 @@ func (t *TransferPVCCommand) runIndirect() error {
 	fmt.Fprintf(os.Stderr, "Done.\n")
 
 	return nil
+}
+
+// hasRcloneSection reports whether configData contains an INI section with the
+// given name. It deliberately examines section-header lines rather than using
+// a whole-file substring search, so comments and ordinary setting values may
+// safely mention a section name.
+func hasRcloneSection(configData []byte, name string) bool {
+	header := "[" + name + "]"
+	for i, line := range strings.Split(string(configData), "\n") {
+		// A UTF-8 BOM is permitted at the start of an INI file, but it is not
+		// whitespace, so strings.TrimSpace does not remove it.
+		if i == 0 {
+			line = strings.TrimPrefix(line, "\uFEFF")
+		}
+		line = strings.TrimSpace(line)
+		if line == header {
+			return true
+		}
+
+		// INI permits a comment after a section header. Do not accept a prefix
+		// such as "[encrypted]-backup" as the generated "encrypted" remote.
+		if strings.HasPrefix(line, header) {
+			remainder := strings.TrimSpace(strings.TrimPrefix(line, header))
+			if strings.HasPrefix(remainder, "#") || strings.HasPrefix(remainder, ";") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger) error {
