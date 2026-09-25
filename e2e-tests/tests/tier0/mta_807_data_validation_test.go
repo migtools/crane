@@ -90,6 +90,11 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one pvc in namespace %q", srcApp.Namespace)
+		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.TgtApp.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 		log.Printf("Found %d pvcs in namespace %q", len(pvcs), srcApp.Namespace)
 		for _, pvc := range pvcs {
 			log.Printf("Found pvc %s in namespace %q\n", pvc.Name, pvc.Namespace)
@@ -121,11 +126,12 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		for _, pvc := range pvcs {
 			pvcName := pvc.Name
 			opts := TransferPVCOptions{
-				SourceContext:   srcApp.Context,
-				TargetContext:   tgtApp.Context,
-				PVCName:         pvcName,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
+				SourceContext:    srcApp.Context,
+				TargetContext:    tgtApp.Context,
+				PVCName:          pvcName,
+				PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+				DestStorageClass: targetStorageClass,
+				Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())

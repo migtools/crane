@@ -72,6 +72,11 @@ var _ = Describe("Empty PVC migration", func() {
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", srcApp.Namespace)
+		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.TgtApp.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 		log.Printf("Found %d PVCs in source namespace %q", len(pvcs), srcApp.Namespace)
 		for _, pvc := range pvcs {
 			log.Printf("Found PVC %s in source namespace %q\n", pvc.Name, pvc.Namespace)
@@ -98,11 +103,12 @@ var _ = Describe("Empty PVC migration", func() {
 			pvcName := pvc.Name
 
 			opts := TransferPVCOptions{
-				SourceContext:   srcApp.Context,
-				TargetContext:   tgtApp.Context,
-				PVCName:         pvcName,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
+				SourceContext:    srcApp.Context,
+				TargetContext:    tgtApp.Context,
+				PVCName:          pvcName,
+				PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+				DestStorageClass: targetStorageClass,
+				Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
