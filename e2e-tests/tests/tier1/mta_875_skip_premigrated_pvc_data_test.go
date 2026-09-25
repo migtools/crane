@@ -76,6 +76,11 @@ var _ = Describe("Skip PV migration when PV data was already migrated ahead of t
 		Expect(pvcs).To(HaveLen(1), "expected exactly one PVC in namespace %q", srcApp.Namespace)
 		pvcName := pvcs[0].Name
 		log.Printf("Found PVC %s in namespace %q\n", pvcName, srcApp.Namespace)
+		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(tgtApp.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"whiteout-pvc":"true","pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 
 		By("Create target namespace")
 		Expect(kubectlTgt.CreateNamespace(tgtApp.Namespace)).NotTo(HaveOccurred())
@@ -86,11 +91,12 @@ var _ = Describe("Skip PV migration when PV data was already migrated ahead of t
 		tgtIP, err := GetClusterNodeIP(tgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		transferOpts := TransferPVCOptions{
-			SourceContext:   srcApp.Context,
-			TargetContext:   tgtApp.Context,
-			PVCName:         pvcName,
-			PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-			Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
+			SourceContext:    srcApp.Context,
+			TargetContext:    tgtApp.Context,
+			PVCName:          pvcName,
+			PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+			DestStorageClass: targetStorageClass,
+			Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 		}
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
 

@@ -88,6 +88,8 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 		By("Launch a separate crane transfer-pvc invocation for each PVC at the same time")
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+		Expect(err).NotTo(HaveOccurred())
 
 		durations := make([]time.Duration, volumeCount)
 		transferErrs := make([]error, volumeCount)
@@ -99,11 +101,12 @@ var _ = Describe("Concurrent multi-PVC transfer for the same app", func() {
 				defer wg.Done()
 				vol := fmt.Sprintf("volume%d", i+1)
 				opts := TransferPVCOptions{
-					SourceContext:   srcApp.Context,
-					TargetContext:   tgtApp.Context,
-					PVCName:         vol,
-					PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-					Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", vol, srcApp.Namespace, tgtIP),
+					SourceContext:    srcApp.Context,
+					TargetContext:    tgtApp.Context,
+					PVCName:          vol,
+					PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+					DestStorageClass: targetStorageClass,
+					Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", vol, srcApp.Namespace, tgtIP),
 				}
 				t0 := time.Now()
 				transferErrs[i] = runner.TransferPVC(opts)

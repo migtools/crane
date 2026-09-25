@@ -268,11 +268,14 @@ var _ = Describe("Verify lifecycle of Secret created from --rclone-config-file",
 			By("Run crane transfer-pvc in indirect mode using --rclone-config-file")
 			runner := app.scenario.CraneNonAdmin
 			runner.WorkDir = app.workDir
+			targetStorageClass, err := DefaultStorageClassName(app.scenario.KubectlTgt.Context)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(runner.TransferPVC(TransferPVCOptions{
 				SourceContext:    app.srcApp.Context,
 				TargetContext:    app.tgtApp.Context,
 				PVCName:          app.pvcName,
 				PVCNamespaceMap:  fmt.Sprintf("%s:%s", app.srcApp.Namespace, app.tgtApp.Namespace),
+				DestStorageClass: targetStorageClass,
 				CloudStorage:     config.CloudStorage,
 				RcloneConfigFile: config.RcloneConfigFile,
 			})).NotTo(HaveOccurred(), "indirect transfer-pvc should succeed with a valid --rclone-config-file")
@@ -312,15 +315,18 @@ var _ = Describe("Verify lifecycle of Secret created from --rclone-config-file",
 			By("Run crane transfer-pvc with a valid config file but an unknown cloud-storage remote")
 			runner := app.scenario.CraneNonAdmin
 			runner.WorkDir = app.workDir
+			targetStorageClass, err := DefaultStorageClassName(app.scenario.KubectlTgt.Context)
+			Expect(err).NotTo(HaveOccurred())
 			// Pointing --cloud-storage at a remote that is not defined in the rclone
 			// config makes that upload pod fail deterministically *after* the Secret
 			// has been created, which is exactly the deferred cleanup-on-error path
 			// we want to exercise.
-			err := runner.TransferPVC(TransferPVCOptions{
+			err = runner.TransferPVC(TransferPVCOptions{
 				SourceContext:    app.srcApp.Context,
 				TargetContext:    app.tgtApp.Context,
 				PVCName:          app.pvcName,
 				PVCNamespaceMap:  fmt.Sprintf("%s:%s", app.srcApp.Namespace, app.tgtApp.Namespace),
+				DestStorageClass: targetStorageClass,
 				CloudStorage:     "crane-e2e-nonexistent-remote:crane-indirect-e2e",
 				RcloneConfigFile: config.RcloneConfigFile,
 			})
