@@ -22,7 +22,7 @@ const preRcloneImage = "quay.io/konveyor/rsync-transfer:release-1.7.0"
 
 var _ = Describe("Indirect transfer with a pre-rclone source image", func() {
 	It("[MTA-921] Should fail clearly when --source-image does not contain an rclone binary",
-		Label("tier1", "pvc-transfer", "indirect"), func() {
+		Label("tier2", "pvc-transfer", "indirect"), func() {
 
 			// This test drives the real indirect (cloud storage) path far enough
 			// to launch the upload mover pod, so it needs a reachable bucket and a
@@ -141,6 +141,8 @@ var _ = Describe("Indirect transfer with a pre-rclone source image", func() {
 				"run should progress through setup to the upload phase before failing on the image")
 			Expect(out).To(ContainSubstring("upload pod failed"),
 				"the failure should be attributed to the upload mover pod, not an earlier step")
+			Expect(out).To(MatchRegexp("upload pod failed.*(?:StartError|rclone.*executable)"),
+				"the failure should include the StartError or missing rclone executable detail")
 
 			By("Verify the transfer did not falsely report success")
 			Expect(out).NotTo(ContainSubstring("PVC data copy: succeeded"),
