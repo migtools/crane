@@ -157,7 +157,7 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 		log.Printf("Using PVC name for data integrity check: %s\n", pvcName)
 		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
 		Expect(err).NotTo(HaveOccurred())
-		targetStorageClass, err := DefaultStorageClassName(tgtApp.Context)
+		targetStorageClass, err := DefaultStorageClassName(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 

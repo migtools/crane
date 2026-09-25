@@ -74,7 +74,7 @@ var _ = Describe("Empty PVC migration", func() {
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", srcApp.Namespace)
 		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
 		Expect(err).NotTo(HaveOccurred())
-		targetStorageClass, err := DefaultStorageClassName(tgtApp.Context)
+		targetStorageClass, err := DefaultStorageClassName(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 		log.Printf("Found %d PVCs in source namespace %q", len(pvcs), srcApp.Namespace)

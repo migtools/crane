@@ -92,7 +92,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one pvc in namespace %q", srcApp.Namespace)
 		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
 		Expect(err).NotTo(HaveOccurred())
-		targetStorageClass, err := DefaultStorageClassName(tgtApp.Context)
+		targetStorageClass, err := DefaultStorageClassName(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 		log.Printf("Found %d pvcs in namespace %q", len(pvcs), srcApp.Namespace)
