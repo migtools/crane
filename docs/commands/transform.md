@@ -158,6 +158,10 @@ crane transform --skip-plugins OpenshiftPlugin
 crane transform --instructions-file instructions.yaml
 ```
 
+See [Declarative transformations with an instructions file](../kustomize-fragments.md)
+for the file format, per-stage plugin options, Kustomize fragments, and rerun
+behavior.
+
 Shell autocompletion is available for plugin and stage names.
 
 ### Applying Transforms
