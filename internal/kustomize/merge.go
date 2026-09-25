@@ -85,11 +85,11 @@ func MergeFragment(base []byte, fragment map[string]interface{}) ([]byte, error)
 // appendList appends the fragment list to the base list. For "resources" the
 // result is de-duplicated by string value, preserving base-then-fragment order.
 func appendList(key string, base, fragment interface{}) (interface{}, error) {
-	baseList, err := toList(key, base)
+	baseList, err := toList(key, base, true)
 	if err != nil {
 		return nil, err
 	}
-	fragList, err := toList(key, fragment)
+	fragList, err := toList(key, fragment, false)
 	if err != nil {
 		return nil, err
 	}
@@ -120,11 +120,14 @@ func appendList(key string, base, fragment interface{}) (interface{}, error) {
 	return result, nil
 }
 
-// toList coerces a value into a list, treating nil as an empty list and
-// rejecting non-list values with a descriptive error.
-func toList(key string, v interface{}) ([]interface{}, error) {
+// toList coerces a value into a list and rejects non-list values with a
+// descriptive error. A missing generated base field may be treated as empty.
+func toList(key string, v interface{}, allowNil bool) ([]interface{}, error) {
 	if v == nil {
-		return nil, nil
+		if allowNil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("kustomize fragment field %q must be a list, got %T", key, v)
 	}
 	list, ok := v.([]interface{})
 	if !ok {

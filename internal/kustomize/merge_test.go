@@ -216,19 +216,41 @@ func TestMergeFragment_EmptyFragmentReturnsBase(t *testing.T) {
 	}
 }
 
-func TestMergeFragment_RejectsNonListResources(t *testing.T) {
-	fragment := map[string]interface{}{
-		"resources": "input/c.yaml", // scalar, not a list
+func TestMergeFragment_RejectsNonListFields(t *testing.T) {
+	tests := []struct {
+		name     string
+		fragment map[string]interface{}
+		wantType string
+	}{
+		{
+			name:     "scalar resources",
+			fragment: map[string]interface{}{"resources": "input/c.yaml"},
+			wantType: "string",
+		},
+		{
+			name:     "null resources",
+			fragment: map[string]interface{}{"resources": nil},
+			wantType: "<nil>",
+		},
+		{
+			name:     "null patches",
+			fragment: map[string]interface{}{"patches": nil},
+			wantType: "<nil>",
+		},
 	}
 
-	_, err := MergeFragment([]byte(baseKustomization), fragment)
-	if err == nil {
-		t.Fatalf("expected error for non-list resources, got nil")
-	}
-	if !strings.Contains(err.Error(), "must be a list") {
-		t.Fatalf("expected 'must be a list' error, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "got string") {
-		t.Fatalf("expected error to include received type, got %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := MergeFragment([]byte(baseKustomization), tt.fragment)
+			if err == nil {
+				t.Fatal("expected error for non-list field, got nil")
+			}
+			if !strings.Contains(err.Error(), "must be a list") {
+				t.Fatalf("expected 'must be a list' error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "got "+tt.wantType) {
+				t.Fatalf("expected error to include received type %q, got %v", tt.wantType, err)
+			}
+		})
 	}
 }
