@@ -219,6 +219,7 @@ func (o *Options) run() error {
 	}
 
 	var instructionStages []string
+	var instructionStageNames []string
 	var instructionStageOptionals map[string]map[string]string
 	var instructionStageKustomize map[string]map[string]interface{}
 	if o.InstructionsFile != "" {
@@ -232,7 +233,8 @@ func (o *Options) run() error {
 			log.Errorf("Failed to load instructions file %q: %v", instructionsFilePath, err)
 			return err
 		}
-		instructionStages = internalTransform.GenerateStageDirNames(cfg.StageNames())
+		instructionStageNames = cfg.StageNames()
+		instructionStages = internalTransform.GenerateStageDirNames(instructionStageNames)
 		instructionStageOptionals, err = cfg.StageOptionals()
 		if err != nil {
 			return fmt.Errorf("invalid instructions file %q: %w", instructionsFilePath, err)
@@ -312,7 +314,7 @@ func (o *Options) run() error {
 			log.Errorf("Failed to reconcile instruction stages: %v", err)
 			return err
 		}
-		for _, stageName := range instructionStages {
+		for i, stageName := range instructionStages {
 			stageDir := filepath.Join(transformDir, stageName)
 			_, err := os.Stat(stageDir)
 			stageExists := err == nil
@@ -330,6 +332,15 @@ func (o *Options) run() error {
 			}
 			selector = internalTransform.StageSelector{
 				Stages: []string{stageName},
+			}
+			baseName := instructionStageNames[i]
+			orchestrator.StageOptionalFlags = nil
+			if optionals, ok := instructionStageOptionals[baseName]; ok {
+				orchestrator.StageOptionalFlags = map[string]map[string]string{baseName: optionals}
+			}
+			orchestrator.StageKustomizeFragments = nil
+			if fragment, ok := instructionStageKustomize[baseName]; ok {
+				orchestrator.StageKustomizeFragments = map[string]map[string]interface{}{baseName: fragment}
 			}
 			log.Infof("Running stage: %s", stageName)
 			if err := o.runStageWithCleanup(orchestrator, selector, stageDir, !stageExists, log); err != nil {

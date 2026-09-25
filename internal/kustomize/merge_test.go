@@ -62,7 +62,7 @@ func TestParseFragment(t *testing.T) {
 		{
 			name:    "list root",
 			raw:     `["a", "b"]`,
-			wantErr: "must be a mapping",
+			wantErr: "got []interface {}",
 		},
 		{
 			name:    "scalar root",
@@ -227,5 +227,8 @@ func TestMergeFragment_RejectsNonListResources(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "must be a list") {
 		t.Fatalf("expected 'must be a list' error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "got string") {
+		t.Fatalf("expected error to include received type, got %v", err)
 	}
 }

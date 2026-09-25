@@ -1,8 +1,12 @@
 package transform
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 func TestParseStageKustomize(t *testing.T) {
@@ -106,5 +110,69 @@ func TestParseStageKustomize(t *testing.T) {
 				tt.check(t, result)
 			}
 		})
+	}
+}
+
+func TestRun_MultiStageInstructionsWithKustomizeFragments(t *testing.T) {
+	tmpDir := t.TempDir()
+	exportDir := filepath.Join(tmpDir, "export")
+	transformDir := filepath.Join(tmpDir, "transform")
+	if err := os.MkdirAll(filepath.Join(exportDir, "default"), 0o700); err != nil {
+		t.Fatalf("failed to create export directory: %v", err)
+	}
+
+	resource := []byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test
+  namespace: default
+`)
+	if err := os.WriteFile(filepath.Join(exportDir, "default", "configmap.yaml"), resource, 0o600); err != nil {
+		t.Fatalf("failed to write test resource: %v", err)
+	}
+
+	instructionsPath := filepath.Join(tmpDir, "instructions.yaml")
+	instructions := []byte(`stages:
+  - name: First
+    optionals:
+      first-option: first-value
+    kustomize:
+      namespace: first
+  - name: Second
+    optionals:
+      second-option: second-value
+    kustomize:
+      namespace: second
+`)
+	if err := os.WriteFile(instructionsPath, instructions, 0o600); err != nil {
+		t.Fatalf("failed to write instructions file: %v", err)
+	}
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	options := &Options{
+		log: logger,
+		Flags: Flags{
+			ExportDir:        exportDir,
+			TransformDir:     transformDir,
+			PluginDir:        filepath.Join(tmpDir, "plugins"),
+			InstructionsFile: instructionsPath,
+		},
+	}
+	if err := options.run(); err != nil {
+		t.Fatalf("expected multi-stage instructions to succeed, got %v", err)
+	}
+
+	for stage, namespace := range map[string]string{
+		"10_First":  "first",
+		"20_Second": "second",
+	} {
+		data, err := os.ReadFile(filepath.Join(transformDir, stage, "kustomization.yaml"))
+		if err != nil {
+			t.Fatalf("failed to read %s kustomization: %v", stage, err)
+		}
+		if !strings.Contains(string(data), "namespace: "+namespace) {
+			t.Errorf("%s kustomization does not contain its namespace:\n%s", stage, data)
+		}
 	}
 }

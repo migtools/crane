@@ -34,7 +34,7 @@ func ParseFragment(raw string) (map[string]interface{}, error) {
 	}
 	out, ok := probe.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("kustomize fragment must be a mapping")
+		return nil, fmt.Errorf("kustomize fragment must be a mapping, got %T", probe)
 	}
 	return out, nil
 }
@@ -128,7 +128,7 @@ func toList(key string, v interface{}) ([]interface{}, error) {
 	}
 	list, ok := v.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("kustomize fragment field %q must be a list", key)
+		return nil, fmt.Errorf("kustomize fragment field %q must be a list, got %T", key, v)
 	}
 	return list, nil
 }
