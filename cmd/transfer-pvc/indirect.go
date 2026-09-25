@@ -300,7 +300,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 				diagnostics.WriteString(fmt.Sprintf("- Container State: %+v\n", pod.Status.ContainerStatuses[0].State))
 			}
 		}
-		log.Debugf("Timed out waiting for pod %s/%s to start: %v%s", namespace, podName, err, diagnostics.String())
+		log.Warnf("Timed out waiting for pod %s/%s to start: %v%s", namespace, podName, err, diagnostics.String())
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
 
@@ -538,22 +538,22 @@ func rcloneObscure(plaintext string, log *logrus.Logger) (string, error) {
 func (t *TransferPVCCommand) logPVCDiagnostics(c client.Client, namespace, pvcName string, log *logrus.Logger) {
 	pvc := &corev1.PersistentVolumeClaim{}
 	if err := c.Get(context.TODO(), client.ObjectKey{Namespace: namespace, Name: pvcName}, pvc); err != nil {
-		log.Debugf("Could not get PVC %s/%s for diagnostics: %v", namespace, pvcName, err)
+		log.Warnf("Could not get PVC %s/%s for diagnostics: %v", namespace, pvcName, err)
 		return
 	}
 
-	log.Debugf("PVC Diagnostics for %s/%s:", namespace, pvcName)
-	log.Debugf("- Phase: %s", pvc.Status.Phase)
-	log.Debugf("- StorageClassName: %v", pvc.Spec.StorageClassName)
-	log.Debugf("- VolumeName: %s", pvc.Spec.VolumeName)
-	log.Debugf("- AccessModes: %v", pvc.Spec.AccessModes)
-	log.Debugf("- Conditions: %+v", pvc.Status.Conditions)
+	log.Warnf("PVC Diagnostics for %s/%s:", namespace, pvcName)
+	log.Warnf("- Phase: %s", pvc.Status.Phase)
+	log.Warnf("- StorageClassName: %v", pvc.Spec.StorageClassName)
+	log.Warnf("- VolumeName: %s", pvc.Spec.VolumeName)
+	log.Warnf("- AccessModes: %v", pvc.Spec.AccessModes)
+	log.Warnf("- Conditions: %+v", pvc.Status.Conditions)
 
 	if pvc.Status.Phase == corev1.ClaimPending {
-		log.Debugf("WARNING: PVC is Pending; this typically indicates storage provisioning is slow,")
-		log.Debugf("  the storage class does not exist, or a PV matching the storage class is unavailable.")
+		log.Warnf("WARNING: PVC is Pending; this typically indicates storage provisioning is slow,")
+		log.Warnf("  the storage class does not exist, or a PV matching the storage class is unavailable.")
 		if pvc.Spec.StorageClassName != nil {
-			log.Debugf("  Requested storage class: %q", *pvc.Spec.StorageClassName)
+			log.Warnf("  Requested storage class: %q", *pvc.Spec.StorageClassName)
 		}
 	}
 }
