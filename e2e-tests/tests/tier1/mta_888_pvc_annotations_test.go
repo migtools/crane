@@ -73,6 +73,8 @@ var _ = Describe("PVC annotations during application migration", func() {
 				"source PVC should have binding-completed metadata")
 			sourceStorageClass, err := ResolvePVCStorageClass(scenario.KubectlSrc.Context, *srcPVC)
 			Expect(err).NotTo(HaveOccurred())
+			targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+			Expect(err).NotTo(HaveOccurred())
 			log.Printf("Source PVC %s/%s: StorageClass=%s provisioner=%s", namespace, pvcName, sourceStorageClass, sourceProvisioner)
 
 			_, err = kubectlSrc.Run("annotate", "pvc", pvcName, "-n", namespace,
@@ -88,7 +90,11 @@ var _ = Describe("PVC annotations during application migration", func() {
 			runner.WorkDir = paths.TempDir
 			Expect(RunCranePipelineWithChecks(runner,
 				ExportOptions{Namespace: namespace, ExportDir: paths.ExportDir},
-				TransformOptions{ExportDir: paths.ExportDir, TransformDir: paths.TransformDir},
+				TransformOptions{
+					ExportDir:     paths.ExportDir,
+					TransformDir:  paths.TransformDir,
+					OptionalFlags: fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass),
+				},
 				ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir},
 			)).NotTo(HaveOccurred())
 
@@ -96,11 +102,12 @@ var _ = Describe("PVC annotations during application migration", func() {
 			targetIP, err := GetClusterNodeIP(scenario.KubectlTgt.Context)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(runner.TransferPVC(TransferPVCOptions{
-				SourceContext:   srcApp.Context,
-				TargetContext:   tgtApp.Context,
-				PVCName:         pvcName,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", namespace, namespace),
-				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, targetIP),
+				SourceContext:    srcApp.Context,
+				TargetContext:    tgtApp.Context,
+				PVCName:          pvcName,
+				PVCNamespaceMap:  fmt.Sprintf("%s:%s", namespace, namespace),
+				DestStorageClass: targetStorageClass,
+				Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, targetIP),
 			})).NotTo(HaveOccurred())
 
 			By("Apply the workload, start MongoDB, and confirm the destination PVC binds")
