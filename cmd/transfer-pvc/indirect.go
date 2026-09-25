@@ -296,7 +296,11 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		Container: containerName,
 		Follow:    true,
 	})
-	stream, err := req.Stream(context.TODO())
+	// Set a deadline on the log stream to prevent hanging if the pod stalls.
+	// This is an additional safety bound beyond the final-status check.
+	streamCtx, streamCancel := context.WithTimeout(context.TODO(), 30*time.Minute)
+	defer streamCancel()
+	stream, err := req.Stream(streamCtx)
 	if err != nil {
 		log.Debugf("Failed to stream logs for pod %s/%s: %v", namespace, podName, err)
 		return fmt.Errorf("failed to stream logs for pod %s/%s: %w", namespace, podName, err)
@@ -328,8 +332,9 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	waitCtx, waitCancel := context.WithTimeout(context.TODO(), 2*time.Minute)
 	defer waitCancel()
 	var podFailed bool
+	var pod *corev1.Pod
 	if err := wait.PollUntilContextCancel(waitCtx, 3*time.Second, true, func(ctx context.Context) (bool, error) {
-		pod := &corev1.Pod{}
+		pod = &corev1.Pod{}
 		if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
 			log.Debugf("Failed to get pod status for %s/%s: %v", namespace, podName, err)
 			return false, fmt.Errorf("failed to get pod status: %w", err)
@@ -349,9 +354,49 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	}
 
 	if podFailed {
+		// Capture container termination reason before cleanup
+		terminationMsg := captureTerminationReason(pod, containerName)
+		if terminationMsg != "" {
+			return checkRclonePartialSuccess(logOutput.String(), podName, namespace, log, terminationMsg)
+		}
 		return checkRclonePartialSuccess(logOutput.String(), podName, namespace, log)
 	}
 	return nil
+}
+
+// captureTerminationReason extracts the termination reason and message from a pod's
+// container status. This provides diagnostic details when a pod fails to start or run.
+func captureTerminationReason(pod *corev1.Pod, containerName string) string {
+	if pod == nil || len(pod.Status.ContainerStatuses) == 0 {
+		return ""
+	}
+
+	var containerStatus *corev1.ContainerStatus
+	for i := range pod.Status.ContainerStatuses {
+		if pod.Status.ContainerStatuses[i].Name == containerName {
+			containerStatus = &pod.Status.ContainerStatuses[i]
+			break
+		}
+	}
+
+	if containerStatus == nil {
+		return ""
+	}
+
+	// Check current state first
+	if containerStatus.State.Waiting != nil {
+		if containerStatus.State.Waiting.Reason != "" {
+			return fmt.Sprintf("container waiting: %s: %s", containerStatus.State.Waiting.Reason, containerStatus.State.Waiting.Message)
+		}
+	}
+
+	if containerStatus.State.Terminated != nil {
+		if containerStatus.State.Terminated.Reason != "" {
+			return fmt.Sprintf("container terminated: %s: %s", containerStatus.State.Terminated.Reason, containerStatus.State.Terminated.Message)
+		}
+	}
+
+	return ""
 }
 
 // checkRclonePartialSuccess examines rclone output when the pod exits non-zero.
@@ -360,7 +405,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 // This function detects that case and treats it as success when files were transferred.
 // It returns an error only when no files were transferred or the failure is not
 // a permission issue.
-func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Logger) error {
+func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Logger, terminationReasons ...string) error {
 	// Parse the last "Transferred: N / M, P%" file count line
 	var lastTransferred, lastTotal int
 	fileCountFound := false
@@ -391,15 +436,21 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 		fileCountFound = true
 	}
 
+	// Build termination detail string if provided
+	terminationDetail := ""
+	if len(terminationReasons) > 0 && terminationReasons[0] != "" {
+		terminationDetail = " (" + terminationReasons[0] + ")"
+	}
+
 	if !fileCountFound {
 		log.Debugf("Pod %s/%s failed: no file count found in rclone output", namespace, podName)
-		return fmt.Errorf("pod %s/%s failed", namespace, podName)
+		return fmt.Errorf("pod %s/%s failed%s", namespace, podName, terminationDetail)
 	}
 
 	if lastTransferred == 0 && lastTotal > 0 {
 		log.Debugf("Pod %s/%s: rclone transferred 0 of %d files", namespace, podName, lastTotal)
-		return fmt.Errorf("pod %s/%s: rclone transferred 0 of %d files — all files may be unreadable (check UID/permissions)",
-			namespace, podName, lastTotal)
+		return fmt.Errorf("pod %s/%s: rclone transferred 0 of %d files — all files may be unreadable (check UID/permissions)%s",
+			namespace, podName, lastTotal, terminationDetail)
 	}
 
 	hasPermissionError := strings.Contains(output, "permission denied")
@@ -410,7 +461,7 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 	}
 
 	log.Debugf("Pod %s/%s failed", namespace, podName)
-	return fmt.Errorf("pod %s/%s failed", namespace, podName)
+	return fmt.Errorf("pod %s/%s failed%s", namespace, podName, terminationDetail)
 }
 
 func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcClient, destClient client.Client) error {
