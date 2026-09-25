@@ -206,6 +206,9 @@ func (t *TransferPVCCommand) runIndirect() error {
 		return fmt.Errorf("download failed: %w", err)
 	}
 	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log); err != nil {
+		if strings.Contains(err.Error(), "timed out") {
+			t.logPVCDiagnostics(destClient, destPVC.Namespace, destPVC.Name, log)
+		}
 		return fmt.Errorf("download pod failed: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ... ok\n")
@@ -287,7 +290,17 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 			return false, nil
 		}
 	}); err != nil {
-		log.Debugf("Timed out waiting for pod %s/%s to start: %v", namespace, podName, err)
+		pod := &corev1.Pod{}
+		var diagnostics strings.Builder
+		diagnostics.WriteString("\nDiagnostics:\n")
+		if getErr := c.Get(context.TODO(), client.ObjectKey{Name: podName, Namespace: namespace}, pod); getErr == nil {
+			diagnostics.WriteString(fmt.Sprintf("- Pod Phase: %s\n", pod.Status.Phase))
+			diagnostics.WriteString(fmt.Sprintf("- Pod Conditions: %+v\n", pod.Status.Conditions))
+			if pod.Status.ContainerStatuses != nil && len(pod.Status.ContainerStatuses) > 0 {
+				diagnostics.WriteString(fmt.Sprintf("- Container State: %+v\n", pod.Status.ContainerStatuses[0].State))
+			}
+		}
+		log.Warnf("Timed out waiting for pod %s/%s to start: %v%s", namespace, podName, err, diagnostics.String())
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
 
@@ -518,4 +531,29 @@ func rcloneObscure(plaintext string, log *logrus.Logger) (string, error) {
 	stream := cipher.NewCTR(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], []byte(plaintext))
 	return base64.RawURLEncoding.EncodeToString(ciphertext), nil
+}
+
+// logPVCDiagnostics logs the status and conditions of a PVC to help diagnose pod startup failures.
+// This is particularly useful when a transfer pod times out waiting to start.
+func (t *TransferPVCCommand) logPVCDiagnostics(c client.Client, namespace, pvcName string, log *logrus.Logger) {
+	pvc := &corev1.PersistentVolumeClaim{}
+	if err := c.Get(context.TODO(), client.ObjectKey{Namespace: namespace, Name: pvcName}, pvc); err != nil {
+		log.Warnf("Could not get PVC %s/%s for diagnostics: %v", namespace, pvcName, err)
+		return
+	}
+
+	log.Warnf("PVC Diagnostics for %s/%s:", namespace, pvcName)
+	log.Warnf("- Phase: %s", pvc.Status.Phase)
+	log.Warnf("- StorageClassName: %v", pvc.Spec.StorageClassName)
+	log.Warnf("- VolumeName: %s", pvc.Spec.VolumeName)
+	log.Warnf("- AccessModes: %v", pvc.Spec.AccessModes)
+	log.Warnf("- Conditions: %+v", pvc.Status.Conditions)
+
+	if pvc.Status.Phase == corev1.ClaimPending {
+		log.Warnf("WARNING: PVC is Pending; this typically indicates storage provisioning is slow,")
+		log.Warnf("  the storage class does not exist, or a PV matching the storage class is unavailable.")
+		if pvc.Spec.StorageClassName != nil {
+			log.Warnf("  Requested storage class: %q", *pvc.Spec.StorageClassName)
+		}
+	}
 }
