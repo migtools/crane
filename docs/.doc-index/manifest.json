@@ -18,13 +18,13 @@
       }
     },
     "commands": {
-      "built": "2026-08-13T14:13:07.658197",
+      "built": "2026-09-01T13:53:47.440364",
       "doc_hashes": {
-        "commands/export.md": "18d5f3a7088cb799a8d88d34c033fd44221128ff1a72d9b7cadffc211493f3d4",
-        "commands/transform.md": "2f067699ade74ba84c49fa40f12fe7253f30978a503cddb3186b7ae65d51d80e",
-        "commands/validate.md": "be296169a1e5dbf222ae233c49843d7b76cbbe8759fc0f16220c27d68592d305",
         "commands/apply.md": "64902f9c980f3aa86f7aeddc0a9819cbb1031467e3263b26ac83b9494ba7b4ba",
-        "commands/transfer-pvc.md": "b6a2d593d56ef973f480228b770d7c034863e0830b210fd8dd66585df82ece2d"
+        "commands/export.md": "18d5f3a7088cb799a8d88d34c033fd44221128ff1a72d9b7cadffc211493f3d4",
+        "commands/transfer-pvc.md": "51c40ce0cfd2c1c0e974db8a1e9dde309fcb663e86832f7fcf4b887d922cbc46",
+        "commands/transform.md": "2f067699ade74ba84c49fa40f12fe7253f30978a503cddb3186b7ae65d51d80e",
+        "commands/validate.md": "be296169a1e5dbf222ae233c49843d7b76cbbe8759fc0f16220c27d68592d305"
       }
     },
     "development": {
@@ -38,5 +38,5 @@
       }
     }
   },
-  "updated": "2026-08-13T14:13:13.738034"
+  "updated": "2026-09-01T13:53:47.456343"
 }
