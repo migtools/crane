@@ -43,7 +43,7 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 | `--destination-context` | string | Yes | Kube context of the destination cluster |
 | `--pvc-name` | string | Yes | Mapping of source/destination PVC names (see [PVC Options](#pvc-options)) |
 | `--pvc-namespace` | string | No | Mapping of source/destination PVC namespaces (see [PVC Options](#pvc-options)) |
-| `--dest-storage-class` | string | No | Storage class of destination PVC (defaults to source storage class) |
+| `--dest-storage-class` | string | No | Storage class of destination PVC (defaults to source PVC's storage class; **required** when destination lacks a class by that name, e.g. cross-provider transfers). See [Cross-provider transfers](#cross-provider-transfers). |
 | `--dest-storage-requests` | string | No | Requested storage capacity of destination PVC (defaults to source capacity) |
 | `--destination-image` | string | No | Custom image to use for destination rsync Pod |
 | `--source-image` | string | No | Custom image to use for source rsync Pod |
@@ -93,6 +93,23 @@ crane transfer-pvc --source-context=mycluster --destination-context=mycluster \
 ```
 
 For the complete end-to-end workflow including workload reference updates, see the [StorageClass Conversion Guide](../storageclass-conversion.md).
+
+### Cross-provider transfers
+
+When crane provisions the destination PVC, it defaults the destination PVC's storage class to the **source PVC's** storage class unless you override it with `--dest-storage-class`.
+
+When the source and destination are on different infrastructure providers (for example AWS→GCP, or any two clusters that do not share storage-class names), you **must** pass `--dest-storage-class` with a class that exists on the destination. Storage class names like `gp3-csi` (AWS) and `standard-csi` (GCP) do not overlap, the inherited source class does not exist on the destination. List the destination's classes with `kubectl --context <destination> get storageclass` and pass an appropriate one:
+
+```bash
+crane transfer-pvc \
+  --source-context aws-cluster --destination-context gcp-cluster \
+  --pvc-name mysql-data \
+  --pvc-namespace myapp:myapp \
+  --dest-storage-class standard-csi \
+  --cloud-storage remote:my-bucket --rclone-config-secret rclone-secret
+```
+
+This applies to both direct and indirect transfers.
 
 > **Warning — StorageClass conversion with StatefulSets:** `crane transfer-pvc` migrates data from existing PVCs to new PVCs on the target StorageClass, but it does not modify the StatefulSet's `volumeClaimTemplates`. If the StatefulSet is scaled up after conversion without being recreated, new replicas will provision PVCs on the original StorageClass. To complete the conversion, delete the StatefulSet with `--cascade=orphan` (preserving existing pods and PVCs) and recreate it with the updated `storageClassName` in the `volumeClaimTemplates` spec.
 

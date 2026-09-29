@@ -67,7 +67,7 @@ runs:
                 fsGroup: 1001
               containers:
               - name: minio
-                # Temporary CI workaround while the official MinIO image is inaccessible.
+                # Use a pinned image while the official MinIO image is unavailable.
                 image: docker.io/bitnamilegacy/minio@sha256:6dabb4a2088c9a79908de3bc05f4586c23ad2182c8908e7e3acbf61c1467fb20
                 command: ["minio", "server", "/data"]
                 ports:
@@ -109,7 +109,6 @@ runs:
       run: |
         MINIO_IP=$(minikube ip -p "$PROFILE")
         MINIO_PORT=$(kubectl --context "$SRC_CTX" get svc minio -n minio -o jsonpath='{.spec.ports[0].nodePort}')
-        # Temporary CI workaround while the official MinIO client image is inaccessible.
         kubectl --context "$SRC_CTX" run minio-setup --restart=Never \
           --image=docker.io/bitnamilegacy/minio-client@sha256:73bd39f7899a0cef12b8dd5df13aa93a3ed1aaa44236542442e9ac76819ac158 \
           --command -- sh -c "mc alias set local http://${MINIO_IP}:${MINIO_PORT} minioadmin minioadmin && mc mb local/${BUCKET} --ignore-existing"

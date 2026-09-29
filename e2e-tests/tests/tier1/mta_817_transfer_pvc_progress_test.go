@@ -81,11 +81,14 @@ func runTransferPVCProgressScenario(indirect bool) {
 	_, err = kubectlSrc.Run("delete", "pod", seedPodName, "-n", namespace, "--wait=true")
 	Expect(err).NotTo(HaveOccurred())
 
+	targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+	Expect(err).NotTo(HaveOccurred())
 	options := TransferPVCOptions{
 		SourceContext:       srcApp.Context,
 		TargetContext:       tgtApp.Context,
 		PVCName:             pvcName,
 		PVCNamespaceMap:     fmt.Sprintf("%s:%s", namespace, namespace),
+		DestStorageClass:    targetStorageClass,
 		DisableCloudStorage: !indirect,
 	}
 	var totalPhases int

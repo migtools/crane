@@ -107,12 +107,15 @@ var _ = Describe("Live PVC transfer with an active writer", func() {
 		By("While writes are ongoing, run crane transfer-pvc to migrate the PVC")
 		tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+		Expect(err).NotTo(HaveOccurred())
 		opts := TransferPVCOptions{
-			SourceContext:   srcApp.Context,
-			TargetContext:   tgtApp.Context,
-			PVCName:         pvcName,
-			PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-			Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
+			SourceContext:    srcApp.Context,
+			TargetContext:    tgtApp.Context,
+			PVCName:          pvcName,
+			PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+			DestStorageClass: targetStorageClass,
+			Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
 		}
 		Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred(),
 			"transfer-pvc must complete without crashing even with an active writer (consistency is not guaranteed)")
