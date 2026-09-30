@@ -75,10 +75,10 @@ runs:
         kubectl wait --for condition=established --timeout=120s \
           crd/pipelineruns.tekton.dev --context ${{ inputs.target_context }}
 
-        echo "==> Waiting for Tekton controller pods to be ready..."
-        kubectl wait --for=condition=ready pod -l app=tekton-pipelines-controller \
+        echo "==> Waiting for Tekton deployments to be ready..."
+        kubectl rollout status deployment/tekton-pipelines-controller \
           -n tekton-pipelines --timeout=180s --context ${{ inputs.target_context }}
-        kubectl wait --for=condition=ready pod -l app=tekton-pipelines-webhook \
+        kubectl rollout status deployment/tekton-pipelines-webhook \
           -n tekton-pipelines --timeout=180s --context ${{ inputs.target_context }}
 
         echo "==> Tekton Pipelines installed successfully"
@@ -103,8 +103,8 @@ runs:
         kubectl wait --for condition=established --timeout=120s \
           crd/clusterbuildstrategies.shipwright.io --context ${{ inputs.target_context }}
 
-        echo "==> Waiting for Shipwright controller pods to be ready..."
-        kubectl wait --for=condition=ready pod -l app=shipwright-build-controller \
+        echo "==> Waiting for Shipwright deployment to be ready..."
+        kubectl rollout status deployment/shipwright-build-controller \
           -n shipwright-build --timeout=180s --context ${{ inputs.target_context }}
 
         echo "==> Shipwright Build installed successfully"
