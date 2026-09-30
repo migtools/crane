@@ -299,11 +299,11 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	stream, err := req.Stream(context.TODO())
 	if err != nil {
 		log.Debugf("Failed to stream logs for pod %s/%s: %v", namespace, podName, err)
-		// A container that never started (e.g. a missing rclone binary) has no
-		// log stream, so surface its termination reason rather than a bare
-		// "failed to stream logs".
+		// Add the container termination reason as context, but keep the stream
+		// error, since a non-empty reason (e.g. Completed, OOMKilled) is not
+		// proof of a startup failure.
 		if reason := podTerminationReason(c, podName, namespace, containerName, log); reason != "" {
-			return fmt.Errorf("pod %s/%s failed to start (%s)", namespace, podName, reason)
+			return fmt.Errorf("failed to stream logs for pod %s/%s (%s): %w", namespace, podName, reason, err)
 		}
 		return fmt.Errorf("failed to stream logs for pod %s/%s: %w", namespace, podName, err)
 	}
@@ -370,8 +370,13 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 // on paths where the pod object is not already in hand (e.g. when log streaming
 // fails because the container never started).
 func podTerminationReason(c client.Client, podName, namespace, containerName string, log *logrus.Logger) string {
+	// Best-effort lookup: bound it so a wedged API server cannot block error
+	// reporting or delay the deferred pod cleanup.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	pod := &corev1.Pod{}
-	if err := c.Get(context.TODO(), client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+	if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
 		log.Debugf("Failed to get pod %s/%s to capture termination reason: %v", namespace, podName, err)
 		return ""
 	}
