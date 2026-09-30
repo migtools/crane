@@ -1,5 +1,5 @@
 name: setup-shipwright-buildconfig
-description: Setup BuildConfig CRD on source cluster and Shipwright Build on target cluster for MTA-819 tests
+description: Setup BuildConfig CRD on source cluster and Shipwright Build on target cluster
 
 inputs:
   source_context:

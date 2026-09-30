@@ -66,7 +66,7 @@ runs:
         src_user: ${{ inputs.src_user }}
         tgt_user: ${{ inputs.tgt_user }}
 
-    - name: Setup BuildConfig CRD and Shipwright for MTA-819
+    - name: Setup BuildConfig CRD and Shipwright
       uses: ./.github/actions/setup-shipwright-buildconfig
       with:
         source_context: ${{ inputs.source_context }}

@@ -160,7 +160,7 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
-      - name: Setup BuildConfig CRD and Shipwright for MTA-819
+      - name: Setup BuildConfig CRD and Shipwright
         uses: ./.github/actions/setup-shipwright-buildconfig
         with:
           source_context: src
@@ -252,7 +252,7 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
-      - name: Setup BuildConfig CRD and Shipwright for MTA-819
+      - name: Setup BuildConfig CRD and Shipwright
         uses: ./.github/actions/setup-shipwright-buildconfig
         with:
           source_context: src
@@ -348,7 +348,7 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
-      - name: Setup BuildConfig CRD and Shipwright for MTA-819
+      - name: Setup BuildConfig CRD and Shipwright
         uses: ./.github/actions/setup-shipwright-buildconfig
         with:
           source_context: src
