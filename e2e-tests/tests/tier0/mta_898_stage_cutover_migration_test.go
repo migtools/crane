@@ -66,6 +66,11 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).To(HaveLen(1), "expected exactly one PVC in namespace %q", srcApp.Namespace)
 		pvcName := pvcs[0].Name
+		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(tgtApp.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 
 		initial, err := redisGet(kubectlSrc, srcApp.Namespace, srcPodName, appName, "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
@@ -84,15 +89,21 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		tgtIP, err := GetClusterNodeIP(tgtApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		transferOpts := TransferPVCOptions{
-			SourceContext:   srcApp.Context,
-			TargetContext:   tgtApp.Context,
-			PVCName:         pvcName,
-			PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-			Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
+			SourceContext:    srcApp.Context,
+			TargetContext:    tgtApp.Context,
+			PVCName:          pvcName,
+			PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+			DestStorageClass: targetStorageClass,
+			Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
+		}
+		waitForTransferCleanup := func() {
+			AssertNoTransferPVCLeftovers(kubectlSrc, []string{srcApp.Namespace}, pvcName)
+			AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtApp.Namespace}, pvcName)
 		}
 
 		By("Run the first stage transfer-pvc while the app is still running on source")
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
+		waitForTransferCleanup()
 
 		By("Verify the source app is unaffected and still running after the stage sync")
 		srcPhase, err := kubectlSrc.Run("get", "pod", srcPodName, "-n", srcApp.Namespace, "-o", "jsonpath={.status.phase}")
@@ -153,6 +164,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
 			By("Skipping incremental sync verification for indirect mode (pods are ephemeral)")
 		}
+		waitForTransferCleanup()
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
 		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
@@ -187,10 +199,11 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		Expect(runner.Export(exportOpts)).NotTo(HaveOccurred())
 		Expect(runner.Transform(transformOpts)).NotTo(HaveOccurred())
 		Expect(runner.TransferPVC(transferOpts)).NotTo(HaveOccurred())
+		waitForTransferCleanup()
 		Expect(runner.Apply(applyOpts)).NotTo(HaveOccurred())
 
-		By("Verify rendered output excludes the PVC: it is migrated separately via transfer-pvc")
-		Expect(utils.AssertNoKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
+		By("Verify rendered output includes a declarative PVC manifest")
+		Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
 
 		By("Apply rendered manifests to target and scale the app back up")
 		Expect(ApplyOutputToTarget(kubectlTgt, tgtApp.Namespace, paths.OutputDir)).NotTo(HaveOccurred())

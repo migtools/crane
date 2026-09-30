@@ -76,7 +76,11 @@ func (t *ConvertOptions) Complete(c *cobra.Command, args []string) error {
 	if t.debug {
 		t.globalFlags.Debug = true
 	}
-	t.Logger = t.globalFlags.GetLoggerOrDefault()
+	logger, err := t.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
+	t.Logger = logger
 	return nil
 }
 

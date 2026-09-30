@@ -90,6 +90,7 @@ ginkgo run -v --recurse e2e-tests/tests -- \
   --target-context=tgt \
   --source-nonadmin-context=src-dev \
   --target-nonadmin-context=tgt-dev \
+  --rsync-image=registry.example/rsync:test \
   --verbose-logs
 ```
 
@@ -142,6 +143,7 @@ Defined in `tests/tier0/e2e_suite_test.go` and `tests/tier1/e2e_suite_test.go`:
 - `--source-nonadmin-context` source kube context for namespace-admin (non-cluster-admin) user flows
 - `--target-nonadmin-context` target kube context for namespace-admin (non-cluster-admin) user flows
 - `--verbose-logs` enable command and output logging for framework runners
+- `--rsync-image` use the specified container image for rsync on both source and destination clusters
 - `--run-as` set to `admin` to run all tests with cluster-admin credentials. Omit this flag to
 run tests in their default mode (non-admin tests as non-admin, admin tests as admin).
 

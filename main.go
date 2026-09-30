@@ -33,6 +33,14 @@ func run() int {
 	}()
 	root := cobra.Command{
 		Use: filepath.Base(os.Args[0]),
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Validate audit logger initialization.
+			// Note: Logger is initialized before convert's Complete() applies --debug flag,
+			// so the console hook is created with debug disabled. Subsequent Debug=true
+			// doesn't update the hook's log level. This affects only the deprecated convert command.
+			_, err := f.GetLoggerOrDefault()
+			return err
+		},
 	}
 	f.ApplyFlags(&root)
 	root.AddCommand(export.NewExportCommand(genericclioptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}, f))

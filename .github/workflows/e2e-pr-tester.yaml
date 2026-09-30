@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - release-0.*
 
 concurrency:
   group: e2e-pr-tester-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
