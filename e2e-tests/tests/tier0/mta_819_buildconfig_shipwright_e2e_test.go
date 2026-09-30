@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("BuildConfig to Shipwright conversion", func() {
-	It("[MTA-819] Converted Shipwright Build runs successfully end-to-end - Docker strategy (Git source)", func() {
+	It("[MTA-819] Converted Shipwright Build runs successfully end-to-end - Docker strategy (Git source)", Label("tier0"), func() {
 		appName := "buildconfig-docker-git"
 		namespace := "buildconfig-docker-git"
 		buildConfigName := "webapp-docker"

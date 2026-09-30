@@ -192,6 +192,12 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
+      - name: Setup BuildConfig CRD and Shipwright for MTA-819
+        uses: ./.github/actions/setup-shipwright-buildconfig
+        with:
+          source_context: src
+          target_context: tgt
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -223,11 +229,29 @@ jobs:
       - name: Build crane CLI
         run: go build -o "$CRANE_BIN" .
 
+      - name: Build BuildConfig to Shipwright plugin
+        run: |
+          set -euo pipefail
+          echo "Cloning BuildConfig to Shipwright plugin repository..."
+          git clone https://github.com/migtools/crane-plugin-buildconfig-to-builds.git
+          cd crane-plugin-buildconfig-to-builds
+          echo "Building plugin..."
+          GOTOOLCHAIN=auto go build -o crane-plugin-buildconfig-to-builds .
+          chmod +x crane-plugin-buildconfig-to-builds
+          echo "Plugin built successfully"
+
+          # Create plugins directory and copy binary
+          mkdir -p ${{ github.workspace }}/crane-plugins
+          cp crane-plugin-buildconfig-to-builds ${{ github.workspace }}/crane-plugins/
+          chmod +x ${{ github.workspace }}/crane-plugins/crane-plugin-buildconfig-to-builds
+          echo "Plugin available at: ${{ github.workspace }}/crane-plugins/"
+          ls -lh ${{ github.workspace }}/crane-plugins/
+
       - name: Run touched crane e2e tests
         env:
           FOCUS_FILE_REGEX: ${{ needs.detect-changes.outputs.focus_file_regex }}
         run: |
-          ginkgo run -v -r --timeout=90m --focus-file="$FOCUS_FILE_REGEX" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS
+          ginkgo run -v -r --timeout=90m --focus-file="$FOCUS_FILE_REGEX" "$E2E_SUITE_DIR" -- $GINKGO_COMMON_ARGS --plugin-dir="${{ github.workspace }}/crane-plugins"
 
   # Keep job id run-changed-e2e-tests so existing required checks keep matching.
   # Pass only when the active path (parallel tiers or focused) succeeded.
