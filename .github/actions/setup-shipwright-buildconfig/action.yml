@@ -89,8 +89,8 @@ runs:
         set -euo pipefail
         echo "==> Installing Shipwright Build v0.19.0 on target cluster (${{ inputs.target_context }})..."
 
-        # Install Shipwright Build v0.19.0
-        kubectl apply --context ${{ inputs.target_context }} \
+        # Install Shipwright Build v0.19.0 (use server-side apply to avoid annotation size limits)
+        kubectl apply --server-side --context ${{ inputs.target_context }} \
           --filename https://github.com/shipwright-io/build/releases/download/v0.19.0/release.yaml
 
         echo "==> Waiting for Shipwright CRDs to be ready..."
