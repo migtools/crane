@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-      - release-0.11
+      - release-0.*
 
 concurrency:
   group: e2e-indirect-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
