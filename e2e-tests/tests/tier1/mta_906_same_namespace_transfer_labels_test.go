@@ -188,28 +188,53 @@ func waitForTransferResources(k KubectlRunner, namespace, sourcePVCName, destina
 	var clientPods, serverPods, clientSecrets, serverSecrets []labeledResource
 	Eventually(func() error {
 		var err error
-		clientPods, err = getLabeledResources(k, namespace, "pods", createdForPVCLabel+"="+sourcePVCName)
+		resources, err := getLabeledResources(k, namespace, "pods", createdForPVCLabel+"="+sourcePVCName)
 		if err != nil {
 			return err
 		}
-		serverPods, err = getLabeledResources(k, namespace, "pods", createdForPVCLabel+"="+destinationPVCName)
+		mergeLabeledResources(&clientPods, resources)
+
+		resources, err = getLabeledResources(k, namespace, "pods", createdForPVCLabel+"="+destinationPVCName)
 		if err != nil {
 			return err
 		}
-		clientSecrets, err = getLabeledResources(k, namespace, "secrets", createdForPVCLabel+"="+sourcePVCName)
+		mergeLabeledResources(&serverPods, resources)
+
+		resources, err = getLabeledResources(k, namespace, "secrets", createdForPVCLabel+"="+sourcePVCName)
 		if err != nil {
 			return err
 		}
-		serverSecrets, err = getLabeledResources(k, namespace, "secrets", createdForPVCLabel+"="+destinationPVCName)
+		mergeLabeledResources(&clientSecrets, resources)
+
+		resources, err = getLabeledResources(k, namespace, "secrets", createdForPVCLabel+"="+destinationPVCName)
 		if err != nil {
 			return err
 		}
+		mergeLabeledResources(&serverSecrets, resources)
+
 		if len(clientPods) == 0 || len(serverPods) == 0 || len(clientSecrets) == 0 || len(serverSecrets) == 0 {
 			return fmt.Errorf("waiting for same-namespace transfer resources: client pods=%d, server pods=%d, client secrets=%d, server secrets=%d", len(clientPods), len(serverPods), len(clientSecrets), len(serverSecrets))
 		}
 		return nil
 	}, "3m", "500ms").Should(Succeed())
 	return clientPods, serverPods, clientSecrets, serverSecrets
+}
+
+// mergeLabeledResources retains resources observed before transfer cleanup removed them.
+func mergeLabeledResources(existing *[]labeledResource, observed []labeledResource) {
+	for _, resource := range observed {
+		updated := false
+		for i := range *existing {
+			if (*existing)[i].Name == resource.Name {
+				(*existing)[i] = resource
+				updated = true
+				break
+			}
+		}
+		if !updated {
+			*existing = append(*existing, resource)
+		}
+	}
 }
 
 // getLabeledResources returns Kubernetes resources and their labels for a namespace-scoped selector.
