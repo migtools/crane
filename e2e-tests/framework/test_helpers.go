@@ -25,11 +25,25 @@ func MongoDocumentCount(k KubectlRunner, namespace, podName string) (int, error)
 	if err != nil {
 		return 0, fmt.Errorf("count MongoDB documents in pod %q in namespace %q: %w", podName, namespace, err)
 	}
-	count, err := strconv.Atoi(strings.TrimSpace(out))
+	count, err := parseMongoDocumentCount(out)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse document count %q: %w", strings.TrimSpace(out), err)
 	}
 	return count, nil
+}
+
+func parseMongoDocumentCount(out string) (int, error) {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		if count, err := strconv.Atoi(line); err == nil {
+			return count, nil
+		}
+	}
+	return 0, fmt.Errorf("no numeric document count in output")
 }
 
 // mtaIDPattern matches MTA ticket references like [MTA-801] in spec descriptions.
