@@ -52,9 +52,7 @@ How does it work? Crane works by:
 | :-- | :-- | :-- |
 | **✅ Stable** | Tagged releases for production use | [GitHub Releases](https://github.com/migtools/crane/releases) |
 | **🛠️ `main`** | Latest artifacts from pushes to `main` | [Build Crane Binaries (main push)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=branch%3Amain+event%3Apush) |
-| **🛠️ `release-0.11`** | Latest artifacts from pushes to `release-0.11` | [Build Crane Binaries (release-0.11 push)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=branch%3Arelease-0.11+event%3Apush) |
-| **🌙 Nightly (`release-0.11`)** | Scheduled artifacts for early validation on `release-0.11` | [Nightly Build Crane Binaries (release-0.11)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.11-build-binaries.yml) |
-| **🌙 Nightly** | Scheduled artifacts for early validation | [Build Crane Binaries (scheduled)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=event%3Aschedule) |
+| **🌙 Nightly (`main`)** | Scheduled artifacts for early validation on `main` | [Build Crane Binaries (main scheduled)](https://github.com/migtools/crane/actions/workflows/build-release-binaries.yml?query=branch%3Amain+event%3Aschedule) |
 
 ## Install
 
