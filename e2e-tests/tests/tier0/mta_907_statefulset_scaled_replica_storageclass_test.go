@@ -155,7 +155,13 @@ var _ = Describe("StatefulSet scaled replica StorageClass behavior", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(PVCStorageClassName(*newReplicaPVC)).To(Equal(sourceSC),
 			"new StatefulSet replicas must retain the original StorageClass")
-		Expect(newReplicaPVC.Status.Phase).To(Equal(corev1.ClaimBound))
+		Eventually(func() (corev1.PersistentVolumeClaimPhase, error) {
+			pvc, err := GetPVC(srcApp.Context, namespace, "cassandra-data-cassandra-1")
+			if err != nil {
+				return "", err
+			}
+			return pvc.Status.Phase, nil
+		}, "10m", "10s").Should(Equal(corev1.ClaimBound))
 		currentTemplateSC, err := kubectl.Run("get", "statefulset", appName, "-n", namespace, "-o", "jsonpath={.spec.volumeClaimTemplates[0].spec.storageClassName}")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(strings.TrimSpace(currentTemplateSC)).To(Equal(originalTemplateSC),
