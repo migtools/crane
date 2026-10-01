@@ -144,6 +144,7 @@ Defined in `tests/tier0/e2e_suite_test.go` and `tests/tier1/e2e_suite_test.go`:
 - `--target-nonadmin-context` target kube context for namespace-admin (non-cluster-admin) user flows
 - `--verbose-logs` enable command and output logging for framework runners
 - `--rsync-image` use the specified container image for rsync on both source and destination clusters
+- `--plugin-dir` use transform plugins from the specified directory; plugin-specific CI tests receive a custom OpenShiftPlugin build through this flag
 - `--run-as` set to `admin` to run all tests with cluster-admin credentials. Omit this flag to
 run tests in their default mode (non-admin tests as non-admin, admin tests as admin).
 

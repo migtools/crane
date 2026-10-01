@@ -1,0 +1,30 @@
+name: build-openshift-plugin
+description: Build the OpenShift transform plugin used by Crane E2E tests
+
+inputs:
+  ref:
+    description: crane-plugin-openshift git ref
+    required: false
+    default: ff642de7f58b9f28b255f2a17a1d01c5230148b2
+
+outputs:
+  plugin_dir:
+    description: Absolute directory containing the plugin binary
+    value: ${{ steps.build.outputs.plugin_dir }}
+
+runs:
+  using: composite
+  steps:
+    - name: Clone and build OpenShift plugin
+      id: build
+      shell: bash
+      run: |
+        set -euo pipefail
+        checkout_dir="${RUNNER_TEMP}/crane-plugin-openshift"
+        plugin_dir="${RUNNER_TEMP}/crane-e2e-plugins"
+        git clone https://github.com/migtools/crane-plugin-openshift.git "$checkout_dir"
+        git -C "$checkout_dir" fetch --depth=1 origin "${{ inputs.ref }}"
+        git -C "$checkout_dir" checkout --detach FETCH_HEAD
+        mkdir -p "$plugin_dir"
+        go build -C "$checkout_dir" -o "$plugin_dir/crane-plugin-openshift" .
+        echo "plugin_dir=$plugin_dir" >> "$GITHUB_OUTPUT"
