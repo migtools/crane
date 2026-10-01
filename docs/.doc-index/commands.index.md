@@ -1,37 +1,38 @@
 # COMMANDS Documentation Index
 
 ## Overview
-This documentation area defines the command-line interface and operational workflows for `crane`, a Kubernetes migration tool. It covers the end-to-end migration pipeline, including resource discovery, transformation, application, validation, and data-plane transfer of persistent volumes.
+This documentation area provides comprehensive instructions for the `crane` CLI toolset, a migration pipeline designed for moving Kubernetes resources between clusters. It covers the full lifecycle of a migration, including resource exportation, transformation via Kustomize plugins, cluster-to-cluster data transfer, manifest application, and validation against target cluster API surfaces.
 
 ## Files Summary
-* **commands/export.md**: Explains the discovery and export of Kubernetes resources (including CRDs and cluster-scoped RBAC) from a source cluster to a local directory.
-* **commands/transform.md**: Details the process of applying Kustomize-based transformations and plugin-driven modifications to exported manifests.
-* **commands/apply.md**: Describes the process of rendering final manifests using embedded Kustomize and organizing them for deployment, including options for dependency ordering.
-* **commands/validate.md**: Outlines how to verify the compatibility of transformed manifests against a target cluster’s API surface, supporting both live and offline modes.
-* **commands/transfer-pvc.md**: Details the mechanism for migrating PersistentVolumeClaim resources and their underlying data between clusters using rsync-based pods.
+- **commands/apply.md**: Describes how to run embedded Kustomize on transform stages to generate final, deployable YAML manifests.
+- **commands/export.md**: Details the discovery and collection of Kubernetes API objects and CRDs from a source cluster into an export directory.
+- **commands/transfer-pvc.md**: Explains procedures for migrating PersistentVolumeClaim resources and their underlying volume data using either direct network connectivity or indirect cloud storage.
+- **commands/transform.md**: Documents the multi-stage transformation pipeline, including how to use plugins, custom manual stages, and sequential Kustomize patch application.
+- **commands/validate.md**: Outlines the process for verifying final rendered manifests against a target cluster’s API surface, supporting both live and offline validation modes.
 
 ## Code Changes That Would Require Documentation Updates
-* **Flag/Argument Modifications**: Adding, removing, or changing defaults for any CLI flags (e.g., changing `--qps` in `export` or adding new transformation options).
-* **Output Structure Changes**: Any changes to the directory hierarchy of `export/`, `transform/`, or `output/` folders.
-* **Plugin Architecture**: Updates to how transformation plugins are discovered, prioritized, or the introduction of new plugin lifecycle stages.
-* **API Version Requirements**: Changes to the validation logic or supported API surface identification methods in `crane validate`.
-* **Impersonation Logic**: Updates to `--as` or `--as-extras` handling in `crane export` for non-admin migrations.
-* **Transfer Protocol**: Changes to the rsync implementation, certificate generation, or supported endpoint types (e.g., adding `loadbalancer` or `nodeport` support) in `transfer-pvc`.
-* **Kustomize Integration**: Changes to the embedded `krusty` library usage or how `kustomization.yaml` files are generated/managed.
+*   **CLI Flags/Arguments**: Addition, removal, or renaming of any flag, short code, or default value (e.g., adding a new `--log-level` or modifying `--ordered`).
+*   **Pipeline Logic**: Changes to the order of operations, sequential consistency rules, or how `crane` creates/manages directories (`export/`, `transform/`, `output/`, `validate/`).
+*   **Plugin Architecture**: Modifications to how plugins are registered, the naming convention (`*Plugin`), or the automatic stage creation logic.
+*   **Transfer Methods**: Introduction of new volume transfer protocols, changes to the `rsync` Pod implementation, or updates to supported cloud storage providers (S3/MinIO).
+*   **Default Behavior**: Any change to default output formats (e.g., changes to the file naming convention `Kind_group_version...`), file structures, or default directory locations.
+*   **API Interactions**: Changes to impersonation logic, RBAC requirements for non-admin migrations, or how the tool handles `Forbidden` errors.
+*   **Validation Logic**: Updates to GVK matching logic, the format of the API surface JSON, or the introduction of new validation rules.
 
 ## Key Technical Concepts
-* **GVK (Group/Version/Kind)**: Used for API surface matching and resource identification.
-* **Kustomization Pipeline**: The sequential execution of transform stages using JSON patches.
-* **Whiteout Resources**: Files tracked during transformation but explicitly excluded from active deployment.
-* **Sequential Consistency**: The requirement that transformation stages operate on the materialized output of previous stages.
-* **Multi-Stage Pipelines**: The ability to chain plugins (`*Plugin`) and manual pass-through stages.
-* **Dependency-Ordered Deployment**: The `--ordered` flag functionality for `kubectl apply`.
-* **Rsync Daemon/Client Architecture**: The data-plane mechanism for `transfer-pvc`.
-* **API Surface Capture**: The offline validation workflow involving JSON-based API resource definitions.
+*   **GVK (Group, Version, Kind)**: The fundamental schema used for validation and resource identification.
+*   **Kustomize / Krusty API**: The embedded engine used for transforming manifests during the `apply` and `transform` phases.
+*   **Sequential Consistency**: The pipeline rule where each transformation stage operates on the materialized output of the previous stage.
+*   **Whiteout**: The concept of filtering or deleting resources during the transformation pipeline.
+*   **Direct vs. Indirect Transfer**: Migration modes for PVCs (Direct via `rsync`/Ingress/Route vs. Indirect via S3-compatible storage/rclone).
+*   **Impersonation**: Using `--as` and `--as-extras` flags to perform migrations with specific service account permissions.
+*   **Cluster-Scoped Resources**: Resources like `ClusterRole`, `ClusterRoleBinding`, and `CRDs` that are handled specifically during migration.
+*   **Pass-through vs. Plugin Stages**: The distinction between automated plugin-driven stages and manually editable custom stages.
 
 ## Related Components
-* **Kustomize (embedded)**: The core engine for resource modification and manifest generation.
-* **Kubernetes API Server**: The primary interaction point for `export` and `validate`.
-* **CRD Controllers**: The source of CustomResourceDefinitions managed during the migration pipeline.
-* **Rsync/Pod Execution**: The data-plane subsystem used for volume transfer.
-* **RBAC/Impersonation Subsystem**: Handles authentication context for non-admin cluster migration.
+*   **Crane Core**: The primary CLI entry point and orchestration layer.
+*   **Kubernetes API**: The source and target environment for all resource operations.
+*   **Kustomize Engine**: The embedded resource manipulation library.
+*   **Rsync Daemon/Pod**: The data synchronization utility used in `transfer-pvc`.
+*   **Rclone**: The backend tool utilized for indirect cloud storage transfers.
+*   **Kubeconfig**: The authentication and cluster-context management system.
