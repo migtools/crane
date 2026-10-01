@@ -640,6 +640,9 @@ func (t *TransferPVCCommand) run() (retErr error) {
 				RunAsUser:  clientPodSecCtx.RunAsUser,
 				RunAsGroup: clientPodSecCtx.RunAsGroup,
 				FSGroup:    clientPodSecCtx.FSGroup,
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
 			},
 			Image: t.Flags.SourceImage,
 		},
