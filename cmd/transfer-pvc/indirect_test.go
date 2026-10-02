@@ -302,3 +302,191 @@ func rcloneReveal(obscured string) (string, error) {
 	stream.XORKeyStream(buf, buf)
 	return string(buf), nil
 }
+
+// podWithContainerStatuses builds a Pod carrying the given container statuses.
+func podWithContainerStatuses(name string, statuses ...corev1.ContainerStatus) *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-ns"},
+		Status:     corev1.PodStatus{ContainerStatuses: statuses},
+	}
+}
+
+const startErrorMsg = `exec: "rclone": executable file not found in $PATH`
+
+func TestCaptureTerminationReason(t *testing.T) {
+	waiting := corev1.ContainerStatus{
+		Name: "rclone",
+		State: corev1.ContainerState{
+			Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff", Message: "back-off pulling image"},
+		},
+	}
+	startError := corev1.ContainerStatus{
+		Name: "rclone",
+		State: corev1.ContainerState{
+			Terminated: &corev1.ContainerStateTerminated{ExitCode: 128, Reason: "StartError", Message: startErrorMsg},
+		},
+	}
+	running := corev1.ContainerStatus{
+		Name:  "rclone",
+		State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+	}
+	terminatedNoReason := corev1.ContainerStatus{
+		Name:  "rclone",
+		State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}},
+	}
+
+	tests := []struct {
+		name          string
+		pod           *corev1.Pod
+		containerName string
+		want          string
+	}{
+		{
+			name:          "nil pod",
+			pod:           nil,
+			containerName: "rclone",
+			want:          "",
+		},
+		{
+			name:          "no container statuses",
+			pod:           &corev1.Pod{},
+			containerName: "rclone",
+			want:          "",
+		},
+		{
+			name:          "container name not found",
+			pod:           podWithContainerStatuses("p", startError),
+			containerName: "not-rclone",
+			want:          "",
+		},
+		{
+			name:          "terminated with StartError reason",
+			pod:           podWithContainerStatuses("p", startError),
+			containerName: "rclone",
+			want:          "container terminated: StartError: " + startErrorMsg,
+		},
+		{
+			name:          "waiting with reason",
+			pod:           podWithContainerStatuses("p", waiting),
+			containerName: "rclone",
+			want:          "container waiting: ImagePullBackOff: back-off pulling image",
+		},
+		{
+			name:          "running has no termination reason",
+			pod:           podWithContainerStatuses("p", running),
+			containerName: "rclone",
+			want:          "",
+		},
+		{
+			name:          "terminated without a reason is ignored",
+			pod:           podWithContainerStatuses("p", terminatedNoReason),
+			containerName: "rclone",
+			want:          "",
+		},
+		{
+			name:          "matches the named container among several",
+			pod:           podWithContainerStatuses("p", running, startError),
+			containerName: "rclone",
+			// both statuses are named "rclone"; the first match (running) wins
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := captureTerminationReason(tt.pod, tt.containerName); got != tt.want {
+				t.Errorf("captureTerminationReason() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPodTerminationReason(t *testing.T) {
+	scheme := newTestScheme()
+	startErrPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "rclone-upload", Namespace: "test-ns"},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodFailed,
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name: "rclone",
+				State: corev1.ContainerState{
+					Terminated: &corev1.ContainerStateTerminated{ExitCode: 128, Reason: "StartError", Message: startErrorMsg},
+				},
+			}},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		objs          []runtime.Object
+		podName       string
+		containerName string
+		want          string
+	}{
+		{
+			name:          "pod found with StartError container",
+			objs:          []runtime.Object{startErrPod},
+			podName:       "rclone-upload",
+			containerName: "rclone",
+			want:          "container terminated: StartError: " + startErrorMsg,
+		},
+		{
+			name:          "pod not found returns empty",
+			objs:          nil,
+			podName:       "does-not-exist",
+			containerName: "rclone",
+			want:          "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tt.objs...).Build()
+			got := podTerminationReason(c, tt.podName, "test-ns", tt.containerName, logrus.StandardLogger())
+			if got != tt.want {
+				t.Errorf("podTerminationReason() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckRclonePartialSuccessTerminationDetail(t *testing.T) {
+	reason := "container terminated: StartError: " + startErrorMsg
+
+	t.Run("no rclone output appends termination detail", func(t *testing.T) {
+		err := checkRclonePartialSuccess("", "rclone-upload", "test-ns", logrus.StandardLogger(), reason)
+		if err == nil {
+			t.Fatal("expected error when no file count is found")
+		}
+		if !strings.Contains(err.Error(), reason) {
+			t.Errorf("error %q should contain termination detail %q", err.Error(), reason)
+		}
+	})
+
+	t.Run("partial success wins even with a termination reason", func(t *testing.T) {
+		output := "ERROR : .mongodb: permission denied\nTransferred:           22 / 22, 100%\n"
+		if err := checkRclonePartialSuccess(output, "rclone-upload", "test-ns", logrus.StandardLogger(), reason); err != nil {
+			t.Errorf("expected nil (partial success) even with termination reason, got %v", err)
+		}
+	})
+
+	t.Run("empty termination reason adds no parens", func(t *testing.T) {
+		err := checkRclonePartialSuccess("", "rclone-upload", "test-ns", logrus.StandardLogger(), "")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if strings.Contains(err.Error(), "()") {
+			t.Errorf("error %q should not contain empty detail parentheses", err.Error())
+		}
+	})
+
+	t.Run("no variadic arg behaves like before", func(t *testing.T) {
+		err := checkRclonePartialSuccess("", "rclone-upload", "test-ns", logrus.StandardLogger())
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if strings.Contains(err.Error(), "(") {
+			t.Errorf("error %q should not contain a detail suffix", err.Error())
+		}
+	})
+}
