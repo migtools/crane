@@ -1,0 +1,128 @@
+name: setup-shipwright-buildconfig
+description: Setup BuildConfig CRD on source cluster and Shipwright Build on target cluster
+
+inputs:
+  source_context:
+    description: Source cluster context name
+    required: false
+    default: src
+  target_context:
+    description: Target cluster context name
+    required: false
+    default: tgt
+
+runs:
+  using: composite
+  steps:
+    - name: Install fake BuildConfig CRD on source cluster
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "==> Installing fake BuildConfig CRD on source cluster (${{ inputs.source_context }})..."
+        echo "WARNING: This CRD has no controller - BuildConfigs will not actually build!"
+
+        # Apply fake BuildConfig CRD
+        kubectl apply --context ${{ inputs.source_context }} -f - <<'EOF'
+        apiVersion: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        metadata:
+          name: buildconfigs.build.openshift.io
+          annotations:
+            description: "FAKE OpenShift BuildConfig CRD for testing transformation only"
+            warning: "This CRD has no controller. BuildConfigs created with this will not trigger any builds."
+        spec:
+          group: build.openshift.io
+          names:
+            kind: BuildConfig
+            listKind: BuildConfigList
+            plural: buildconfigs
+            singular: buildconfig
+            shortNames:
+            - bc
+          scope: Namespaced
+          versions:
+          - name: v1
+            served: true
+            storage: true
+            schema:
+              openAPIV3Schema:
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+            subresources:
+              status: {}
+        EOF
+
+        echo "==> Waiting for BuildConfig CRD to be established..."
+        kubectl wait --for=condition=established crd/buildconfigs.build.openshift.io \
+          --context ${{ inputs.source_context }} --timeout=60s
+
+        echo "==> Fake BuildConfig CRD installed successfully on source cluster"
+        kubectl get crd buildconfigs.build.openshift.io --context ${{ inputs.source_context }}
+
+    - name: Install Tekton Pipelines on target cluster
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "==> Installing Tekton Pipelines v1.9.1 on target cluster (${{ inputs.target_context }})..."
+
+        # Install Tekton Pipelines v1.9.1
+        kubectl apply --context ${{ inputs.target_context }} \
+          --filename https://infra.tekton.dev/tekton-releases/pipeline/previous/v1.9.1/release.yaml
+
+        echo "==> Waiting for Tekton CRDs to be ready..."
+        kubectl wait --for condition=established --timeout=120s \
+          crd/taskruns.tekton.dev --context ${{ inputs.target_context }}
+        kubectl wait --for condition=established --timeout=120s \
+          crd/pipelineruns.tekton.dev --context ${{ inputs.target_context }}
+
+        echo "==> Waiting for Tekton deployments to be ready..."
+        kubectl rollout status deployment/tekton-pipelines-controller \
+          -n tekton-pipelines --timeout=180s --context ${{ inputs.target_context }}
+        kubectl rollout status deployment/tekton-pipelines-webhook \
+          -n tekton-pipelines --timeout=180s --context ${{ inputs.target_context }}
+
+        echo "==> Tekton Pipelines installed successfully"
+
+    - name: Install Shipwright Build on target cluster
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "==> Installing Shipwright Build v0.19.0 on target cluster (${{ inputs.target_context }})..."
+
+        # Install Shipwright Build v0.19.0 (use server-side apply to avoid annotation size limits)
+        kubectl apply --server-side --context ${{ inputs.target_context }} \
+          --filename https://github.com/shipwright-io/build/releases/download/v0.19.0/release.yaml
+
+        echo "==> Waiting for Shipwright CRDs to be ready..."
+        kubectl wait --for condition=established --timeout=120s \
+          crd/builds.shipwright.io --context ${{ inputs.target_context }}
+        kubectl wait --for condition=established --timeout=120s \
+          crd/buildruns.shipwright.io --context ${{ inputs.target_context }}
+        kubectl wait --for condition=established --timeout=120s \
+          crd/buildstrategies.shipwright.io --context ${{ inputs.target_context }}
+        kubectl wait --for condition=established --timeout=120s \
+          crd/clusterbuildstrategies.shipwright.io --context ${{ inputs.target_context }}
+
+        echo "==> Waiting for Shipwright deployment to be ready..."
+        kubectl rollout status deployment/shipwright-build-controller \
+          -n shipwright-build --timeout=180s --context ${{ inputs.target_context }}
+
+        echo "==> Shipwright Build installed successfully"
+
+    - name: Install Shipwright ClusterBuildStrategies on target cluster
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "==> Installing Shipwright sample ClusterBuildStrategies on target cluster..."
+
+        # Install sample strategies (buildah, buildpacks-v3, kaniko, ko, source-to-image)
+        kubectl apply --context ${{ inputs.target_context }} \
+          --filename https://github.com/shipwright-io/build/releases/download/v0.19.0/sample-strategies.yaml
+
+        echo "==> Waiting for ClusterBuildStrategies to be available..."
+        sleep 5
+
+        echo "==> Installed ClusterBuildStrategies:"
+        kubectl get clusterbuildstrategy --context ${{ inputs.target_context }}
+
+        echo "==> Tekton and Shipwright setup complete on target cluster"
