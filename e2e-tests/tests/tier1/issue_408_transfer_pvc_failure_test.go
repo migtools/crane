@@ -109,7 +109,6 @@ spec:
           chown -R 2000:2000 /data/restricted
           chmod 0700 /data/restricted
           chmod 0600 /data/restricted/secret.txt
-          sleep 3600
       volumeMounts:
         - name: data
           mountPath: /data
@@ -119,7 +118,7 @@ spec:
         claimName: %[3]s
 `, seedPodName, sourceNamespace, pvcName)
 		Expect(kubectl.ApplyYAMLSpec(seedManifest, sourceNamespace)).To(Succeed())
-		_, err = kubectl.Run("wait", "--for=condition=Ready", "pod/"+seedPodName, "-n", sourceNamespace, "--timeout=120s")
+		_, err = kubectl.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/"+seedPodName, "-n", sourceNamespace, "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 		_, err = kubectl.Run("delete", "pod", seedPodName, "-n", sourceNamespace, "--wait=true", "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
