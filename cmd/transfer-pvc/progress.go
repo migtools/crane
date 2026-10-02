@@ -91,25 +91,19 @@ func (r *rsyncLogStream) Init() error {
 			} else {
 				zeroBytes += 1
 			}
-			// sometimes, a stream would end without returning an EOF gracefully
-			// we force exit the loop when we see null bytes on stream consecutively
+			var streamErr error
+			// Sometimes a stream ends without returning EOF. In either case, wait
+			// for the rsync container so a closed log stream is not treated as success.
 			if zeroBytes > 4 {
-				code, finalLogs, e := getFinalPodStatus(clientset, podName, r.pvc.Namespace)
-				if e == nil {
-					r.progress.ExitCode = code
-					logString = finalLogs
-				}
-				err = io.EOF
+				streamErr = r.setFinalPodStatus(clientset, podName)
 			}
 			logString = fmt.Sprintf("%s%s", logString, string(buf[:n]))
 			if readErr == io.EOF {
-				err = readErr
 				if r.progress.ExitCode == nil {
-					code, finalLogs, e := getFinalPodStatus(clientset, podName, r.pvc.Namespace)
-					if e == nil {
-						r.progress.ExitCode = code
-						logString = finalLogs
-					}
+					streamErr = r.setFinalPodStatus(clientset, podName)
+				}
+				if streamErr == nil {
+					streamErr = io.EOF
 				}
 			}
 			parsedProgress, unparsed := parseRsyncLogs(logString)
@@ -130,8 +124,8 @@ func (r *rsyncLogStream) Init() error {
 			}
 			logString = unparsed
 			lastProgress = r.progress
-			if err != nil {
-				r.err <- err
+			if streamErr != nil {
+				r.err <- streamErr
 				break
 			}
 		}
@@ -163,11 +157,8 @@ func (r *rsyncLogStream) Streams() (stdout chan string, stderr chan string, err 
 	return r.stdout, r.stderr, r.err
 }
 
-func (r *rsyncLogStream) ExitCode() *int32 {
-	if r.progress != nil {
-		return r.progress.ExitCode
-	}
-	return nil
+func (r *rsyncLogStream) Progress() *Progress {
+	return r.progress
 }
 
 // Progress defines transfer Progress
@@ -525,25 +516,40 @@ func waitForPodRunning(c *kubernetes.Clientset, namespace string, labels map[str
 	return podName, err
 }
 
-func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (*int32, string, error) {
-	var exitCode *int32
-	for i := 0; i < 10; i++ {
-		pod, err := c.CoreV1().Pods(namespace).Get(context.Background(), name, metav1.GetOptions{})
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get pod %s/%s for final status: %w", namespace, name, err)
-		}
+func (r *rsyncLogStream) setFinalPodStatus(c kubernetes.Interface, podName string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
+	exitCode, finalLogs, err := getFinalPodStatus(ctx, c, podName, r.pvc.Namespace)
+	if exitCode != nil {
+		r.progress.ExitCode = exitCode
+		parsedProgress, _ := parseRsyncLogs(finalLogs)
+		r.progress.Merge(parsedProgress)
+	}
+	if err != nil && exitCode != nil {
+		r.log.Warnf("Unable to read final logs from rsync client pod %s/%s: %v", r.pvc.Namespace, podName, err)
+		return nil
+	}
+	return err
+}
+
+func getFinalPodStatus(ctx context.Context, c kubernetes.Interface, name string, namespace string) (*int32, string, error) {
+	var exitCode *int32
+	err := wait.PollUntilContextCancel(ctx, time.Second, true, func(ctx context.Context) (bool, error) {
+		pod, err := c.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return false, fmt.Errorf("getting rsync client pod %s/%s: %w", namespace, name, err)
+		}
 		for _, container := range pod.Status.ContainerStatuses {
-			if container.Name == "rsync" {
-				if container.State.Terminated != nil {
-					exitCode = &container.State.Terminated.ExitCode
-				}
+			if container.Name == "rsync" && container.State.Terminated != nil {
+				exitCode = &container.State.Terminated.ExitCode
+				return true, nil
 			}
 		}
-		if exitCode != nil {
-			break
-		}
-		time.Sleep(time.Second)
+		return false, nil
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("waiting for rsync client pod %s/%s to terminate: %w", namespace, name, err)
 	}
 
 	lastLines := int64(35)
@@ -553,7 +559,7 @@ func getFinalPodStatus(c *kubernetes.Clientset, name string, namespace string) (
 		TailLines: &lastLines,
 	})
 
-	podLogStream, err := finalLogRequest.Stream(context.TODO())
+	podLogStream, err := finalLogRequest.Stream(ctx)
 	if err != nil {
 		return exitCode, "", err
 	}

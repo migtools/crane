@@ -35,36 +35,70 @@ func int32Ptr(v int32) *int32 { return &v }
 
 func TestTransferSummaryStatus(t *testing.T) {
 	tests := []struct {
-		name          string
-		retErr        error
-		rsyncExitCode *int32
-		want          string
+		name     string
+		retErr   error
+		progress *Progress
+		want     string
 	}{
 		{
-			name: "successful rsync",
-			want: "succeeded",
+			name:     "successful rsync",
+			progress: &Progress{ExitCode: int32Ptr(0)},
+			want:     "succeeded",
 		},
 		{
-			name:          "partial rsync transfer",
-			rsyncExitCode: int32Ptr(23),
-			want:          "succeeded (with warnings — some files could not be transferred)",
+			name:     "partial rsync transfer",
+			progress: &Progress{ExitCode: int32Ptr(23), TransferredFiles: 1},
+			want:     "succeeded (with warnings — some files could not be transferred)",
 		},
 		{
-			name:          "unexpected rsync failure",
-			rsyncExitCode: int32Ptr(12),
-			want:          "failed",
+			name:     "partial rsync transfer without copied data",
+			progress: &Progress{ExitCode: int32Ptr(23)},
+			want:     "failed",
 		},
 		{
-			name:   "transfer failure takes precedence over rsync exit code",
-			retErr: fmt.Errorf("cleanup failed"),
-			want:   "failed",
+			name:     "unexpected rsync failure",
+			progress: &Progress{ExitCode: int32Ptr(12)},
+			want:     "failed",
+		},
+		{
+			name:     "transfer failure takes precedence over rsync exit code",
+			retErr:   fmt.Errorf("cleanup failed"),
+			progress: &Progress{ExitCode: int32Ptr(0)},
+			want:     "failed",
+		},
+		{
+			name: "unknown rsync result",
+			want: "failed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := transferSummaryStatus(tt.retErr, tt.rsyncExitCode); got != tt.want {
+			if got := transferSummaryStatus(tt.retErr, tt.progress); got != tt.want {
 				t.Errorf("transferSummaryStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRsyncResultError(t *testing.T) {
+	tests := []struct {
+		name     string
+		progress *Progress
+		wantErr  bool
+	}{
+		{name: "successful rsync", progress: &Progress{ExitCode: int32Ptr(0)}},
+		{name: "partial rsync transfer with files copied", progress: &Progress{ExitCode: int32Ptr(23), TransferredFiles: 1}},
+		{name: "partial rsync transfer with bytes copied", progress: &Progress{ExitCode: int32Ptr(23), TransferredData: &dataSize{val: 1, unit: "bytes"}}},
+		{name: "partial rsync transfer without copied data", progress: &Progress{ExitCode: int32Ptr(23)}, wantErr: true},
+		{name: "other rsync failure", progress: &Progress{ExitCode: int32Ptr(12)}, wantErr: true},
+		{name: "missing final status", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := rsyncResultError(tt.progress); (err != nil) != tt.wantErr {
+				t.Errorf("rsyncResultError() error = %v, wantErr %t", err, tt.wantErr)
 			}
 		})
 	}
