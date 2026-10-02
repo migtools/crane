@@ -96,6 +96,9 @@ func (r *rsyncLogStream) Init() error {
 			// for the rsync container so a closed log stream is not treated as success.
 			if zeroBytes > 4 {
 				streamErr = r.setFinalPodStatus(clientset, podName)
+				if streamErr == nil {
+					streamErr = io.EOF
+				}
 			}
 			logString = fmt.Sprintf("%s%s", logString, string(buf[:n]))
 			if readErr == io.EOF {
