@@ -150,21 +150,6 @@ Before accepting generated changes, verify:
 - Full, focused, and indirect CI jobs receive new flags and dependencies where needed.
 - The final response states which tests actually ran and which require a cluster.
 
-## DeploymentConfig example
-
-The repository contains a complete plugin-dependent example:
-
-```text
-e2e-tests/tests/tier1/deploymentconfig_conversion_test.go
-e2e-tests/testdata/deploymentconfig-conversion/export/
-e2e-tests/testdata/deploymentconfig-conversion/expected/output.yaml
-.github/actions/build-openshift-plugin/action.yml
-```
-
-This scenario uses a synthetic OpenShift `DeploymentConfig`, runs a custom `OpenShiftPlugin`, verifies the generated `apps/v1 Deployment`, and applies it to the target cluster.
-
-Use this example for source APIs that minikube cannot host. Do not use it as a reason to replace a live migration test when both clusters support the required APIs.
-
 ## Verification commands
 
 The skill recommends these checks before cluster-backed execution:

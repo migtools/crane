@@ -87,72 +87,22 @@ Relevant review and follow-up changes are in [#1009](https://github.com/migtools
 
 Human reviewers requested these patterns in [#923](https://github.com/migtools/crane/pull/923), [#948](https://github.com/migtools/crane/pull/948), [#958](https://github.com/migtools/crane/pull/958), [#959](https://github.com/migtools/crane/pull/959), [#897](https://github.com/migtools/crane/pull/897), and [#918](https://github.com/migtools/crane/pull/918).
 
-## DeploymentConfig conversion example
-
-The reference test is `e2e-tests/tests/tier1/deploymentconfig_conversion_test.go`. Its input export is under `e2e-tests/testdata/deploymentconfig-conversion/export/`, and the captured proof is `e2e-tests/testdata/deploymentconfig-conversion/expected/output.yaml`.
-
-PR `migtools/crane-plugin-openshift#34` adds the conversion. Conversion is enabled by default for compatible DeploymentConfigs. Set `convert-deploymentconfigs=false` only when the migration must preserve DeploymentConfigs. Until the PR merges, CI builds commit `ff642de7f58b9f28b255f2a17a1d01c5230148b2` through `.github/actions/build-openshift-plugin`.
-
-The transform must receive:
-
-```go
-TransformOptions{
-    ExportDir:    paths.ExportDir,
-    TransformDir: paths.TransformDir,
-    PluginDir:    config.PluginDir,
-    OptionalFlags: `{"pvc-rename-map":"legacy-data:migrated-data"}`,
-    Stages:       []string{"OpenShiftPlugin"},
-}
-```
-
-Expected proof in `output/output.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: legacy-web
-  namespace: deploymentconfig-conversion
-spec:
-  replicas: 0
-  selector:
-    matchLabels:
-      app: legacy-web
-  template:
-    spec:
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: migrated-data
-```
-
-The complete assertion must also prove that no active `DeploymentConfig` remains, the ImageChange warning annotation exists, and SCC-injected IDs were removed. Finally, apply the rendered output and query the target Deployment.
-
 ## Local commands
-
-Build the custom plugin:
-
-```bash
-git clone https://github.com/migtools/crane-plugin-openshift.git /tmp/crane-plugin-openshift
-git -C /tmp/crane-plugin-openshift fetch --depth=1 origin ff642de7f58b9f28b255f2a17a1d01c5230148b2
-git -C /tmp/crane-plugin-openshift checkout --detach FETCH_HEAD
-mkdir -p /tmp/crane-e2e-plugins
-go build -C /tmp/crane-plugin-openshift -o /tmp/crane-e2e-plugins/crane-plugin-openshift .
-```
 
 Run the focused test after the two clusters and `k8sdeploy` are available:
 
 ```bash
-ginkgo run -v -r --focus-file=deploymentconfig_conversion_test.go e2e-tests/tests -- \
+ginkgo run -v -r --focus-file=<test-file> e2e-tests/tests -- \
   --k8sdeploy-bin=k8sdeploy \
   --crane-bin="$PWD/crane" \
   --source-context=src \
   --target-context=tgt \
   --source-nonadmin-context=src-dev \
   --target-nonadmin-context=tgt-dev \
-  --plugin-dir=/tmp/crane-e2e-plugins \
   --verbose-logs
 ```
+
+Add scenario-specific flags such as `--plugin-dir`, `--cloud-storage`, or `--rclone-config-file` only when required.
 
 ## Verification
 
