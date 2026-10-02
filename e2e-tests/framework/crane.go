@@ -32,6 +32,8 @@ type TransferPVCOptions struct {
 	// transfer coverage run in the same E2E invocation.
 	DisableCloudStorage bool
 	RsyncImage          string
+	Encrypt             bool
+	KeepCloudData       bool
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -276,6 +278,12 @@ func buildTransferPVCArgs(opts TransferPVCOptions) []string {
 			args = append(args, "--rclone-config-secret", opts.RcloneConfigSecret)
 		} else if opts.RcloneConfigFile != "" {
 			args = append(args, "--rclone-config-file", opts.RcloneConfigFile)
+		}
+		if opts.Encrypt {
+			args = append(args, "--encrypt")
+		}
+		if opts.KeepCloudData {
+			args = append(args, "--keep-cloud-data")
 		}
 	} else {
 		args = append(args, "--endpoint", opts.Endpoint)
