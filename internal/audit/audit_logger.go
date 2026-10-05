@@ -25,21 +25,8 @@ func NewFileHook(path string, cmd *string) (*FileHook, error) {
 	}
 	// Try to create with exclusive access. If it succeeds, we created a new file.
 	// If it fails with ErrExist, the file already existed.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_APPEND|os.O_WRONLY, 0600)
 	if err == nil {
-		// We created the file. Chmod is redundant since we set 0600 in OpenFile,
-		// but call it anyway for safety in case the umask affected it.
-		fileInfo, err := f.Stat()
-		if err != nil {
-			_ = f.Close()
-			return nil, err
-		}
-		if fileInfo.Mode().IsRegular() {
-			if err := f.Chmod(0600); err != nil {
-				_ = f.Close()
-				return nil, err
-			}
-		}
 		return &FileHook{
 			file:      f,
 			cmd:       cmd,
