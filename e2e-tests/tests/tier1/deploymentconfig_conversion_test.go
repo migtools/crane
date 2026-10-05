@@ -19,7 +19,7 @@ import (
 var _ = Describe("OpenShift DeploymentConfig conversion", func() {
 	It("converts a DeploymentConfig into a target-compatible Deployment", Label("tier1", "plugin"), func() {
 		if config.PluginDir == "" {
-			Skip("requires --plugin-dir containing the custom OpenShiftPlugin build")
+			Skip("requires --plugin-dir containing the OpenShiftPlugin build")
 		}
 
 		const namespace = "deploymentconfig-conversion"
@@ -39,14 +39,13 @@ var _ = Describe("OpenShift DeploymentConfig conversion", func() {
 		exportDir, err := utils.TestdataFilePath("deploymentconfig-conversion/export")
 		Expect(err).NotTo(HaveOccurred())
 
-		By("Transform the DeploymentConfig with the custom OpenShiftPlugin")
+		By("Transform the DeploymentConfig with the OpenShiftPlugin")
 		runner := CraneRunner{Bin: config.CraneBin, WorkDir: paths.TempDir}
 		Expect(runner.Transform(TransformOptions{
 			ExportDir:     exportDir,
 			TransformDir:  paths.TransformDir,
 			PluginDir:     config.PluginDir,
 			OptionalFlags: `{"pvc-rename-map":"legacy-data:migrated-data"}`,
-			Stages:        []string{"OpenShiftPlugin"},
 		})).To(Succeed())
 		Expect(runner.Apply(ApplyOptions{
 			TransformDir: paths.TransformDir,
