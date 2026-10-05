@@ -59,6 +59,33 @@ runs:
         echo "==> Fake BuildConfig CRD installed successfully on source cluster"
         kubectl get crd buildconfigs.build.openshift.io --context ${{ inputs.source_context }}
 
+        echo "==> Creating RBAC permissions for BuildConfig resources..."
+        kubectl apply --context ${{ inputs.source_context }} -f - <<'EOF'
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: buildconfig-user
+        rules:
+        - apiGroups: ["build.openshift.io"]
+          resources: ["buildconfigs", "buildconfigs/status"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: buildconfig-user-binding
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: buildconfig-user
+        subjects:
+        - kind: Group
+          name: system:authenticated
+          apiGroup: rbac.authorization.k8s.io
+        EOF
+
+        echo "==> BuildConfig RBAC permissions created successfully"
+
     - name: Install Tekton Pipelines on target cluster
       shell: bash
       run: |
@@ -125,4 +152,36 @@ runs:
         echo "==> Installed ClusterBuildStrategies:"
         kubectl get clusterbuildstrategy --context ${{ inputs.target_context }}
 
+        echo "==> Creating RBAC permissions for Shipwright resources..."
+        kubectl apply --context ${{ inputs.target_context }} -f - <<'EOF'
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: shipwright-user
+        rules:
+        - apiGroups: ["shipwright.io"]
+          resources: ["builds", "buildruns", "buildstrategies"]
+          verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+        - apiGroups: ["shipwright.io"]
+          resources: ["builds/status", "buildruns/status"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: [""]
+          resources: ["serviceaccounts"]
+          verbs: ["get", "list", "create"]
+        ---
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: shipwright-user-binding
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: shipwright-user
+        subjects:
+        - kind: Group
+          name: system:authenticated
+          apiGroup: rbac.authorization.k8s.io
+        EOF
+
+        echo "==> Shipwright RBAC permissions created successfully"
         echo "==> Tekton and Shipwright setup complete on target cluster"
