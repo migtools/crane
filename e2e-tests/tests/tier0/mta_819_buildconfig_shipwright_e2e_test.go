@@ -168,7 +168,7 @@ spec:
 			log.Printf("  Image digest: %s\n", outputImage)
 		}
 
-		By("Test completed successfully - BuildConfig converted and BuildRun executed end-to-end")
+		By("Test completed successfully")
 		log.Printf("MTA-819: Successfully converted and executed Docker BuildConfig (Git source) end-to-end\n")
 	})
 })
