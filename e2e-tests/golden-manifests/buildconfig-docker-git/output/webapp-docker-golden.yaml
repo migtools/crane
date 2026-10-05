@@ -22,7 +22,7 @@ spec:
     values:
     - value: image-registry.openshift-image-registry.svc:5000
   source:
-    contextDir: ""
+    contextDir: "."
     git:
       revision: main
       url: https://github.com/docker/welcome-to-docker.git
