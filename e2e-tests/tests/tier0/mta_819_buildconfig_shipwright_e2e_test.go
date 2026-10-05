@@ -7,6 +7,7 @@ import (
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -92,8 +93,12 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 		log.Printf("Crane pipeline completed - BuildConfig converted successfully\n")
 
 		By("Compare generated Build against golden file")
+		isOpenShift := kubectlSrcNonAdmin.IsOpenShift()
+		goldenOutputDir, err := utils.GoldenManifestsDirForPlatform(appName, "output", isOpenShift)
+		Expect(err).NotTo(HaveOccurred())
+
 		actualBuildPath := filepath.Join(paths.OutputDir, "resources", namespace, fmt.Sprintf("Build_shipwright.io_v1beta1_%s_%s.yaml", namespace, buildConfigName))
-		goldenFilePath := filepath.Join("../../testdata/buildconfig-docker-git/golden", "webapp-docker-golden.yaml")
+		goldenFilePath := filepath.Join(goldenOutputDir, "webapp-docker-golden.yaml")
 
 		diffs, err := CompareWithGoldenFile(actualBuildPath, goldenFilePath)
 		Expect(err).NotTo(HaveOccurred(), "Failed to compare Build with golden file")
