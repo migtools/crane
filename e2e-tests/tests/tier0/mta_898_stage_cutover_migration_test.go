@@ -113,11 +113,12 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		By("Verify the initial data landed on target via a throwaway redis instance on the migrated PVC")
 		const verifierPod = "mta-898-redis-verifier"
 		verifierOpts := VerifierPodOptions{
-			Name:      verifierPod,
-			Namespace: tgtApp.Namespace,
-			Image:     "redis:latest",
-			Command:   []string{"redis-server", "--requirepass", mta898RedisPassword},
-			Volumes:   []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
+			Name:       verifierPod,
+			Namespace:  tgtApp.Namespace,
+			Image:      "docker.io/bitnami/redis:latest",
+			Command:    []string{"/opt/bitnami/redis/bin/redis-server", "--dir", "/data", "--requirepass", mta898RedisPassword},
+			Volumes:    []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
+			Restricted: true,
 		}
 		DeferCleanup(func() {
 			if err := DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod); err != nil {
