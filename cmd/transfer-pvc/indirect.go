@@ -296,11 +296,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		Container: containerName,
 		Follow:    true,
 	})
-	// Set a deadline on the log stream to prevent hanging if the pod stalls.
-	// This is an additional safety bound beyond the final-status check.
-	streamCtx, streamCancel := context.WithTimeout(context.TODO(), 30*time.Minute)
-	defer streamCancel()
-	stream, err := req.Stream(streamCtx)
+	stream, err := req.Stream(context.TODO())
 	if err != nil {
 		log.Debugf("Failed to stream logs for pod %s/%s: %v", namespace, podName, err)
 		// Add the container termination reason as context, but keep the stream
@@ -338,9 +334,8 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	waitCtx, waitCancel := context.WithTimeout(context.TODO(), 2*time.Minute)
 	defer waitCancel()
 	var podFailed bool
-	var pod *corev1.Pod
 	if err := wait.PollUntilContextCancel(waitCtx, 3*time.Second, true, func(ctx context.Context) (bool, error) {
-		pod = &corev1.Pod{}
+		pod := &corev1.Pod{}
 		if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
 			log.Debugf("Failed to get pod status for %s/%s: %v", namespace, podName, err)
 			return false, fmt.Errorf("failed to get pod status: %w", err)
