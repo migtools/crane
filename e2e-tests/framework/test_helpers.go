@@ -242,6 +242,12 @@ type VerifierPodOptions struct {
 	// match a Deployment's selector (e.g. simulating the real app briefly)
 	// rather than just being a throwaway inspector.
 	Labels map[string]string
+	// Restricted, when true, adds a hardened container securityContext
+	// (runAsNonRoot, runAsUser 1000, no privilege escalation, RuntimeDefault
+	// seccomp) so the pod is admissible in namespaces enforcing the restricted
+	// Pod Security Admission profile. Leave false for cluster-admin contexts
+	// where a securityContext is not required.
+	Restricted bool
 }
 
 // DeployVerifierPod creates a disposable pod that mounts one or more existing
@@ -281,6 +287,25 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 		return fmt.Errorf("marshal verifier pod command: %w", err)
 	}
 
+	securityBlock := ""
+	if opts.Restricted {
+		// Kubernetes needs an explicit non-root UID for root-based images such
+		// as alpine. OpenShift's restricted SCC assigns an allowed UID instead.
+		runAsUserLine := ""
+		if !k.IsOpenShift() {
+			runAsUserLine = "      runAsUser: 1000\n"
+		}
+		securityBlock = fmt.Sprintf(`    securityContext:
+      runAsNonRoot: true
+%s      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      seccompProfile:
+        type: RuntimeDefault
+`, runAsUserLine)
+	}
+
 	manifest := fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata:
@@ -292,7 +317,7 @@ metadata:
   - name: verifier
     image: %s
     command: %s
-%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), mountsBlock, volumesBlock)
+%s%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), securityBlock, mountsBlock, volumesBlock)
 
 	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
 		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
@@ -380,4 +405,15 @@ spec:
       persistentVolumeClaim:
         claimName: %s
 `, podName, namespace, pvcName)
+}
+
+// MD5SumFile returns the MD5 checksum of a file inside a pod.
+func MD5SumFile(k KubectlRunner, namespace, pod, path string) (string, error) {
+	out, err := k.Run("exec", pod, "-n", namespace, "--", "md5sum", path)
+	if err != nil {
+		return "", fmt.Errorf("md5sum %q in pod %q (namespace %q): %w", path, pod, namespace, err)
+	}
+	output := strings.TrimSpace(StripKubectlWarnings(out))
+	parts := strings.Fields(output)
+	return parts[0], nil
 }
