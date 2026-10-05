@@ -126,8 +126,7 @@ var _ = Describe("Ordered apply for Role and RoleBinding migration", func() {
 		namespaceResourcesDir := filepath.Join(paths.OutputDir, "resources", namespace)
 		By("Apply rendered manifests to target in a single pass (ordering must resolve the dependency)")
 		log.Printf("Single apply pass for namespace %s using ordered output dir %s\n", namespace, namespaceResourcesDir)
-		Expect(kubectlTgtNonAdmin.ValidateApplyDir(namespaceResourcesDir)).NotTo(HaveOccurred())
-		Expect(kubectlTgtNonAdmin.ApplyDir(namespaceResourcesDir)).NotTo(HaveOccurred())
+		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, namespaceResourcesDir)).NotTo(HaveOccurred())
 
 		By("Scale target deployment and validate app is running")
 		log.Printf("Scaling target deployment(s) with label app=%s to 1\n", appName)

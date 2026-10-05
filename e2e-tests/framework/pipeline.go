@@ -200,7 +200,12 @@ func AssertNoTransferPVCLeftovers(k KubectlRunner, namespaces []string, pvcNames
 }
 
 func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
-	resourcesDir := filepath.Join(outputDir, "resources")
+	resourcesDir := outputDir
+	if _, err := os.Stat(filepath.Join(outputDir, "output.yaml")); err == nil {
+		resourcesDir = filepath.Join(outputDir, "resources")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	if err := kubectlTgt.ValidateApplyDir(resourcesDir); err != nil {
 		return err
 	}
