@@ -149,6 +149,7 @@ jobs:
     with:
       checkout_ref: ${{ github.sha }}
       label_filter: tier0
+      k8sdeploy_branch: update-app-with-empty-pvc
 
   e2e-tier1:
     needs: detect-changes
@@ -159,6 +160,7 @@ jobs:
     with:
       checkout_ref: ${{ github.sha }}
       label_filter: tier1
+      k8sdeploy_branch: update-app-with-empty-pvc
 
   # Focused mode: only touched test files (unchanged from prior single-job path).
   e2e-focused:
@@ -198,7 +200,7 @@ jobs:
           python-version: "3.11"
 
       - name: Clone k8s-apps-deployer
-        run: git clone https://github.com/migtools/k8s-apps-deployer.git
+        run: git clone --branch update-app-with-empty-pvc --single-branch https://github.com/migtools/k8s-apps-deployer.git
 
       - name: Create venv and install package
         run: |

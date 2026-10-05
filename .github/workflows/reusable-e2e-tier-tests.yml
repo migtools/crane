@@ -21,6 +21,11 @@ on:
         required: false
         type: string
         default: ""
+      k8sdeploy_branch:
+        description: k8s-apps-deployer branch to checkout for the E2E run
+        required: false
+        type: string
+        default: main
 
 permissions:
   contents: read
@@ -46,3 +51,4 @@ jobs:
           tgt_user: "dev"
           cloud_storage: ${{ inputs.cloud_storage }}
           rclone_config_file: ${{ inputs.rclone_config_file }}
+          k8sdeploy_branch: ${{ inputs.k8sdeploy_branch }}

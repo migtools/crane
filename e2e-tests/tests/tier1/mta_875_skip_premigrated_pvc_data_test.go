@@ -115,34 +115,14 @@ var _ = Describe("Skip PV migration when PV data was already migrated ahead of t
 
 		By("Verify the destination PVC's data already matches source, isolated from the rest of the migration")
 		const verifierPod = "mta-875-pvc-verifier"
-		verifierPodYAML := fmt.Sprintf(`
-apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  containers:
-  - name: verifier
-    image: quay.io/openshifttest/alpine:multiarch
-    command: ["sleep", "300"]
-    volumeMounts:
-    - name: data
-      mountPath: /data
-    securityContext:
-      runAsNonRoot: true
-      runAsUser: 1000
-      allowPrivilegeEscalation: false
-      seccompProfile:
-        type: RuntimeDefault
-  volumes:
-  - name: data
-    persistentVolumeClaim:
-      claimName: %s
-`, verifierPod, tgtApp.Namespace, pvcName)
-		Expect(kubectlTgt.ApplyYAMLSpec(verifierPodYAML, tgtApp.Namespace)).NotTo(HaveOccurred())
-		_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifierPod, "-n", tgtApp.Namespace, "--timeout=120s")
-		Expect(err).NotTo(HaveOccurred())
+		Expect(DeployVerifierPod(kubectlTgt, VerifierPodOptions{
+			Name:       verifierPod,
+			Namespace:  tgtApp.Namespace,
+			Image:      "docker.io/bitnami/redis:latest",
+			Command:    []string{"sleep", "300"},
+			Volumes:    []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
+			Restricted: true,
+		})).NotTo(HaveOccurred())
 		tgtMD5BeforeMigration, err := MD5SumFile(kubectlTgt, tgtApp.Namespace, verifierPod, "/data/"+testFileName)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(tgtMD5BeforeMigration).To(Equal(srcMD5),
