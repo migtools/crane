@@ -12,13 +12,10 @@ metadata:
   namespace: buildconfig-docker-git
 spec:
   output:
-    image: localhost:5000/buildconfig-docker-git/webapp-docker:latest
+    image: ttl.sh/crane-test-webapp-docker:1h
   paramValues:
   - name: dockerfile
     value: Dockerfile
-  - name: registries-insecure
-    values:
-    - value: localhost:5000
   source:
     contextDir: "."
     git:

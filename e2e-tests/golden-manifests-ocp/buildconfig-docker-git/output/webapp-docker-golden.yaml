@@ -12,17 +12,12 @@ metadata:
   namespace: buildconfig-docker-git
 spec:
   output:
-    image: localhost:5000/buildconfig-docker-git/webapp-docker:latest
+    image: ttl.sh/crane-test-webapp-docker:1h
   paramValues:
   - configMapValue: null
     name: dockerfile
     secretValue: null
     value: Dockerfile
-  - name: registries-insecure
-    values:
-    - configMapValue: null
-      secretValue: null
-      value: localhost:5000
   retention:
     failedLimit: 5
     succeededLimit: 5
