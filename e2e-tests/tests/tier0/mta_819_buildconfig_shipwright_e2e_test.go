@@ -225,9 +225,9 @@ spec:
 		out, err = kubectlTgtNonAdmin.Run("get", "pods", "-n", namespace, "-l", fmt.Sprintf("app=%s", buildConfigName), "-o", "jsonpath={.items[0].status.containerStatuses[0].ready}")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(out).To(Equal("true"), "Application container should be ready")
-		log.Printf("✓ Application is healthy and ready\n")
+		log.Printf("Application is healthy and ready\n")
 
-		By("Test completed successfully - BuildConfig migrated and application deployed")
+		By("Test completed successfully, BuildConfig migrated and application deployed")
 		log.Printf("MTA-819: Successfully migrated Docker BuildConfig (Git source) to Shipwright and deployed application\n")
 	})
 })
