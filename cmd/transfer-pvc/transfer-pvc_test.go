@@ -17,10 +17,13 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -113,7 +116,7 @@ func newTestScheme() *runtime.Scheme {
 }
 
 func TestDestinationPVCStorageClassError(t *testing.T) {
-	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns"}}
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
 	tests := []struct {
 		name    string
 		event   *corev1.Event
@@ -123,7 +126,7 @@ func TestDestinationPVCStorageClassError(t *testing.T) {
 			name: "reports missing storage class provisioning failure",
 			event: &corev1.Event{
 				ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
-				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("current-pvc")},
 				Reason:         "ProvisioningFailed",
 				Message:        `storageclass.storage.k8s.io "missing-class" not found`,
 			},
@@ -133,9 +136,18 @@ func TestDestinationPVCStorageClassError(t *testing.T) {
 			name: "ignores other pvc provisioning failures",
 			event: &corev1.Event{
 				ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
-				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("current-pvc")},
 				Reason:         "ProvisioningFailed",
 				Message:        "waiting for a volume to be created",
+			},
+		},
+		{
+			name: "ignores a stale event for a deleted pvc with the same name",
+			event: &corev1.Event{
+				ObjectMeta:     metav1.ObjectMeta{Name: "old-pvc-provisioning", Namespace: "target-ns"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("deleted-pvc")},
+				Reason:         "ProvisioningFailed",
+				Message:        `storageclass.storage.k8s.io "missing-class" not found`,
 			},
 		},
 	}
@@ -159,10 +171,10 @@ func TestDestinationPVCStorageClassError(t *testing.T) {
 }
 
 func TestCheckDestinationPVCProvisioningFailsFastOnMissingStorageClassEvent(t *testing.T) {
-	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns"}}
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
 	event := &corev1.Event{
 		ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
-		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc"},
+		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("current-pvc")},
 		Reason:         "ProvisioningFailed",
 		Message:        `storageclass.storage.k8s.io "missing-class" not found`,
 	}
@@ -171,6 +183,23 @@ func TestCheckDestinationPVCProvisioningFailsFastOnMissingStorageClassEvent(t *t
 	err := (&TransferPVCCommand{}).checkDestinationPVCProvisioning(context.Background(), c, pvc)
 	if err == nil || !strings.Contains(err.Error(), `storageclass.storage.k8s.io "missing-class" not found`) {
 		t.Fatalf("checkDestinationPVCProvisioning() error = %v, want missing StorageClass event", err)
+	}
+}
+
+func TestCheckDestinationPVCProvisioningReturnsEventAccessError(t *testing.T) {
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(pvc).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(_ context.Context, _ client.WithWatch, list client.ObjectList, _ ...client.ListOption) error {
+			if _, ok := list.(*corev1.EventList); ok {
+				return apierrors.NewForbidden(schema.GroupResource{Resource: "events"}, "", fmt.Errorf("forbidden for test"))
+			}
+			return nil
+		},
+	}).Build()
+
+	err := (&TransferPVCCommand{}).checkDestinationPVCProvisioning(context.Background(), c, pvc)
+	if err == nil || !strings.Contains(err.Error(), "listing events for destination PVC target-ns/target-pvc") {
+		t.Fatalf("checkDestinationPVCProvisioning() error = %v, want contextual events access error", err)
 	}
 }
 

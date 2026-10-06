@@ -1404,12 +1404,9 @@ func (t *TransferPVCCommand) checkDestinationPVCProvisioning(ctx context.Context
 			return true, nil
 		}
 
-		message, err := destinationPVCStorageClassError(ctx, c, pvc)
+		message, err := destinationPVCStorageClassError(ctx, c, currentPVC)
 		if err != nil {
-			if t.log != nil {
-				t.log.Debugf("Cannot inspect destination PVC %s/%s provisioning status: %v", pvc.Namespace, pvc.Name, err)
-			}
-			return true, nil
+			return false, fmt.Errorf("listing events for destination PVC %s/%s: %w", pvc.Namespace, pvc.Name, err)
 		}
 		if message != "" {
 			provisioningErr = message
@@ -1438,7 +1435,8 @@ func destinationPVCStorageClassError(ctx context.Context, c client.Client, pvc *
 	for _, event := range events.Items {
 		if event.InvolvedObject.Kind != "PersistentVolumeClaim" ||
 			event.InvolvedObject.Name != pvc.Name ||
-			(event.InvolvedObject.Namespace != "" && event.InvolvedObject.Namespace != pvc.Namespace) {
+			(event.InvolvedObject.Namespace != "" && event.InvolvedObject.Namespace != pvc.Namespace) ||
+			event.InvolvedObject.UID != pvc.UID {
 			continue
 		}
 		message := strings.ToLower(event.Message)
