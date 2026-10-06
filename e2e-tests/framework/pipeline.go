@@ -203,6 +203,11 @@ func applyOutputManifests(kubectlTgt KubectlRunner, outputDir string) error {
 	resourcesDir := outputDir
 	if _, err := os.Stat(filepath.Join(outputDir, "output.yaml")); err == nil {
 		resourcesDir = filepath.Join(outputDir, "resources")
+		if _, err := os.Stat(resourcesDir); os.IsNotExist(err) {
+			return nil
+		} else if err != nil {
+			return err
+		}
 	} else if !os.IsNotExist(err) {
 		return err
 	}
