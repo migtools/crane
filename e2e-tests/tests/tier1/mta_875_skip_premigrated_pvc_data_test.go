@@ -115,6 +115,11 @@ var _ = Describe("Skip PV migration when PV data was already migrated ahead of t
 
 		By("Verify the destination PVC's data already matches source, isolated from the rest of the migration")
 		const verifierPod = "mta-875-pvc-verifier"
+		DeferCleanup(func() {
+			if err := DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod); err != nil {
+				log.Printf("cleanup verifier pod %q: %v", verifierPod, err)
+			}
+		})
 		Expect(DeployVerifierPod(kubectlTgt, VerifierPodOptions{
 			Name:       verifierPod,
 			Namespace:  tgtApp.Namespace,
