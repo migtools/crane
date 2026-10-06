@@ -53,6 +53,7 @@ inputs:
     description: Path to local rclone.conf file for indirect transfer
     required: false
     default: ""
+
 runs:
   using: composite
   steps:

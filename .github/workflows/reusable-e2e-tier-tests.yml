@@ -21,6 +21,7 @@ on:
         required: false
         type: string
         default: ""
+
 permissions:
   contents: read
 
