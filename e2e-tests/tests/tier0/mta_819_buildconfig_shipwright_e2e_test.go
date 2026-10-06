@@ -172,7 +172,62 @@ spec:
 			log.Printf("  Image digest: %s\n", outputImage)
 		}
 
-		By("Test completed successfully")
-		log.Printf("MTA-819: Successfully converted and executed Docker BuildConfig (Git source) end-to-end\n")
+		By("Deploy application using built image to verify end-to-end migration")
+		builtImageURL, err := kubectlTgtNonAdmin.Run("get", "build.shipwright.io", buildConfigName, "-n", namespace, "-o", "jsonpath={.spec.output.image}")
+		Expect(err).NotTo(HaveOccurred())
+		log.Printf("Deploying application using built image: %s\n", builtImageURL)
+
+		deploymentYAML := fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    app: %s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: %s
+  template:
+    metadata:
+      labels:
+        app: %s
+    spec:
+      containers:
+      - name: webapp
+        image: %s
+        ports:
+        - containerPort: 80
+`, buildConfigName, namespace, buildConfigName, buildConfigName, buildConfigName, builtImageURL)
+
+		_, err = kubectlTgtNonAdmin.RunWithStdin(deploymentYAML, "apply", "-f", "-", "-n", namespace)
+		Expect(err).NotTo(HaveOccurred())
+		log.Printf("✓ Deployment created\n")
+
+		By("Wait for application pod to be ready")
+		log.Printf("Waiting for pod to be ready (timeout: 2 minutes)...\n")
+		Eventually(func() bool {
+			out, err := kubectlTgtNonAdmin.Run("get", "pods", "-n", namespace, "-l", fmt.Sprintf("app=%s", buildConfigName), "-o", "jsonpath={.items[0].status.phase}")
+			if err != nil {
+				log.Printf("Pod not ready yet: %v\n", err)
+				return false
+			}
+			if out == "Running" {
+				log.Printf("✓ Application pod is running\n")
+				return true
+			}
+			log.Printf("Pod status: %s\n", out)
+			return false
+		}, "2m", "5s").Should(BeTrue(), "Application pod should be running")
+
+		By("Verify application pod is healthy")
+		out, err = kubectlTgtNonAdmin.Run("get", "pods", "-n", namespace, "-l", fmt.Sprintf("app=%s", buildConfigName), "-o", "jsonpath={.items[0].status.containerStatuses[0].ready}")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(out).To(Equal("true"), "Application container should be ready")
+		log.Printf("✓ Application is healthy and ready\n")
+
+		By("Test completed successfully - BuildConfig migrated and application deployed")
+		log.Printf("MTA-819: Successfully migrated Docker BuildConfig (Git source) to Shipwright and deployed application\n")
 	})
 })
