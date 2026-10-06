@@ -12,6 +12,19 @@ type ManifestEntry struct {
 	SourceFiles []string // which files contributed this entry
 }
 
+// ManifestResource identifies one rendered Kubernetes object. Unlike
+// ManifestEntry, it retains metadata.name so live validation can inspect the
+// corresponding object on a target cluster.
+type ManifestResource struct {
+	APIVersion  string
+	Kind        string
+	Group       string
+	Version     string
+	Namespace   string
+	Name        string
+	SourceFiles []string
+}
+
 // ValidationStatus indicates whether a GVK is compatible with the target cluster.
 type ValidationStatus string
 
