@@ -77,8 +77,6 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 	fmt.Fprintf(os.Stderr, "[1/6] Reading source PVC ... ok\n")
 
-	destPVC := t.buildDestinationPVC(srcPVC)
-
 	// Resolve rclone config secret name and validate before creating destination resources
 	configSecret := t.RcloneConfigSecret
 	if t.RcloneConfigFile != "" {
@@ -142,6 +140,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 
 	// Create destination PVC
 	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
+	destPVC := t.buildDestinationPVC(srcPVC)
 	err = t.createDestinationPVC(context.TODO(), destClient, destPVC)
 	if err != nil {
 		log.Debugf("Unable to create destination PVC %s/%s: %v", destPVC.Namespace, destPVC.Name, err)
