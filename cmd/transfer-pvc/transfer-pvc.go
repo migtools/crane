@@ -54,6 +54,8 @@ type endpointType string
 const (
 	endpointNginx endpointType = "nginx-ingress"
 	endpointRoute endpointType = "route"
+
+	destinationPVCProvisioningCheckTimeout = 5 * time.Second
 )
 
 type TransferPVCCommand struct {
@@ -429,6 +431,9 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	if err != nil {
 		log.Errorf("Unable to create destination PVC %s/%s: %v", t.PVC.Namespace.destination, t.PVC.Name.destination, err)
 		return phases.Fail(err, "unable to create destination PVC")
+	}
+	if err := t.checkDestinationPVCProvisioning(context.TODO(), destClient, destPVC); err != nil {
+		return phases.Fail(err, "destination PVC provisioning failed")
 	}
 	phases.End("ok", "")
 
@@ -1376,6 +1381,74 @@ func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.
 	}
 
 	return nil
+}
+
+// checkDestinationPVCProvisioning lets a Bound PVC proceed immediately. For an
+// unbound PVC, it waits briefly for the specific event Kubernetes emits when a
+// named StorageClass does not exist. Other Pending conditions are allowed to
+// proceed as before.
+func (t *TransferPVCCommand) checkDestinationPVCProvisioning(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) error {
+	checkCtx, cancel := context.WithTimeout(ctx, destinationPVCProvisioningCheckTimeout)
+	defer cancel()
+
+	var provisioningErr string
+	err := wait.PollUntilContextCancel(checkCtx, time.Second, true, func(ctx context.Context) (bool, error) {
+		currentPVC := &corev1.PersistentVolumeClaim{}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(pvc), currentPVC); err != nil {
+			if t.log != nil {
+				t.log.Debugf("Cannot inspect destination PVC %s/%s status: %v", pvc.Namespace, pvc.Name, err)
+			}
+			return true, nil
+		}
+		if currentPVC.Status.Phase == corev1.ClaimBound {
+			return true, nil
+		}
+
+		message, err := destinationPVCStorageClassError(ctx, c, pvc)
+		if err != nil {
+			if t.log != nil {
+				t.log.Debugf("Cannot inspect destination PVC %s/%s provisioning status: %v", pvc.Namespace, pvc.Name, err)
+			}
+			return true, nil
+		}
+		if message != "" {
+			provisioningErr = message
+			return true, nil
+		}
+		return false, nil
+	})
+	if provisioningErr != "" {
+		return fmt.Errorf("destination PVC %s/%s provisioning failed: %s", pvc.Namespace, pvc.Name, provisioningErr)
+	}
+	if err != nil && err != context.DeadlineExceeded {
+		return fmt.Errorf("checking destination PVC %s/%s provisioning status: %w", pvc.Namespace, pvc.Name, err)
+	}
+	return nil
+}
+
+// destinationPVCStorageClassError returns an event message only for the
+// Kubernetes error emitted when the PVC names a StorageClass that does not
+// exist. Other Pending conditions may resolve normally and must not abort a
+// transfer.
+func destinationPVCStorageClassError(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) (string, error) {
+	events := &corev1.EventList{}
+	if err := c.List(ctx, events, client.InNamespace(pvc.Namespace)); err != nil {
+		return "", err
+	}
+	for _, event := range events.Items {
+		if event.InvolvedObject.Kind != "PersistentVolumeClaim" ||
+			event.InvolvedObject.Name != pvc.Name ||
+			(event.InvolvedObject.Namespace != "" && event.InvolvedObject.Namespace != pvc.Namespace) {
+			continue
+		}
+		message := strings.ToLower(event.Message)
+		if event.Reason == "ProvisioningFailed" &&
+			strings.Contains(message, "storageclass.storage.k8s.io") &&
+			strings.Contains(message, "not found") {
+			return event.Message, nil
+		}
+	}
+	return "", nil
 }
 
 func stripServerManagedPVCAnnotations(annotations map[string]string) map[string]string {

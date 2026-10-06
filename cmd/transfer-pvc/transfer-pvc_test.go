@@ -112,6 +112,68 @@ func newTestScheme() *runtime.Scheme {
 	return s
 }
 
+func TestDestinationPVCStorageClassError(t *testing.T) {
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns"}}
+	tests := []struct {
+		name    string
+		event   *corev1.Event
+		wantErr string
+	}{
+		{
+			name: "reports missing storage class provisioning failure",
+			event: &corev1.Event{
+				ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc"},
+				Reason:         "ProvisioningFailed",
+				Message:        `storageclass.storage.k8s.io "missing-class" not found`,
+			},
+			wantErr: `storageclass.storage.k8s.io "missing-class" not found`,
+		},
+		{
+			name: "ignores other pvc provisioning failures",
+			event: &corev1.Event{
+				ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc"},
+				Reason:         "ProvisioningFailed",
+				Message:        "waiting for a volume to be created",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objects := []client.Object{pvc.DeepCopy()}
+			if tt.event != nil {
+				objects = append(objects, tt.event)
+			}
+			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objects...).Build()
+			got, err := destinationPVCStorageClassError(context.Background(), c, pvc)
+			if err != nil {
+				t.Fatalf("destinationPVCStorageClassError() unexpected error = %v", err)
+			}
+			if got != tt.wantErr {
+				t.Errorf("destinationPVCStorageClassError() = %q, want %q", got, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckDestinationPVCProvisioningFailsFastOnMissingStorageClassEvent(t *testing.T) {
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns"}}
+	event := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
+		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc"},
+		Reason:         "ProvisioningFailed",
+		Message:        `storageclass.storage.k8s.io "missing-class" not found`,
+	}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(pvc, event).Build()
+
+	err := (&TransferPVCCommand{}).checkDestinationPVCProvisioning(context.Background(), c, pvc)
+	if err == nil || !strings.Contains(err.Error(), `storageclass.storage.k8s.io "missing-class" not found`) {
+		t.Fatalf("checkDestinationPVCProvisioning() error = %v, want missing StorageClass event", err)
+	}
+}
+
 func TestCreateDestinationPVC(t *testing.T) {
 	storageClass := func(name string) *string { return &name }
 	tests := []struct {
