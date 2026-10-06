@@ -53,11 +53,6 @@ inputs:
     description: Path to local rclone.conf file for indirect transfer
     required: false
     default: ""
-  k8sdeploy_branch:
-    description: k8s-apps-deployer branch to checkout for the E2E run
-    required: false
-    default: main
-
 runs:
   using: composite
   steps:
@@ -77,7 +72,7 @@ runs:
 
     - name: Clone k8s-apps-deployer
       shell: bash
-      run: git clone --branch "${{ inputs.k8sdeploy_branch }}" --single-branch https://github.com/migtools/k8s-apps-deployer.git
+      run: git clone https://github.com/migtools/k8s-apps-deployer.git
 
     - name: Create venv and install package
       shell: bash
