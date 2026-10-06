@@ -163,11 +163,10 @@ func (o *ValidateOptions) Run() error {
 		log.Debugf("Mode: live")
 	}
 
-	resources, err := internalValidate.ScanManifestResources(internalValidate.ScanOptions{Dirs: []string{o.inputDir}}, log)
+	entries, err := internalValidate.ScanManifests(internalValidate.ScanOptions{Dirs: []string{o.inputDir}}, log)
 	if err != nil {
 		return fmt.Errorf("scanning manifests: %w", err)
 	}
-	entries := internalValidate.ManifestEntries(resources)
 
 	log.Infof("Scanned %d distinct GVK+namespace tuples", len(entries))
 
@@ -225,7 +224,7 @@ func (o *ValidateOptions) Run() error {
 					reason: fmt.Sprintf("could not create target-object inspection client: %v", err),
 				})
 			} else {
-				targetWarnings = inspectTargetObjects(context.Background(), dynamicClient, resources, report)
+				targetWarnings = inspectTargetObjects(context.Background(), dynamicClient, entries, report)
 			}
 		}
 	}

@@ -13,30 +13,28 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-// targetObjectWarnings records non-fatal results from inspecting rendered
-// namespaced resources on a live target cluster.
+type targetObject struct {
+	entry internalValidate.ManifestEntry
+	name  string
+}
+
 type targetObjectWarnings struct {
-	existing []internalValidate.ManifestResource
+	existing []targetObject
 	unknown  []targetObjectInspectionError
-	skipped  []targetObjectInspectionError
 }
 
 type targetObjectInspectionError struct {
-	resource internalValidate.ManifestResource
-	reason   string
+	object targetObject
+	reason string
 }
 
-func (w targetObjectWarnings) hasWarnings() bool {
-	return len(w.existing) > 0 || len(w.unknown) > 0 || len(w.skipped) > 0
-}
-
-// inspectTargetObjects gets each namespaced rendered object whose API is
-// compatible with the target. Object presence is advisory: access failures
-// are reported as warnings and do not change compatibility validation.
+// inspectTargetObjects gets every named, namespaced manifest whose API is
+// compatible with the target. Object presence is advisory: access failures do
+// not change API compatibility validation.
 func inspectTargetObjects(
 	ctx context.Context,
 	client dynamic.Interface,
-	resources []internalValidate.ManifestResource,
+	entries []internalValidate.ManifestEntry,
 	report *internalValidate.ValidationReport,
 ) targetObjectWarnings {
 	resultByIdentity := make(map[string]internalValidate.ValidationResult, len(report.Results))
@@ -45,44 +43,34 @@ func inspectTargetObjects(
 	}
 
 	warnings := targetObjectWarnings{}
-	for _, resource := range resources {
-		// This feature intentionally checks only namespaced resources. A
-		// namespace-admin normally cannot inspect cluster-scoped objects.
-		if resource.Namespace == "" {
+	for _, entry := range entries {
+		// Namespace-admin users normally cannot inspect cluster-scoped objects.
+		if entry.Namespace == "" {
 			continue
 		}
 
-		result, ok := resultByIdentity[validationIdentity(resource.APIVersion, resource.Kind, resource.Namespace)]
+		result, ok := resultByIdentity[validationIdentity(entry.APIVersion, entry.Kind, entry.Namespace)]
 		if !ok || result.Status != internalValidate.StatusOK {
-			reason := fmt.Sprintf("%s is not served by the target cluster", resource.APIVersion)
-			if ok && result.Reason != "" {
-				reason = result.Reason
-			}
-			warnings.skipped = append(warnings.skipped, targetObjectInspectionError{
-				resource: resource,
-				reason:   reason,
-			})
-			continue
-		}
-		if resource.Name == "" {
-			warnings.unknown = append(warnings.unknown, targetObjectInspectionError{
-				resource: resource,
-				reason:   "metadata.name is empty",
-			})
 			continue
 		}
 
-		gvr := schema.GroupVersionResource{Group: resource.Group, Version: resource.Version, Resource: result.ResourcePlural}
-		_, err := client.Resource(gvr).Namespace(resource.Namespace).Get(ctx, resource.Name, metav1.GetOptions{})
-		switch {
-		case err == nil:
-			warnings.existing = append(warnings.existing, resource)
-		case apierrors.IsNotFound(err):
-			// The object is absent. This is the expected no-collision case.
-		case apierrors.IsForbidden(err):
-			warnings.unknown = append(warnings.unknown, targetObjectInspectionError{resource: resource, reason: err.Error()})
-		default:
-			warnings.unknown = append(warnings.unknown, targetObjectInspectionError{resource: resource, reason: err.Error()})
+		gvr := schema.GroupVersionResource{Group: entry.Group, Version: entry.Version, Resource: result.ResourcePlural}
+		for _, name := range entry.Names {
+			object := targetObject{entry: entry, name: name}
+			if name == "" {
+				warnings.unknown = append(warnings.unknown, targetObjectInspectionError{object: object, reason: "metadata.name is empty"})
+				continue
+			}
+
+			_, err := client.Resource(gvr).Namespace(entry.Namespace).Get(ctx, name, metav1.GetOptions{})
+			switch {
+			case err == nil:
+				warnings.existing = append(warnings.existing, object)
+			case apierrors.IsNotFound(err):
+				// The object is absent. This is the expected no-collision case.
+			default:
+				warnings.unknown = append(warnings.unknown, targetObjectInspectionError{object: object, reason: err.Error()})
+			}
 		}
 	}
 
@@ -94,41 +82,32 @@ func validationIdentity(apiVersion, kind, namespace string) string {
 }
 
 func formatTargetObjectWarnings(w io.Writer, warnings targetObjectWarnings) {
-	if !warnings.hasWarnings() {
+	if len(warnings.existing) == 0 && len(warnings.unknown) == 0 {
 		return
 	}
 
 	sort.Slice(warnings.existing, func(i, j int) bool {
-		return resourceDisplayName(warnings.existing[i]) < resourceDisplayName(warnings.existing[j])
+		return targetObjectDisplayName(warnings.existing[i]) < targetObjectDisplayName(warnings.existing[j])
 	})
 	sort.Slice(warnings.unknown, func(i, j int) bool {
-		return resourceDisplayName(warnings.unknown[i].resource) < resourceDisplayName(warnings.unknown[j].resource)
-	})
-	sort.Slice(warnings.skipped, func(i, j int) bool {
-		return resourceDisplayName(warnings.skipped[i].resource) < resourceDisplayName(warnings.skipped[j].resource)
+		return targetObjectDisplayName(warnings.unknown[i].object) < targetObjectDisplayName(warnings.unknown[j].object)
 	})
 
 	if len(warnings.existing) > 0 {
 		fmt.Fprintf(w, "\nWarning: %d rendered resource(s) already exist on the target cluster.\n", len(warnings.existing))
 		fmt.Fprintln(w, "kubectl apply may modify them:")
-		for _, resource := range warnings.existing {
-			fmt.Fprintf(w, "  - %s\n", resourceDisplayName(resource))
+		for _, object := range warnings.existing {
+			fmt.Fprintf(w, "  - %s\n", targetObjectDisplayName(object))
 		}
 	}
 	if len(warnings.unknown) > 0 {
 		fmt.Fprintf(w, "\nWarning: %d rendered resource(s) could not be inspected on the target cluster:\n", len(warnings.unknown))
 		for _, inspectionErr := range warnings.unknown {
-			fmt.Fprintf(w, "  - %s: %s\n", resourceDisplayName(inspectionErr.resource), inspectionErr.reason)
-		}
-	}
-	if len(warnings.skipped) > 0 {
-		fmt.Fprintf(w, "\nWarning: target-object presence was not checked for %d rendered resource(s):\n", len(warnings.skipped))
-		for _, inspectionErr := range warnings.skipped {
-			fmt.Fprintf(w, "  - %s: %s\n", resourceDisplayName(inspectionErr.resource), inspectionErr.reason)
+			fmt.Fprintf(w, "  - %s: %s\n", targetObjectDisplayName(inspectionErr.object), inspectionErr.reason)
 		}
 	}
 }
 
-func resourceDisplayName(resource internalValidate.ManifestResource) string {
-	return fmt.Sprintf("%s/%s/%s", resource.Kind, resource.Namespace, resource.Name)
+func targetObjectDisplayName(object targetObject) string {
+	return fmt.Sprintf("%s/%s/%s", object.entry.Kind, object.entry.Namespace, object.name)
 }

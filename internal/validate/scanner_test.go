@@ -8,7 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func TestScanManifestResources_RetainsNamesWithoutChangingCompatibilityAggregation(t *testing.T) {
+func TestScanManifests_RetainsNamesWithoutChangingCompatibilityAggregation(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "deployments.yaml"), `
 apiVersion: apps/v1
@@ -24,23 +24,15 @@ metadata:
   namespace: prod
 `)
 
-	resources, err := ScanManifestResources(ScanOptions{Dirs: []string{dir}}, testLogger())
-	if err != nil {
-		t.Fatalf("ScanManifestResources() error = %v", err)
-	}
-	if len(resources) != 2 {
-		t.Fatalf("ScanManifestResources() returned %d resources, want 2", len(resources))
-	}
-	if resources[0].Name != "api" || resources[1].Name != "worker" {
-		t.Fatalf("resource names = %q, %q; want api, worker", resources[0].Name, resources[1].Name)
-	}
-
 	entries, err := ScanManifests(ScanOptions{Dirs: []string{dir}}, testLogger())
 	if err != nil {
 		t.Fatalf("ScanManifests() error = %v", err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("ScanManifests() returned %d compatibility entries, want 1", len(entries))
+	}
+	if got := entries[0].Names; len(got) != 2 || got[0] != "api" || got[1] != "worker" {
+		t.Fatalf("Names = %v, want [api worker]", got)
 	}
 }
 

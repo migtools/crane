@@ -9,20 +9,8 @@ type ManifestEntry struct {
 	Group       string   // parsed from APIVersion (e.g. "apps" from "apps/v1")
 	Version     string   // parsed from APIVersion (e.g. "v1")
 	Namespace   string   // from metadata.namespace; empty for cluster-scoped
+	Names       []string // distinct metadata.name values for target-object inspection
 	SourceFiles []string // which files contributed this entry
-}
-
-// ManifestResource identifies one rendered Kubernetes object. Unlike
-// ManifestEntry, it retains metadata.name so live validation can inspect the
-// corresponding object on a target cluster.
-type ManifestResource struct {
-	APIVersion  string
-	Kind        string
-	Group       string
-	Version     string
-	Namespace   string
-	Name        string
-	SourceFiles []string
 }
 
 // ValidationStatus indicates whether a GVK is compatible with the target cluster.

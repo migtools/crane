@@ -33,60 +33,7 @@ type manifestMeta struct {
 // (including multi-document YAML), and returns deduplicated ManifestEntry
 // values sorted by group/version/kind/namespace.
 func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, error) {
-	resources, err := ScanManifestResources(opts, log)
-	if err != nil {
-		return nil, err
-	}
-	return ManifestEntries(resources), nil
-}
-
-// ManifestEntries aggregates rendered-object identities into the distinct
-// GVK+namespace entries used by API compatibility validation.
-func ManifestEntries(resources []ManifestResource) []ManifestEntry {
 	index := map[string]*ManifestEntry{}
-	for _, resource := range resources {
-		key := fmt.Sprintf("%s/%s/%s/%s", resource.Group, resource.Version, resource.Kind, resource.Namespace)
-		if entry, ok := index[key]; ok {
-			entry.SourceFiles = append(entry.SourceFiles, resource.SourceFiles...)
-			continue
-		}
-		index[key] = &ManifestEntry{
-			APIVersion:  resource.APIVersion,
-			Kind:        resource.Kind,
-			Group:       resource.Group,
-			Version:     resource.Version,
-			Namespace:   resource.Namespace,
-			SourceFiles: append([]string(nil), resource.SourceFiles...),
-		}
-	}
-
-	entries := make([]ManifestEntry, 0, len(index))
-	for _, e := range index {
-		entries = append(entries, *e)
-	}
-	sort.Slice(entries, func(i, j int) bool {
-		a, b := entries[i], entries[j]
-		if a.Group != b.Group {
-			return a.Group < b.Group
-		}
-		if a.Version != b.Version {
-			return a.Version < b.Version
-		}
-		if a.Kind != b.Kind {
-			return a.Kind < b.Kind
-		}
-		return a.Namespace < b.Namespace
-	})
-
-	return entries
-}
-
-// ScanManifestResources walks the given directories and returns one entry for
-// each distinct apiVersion+kind+namespace+name identity. It is used by live
-// validation to inspect rendered target objects without changing the existing
-// GVK+namespace compatibility-report semantics.
-func ScanManifestResources(opts ScanOptions, log logrus.FieldLogger) ([]ManifestResource, error) {
-	index := map[string]*ManifestResource{}
 
 	for _, dir := range opts.Dirs {
 		log.Debugf("Scanning directory: %s", dir)
@@ -153,21 +100,24 @@ func ScanManifestResources(opts ScanOptions, log logrus.FieldLogger) ([]Manifest
 					continue
 				}
 
-				key := fmt.Sprintf("%s/%s/%s/%s/%s", gv.Group, gv.Version, meta.Kind, meta.Metadata.Namespace, meta.Metadata.Name)
+				key := fmt.Sprintf("%s/%s/%s/%s", gv.Group, gv.Version, meta.Kind, meta.Metadata.Namespace)
 				if entry, ok := index[key]; ok {
 					entry.SourceFiles = append(entry.SourceFiles, path)
-					log.Debugf("  Duplicate resource %s (additional source: %s)", key, path)
+					if !containsName(entry.Names, meta.Metadata.Name) {
+						entry.Names = append(entry.Names, meta.Metadata.Name)
+					}
+					log.Debugf("  Duplicate GVK+ns %s (additional source: %s)", key, path)
 				} else {
-					index[key] = &ManifestResource{
+					index[key] = &ManifestEntry{
 						APIVersion:  meta.APIVersion,
 						Kind:        meta.Kind,
 						Group:       gv.Group,
 						Version:     gv.Version,
 						Namespace:   meta.Metadata.Namespace,
-						Name:        meta.Metadata.Name,
+						Names:       []string{meta.Metadata.Name},
 						SourceFiles: []string{path},
 					}
-					log.Debugf("  Found %s/%s %q (namespace: %q) in %s", meta.APIVersion, meta.Kind, meta.Metadata.Name, meta.Metadata.Namespace, path)
+					log.Debugf("  Found %s/%s (namespace: %q) in %s", meta.APIVersion, meta.Kind, meta.Metadata.Namespace, path)
 				}
 			}
 			return nil
@@ -177,8 +127,9 @@ func ScanManifestResources(opts ScanOptions, log logrus.FieldLogger) ([]Manifest
 		}
 	}
 
-	entries := make([]ManifestResource, 0, len(index))
+	entries := make([]ManifestEntry, 0, len(index))
 	for _, e := range index {
+		sort.Strings(e.Names)
 		entries = append(entries, *e)
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -192,11 +143,17 @@ func ScanManifestResources(opts ScanOptions, log logrus.FieldLogger) ([]Manifest
 		if a.Kind != b.Kind {
 			return a.Kind < b.Kind
 		}
-		if a.Namespace != b.Namespace {
-			return a.Namespace < b.Namespace
-		}
-		return a.Name < b.Name
+		return a.Namespace < b.Namespace
 	})
 
 	return entries, nil
+}
+
+func containsName(names []string, name string) bool {
+	for _, candidate := range names {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
 }

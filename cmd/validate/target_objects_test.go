@@ -38,11 +38,11 @@ func TestInspectTargetObjects(t *testing.T) {
 		)
 	})
 
-	resources := []internalValidate.ManifestResource{
-		{APIVersion: "v1", Kind: "ConfigMap", Namespace: "my-app", Name: "app-config", Version: "v1"},
-		{APIVersion: "v1", Kind: "Service", Namespace: "my-app", Name: "api", Version: "v1"},
-		{APIVersion: "apps/v1", Kind: "Deployment", Group: "apps", Namespace: "my-app", Name: "api", Version: "v1"},
-		{APIVersion: "route.openshift.io/v1", Kind: "Route", Group: "route.openshift.io", Namespace: "my-app", Name: "api", Version: "v1"},
+	entries := []internalValidate.ManifestEntry{
+		{APIVersion: "v1", Kind: "ConfigMap", Namespace: "my-app", Names: []string{"app-config"}, Version: "v1"},
+		{APIVersion: "v1", Kind: "Service", Namespace: "my-app", Names: []string{"api"}, Version: "v1"},
+		{APIVersion: "apps/v1", Kind: "Deployment", Group: "apps", Namespace: "my-app", Names: []string{"api"}, Version: "v1"},
+		{APIVersion: "route.openshift.io/v1", Kind: "Route", Group: "route.openshift.io", Namespace: "my-app", Names: []string{"api"}, Version: "v1"},
 	}
 	report := &internalValidate.ValidationReport{Results: []internalValidate.ValidationResult{
 		{APIVersion: "v1", Kind: "ConfigMap", Namespace: "my-app", ResourcePlural: "configmaps", Status: internalValidate.StatusOK},
@@ -51,15 +51,12 @@ func TestInspectTargetObjects(t *testing.T) {
 		{APIVersion: "route.openshift.io/v1", Kind: "Route", Namespace: "my-app", Status: internalValidate.StatusIncompatible},
 	}}
 
-	warnings := inspectTargetObjects(context.Background(), client, resources, report)
-	if len(warnings.existing) != 1 || warnings.existing[0].Name != "app-config" {
+	warnings := inspectTargetObjects(context.Background(), client, entries, report)
+	if len(warnings.existing) != 1 || warnings.existing[0].name != "app-config" {
 		t.Fatalf("existing = %+v, want ConfigMap/app-config", warnings.existing)
 	}
-	if len(warnings.unknown) != 1 || warnings.unknown[0].resource.Name != "api" {
+	if len(warnings.unknown) != 1 || warnings.unknown[0].object.name != "api" {
 		t.Fatalf("unknown = %+v, want forbidden Deployment/api", warnings.unknown)
-	}
-	if len(warnings.skipped) != 1 || warnings.skipped[0].resource.Kind != "Route" {
-		t.Fatalf("skipped = %+v, want incompatible Route", warnings.skipped)
 	}
 
 	var out bytes.Buffer
@@ -70,8 +67,6 @@ func TestInspectTargetObjects(t *testing.T) {
 		"- ConfigMap/my-app/app-config",
 		"Warning: 1 rendered resource(s) could not be inspected on the target cluster:",
 		"- Deployment/my-app/api: deployments.apps \"api\" is forbidden",
-		"Warning: target-object presence was not checked for 1 rendered resource(s):",
-		"- Route/my-app/api: route.openshift.io/v1 is not served by the target cluster",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("warning output missing %q:\\n%s", want, got)
