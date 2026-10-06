@@ -114,11 +114,12 @@ spec:
 			tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 			Expect(err).NotTo(HaveOccurred())
 			baseOpts := TransferPVCOptions{
-				SourceContext:   srcApp.Context,
-				TargetContext:   tgtApp.Context,
-				PVCName:         pvcName,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", namespace, namespace),
-				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
+				SourceContext:        srcApp.Context,
+				TargetContext:        tgtApp.Context,
+				PVCName:              pvcName,
+				PVCNamespaceMap:      fmt.Sprintf("%s:%s", namespace, namespace),
+				Subdomain:            fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
+				DisableCloudStorage:  true,
 			}
 
 			// ── Phase 1: Transfer WITH --verify (happy path) ──────────────────────────
