@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - release-0.*
   schedule:
     - cron: '0 2 * * *'
   workflow_dispatch:
@@ -52,4 +53,3 @@ jobs:
             :warning: Crane E2E · TIER-0 Tests Failed (push to main)
             Commit: ${{ github.sha }}
             Failed Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
