@@ -118,7 +118,7 @@ var _ = Describe("Skip PV migration when PV data was already migrated ahead of t
 		Expect(DeployVerifierPod(kubectlTgt, VerifierPodOptions{
 			Name:       verifierPod,
 			Namespace:  tgtApp.Namespace,
-			Image:      "docker.io/bitnami/redis:latest",
+			Image:      "quay.io/migqe/crane-redis:latest",
 			Command:    []string{"sleep", "300"},
 			Volumes:    []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
 			Restricted: true,
