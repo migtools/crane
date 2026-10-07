@@ -113,7 +113,8 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 
 		By("Apply rendered manifests to target cluster")
 		log.Printf("Applying rendered manifests on target namespace %s from %s\n", namespace, paths.OutputDir)
-		Expect(ApplyOutputToTargetNonAdmin(kubectlTgtNonAdmin, paths.OutputDir)).NotTo(HaveOccurred())
+		// Use admin runner because RBAC resources (builder Role/RoleBinding) require elevated privileges
+		Expect(ApplyOutputToTargetNonAdmin(scenario.KubectlTgt, paths.OutputDir)).NotTo(HaveOccurred())
 
 		By("Verify Build exists on target cluster")
 		out, err = kubectlTgtNonAdmin.Run("get", "build.shipwright.io", buildConfigName, "-n", namespace, "-o", "jsonpath={.kind}")
