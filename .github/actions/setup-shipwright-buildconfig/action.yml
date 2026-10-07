@@ -152,6 +152,27 @@ runs:
         echo "==> Installed ClusterBuildStrategies:"
         kubectl get clusterbuildstrategy --context ${{ inputs.target_context }}
 
+        echo "==> Patching buildah strategy to add cache volume..."
+        kubectl --context ${{ inputs.target_context }} patch clusterbuildstrategy buildah --type=json -p='[
+          {
+            "op": "add",
+            "path": "/spec/volumes/-",
+            "value": {
+              "name": "shp-cache",
+              "emptyDir": {}
+            }
+          },
+          {
+            "op": "add",
+            "path": "/spec/steps/0/volumeMounts/-",
+            "value": {
+              "name": "shp-cache",
+              "mountPath": "/var/cache/containers"
+            }
+          }
+        ]'
+        echo "==> buildah strategy patched successfully"
+
         echo "==> Creating RBAC permissions for Shipwright resources..."
         kubectl apply --context ${{ inputs.target_context }} -f - <<'EOF'
         apiVersion: rbac.authorization.k8s.io/v1
