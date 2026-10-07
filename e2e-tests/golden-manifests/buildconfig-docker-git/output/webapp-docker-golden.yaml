@@ -4,6 +4,7 @@ metadata:
   annotations:
     buildconfig-to-shipwright/conversion-outcome: converted-with-warnings
     crane.konveyor.io/conversion-warnings: |-
+      [buildconfig-docker-git/webapp-docker] No explicit pushSecret found for DockerImage output. Set spec.output.pushSecret to a registry credential secret, or ensure the BuildRun ServiceAccount carries credentials for the target registry; otherwise the push will fail.
       [buildconfig-docker-git/webapp-docker] BuildConfig webapp-docker uses runPolicy "Serial", which is dropped: OpenShift queued its builds and ran them one at a time, but Shipwright BuildRuns run concurrently. Serialize the runs in your CI/CD pipeline if build ordering matters, for example when several BuildRuns push the same image tag
     crane.konveyor.io/converted-from: build.openshift.io/v1/BuildConfig/webapp-docker
   labels:
