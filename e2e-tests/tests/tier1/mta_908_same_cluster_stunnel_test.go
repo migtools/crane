@@ -16,6 +16,10 @@ import (
 
 var _ = Describe("Same-cluster transfer TLS", func() {
 	It("[MTA-908] uses TLS/stunnel for direct same-cluster transfers", Label("tier1", "pvc-transfer"), func() {
+		if config.CloudStorage != "" {
+			Skip("MTA-908 validates direct rsync/stunnel transfers")
+		}
+
 		const (
 			appName            = "mongodb"
 			namespace          = "mta-908"
