@@ -180,23 +180,24 @@ var _ = Describe("Same-cluster transfer TLS", func() {
 		Expect(destinationPVC.Status.Phase).To(Equal(corev1.ClaimBound))
 		Expect(PVCStorageClassName(*destinationPVC)).To(Equal(destinationSC))
 
-		By("Verify the transferred MongoDB data on the destination PVC")
-		verifyPod := "mta-908-mongo-verify"
-		Expect(DeployVerifierPod(kubectl, VerifierPodOptions{
-			Name:       verifyPod,
-			Namespace:  namespace,
-			Image:      "quay.io/migqe/mongo:7",
-			Command:    []string{"mongod", "--dbpath", "/data/db", "--bind_ip_all"},
-			Volumes:    []PodVolumeMount{{PVCName: destinationPVCName, MountPath: "/data/db"}},
-			Restricted: true,
-		})).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			if err := DeleteVerifierPod(kubectl, namespace, verifyPod); err != nil {
-				log.Printf("cleanup verifier pod: %v", err)
-			}
-		})
+		By("Start MongoDB against the transferred PVC and verify the migrated data")
+		patch := fmt.Sprintf(
+			`[{"op":"replace","path":"/spec/template/spec/volumes/0/persistentVolumeClaim/claimName","value":"%s"}]`,
+			destinationPVCName,
+		)
+		_, err = kubectl.Run(
+			"patch", "deployment", appName,
+			"-n", namespace,
+			"--type=json", "-p", patch,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(kubectl.ScaleDeployment(namespace, appName, 1)).NotTo(HaveOccurred())
 		Eventually(func() (int, error) {
-			return MongoDocumentCount(kubectl, namespace, verifyPod)
+			podName, err := GetPodNameByLabel(kubectl, namespace, "name="+appName)
+			if err != nil {
+				return 0, err
+			}
+			return MongoDocumentCount(kubectl, namespace, podName)
 		}, "2m", "5s").Should(Equal(sourceDocumentCount))
 
 		By("Confirm transfer helper resources are gone")
