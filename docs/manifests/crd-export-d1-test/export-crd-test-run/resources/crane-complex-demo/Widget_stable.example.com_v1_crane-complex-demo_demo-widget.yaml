@@ -1,0 +1,30 @@
+apiVersion: stable.example.com/v1
+kind: Widget
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"stable.example.com/v1","kind":"Widget","metadata":{"annotations":{},"name":"demo-widget","namespace":"crane-complex-demo"},"spec":{"description":"Complex demo widget for crane export experiments","replicasHint":1}}
+  creationTimestamp: "2026-03-30T15:21:46Z"
+  generation: 1
+  managedFields:
+  - apiVersion: stable.example.com/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+      f:spec:
+        .: {}
+        f:description: {}
+        f:replicasHint: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+    time: "2026-03-30T15:21:46Z"
+  name: demo-widget
+  namespace: crane-complex-demo
+  resourceVersion: "157240"
+  uid: 82645ea0-3781-4963-a746-d64c39da00d6
+spec:
+  description: Complex demo widget for crane export experiments
+  replicasHint: 1

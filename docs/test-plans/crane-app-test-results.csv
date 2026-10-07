@@ -1,0 +1,45 @@
+Tool,OS,Cluster,App,Commands,Status
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-simple-nginx-nopv,"export, transform, apply, validate, kubectl apply",PASS - App running. Route hostname issue without OpenShiftPlugin (fixed with plugin).
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-mysql,"export, transform, apply, validate, kubectl apply",PARTIAL - Pipeline passes. App broken - PVC whiteout-ed but Deployment references it. Pod Pending.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-configmap,"export, transform, apply, validate, kubectl apply",PASS - App fully working. Redis running with correct ConfigMap mounted.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-role,"export, transform, apply, validate, kubectl apply",PASS - RBAC fully functional. SA can-i create pods returns yes on target.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-crd,"export, transform, apply, validate, kubectl apply",PARTIAL - CRD+CR ordering issue. First apply fails (CRD not registered). Retry succeeds. App works.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-sets,"export, transform, apply, validate, kubectl apply",PASS - DaemonSet (5 pods) ReplicaSet (2 pods) StatefulSet running on target.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-cronjob,"export, transform, apply, validate, kubectl apply",PARTIAL - simple-cronjob works. pvc-cronjob broken (PVC whiteout-ed). CronJobs auto-fire immediately.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-jobs,"export, transform, apply, validate, kubectl apply",FAIL - Jobs fail with controller-uid mismatch (crane-lib PR #138). ImageStreamTag/ImageTag already exists errors.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-initcont,"export, transform, apply, validate, kubectl apply",PASS - Both deployments running with init containers. Route correct. ImageStreamTag/ImageTag errors (non-blocking).
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-mongodb,"export, transform, apply, validate, kubectl apply",PARTIAL - Pipeline clean. App broken - PVC whiteout-ed. DeploymentConfig + Template migrated correctly.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-todolist-mariadb,"export, transform, apply, validate, kubectl apply",PARTIAL - Pipeline clean. MySQL Pending (PVC). Todolist stuck in Init. SCC migrated correctly.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-redis,"export, transform, apply, validate, kubectl apply",PARTIAL - Pipeline clean (3 resources). App broken - PVC whiteout-ed.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-cassandra,"export, transform, apply, validate, kubectl apply",PASS - App working! StatefulSet volumeClaimTemplates auto-create PVCs on target.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-mssql,"export, transform, apply, validate, kubectl apply",PARTIAL - mssql-app running. mssql-db Pending (PVC). SCC migrated. Route correct.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-nginxpv,"export, transform, apply, validate, kubectl apply",PARTIAL - Pipeline clean (3 resources). App broken - PVCs not found.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-8pvc-app,"export, transform, apply, validate, kubectl apply",PARTIAL - Only Deployment in output. All 8 PVCs whiteout-ed. Pod Pending.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-basic-pod,"export, transform, apply, validate, kubectl apply",PARTIAL - Pod without PVs running. Pod with PVs Pending (PVC not found).
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-pod-with-emptydir,"export, transform, apply, validate, kubectl apply",PASS - Pod running. EmptyDir volumes work without PVCs.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-pvc,"export, transform, apply",PASS (empty) - PVC whiteout-ed. No output generated. Expected behavior.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-pvc-with-data-attached-to-a-completed-pod,"export, transform, apply, kubectl apply",FAIL - Job controller-uid error. PVC whiteout-ed. Nothing on target.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-resourcequota,"export, transform, apply, validate, kubectl apply",PASS - ResourceQuota active on target with same limits.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-networkpolicy,"export, transform, apply, validate, kubectl apply",PASS - All 3 NetworkPolicies active. Deployment running.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-project,"export, transform, apply",PASS (empty) - Namespace metadata not captured by crane. No resources to migrate.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-storageclass,N/A,SKIPPED - StorageClass is cluster-scoped. Not in crane scope.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-corrupt-file,N/A,SKIPPED - Depends on ocp-nginxpv PVC.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-dockerbuild,"export, transform, apply",PASS - BuildConfig + ImageStream in output. Build whiteout-ed (ownerRef).
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-imagestreams,export,SKIPPED pipeline - Same ImageStreamTag/ImageTag issues as ocp-jobs.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-templateinstance,"export, transform, apply, validate, kubectl apply",PASS - App working! TemplateInstance auto-created PVC on target.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-cakephp,"export, transform, apply",PASS pipeline - BuildConfig + DCs + ImageStream + Route. ImageStreamTag/ImageTag in output (known).
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-django,"export, transform, apply",PASS pipeline - Deployments + BuildConfig + ImageStream + Route + Template. ImageStreamTag/ImageTag in output.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-todolist-mongodb-block,"export, transform, apply",PASS pipeline - Deployment + DC + BuildConfig + ImageStream + Route + SCC + SA.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-robot-shop,N/A,SKIPPED
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-sock-shop,N/A,SKIPPED
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-datagrid,"export, transform, apply",PASS pipeline - StatefulSet + DC + BuildConfig + ImageStream + Routes + Template.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-kubevirt,"export, transform, apply, validate, kubectl apply",PASS - VM migrated (stopped). DataVolume auto-created. CRDs correctly skipped.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-kubevirt-running-vm,"export, transform, apply, kubectl apply",PASS pipeline - Running VM migrated. VMI/PDB/Pod whiteout-ed. Cannot run (no KVM on cloud nodes).
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-kubevirt-windows,"export, transform, apply, kubectl apply",PASS - Windows VM migrated. UEFI/Hyper-V features preserved. DataVolume from DataSource.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-datavolume,"export, transform, apply, kubectl apply",PASS - DataVolume Succeeded on target. Note: re-downloads from source not runtime data.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-volumesnapshot,"export, transform, apply, validate, kubectl apply",PARTIAL - VolumeSnapshot created but READYTOUSE=false. Snapshot data not portable. CRD exported unnecessarily.
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-internal-registry,N/A,NOT TESTED
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-attached-pvc,N/A,NOT TESTED
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,nginx-j2,N/A,NOT TESTED
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,empty-namespace,N/A,NOT TESTED - Deployer bug
+Crane alpha,MacOS,OCP 4.16 → OCP 4.18/4.19,ocp-kubevirt-todo,N/A,SKIPPED - Same pattern as other kubevirt apps

@@ -1,0 +1,63 @@
+addressType: IPv4
+apiVersion: discovery.k8s.io/v1
+endpoints:
+- addresses:
+  - 10.129.2.22
+  conditions:
+    ready: true
+    serving: true
+    terminating: false
+  nodeName: oadp-5831-jnpml-worker-c-kmjhv
+  targetRef:
+    kind: Pod
+    name: complex-demo-app-7d69f794fb-mc4hk
+    namespace: crane-complex-demo
+    uid: 3bee8374-24dd-4135-a691-29b1b55f0988
+  zone: us-central1-c
+kind: EndpointSlice
+metadata:
+  annotations:
+    endpoints.kubernetes.io/last-change-trigger-time: "2026-03-30T15:21:53Z"
+  creationTimestamp: "2026-03-30T15:21:50Z"
+  generateName: complex-demo-svc-
+  generation: 2
+  labels:
+    endpointslice.kubernetes.io/managed-by: endpointslice-controller.k8s.io
+    kubernetes.io/service-name: complex-demo-svc
+  managedFields:
+  - apiVersion: discovery.k8s.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:addressType: {}
+      f:endpoints: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:endpoints.kubernetes.io/last-change-trigger-time: {}
+        f:generateName: {}
+        f:labels:
+          .: {}
+          f:endpointslice.kubernetes.io/managed-by: {}
+          f:kubernetes.io/service-name: {}
+        f:ownerReferences:
+          .: {}
+          k:{"uid":"b1d227bb-0ecb-4a13-af88-984768148f51"}: {}
+      f:ports: {}
+    manager: kube-controller-manager
+    operation: Update
+    time: "2026-03-30T15:21:53Z"
+  name: complex-demo-svc-79klr
+  namespace: crane-complex-demo
+  ownerReferences:
+  - apiVersion: v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Service
+    name: complex-demo-svc
+    uid: b1d227bb-0ecb-4a13-af88-984768148f51
+  resourceVersion: "157303"
+  uid: c0545e43-5334-4e22-960a-f4e8b25d9e8c
+ports:
+- name: http
+  port: 8080
+  protocol: TCP

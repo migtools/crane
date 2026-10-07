@@ -1,0 +1,79 @@
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: false
+allowPrivilegedContainer: false
+allowedCapabilities: null
+apiVersion: security.openshift.io/v1
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups: []
+kind: SecurityContextConstraints
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"allowHostDirVolumePlugin":false,"allowHostIPC":false,"allowHostNetwork":false,"allowHostPID":false,"allowHostPorts":false,"allowPrivilegeEscalation":false,"allowPrivilegedContainer":false,"apiVersion":"security.openshift.io/v1","defaultAddCapabilities":null,"fsGroup":{"type":"RunAsAny"},"kind":"SecurityContextConstraints","metadata":{"annotations":{},"name":"crane-complex-demo-scc"},"readOnlyRootFilesystem":false,"requiredDropCapabilities":["KILL","MKNOD","SETUID","SETGID"],"runAsUser":{"type":"RunAsAny"},"seLinuxContext":{"type":"MustRunAs"},"supplementalGroups":{"type":"RunAsAny"},"users":["system:serviceaccount:crane-complex-demo:app-sa"],"volumes":["configMap","downwardAPI","emptyDir","persistentVolumeClaim","projected","secret"]}
+  creationTimestamp: "2026-03-30T15:21:39Z"
+  generation: 1
+  managedFields:
+  - apiVersion: security.openshift.io/v1
+    fieldsType: FieldsV1
+    fieldsV1:
+      f:allowHostDirVolumePlugin: {}
+      f:allowHostIPC: {}
+      f:allowHostNetwork: {}
+      f:allowHostPID: {}
+      f:allowHostPorts: {}
+      f:allowPrivilegeEscalation: {}
+      f:allowPrivilegedContainer: {}
+      f:fsGroup:
+        .: {}
+        f:type: {}
+      f:metadata:
+        f:annotations:
+          .: {}
+          f:kubectl.kubernetes.io/last-applied-configuration: {}
+      f:readOnlyRootFilesystem: {}
+      f:requiredDropCapabilities: {}
+      f:runAsUser:
+        .: {}
+        f:type: {}
+      f:seLinuxContext:
+        .: {}
+        f:type: {}
+      f:supplementalGroups:
+        .: {}
+        f:type: {}
+      f:users: {}
+      f:volumes: {}
+    manager: kubectl-client-side-apply
+    operation: Update
+    time: "2026-03-30T15:21:39Z"
+  name: crane-complex-demo-scc
+  resourceVersion: "157194"
+  uid: 156061e0-4caf-40b5-ac58-9bfaecca38fa
+priority: null
+readOnlyRootFilesystem: false
+requiredDropCapabilities:
+- KILL
+- MKNOD
+- SETUID
+- SETGID
+runAsUser:
+  type: RunAsAny
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+users:
+- system:serviceaccount:crane-complex-demo:app-sa
+volumes:
+- configMap
+- downwardAPI
+- emptyDir
+- persistentVolumeClaim
+- projected
+- secret

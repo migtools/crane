@@ -86,6 +86,7 @@ type Flags struct {
 	RcloneConfigFile   string
 	Encrypt            bool
 	KeepCloudData      bool
+	UploadOnly         bool
 }
 
 // EndpointFlags defines command line flags specific
@@ -199,8 +200,8 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer (crane creates temporary Secrets)")
 	cmd.Flags().BoolVar(&c.Encrypt, "encrypt", false, "Enable client-side encryption for indirect transfer")
 	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer")
+	cmd.Flags().BoolVar(&c.UploadOnly, "upload-only", false, "Upload source PVC data to cloud storage without contacting the destination cluster")
 	cmd.MarkFlagRequired("source-context")
-	cmd.MarkFlagRequired("destination-context")
 	cmd.MarkFlagRequired("pvc-name")
 }
 
@@ -218,7 +219,7 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	if t.Flags.DestinationContext == "" {
+	if t.Flags.DestinationContext == "" && !t.UploadOnly {
 		t.Flags.DestinationContext = *t.configFlags.Context
 	}
 
@@ -226,7 +227,7 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 		if name == t.Flags.SourceContext {
 			t.sourceContext = context
 		}
-		if name == t.Flags.DestinationContext {
+		if !t.UploadOnly && name == t.Flags.DestinationContext {
 			t.destinationContext = context
 		}
 	}
@@ -258,6 +259,12 @@ func (t *TransferPVCCommand) Validate() error {
 	}
 	cloudStorage := t.CloudStorage
 
+	if t.UploadOnly && cloudStorage == "" {
+		return fmt.Errorf("--upload-only requires --cloud-storage")
+	}
+	if t.UploadOnly && t.Encrypt {
+		return fmt.Errorf("--upload-only does not support --encrypt until a download handoff is available; use a user-managed rclone crypt remote")
+	}
 	if t.Encrypt && cloudStorage == "" {
 		return fmt.Errorf("--encrypt requires --cloud-storage")
 	}
@@ -277,20 +284,29 @@ func (t *TransferPVCCommand) Validate() error {
 		return fmt.Errorf("cannot evaluate source context")
 	}
 
-	if t.destinationContext == nil {
+	if !t.UploadOnly && t.destinationContext == nil {
 		log.Debugf("Cannot evaluate destination context")
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
-	if t.isIntraClusterSameNamespace() && t.PVC.Name.source == t.PVC.Name.destination {
+	if !t.UploadOnly && t.isIntraClusterSameNamespace() && t.PVC.Name.source == t.PVC.Name.destination {
 		log.Debugf("Source and destination PVC names must differ for same-cluster same-namespace transfers")
 		return fmt.Errorf("source and destination PVC names must differ for same-cluster same-namespace transfers")
 	}
 
-	err := t.PVC.Validate()
-	if err != nil {
-		log.Errorf("PVC validation failed: %v", err)
-		return err
+	if t.UploadOnly {
+		if t.PVC.Name.source == "" {
+			return fmt.Errorf("source pvc name cannot be empty")
+		}
+		if t.PVC.Namespace.source == "" {
+			return fmt.Errorf("source pvc namespace cannot be empty")
+		}
+	} else {
+		err := t.PVC.Validate()
+		if err != nil {
+			log.Errorf("PVC validation failed: %v", err)
+			return err
+		}
 	}
 
 	if cloudStorage != "" {
@@ -309,7 +325,7 @@ func (t *TransferPVCCommand) Validate() error {
 		return nil
 	}
 
-	err = t.Endpoint.Validate()
+	err := t.Endpoint.Validate()
 	if err != nil {
 		log.Errorf("Endpoint validation failed: %v", err)
 		return err

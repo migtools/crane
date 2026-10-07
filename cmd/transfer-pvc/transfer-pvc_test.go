@@ -1727,3 +1727,87 @@ func TestCompleteTrimsCloudStorageWhitespace(t *testing.T) {
 		})
 	}
 }
+
+func TestUploadOnlyDoesNotRequireDestinationContext(t *testing.T) {
+	const sourceContext = "source"
+	kubeconfig := writeTempKubeconfig(t, sourceContext)
+	configFlags := genericclioptions.NewConfigFlags(false)
+	configFlags.KubeConfig = &kubeconfig
+
+	cmd := &TransferPVCCommand{
+		configFlags: configFlags,
+		Flags: Flags{
+			SourceContext: sourceContext,
+			UploadOnly:    true,
+		},
+	}
+	if err := cmd.Complete(nil, nil); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if cmd.destinationContext != nil || cmd.DestinationContext != "" {
+		t.Fatalf("upload-only unexpectedly resolved destination context %q", cmd.DestinationContext)
+	}
+}
+
+func TestValidateUploadOnly(t *testing.T) {
+	validFlags := func() Flags {
+		return Flags{
+			UploadOnly: true,
+			PVC: PvcFlags{
+				Name:      mappedNameVar{source: "data"},
+				Namespace: mappedNameVar{source: "source-ns"},
+			},
+			CloudStorage:       "remote:bucket",
+			RcloneConfigSecret: "rclone-config",
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Flags)
+		wantErr string
+	}{
+		{name: "valid without destination context"},
+		{
+			name: "requires cloud storage",
+			mutate: func(f *Flags) {
+				f.CloudStorage = ""
+			},
+			wantErr: "--upload-only requires --cloud-storage",
+		},
+		{
+			name: "requires source namespace",
+			mutate: func(f *Flags) {
+				f.PVC.Namespace.source = ""
+			},
+			wantErr: "source pvc namespace cannot be empty",
+		},
+		{
+			name: "rejects automatic encryption",
+			mutate: func(f *Flags) {
+				f.Encrypt = true
+			},
+			wantErr: "--upload-only does not support --encrypt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := validFlags()
+			if tt.mutate != nil {
+				tt.mutate(&flags)
+			}
+			cmd := &TransferPVCCommand{
+				Flags:         flags,
+				sourceContext: &clientcmdapi.Context{},
+			}
+			err := cmd.Validate()
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
