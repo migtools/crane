@@ -17,10 +17,20 @@ var _ = Describe("Audit logging /dev/null support", func() {
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Created temp directory: %s\n", paths.TempDir)
 
+		devNullInfo, err := os.Stat("/dev/null")
+		Expect(err).NotTo(HaveOccurred())
+		devNullMode := devNullInfo.Mode()
+		log.Printf("/dev/null permissions before transform: %v\n", devNullMode)
+
 		DeferCleanup(func() {
 			By("Cleanup temp directory")
 			if err := os.RemoveAll(paths.TempDir); err != nil {
 				log.Printf("cleanup: failed to remove temp dir: %v", err)
+			}
+			if info, err := os.Stat("/dev/null"); err == nil && info.Mode() != devNullMode {
+				if err := os.Chmod("/dev/null", devNullMode); err != nil {
+					log.Printf("cleanup: failed to restore /dev/null permissions: %v", err)
+				}
 			}
 		})
 
@@ -45,6 +55,11 @@ var _ = Describe("Audit logging /dev/null support", func() {
 		By("Verify no audit log warning in console output")
 		log.Printf("Console output length: %d bytes\n", len(consoleOutput))
 		Expect(consoleOutput).NotTo(ContainSubstring("Failed to open audit log"), "output should not warn about audit log failure")
+
+		By("Verify /dev/null permissions are unchanged")
+		devNullInfoAfter, err := os.Stat("/dev/null")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(devNullInfoAfter.Mode()).To(Equal(devNullMode), "/dev/null permission bits must not be changed by crane transform")
 
 		By("Verify transform output was produced (command ran to completion)")
 		hasFiles, _, err := utils.HasFilesRecursively(paths.TransformDir)
