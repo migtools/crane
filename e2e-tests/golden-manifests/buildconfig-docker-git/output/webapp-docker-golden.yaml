@@ -15,9 +15,7 @@ spec:
   output:
     image: ttl.sh/crane-test-webapp-docker:1h
   paramValues:
-  - configMapValue: null
-    name: dockerfile
-    secretValue: null
+  - name: dockerfile
     value: Dockerfile
   source:
     contextDir: "."
