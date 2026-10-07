@@ -40,7 +40,7 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
 | `--source-context` | string | Yes | Kube context of the source cluster |
-| `--destination-context` | string | Yes, unless `--upload-only` is set | Kube context of the destination cluster |
+| `--destination-context` | string | Yes | Kube context of the destination cluster |
 | `--pvc-name` | string | Yes | Mapping of source/destination PVC names (see [PVC Options](#pvc-options)) |
 | `--pvc-namespace` | string | No | Mapping of source/destination PVC namespaces (see [PVC Options](#pvc-options)) |
 | `--dest-storage-class` | string | No | Storage class of destination PVC (defaults to source PVC's storage class; **required** when destination lacks a class by that name, e.g. cross-provider transfers). See [Cross-provider transfers](#cross-provider-transfers). |
@@ -57,7 +57,6 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 | `--rclone-config-file` | string | No | Local path to `rclone.conf`; crane creates temporary Secrets on both clusters |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
 | `--keep-cloud-data` | bool | No | Retain the uploaded object prefix after the transfer instead of cleaning it up |
-| `--upload-only` | bool | No | Upload source PVC data to cloud storage, retaining it for a later download, without contacting a destination cluster |
 | `--audit-log` | string | No | Path to the audit log file (defaults to `audit/.crane-audit.log`) |
 
 ### PVC Options
@@ -137,30 +136,6 @@ In an OpenShift cluster, `route` endpoint can be used. A subdomain option can be
 ### Indirect Transfer Options
 
 Indirect transfer enables PVC migration between clusters without direct network connectivity. Data is uploaded to an S3-compatible cloud storage bucket by the source cluster and then downloaded by the destination cluster.
-
-#### Source-only upload
-
-Pass `--upload-only` to run only the source phase. In this mode, `--destination-context` is not required and Crane does not load or contact the destination cluster. The uploaded data is retained in object storage, irrespective of `--keep-cloud-data`.
-
-```bash
-crane transfer-pvc \
-  --source-context source \
-  --pvc-name data-pvc \
-  --pvc-namespace source-ns \
-  --cloud-storage remote:my-bucket/transfer-path \
-  --rclone-config-secret source-rclone-secret \
-  --upload-only
-```
-
-Crane prints the transfer ID and stable object-storage location when the upload succeeds. The location is always:
-
-```text
-<cloud-storage>/<source-namespace>/<source-pvc-name>
-```
-
-For example, the command above uploads to `remote:my-bucket/transfer-path/source-ns/data-pvc`, with transfer ID `source-ns/data-pvc`. A later download command will use that identity to find the data.
-
-Automatic `--encrypt` is intentionally rejected with `--upload-only` until the download half can securely receive the generated key. A user-managed rclone `crypt` remote is supported: configure the same stable crypt remote for both operators and pass it with `--cloud-storage`.
 
 #### Configuration
 
