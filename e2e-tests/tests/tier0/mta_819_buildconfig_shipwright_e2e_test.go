@@ -152,8 +152,9 @@ spec:
 				return true
 			}
 			reason, _ := kubectlTgtNonAdmin.Run("get", "buildrun", buildRunName, "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='Succeeded')].reason}")
+			message, _ := kubectlTgtNonAdmin.Run("get", "buildrun", buildRunName, "-n", namespace, "-o", "jsonpath={.status.conditions[?(@.type=='Succeeded')].message}")
 			if reason != "" && reason != "Running" && reason != "Pending" {
-				log.Printf("BuildRun %s status: %s (reason: %s)\n", buildRunName, out, reason)
+				log.Printf("BuildRun %s status: %s (reason: %s, message: %s)\n", buildRunName, out, reason, message)
 			}
 			return false
 		}, "5m", "10s").Should(BeTrue(), fmt.Sprintf("BuildRun %s should complete within 5 minutes", buildRunName))
