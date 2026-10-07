@@ -146,9 +146,6 @@ func (t *TransferPVCCommand) runIndirect() error {
 		log.Debugf("Unable to create destination PVC %s/%s: %v", destPVC.Namespace, destPVC.Name, err)
 		return fmt.Errorf("unable to create destination PVC: %w", err)
 	}
-	if err := t.checkDestinationPVCProvisioning(context.TODO(), destClient, destPVC); err != nil {
-		return err
-	}
 	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
 
 	// Get security contexts for source and target separately
@@ -196,7 +193,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 		log.Debugf("Upload failed: %v", err)
 		return fmt.Errorf("upload failed: %w", err)
 	}
-	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone", log); err != nil {
+	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone", log, nil); err != nil {
 		return fmt.Errorf("upload pod failed: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "[3/6] Uploading data to cloud storage ... ok\n")
@@ -208,7 +205,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 		log.Debugf("Download failed: %v", err)
 		return fmt.Errorf("download failed: %w", err)
 	}
-	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log); err != nil {
+	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log, destPVC); err != nil {
 		return fmt.Errorf("download pod failed: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ... ok\n")
@@ -223,7 +220,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
 			fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
 		} else {
-			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log); err != nil {
+			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log, nil); err != nil {
 				log.Printf("WARN: cloud storage cleanup failed: %v", err)
 				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
 			} else {
@@ -268,7 +265,7 @@ func hasRcloneSection(configData []byte, name string) bool {
 	return false
 }
 
-func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger) error {
+func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger, destinationPVC *corev1.PersistentVolumeClaim) error {
 	clientset, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		log.Debugf("Failed to create clientset: %v", err)
@@ -287,9 +284,17 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		case corev1.PodRunning, corev1.PodSucceeded, corev1.PodFailed:
 			return true, nil
 		default:
+			if destinationPVC != nil {
+				if provisioningErr := destinationPVCProvisioningError(ctx, c, destinationPVC, log); provisioningErr != nil {
+					return false, provisioningErr
+				}
+			}
 			return false, nil
 		}
 	}); err != nil {
+		if err != context.DeadlineExceeded {
+			return fmt.Errorf("waiting for pod %s/%s to start: %w", namespace, podName, err)
+		}
 		log.Debugf("Timed out waiting for pod %s/%s to start: %v", namespace, podName, err)
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}

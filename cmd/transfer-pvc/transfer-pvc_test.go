@@ -14,6 +14,7 @@ import (
 	"github.com/konveyor/crane-lib/transform/kubernetes"
 	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
 	"github.com/migtools/pvc-transfer/transport"
+	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -170,7 +171,7 @@ func TestDestinationPVCStorageClassError(t *testing.T) {
 	}
 }
 
-func TestCheckDestinationPVCProvisioningFailsFastOnMissingStorageClassEvent(t *testing.T) {
+func TestDestinationPVCProvisioningErrorReportsMissingStorageClassEvent(t *testing.T) {
 	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
 	event := &corev1.Event{
 		ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
@@ -180,13 +181,13 @@ func TestCheckDestinationPVCProvisioningFailsFastOnMissingStorageClassEvent(t *t
 	}
 	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(pvc, event).Build()
 
-	err := (&TransferPVCCommand{}).checkDestinationPVCProvisioning(context.Background(), c, pvc)
+	err := destinationPVCProvisioningError(context.Background(), c, pvc, logrus.New())
 	if err == nil || !strings.Contains(err.Error(), `storageclass.storage.k8s.io "missing-class" not found`) {
-		t.Fatalf("checkDestinationPVCProvisioning() error = %v, want missing StorageClass event", err)
+		t.Fatalf("destinationPVCProvisioningError() error = %v, want missing StorageClass event", err)
 	}
 }
 
-func TestCheckDestinationPVCProvisioningReturnsEventAccessError(t *testing.T) {
+func TestDestinationPVCProvisioningErrorIgnoresEventAccessError(t *testing.T) {
 	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
 	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(pvc).WithInterceptorFuncs(interceptor.Funcs{
 		List: func(_ context.Context, _ client.WithWatch, list client.ObjectList, _ ...client.ListOption) error {
@@ -197,9 +198,9 @@ func TestCheckDestinationPVCProvisioningReturnsEventAccessError(t *testing.T) {
 		},
 	}).Build()
 
-	err := (&TransferPVCCommand{}).checkDestinationPVCProvisioning(context.Background(), c, pvc)
-	if err == nil || !strings.Contains(err.Error(), "listing events for destination PVC target-ns/target-pvc") {
-		t.Fatalf("checkDestinationPVCProvisioning() error = %v, want contextual events access error", err)
+	err := destinationPVCProvisioningError(context.Background(), c, pvc, logrus.New())
+	if err != nil {
+		t.Fatalf("destinationPVCProvisioningError() error = %v, want nil when events cannot be listed", err)
 	}
 }
 
