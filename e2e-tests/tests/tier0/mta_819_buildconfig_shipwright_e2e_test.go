@@ -51,6 +51,11 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 		})
 		DeferCleanup(cleanup)
 
+		By("Label target namespace to allow privileged pods for buildah")
+		_, err = scenario.KubectlTgt.Run("label", "namespace", namespace, "pod-security.kubernetes.io/enforce=privileged", "--overwrite")
+		Expect(err).NotTo(HaveOccurred())
+		log.Printf("✓ Target namespace labeled for privileged pod security\n")
+
 		paths, err := NewScenarioPaths("crane-export-*")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
