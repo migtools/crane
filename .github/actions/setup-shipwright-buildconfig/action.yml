@@ -152,6 +152,12 @@ runs:
         echo "==> Installed ClusterBuildStrategies:"
         kubectl get clusterbuildstrategy --context ${{ inputs.target_context }}
 
+        echo "==> Creating buildah strategy from buildah-shipwright-managed-push..."
+        kubectl get clusterbuildstrategy buildah-shipwright-managed-push --context ${{ inputs.target_context }} -o yaml | \
+          sed 's/buildah-shipwright-managed-push/buildah/g' | \
+          kubectl apply --context ${{ inputs.target_context }} -f -
+        echo "==> buildah strategy created successfully"
+
         echo "==> Patching buildah strategy to add cache volume..."
         kubectl --context ${{ inputs.target_context }} patch clusterbuildstrategy buildah --type=json -p='[
           {
