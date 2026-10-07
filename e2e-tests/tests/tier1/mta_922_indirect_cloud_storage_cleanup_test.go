@@ -136,22 +136,23 @@ spec:
 			_, err = app.kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+inspectPod, "-n", namespace, "--timeout=120s")
 			Expect(err).NotTo(HaveOccurred())
 
-			// Best-effort purge of the source-namespace prefix so a failed run (where
-			// crane did NOT clean up) does not leave objects behind for the next run.
-			// Registered after the pod-delete cleanup so it executes first.
+			// Best-effort purge of remotePath so a failed run (crane did NOT clean up)
+			// leaves nothing behind for the next run. Registered after the pod-delete
+			// cleanup so it executes first.
 			DeferCleanup(func() {
-				purge := fmt.Sprintf("export HOME=/tmp; rclone --config /cfg/rclone.conf purge %q",
-					fmt.Sprintf("%s/%s", config.CloudStorage, app.srcApp.Namespace))
+				purge := fmt.Sprintf("export HOME=/tmp; rclone --config /cfg/rclone.conf purge %q", remotePath)
 				if _, err := app.kubectlTgt.Run("exec", inspectPod, "-n", namespace, "--", "/bin/sh", "-c", purge); err != nil {
-					log.Printf("cleanup: failed to purge cloud objects at %q/%s: %v", config.CloudStorage, app.srcApp.Namespace, err)
+					log.Printf("cleanup: failed to purge cloud objects at %q: %v", remotePath, err)
 				}
 			})
 
-			// `rclone lsf -R` lists every object under the prefix (recursively). On an
-			// emptied or non-existent S3 prefix it prints nothing and exits 0.
+			// `rclone lsf -R` lists every object under the prefix; an emptied or
+			// non-existent S3 prefix prints nothing and exits 0. set -e makes a genuine
+			// listing failure abort the script (caught by the err assertion below)
+			// instead of being masked by the trailing echo's exit 0 and looking empty.
 			listScript := fmt.Sprintf(
-				"export HOME=/tmp; echo '===OBJECTS_START==='; "+
-					"rclone --config /cfg/rclone.conf lsf -R %q || true; echo '===OBJECTS_END==='",
+				"set -e; export HOME=/tmp; echo '===OBJECTS_START==='; "+
+					"rclone --config /cfg/rclone.conf lsf -R %q; echo '===OBJECTS_END==='",
 				remotePath)
 			listOut, err := app.kubectlTgt.Run("exec", inspectPod, "-n", namespace, "--", "/bin/sh", "-c", listScript)
 			Expect(err).NotTo(HaveOccurred(), "failed to list raw bucket objects")
