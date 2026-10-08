@@ -210,30 +210,52 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ... ok\n")
 
-	// Cleanup cloud data
-	fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ...\n")
-	if t.KeepCloudData {
-		fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
-	} else {
-		cleanupPod, err := transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
-		if err != nil {
-			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
-			fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
-		} else {
-			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log, nil); err != nil {
-				log.Printf("WARN: cloud storage cleanup failed: %v", err)
-				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
-			} else {
-				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... ok\n")
-			}
-		}
-	}
+	// Cleanup cloud data. Failures here are non-fatal (the data transfer has
+	// already succeeded), so this never aborts the transfer.
+	t.cleanupCloudStorage(os.Stderr,
+		func() (*corev1.Pod, error) {
+			return transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
+		},
+		func(pod *corev1.Pod) error {
+			return followPodLogsUntilComplete(srcCfg, srcClient, pod.Name, pod.Namespace, "rclone", log, nil)
+		},
+	)
 
 	fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 	fmt.Fprintf(os.Stderr, "PVC data copy: succeeded (indirect via cloud storage)\n")
 	fmt.Fprintf(os.Stderr, "Done.\n")
 
 	return nil
+}
+
+// cleanupCloudStorage runs the [5/6] cleanup step (skipped when --keep-cloud-data
+// is set), reporting progress to out. The transfer has already succeeded, so a
+// cleanup failure is logged as "failed (non-fatal)" and never returned as an error.
+//
+// cleanup and followLog are passed as functions so the failure paths can be
+// unit-tested without a cluster.
+func (t *TransferPVCCommand) cleanupCloudStorage(out io.Writer, cleanup func() (*corev1.Pod, error), followLog func(pod *corev1.Pod) error) {
+	// Progress writes to out are best-effort; a failed status write must not
+	// affect the transfer outcome, so the error is intentionally ignored.
+	status := func(msg string) { _, _ = io.WriteString(out, msg) }
+
+	status("[5/6] Cleaning up cloud storage ...\n")
+	if t.KeepCloudData {
+		status("[5/6] Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
+		return
+	}
+	cleanupPod, err := cleanup()
+	if err != nil {
+		t.log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
+		status("[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
+		return
+	}
+	if err := followLog(cleanupPod); err != nil {
+		t.log.Printf("WARN: cloud storage cleanup failed: %v", err)
+		status("[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
+		return
+	}
+	status("[5/6] Cleaning up cloud storage ... ok\n")
 }
 
 // hasRcloneSection reports whether configData contains an INI section with the
