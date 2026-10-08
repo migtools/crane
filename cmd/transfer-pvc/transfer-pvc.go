@@ -463,7 +463,7 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	// ---- Phase 4: Waiting for endpoint healthy ----
 	log.Infof("Phase 4: Waiting for endpoint healthy")
 	phases.Start("Waiting for endpoint healthy")
-	if err := waitForEndpoint(e, destClient); err != nil {
+	if err := waitForEndpoint(e, destClient, destPVC, log); err != nil {
 		log.Errorf("Endpoint not healthy: %v", err)
 		return phases.Fail(err, "endpoint not healthy")
 	}
@@ -607,13 +607,21 @@ func (t *TransferPVCCommand) run() (retErr error) {
 	err = wait.PollUntilContextCancel(healthCtx, time.Second*5, false, func(ctx context.Context) (done bool, err error) {
 		ready, err := rsyncServer.IsHealthy(ctx, destClient)
 		if err != nil {
+			if provisioningErr := destinationPVCProvisioningError(ctx, destClient, destPVC, log); provisioningErr != nil {
+				return false, provisioningErr
+			}
 			fmt.Fprintf(t.ErrOut, "  rsync server not ready, retrying...\n")
 			return false, nil
+		}
+		if !ready {
+			if provisioningErr := destinationPVCProvisioningError(ctx, destClient, destPVC, log); provisioningErr != nil {
+				return false, provisioningErr
+			}
 		}
 		return ready, nil
 	})
 	if err != nil {
-		log.Fatal(err, "rsync server failed to become healthy")
+		return phases.Fail(err, "rsync server failed to become healthy")
 	}
 	phases.End("ok", "")
 
@@ -1237,13 +1245,23 @@ func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels m
 	return logReader.ExitCode(), err
 }
 
-// waitForEndpoint waits for endpoint to become ready
-func waitForEndpoint(e endpoint.Endpoint, destClient client.Client) error {
+// waitForEndpoint waits for endpoint to become ready. While it waits, it also
+// checks for the specific destination PVC provisioning failure that can prevent
+// the endpoint's inspection pod from starting.
+func waitForEndpoint(e endpoint.Endpoint, destClient client.Client, destPVC *corev1.PersistentVolumeClaim, logger *logrus.Logger) error {
 	return wait.PollUntil(time.Second*5, func() (done bool, err error) {
 		ready, err := e.IsHealthy(context.TODO(), destClient)
 		if err != nil {
+			if provisioningErr := destinationPVCProvisioningError(context.TODO(), destClient, destPVC, logger); provisioningErr != nil {
+				return false, provisioningErr
+			}
 			log.Println(err, "unable to check endpoint health, retrying...")
 			return false, nil
+		}
+		if !ready {
+			if provisioningErr := destinationPVCProvisioningError(context.TODO(), destClient, destPVC, logger); provisioningErr != nil {
+				return false, provisioningErr
+			}
 		}
 		return ready, nil
 	}, make(<-chan struct{}))
@@ -1376,6 +1394,57 @@ func (t *TransferPVCCommand) createDestinationPVC(ctx context.Context, c client.
 	}
 
 	return nil
+}
+
+// destinationPVCProvisioningError returns a specific StorageClass provisioning
+// failure, if one is already observable. It is a best-effort diagnostic for the
+// existing destination-pod readiness waits: an RBAC denial for Events must not
+// prevent a transfer that may still succeed.
+func destinationPVCProvisioningError(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim, log *logrus.Logger) error {
+	currentPVC := &corev1.PersistentVolumeClaim{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pvc), currentPVC); err != nil {
+		log.Debugf("Cannot inspect destination PVC %s/%s status: %v", pvc.Namespace, pvc.Name, err)
+		return nil
+	}
+	if currentPVC.Status.Phase == corev1.ClaimBound {
+		return nil
+	}
+
+	message, err := destinationPVCStorageClassError(ctx, c, currentPVC)
+	if err != nil {
+		log.Debugf("Cannot list events for destination PVC %s/%s: %v", pvc.Namespace, pvc.Name, err)
+		return nil
+	}
+	if message == "" {
+		return nil
+	}
+	return fmt.Errorf("destination PVC %s/%s provisioning failed: %s", pvc.Namespace, pvc.Name, message)
+}
+
+// destinationPVCStorageClassError returns an event message only for the
+// Kubernetes error emitted when the PVC names a StorageClass that does not
+// exist. Other Pending conditions may resolve normally and must not abort a
+// transfer.
+func destinationPVCStorageClassError(ctx context.Context, c client.Client, pvc *corev1.PersistentVolumeClaim) (string, error) {
+	events := &corev1.EventList{}
+	if err := c.List(ctx, events, client.InNamespace(pvc.Namespace)); err != nil {
+		return "", err
+	}
+	for _, event := range events.Items {
+		if event.InvolvedObject.Kind != "PersistentVolumeClaim" ||
+			event.InvolvedObject.Name != pvc.Name ||
+			(event.InvolvedObject.Namespace != "" && event.InvolvedObject.Namespace != pvc.Namespace) ||
+			event.InvolvedObject.UID != pvc.UID {
+			continue
+		}
+		message := strings.ToLower(event.Message)
+		if event.Reason == "ProvisioningFailed" &&
+			strings.Contains(message, "storageclass.storage.k8s.io") &&
+			strings.Contains(message, "not found") {
+			return event.Message, nil
+		}
+	}
+	return "", nil
 }
 
 func stripServerManagedPVCAnnotations(annotations map[string]string) map[string]string {
