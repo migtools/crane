@@ -155,6 +155,11 @@ runs:
         echo "==> Creating buildah strategy from buildah-shipwright-managed-push..."
         kubectl get clusterbuildstrategy buildah-shipwright-managed-push --context ${{ inputs.target_context }} -o yaml | \
           sed 's/buildah-shipwright-managed-push/buildah/g' | \
+          sed '/^  resourceVersion:/d' | \
+          sed '/^  uid:/d' | \
+          sed '/^  creationTimestamp:/d' | \
+          sed '/^  generation:/d' | \
+          sed '/^  managedFields:/,/^[^ ]/{ /^  managedFields:/d; /^[^ ]/!d; }' | \
           kubectl apply --context ${{ inputs.target_context }} -f -
         echo "==> buildah strategy created successfully"
 
