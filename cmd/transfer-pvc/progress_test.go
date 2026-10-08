@@ -1,6 +1,7 @@
 package transfer_pvc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -9,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // resetGlobals resets global variables between tests for isolation
@@ -693,11 +697,8 @@ func TestProgressAsString_WhenCompleted(t *testing.T) {
 	}
 }
 
-// TestProgressAsString_WithErrors tests that AsString includes error output when
-// completed with errors. This test exposes the variable shadowing bug on line 262
-// where 'errors :=' declares a new variable instead of assigning to the outer 'errors'.
+// TestProgressAsString_WithErrors verifies completed transfers display rsync errors.
 func TestProgressAsString_WithErrors(t *testing.T) {
-	t.Skip("Skipping: known variable shadowing bug on line 262")
 	resetGlobals()
 	exitCode := int32(1)
 	p := &Progress{
@@ -709,8 +710,6 @@ func TestProgressAsString_WithErrors(t *testing.T) {
 		startedAt:        time.Now(),
 	}
 	_, errStr := p.AsString()
-	// Due to the variable shadowing bug on line 262, errStr will be empty
-	// even though there are errors. When the bug is fixed, this test should pass.
 	if !strings.Contains(errStr, "Errors:") {
 		t.Errorf("AsString() err output missing 'Errors:' - possible variable shadowing bug")
 	}
@@ -719,6 +718,25 @@ func TestProgressAsString_WithErrors(t *testing.T) {
 	}
 	if !strings.Contains(errStr, "permission denied") {
 		t.Errorf("AsString() err output missing 'permission denied'")
+	}
+}
+
+func TestGetFinalPodStatus_ReturnsErrorWhenRsyncDoesNotTerminate(t *testing.T) {
+	clientset := fake.NewSimpleClientset(&corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "rsync-client", Namespace: "source"},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+			Name: "rsync",
+		}}},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, _, err := getFinalPodStatus(ctx, clientset, "rsync-client", "source")
+	if err == nil {
+		t.Fatal("getFinalPodStatus() error = nil, want timeout error")
+	}
+	if !strings.Contains(err.Error(), "source/rsync-client to terminate") {
+		t.Errorf("getFinalPodStatus() error = %q, want pod identity", err)
 	}
 }
 

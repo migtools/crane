@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"log"
@@ -372,10 +373,10 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		totalPhases = 8
 	}
 	phases := cli.NewPhaseTracker(t.ErrOut, totalPhases)
-	var rsyncExitCode *int32
+	var rsyncProgress *Progress
 	defer func() {
 		cli.PrintTransferSummary(t.ErrOut, &cli.TransferSummary{
-			Status:   transferSummaryStatus(retErr, rsyncExitCode),
+			Status:   transferSummaryStatus(retErr, rsyncProgress),
 			Duration: phases.Elapsed(),
 		})
 	}()
@@ -668,20 +669,27 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		return phases.Fail(err, "failed to create rsync client")
 	}
 
-	rsyncExitCode, err = followClientLogs(
+	rsyncProgress, err = followClientLogs(
 		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, clientLabels, t.ProgressOutput, log)
-	if err != nil {
-		log.Errorf("Error following rsync client logs: %v", err)
-		return phases.Fail(err, "error following rsync client logs")
+	copyErr := err
+	if copyErr == nil {
+		copyErr = rsyncResultError(rsyncProgress)
+	}
+	if copyErr != nil {
+		log.Errorf("Rsync data copy failed: %v", copyErr)
+		copyErr = phases.Fail(copyErr, "rsync data copy failed")
 	}
 	detail := ""
-	if rsyncExitCode != nil {
-		detail = fmt.Sprintf("exit=%d", *rsyncExitCode)
+	if rsyncProgress != nil && rsyncProgress.ExitCode != nil {
+		detail = fmt.Sprintf("exit=%d", *rsyncProgress.ExitCode)
 	}
-	phases.End("finished", detail)
+	if copyErr == nil {
+		phases.End("finished", detail)
+	}
 
 	// ---- Phase 7/8: Cleanup ----
 	log.Infof("Phase %d: Cleanup", totalPhases)
+	var cleanupErr error
 	if t.isIntraClusterSameNamespace() {
 		phases.Start("Cleaning up server resources")
 		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
@@ -693,30 +701,52 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		phases.Start("Cleaning up client resources")
 		if err := garbageCollect(srcClient, destClient, clientLabels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
 			log.Errorf("Client-side cleanup failed: %v", err)
-			return phases.Fail(err, "client-side cleanup failed")
+			cleanupErr = phases.Fail(err, "client-side cleanup failed")
+		} else {
+			phases.End("ok", "")
 		}
-		phases.End("ok", "")
 	} else {
 		phases.Start("Cleaning up temporary resources")
 		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
 			log.Errorf("Cleanup failed: %v", err)
-			return phases.Fail(err, "cleanup failed")
+			cleanupErr = phases.Fail(err, "cleanup failed")
+		} else {
+			phases.End("ok", "")
 		}
-		phases.End("ok", "")
+	}
+	if copyErr != nil || cleanupErr != nil {
+		return stderrors.Join(copyErr, cleanupErr)
 	}
 
 	log.Infof("PVC transfer complete: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 	return nil
 }
 
-func transferSummaryStatus(retErr error, rsyncExitCode *int32) string {
+func rsyncResultError(progress *Progress) error {
+	if progress == nil || progress.ExitCode == nil {
+		return fmt.Errorf("rsync client pod terminated without an exit code")
+	}
+	if *progress.ExitCode == 0 {
+		return nil
+	}
+	if *progress.ExitCode == 23 && (progress.TransferredFiles > 0 ||
+		(progress.TransferredData != nil && progress.TransferredData.val > 0)) {
+		return nil
+	}
+	return fmt.Errorf("rsync client exited with code %d", *progress.ExitCode)
+}
+
+func transferSummaryStatus(retErr error, progress *Progress) string {
 	if retErr != nil {
 		return "failed"
 	}
-	if rsyncExitCode != nil && *rsyncExitCode == 23 {
+	if rsyncResultError(progress) != nil {
+		return "failed"
+	}
+	if *progress.ExitCode == 23 {
 		return "succeeded (with warnings — some files could not be transferred)"
 	}
-	if rsyncExitCode != nil && *rsyncExitCode != 0 {
+	if *progress.ExitCode != 0 {
 		return "failed"
 	}
 	return "succeeded"
@@ -1213,11 +1243,11 @@ type LogStreams interface {
 	Streams() (stdout chan string, stderr chan string, err chan error)
 	// Close closes log streams
 	Close()
-	// ExitCode returns the rsync process exit code, if available
-	ExitCode() *int32
+	// Progress returns the final rsync transfer progress, if available.
+	Progress() *Progress
 }
 
-func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string, log *logrus.Logger) (*int32, error) {
+func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string, log *logrus.Logger) (*Progress, error) {
 	logReader := NewRsyncLogStream(srcConfig, pvc, labels, outputFile, log)
 	err := logReader.Init()
 	if err != nil {
@@ -1242,7 +1272,7 @@ func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels m
 			break
 		}
 	}
-	return logReader.ExitCode(), err
+	return logReader.Progress(), err
 }
 
 // waitForEndpoint waits for endpoint to become ready. While it waits, it also
