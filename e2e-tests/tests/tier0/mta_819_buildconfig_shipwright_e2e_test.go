@@ -104,7 +104,7 @@ var _ = Describe("BuildConfig to Shipwright conversion", func() {
 		actualBuildPath := filepath.Join(paths.OutputDir, "resources", namespace, fmt.Sprintf("Build_shipwright.io_v1beta1_%s_%s.yaml", namespace, buildConfigName))
 		goldenFilePath := filepath.Join(goldenOutputDir, "webapp-docker-golden.yaml")
 
-		diffs, err := CompareWithGoldenFile(actualBuildPath, goldenFilePath)
+		diffs, err := utils.CompareWithGoldenFile(actualBuildPath, goldenFilePath)
 		Expect(err).NotTo(HaveOccurred(), "Failed to compare Build with golden file")
 
 		if len(diffs) > 0 {
