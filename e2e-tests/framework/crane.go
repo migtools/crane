@@ -34,6 +34,7 @@ type TransferPVCOptions struct {
 	RsyncImage          string
 	Encrypt             bool
 	KeepCloudData       bool
+	Verify              bool
 }
 
 // ValidateOptions contains arguments for the crane validate command.
@@ -298,6 +299,9 @@ func buildTransferPVCArgs(opts TransferPVCOptions) []string {
 			args = append(args, "--ingress-class", opts.IngressClass)
 			args = append(args, "--subdomain", opts.Subdomain)
 		}
+	}
+	if opts.Verify {
+		args = append(args, "--verify")
 	}
 	return args
 }
