@@ -17,6 +17,7 @@ Welcome to the Crane documentation. Crane is a Kubernetes migration tool that he
 ## Concepts
 
 - [Multi-Stage Pipeline](./multistage-pipeline.md) — How Crane's multi-stage Kustomize transform pipeline works
+- [Declarative Transformations](./kustomize-fragments.md) - Define stages, plugin options, and Kustomize changes in an instructions file
 - [Plugins](./plugins.md) — Built-in and custom plugin overview
 
 ## Reference
