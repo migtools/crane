@@ -155,18 +155,20 @@ Before accepting generated changes, verify:
 The skill recommends these checks before cluster-backed execution:
 
 ```bash
-gofmt -w e2e-tests/tests/<tier>/<test>.go
+TEST_FILE=e2e-tests/tests/tier0/example_test.go
+gofmt -w "$TEST_FILE"
 go test ./e2e-tests/framework ./e2e-tests/utils
 go test ./e2e-tests/tests/tier0 ./e2e-tests/tests/tier1 -run '^$'
 go test . ./cmd/... ./internal/...
 ```
 
-Do not treat an unqualified `go test ./...` as a unit-test command in this repository. It starts the Ginkgo e2e suites and fails without their clusters, binaries, and suite flags.
+Do not treat an unqualified `go test ./...` as a unit-test command in this repository. It also runs the Ginkgo e2e suites under `e2e-tests/tests/tier0` and `e2e-tests/tests/tier1`. Some specs require configured clusters, binaries, or suite flags and can fail when that setup is unavailable.
 
 Run a focused scenario with Ginkgo after preparing the required environment:
 
 ```bash
-ginkgo run -v -r --focus-file=<test-file> e2e-tests/tests -- \
+TEST_FILE=e2e-tests/tests/tier0/example_test.go
+ginkgo run -v -r --focus-file="$TEST_FILE" e2e-tests/tests -- \
   --k8sdeploy-bin=k8sdeploy \
   --crane-bin="$PWD/crane" \
   --source-context=src \

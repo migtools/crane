@@ -92,7 +92,8 @@ Human reviewers requested these patterns in [#923](https://github.com/migtools/c
 Run the focused test after the two clusters and `k8sdeploy` are available:
 
 ```bash
-ginkgo run -v -r --focus-file=<test-file> e2e-tests/tests -- \
+TEST_FILE=e2e-tests/tests/tier0/example_test.go
+ginkgo run -v -r --focus-file="$TEST_FILE" e2e-tests/tests -- \
   --k8sdeploy-bin=k8sdeploy \
   --crane-bin="$PWD/crane" \
   --source-context=src \
@@ -109,13 +110,14 @@ Add scenario-specific flags such as `--plugin-dir`, `--cloud-storage`, or `--rcl
 Run the cheapest checks first:
 
 ```bash
-gofmt -w e2e-tests/tests/<tier>/<test>.go
+TEST_FILE=e2e-tests/tests/tier0/example_test.go
+gofmt -w "$TEST_FILE"
 go test ./e2e-tests/framework ./e2e-tests/utils
 go test ./e2e-tests/tests/tier0 ./e2e-tests/tests/tier1 -run '^$'
 go test . ./cmd/... ./internal/...
 ```
 
-Do not use an unqualified `go test ./...` as a local unit-test command. It executes both Ginkgo e2e suites and requires their flags, clusters, and external binaries. Run the focused Ginkgo test with its required environment instead. Report separately which compile/unit checks passed and whether cluster-backed execution ran.
+Do not use an unqualified `go test ./...` as a local unit-test command. It also runs the Ginkgo e2e suites under `e2e-tests/tests/tier0` and `e2e-tests/tests/tier1`. Some specs require configured clusters, binaries, or suite flags and can fail when that setup is unavailable. Run the focused Ginkgo test with its required environment instead. Report separately which compile/unit checks passed and whether cluster-backed execution ran.
 
 Before finishing, inspect the diff for these common failures:
 
