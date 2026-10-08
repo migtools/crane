@@ -259,6 +259,9 @@ func downloadBinary(pluginDir string, filename string, url string, log *logrus.L
 			return err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return fmt.Errorf("failed to download plugin binary from %s: server returned %s", url, resp.Status)
+		}
 		binaryContents = resp.Body
 	}
 	// Create dir if not exists
