@@ -110,16 +110,41 @@ func getFilteredPlugins(pluginDir string, skipPlugins []string, log *logrus.Logg
 	return plugin.GetFilteredPlugins(absPluginDir, skipPlugins, log)
 }
 
+func getPluginDescriptors(pluginDir string, skipPlugins []string, log *logrus.Logger) ([]plugin.PluginDescriptor, error) {
+	absPluginDir, err := filepath.Abs(pluginDir)
+	if err != nil {
+		log.Errorf("Failed to resolve plugin directory path %q: %v", pluginDir, err)
+		return nil, err
+	}
+
+	return plugin.GetPluginDescriptors(absPluginDir, skipPlugins, log)
+}
+
 func (o *Options) run() error {
 	log := o.log
 
-	plugins, err := getFilteredPlugins(o.PluginDir, o.SkipPlugins, log)
+	descriptors, err := getPluginDescriptors(o.PluginDir, o.SkipPlugins, log)
 	if err != nil {
 		return err
 	}
 
-	for _, thisPlugin := range plugins {
-		fmt.Printf("Plugin: %v (version %v)\n", thisPlugin.Metadata().Name, thisPlugin.Metadata().Version)
+	for _, descriptor := range descriptors {
+		fmt.Println(formatPluginDescriptor(descriptor))
 	}
 	return nil
+}
+
+func formatPluginDescriptor(descriptor plugin.PluginDescriptor) string {
+	metadata := descriptor.Plugin.Metadata()
+	source := string(descriptor.Source)
+	if descriptor.Source == plugin.PluginSourceExternal {
+		source = fmt.Sprintf("%s: %s", source, descriptor.SourceDirectory)
+	}
+
+	runMode := "opt-in"
+	if descriptor.EnabledByDefault {
+		runMode = "default"
+	}
+
+	return fmt.Sprintf("Plugin: %v (version %v, source %s, run %s)", metadata.Name, metadata.Version, source, runMode)
 }
