@@ -1,9 +1,12 @@
 package transfer_pvc
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -489,4 +492,94 @@ func TestCheckRclonePartialSuccessTerminationDetail(t *testing.T) {
 			t.Errorf("error %q should not contain a detail suffix", err.Error())
 		}
 	})
+}
+
+// newQuietLogger returns a logrus logger whose output is discarded, so the
+// WARN lines cleanupCloudStorage emits on the failure paths do not pollute test
+// output.
+func newQuietLogger() *logrus.Logger {
+	l := logrus.New()
+	l.SetOutput(io.Discard)
+	return l
+}
+
+// TestCleanupCloudStorage covers the [5/6] cleanup decision tree, in particular
+// that a failure is reported as "failed (non-fatal)" and never aborts the transfer.
+func TestCleanupCloudStorage(t *testing.T) {
+	cleanupPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "cleanup", Namespace: "ns"}}
+
+	tests := []struct {
+		name          string
+		keepCloudData bool
+		cleanupErr    error // error returned by the cleanup-pod launch
+		followErr     error // error returned while following the cleanup-pod logs
+		wantContains  string
+		wantNotRun    bool // cleanup/followLog must not be invoked at all
+	}{
+		{
+			name:          "keep-cloud-data skips cleanup entirely",
+			keepCloudData: true,
+			wantContains:  "skipped (--keep-cloud-data)",
+			wantNotRun:    true,
+		},
+		{
+			name:         "successful cleanup reports ok",
+			wantContains: "... ok",
+		},
+		{
+			name:         "cleanup pod fails to start is non-fatal",
+			cleanupErr:   errors.New("boom: cannot create cleanup pod"),
+			wantContains: "failed (non-fatal)",
+		},
+		{
+			name:         "cleanup pod log-follow failure is non-fatal",
+			followErr:    errors.New("boom: cleanup pod exited non-zero"),
+			wantContains: "failed (non-fatal)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cleanupCalled, followCalled bool
+			cmd := &TransferPVCCommand{
+				log:   newQuietLogger(),
+				Flags: Flags{KeepCloudData: tt.keepCloudData},
+			}
+			var out bytes.Buffer
+			cmd.cleanupCloudStorage(&out,
+				func() (*corev1.Pod, error) {
+					cleanupCalled = true
+					if tt.cleanupErr != nil {
+						return nil, tt.cleanupErr
+					}
+					return cleanupPod, nil
+				},
+				func(pod *corev1.Pod) error {
+					followCalled = true
+					return tt.followErr
+				},
+			)
+
+			got := out.String()
+			if !strings.Contains(got, tt.wantContains) {
+				t.Fatalf("cleanupCloudStorage output = %q, want it to contain %q", got, tt.wantContains)
+			}
+
+			if tt.wantNotRun {
+				if cleanupCalled || followCalled {
+					t.Fatalf("with --keep-cloud-data no cleanup should run, but cleanupCalled=%v followCalled=%v", cleanupCalled, followCalled)
+				}
+				return
+			}
+
+			// Once the cleanup pod fails to launch, the logs must not be followed.
+			if tt.cleanupErr != nil && followCalled {
+				t.Fatalf("followLog should not run when the cleanup pod fails to start")
+			}
+			// Every non-skip, non-launch-failure case must follow the pod logs.
+			if tt.cleanupErr == nil && !followCalled {
+				t.Fatalf("followLog should run after a successful cleanup-pod launch")
+			}
+		})
+	}
 }
