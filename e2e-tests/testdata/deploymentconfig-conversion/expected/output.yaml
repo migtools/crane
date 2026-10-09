@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    crane.konveyor.io/deploymentconfig-conversion-warnings: ImageChange trigger was removed; configure image automation on the target cluster; rollingParams.timeoutSeconds was removed
+    example.com/preserved: "true"
+  labels:
+    app: legacy-web
+  name: legacy-web
+  namespace: deploymentconfig-conversion
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: legacy-web
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: legacy-web
+    spec:
+      containers:
+        - image: nginx:1.27-alpine
+          name: web
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - mountPath: /data
+              name: data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: migrated-data
