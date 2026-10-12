@@ -4,7 +4,7 @@ data:
 kind: Secret
 metadata:
   name: redis
-  namespace: redis
+  namespace: mta-801-redis
 type: Opaque
 ---
 apiVersion: v1
@@ -13,7 +13,7 @@ metadata:
   labels:
     name: redis
   name: redis
-  namespace: redis
+  namespace: mta-801-redis
 spec:
   internalTrafficPolicy: Cluster
   ipFamilies:
@@ -33,7 +33,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: redis-data
-  namespace: redis
+  namespace: mta-801-redis
 spec:
   accessModes:
   - ReadWriteOnce
@@ -51,7 +51,7 @@ metadata:
   labels:
     name: redis
   name: redis
-  namespace: redis
+  namespace: mta-801-redis
 spec:
   progressDeadlineSeconds: 600
   replicas: 0
