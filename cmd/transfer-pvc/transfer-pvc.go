@@ -199,7 +199,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.RcloneConfigSecret, "rclone-config-secret", "", "Name of the K8s Secret containing rclone.conf for indirect transfer")
 	cmd.Flags().StringVar(&c.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer (crane creates temporary Secrets)")
 	cmd.Flags().BoolVar(&c.Encrypt, "encrypt", false, "Enable client-side encryption for indirect transfer")
-	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer")
+	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer; required with --upload-only for a later download")
 	cmd.Flags().BoolVar(&c.UploadOnly, "upload-only", false, "Upload source PVC data to cloud storage without contacting the destination cluster")
 	cmd.MarkFlagRequired("source-context")
 	cmd.MarkFlagRequired("pvc-name")
@@ -219,15 +219,15 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	if t.Flags.DestinationContext == "" && !t.UploadOnly {
-		t.Flags.DestinationContext = *t.configFlags.Context
+	if t.DestinationContext == "" && !t.UploadOnly {
+		t.DestinationContext = *t.configFlags.Context
 	}
 
 	for name, context := range rawConfig.Contexts {
 		if name == t.Flags.SourceContext {
 			t.sourceContext = context
 		}
-		if !t.UploadOnly && name == t.Flags.DestinationContext {
+		if !t.UploadOnly && name == t.DestinationContext {
 			t.destinationContext = context
 		}
 	}
@@ -261,6 +261,9 @@ func (t *TransferPVCCommand) Validate() error {
 
 	if t.UploadOnly && cloudStorage == "" {
 		return fmt.Errorf("--upload-only requires --cloud-storage")
+	}
+	if t.UploadOnly && !t.KeepCloudData {
+		return fmt.Errorf("--upload-only requires --keep-cloud-data so a later download can access the uploaded data")
 	}
 	if t.UploadOnly && t.Encrypt {
 		return fmt.Errorf("--upload-only does not support --encrypt until a download handoff is available; use a user-managed rclone crypt remote")

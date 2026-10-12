@@ -31,9 +31,9 @@ import (
 func (t *TransferPVCCommand) runIndirect() error {
 	log := t.log
 	crlog.InitControllerRuntimeLogger("transfer-pvc")
-	readSourceStep, uploadStep, cleanupStep := "[1/6]", "[3/6]", "[6/6]"
+	readSourceStep, uploadStep, cloudCleanupStep, cleanupStep := "[1/6]", "[3/6]", "[5/6]", "[6/6]"
 	if t.UploadOnly {
-		readSourceStep, uploadStep, cleanupStep = "[1/3]", "[2/3]", "[3/3]"
+		readSourceStep, uploadStep, cloudCleanupStep, cleanupStep = "[1/4]", "[2/4]", "[3/4]", "[4/4]"
 	}
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
@@ -202,6 +202,29 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 		fmt.Fprintf(os.Stderr, "%s Cleaning up transfer pods ... ok\n", cleanupStep)
 	}()
+	cleanupCloudData := func() {
+		fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ...\n", cloudCleanupStep)
+		if t.KeepCloudData {
+			fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ... skipped (--keep-cloud-data)\n", cloudCleanupStep)
+			return
+		}
+
+		cleanupSucceeded := true
+		cleanupPod, err := transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
+		if err != nil {
+			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
+			cleanupSucceeded = false
+		} else if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log); err != nil {
+			log.Printf("WARN: cloud storage cleanup failed: %v", err)
+			cleanupSucceeded = false
+		}
+
+		if cleanupSucceeded {
+			fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ... ok\n", cloudCleanupStep)
+		} else {
+			fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ... failed (non-fatal)\n", cloudCleanupStep)
+		}
+	}
 
 	// Upload
 	fmt.Fprintf(os.Stderr, "%s Uploading data to cloud storage ...\n", uploadStep)
@@ -216,10 +239,15 @@ func (t *TransferPVCCommand) runIndirect() error {
 	fmt.Fprintf(os.Stderr, "%s Uploading data to cloud storage ... ok\n", uploadStep)
 
 	if t.UploadOnly {
+		cleanupCloudData()
 		fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 		fmt.Fprintf(os.Stderr, "PVC data upload: succeeded\n")
 		fmt.Fprintf(os.Stderr, "Transfer ID:       %s/%s\n", srcPVC.Namespace, srcPVC.Name)
-		fmt.Fprintf(os.Stderr, "Cloud data path:   %s/%s/%s\n", t.CloudStorage, srcPVC.Namespace, srcPVC.Name)
+		if t.KeepCloudData {
+			fmt.Fprintf(os.Stderr, "Cloud data path:   %s/%s/%s\n", t.CloudStorage, srcPVC.Namespace, srcPVC.Name)
+		} else {
+			fmt.Fprintln(os.Stderr, "Cloud data:        cleaned up (use --keep-cloud-data for a later download)")
+		}
 		return nil
 	}
 
@@ -235,24 +263,7 @@ func (t *TransferPVCCommand) runIndirect() error {
 	}
 	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ... ok\n")
 
-	// Cleanup cloud data
-	fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ...\n")
-	if t.KeepCloudData {
-		fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
-	} else {
-		cleanupPod, err := transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
-		if err != nil {
-			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
-			fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
-		} else {
-			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log); err != nil {
-				log.Printf("WARN: cloud storage cleanup failed: %v", err)
-				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
-			} else {
-				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... ok\n")
-			}
-		}
-	}
+	cleanupCloudData()
 
 	fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 	fmt.Fprintf(os.Stderr, "PVC data copy: succeeded (indirect via cloud storage)\n")

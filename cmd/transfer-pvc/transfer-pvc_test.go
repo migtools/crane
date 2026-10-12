@@ -1759,6 +1759,7 @@ func TestValidateUploadOnly(t *testing.T) {
 			},
 			CloudStorage:       "remote:bucket",
 			RcloneConfigSecret: "rclone-config",
+			KeepCloudData:      true,
 		}
 	}
 
@@ -1774,6 +1775,13 @@ func TestValidateUploadOnly(t *testing.T) {
 				f.CloudStorage = ""
 			},
 			wantErr: "--upload-only requires --cloud-storage",
+		},
+		{
+			name: "requires cloud data retention",
+			mutate: func(f *Flags) {
+				f.KeepCloudData = false
+			},
+			wantErr: "--upload-only requires --keep-cloud-data",
 		},
 		{
 			name: "requires source namespace",
