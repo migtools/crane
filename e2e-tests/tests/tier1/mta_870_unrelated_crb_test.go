@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level export filtering", func() {
 	It("[MTA-870] Should not export CRB with subject from another namespace", Label("cluster-admin"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-870-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,

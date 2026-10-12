@@ -14,7 +14,7 @@ import (
 var _ = Describe("Empty PVC migration", func() {
 	It("[MTA-804] Migrate an empty PVC associated with an application", Label("tier0", "pvc-transfer"), func() {
 		appName := "app-with-empty-pvc"
-		namespace := appName
+		namespace := "mta-804-empty-pvc"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,

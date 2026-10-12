@@ -13,7 +13,7 @@ import (
 
 var _ = Describe("CRD group filtering during export", func() {
 	appName := "simple-nginx-nopv"
-	namespace := "simple-nginx-nopv"
+	namespace := "mta-869-nginx"
 	serviceName := "my-" + appName
 	It("[MTA-869A] Should skip CRD when --crd-skip-group matches", Label("tier0"), func() {
 		scenario := NewMigrationScenario(

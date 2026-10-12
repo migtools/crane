@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level RBAC export", func() {
 	It("[MTA-856] Should export ClusterRole and ClusterRoleBinding for linked ServiceAccount", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-856-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
