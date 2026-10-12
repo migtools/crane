@@ -31,9 +31,9 @@ import (
 func (t *TransferPVCCommand) runIndirect() error {
 	log := t.log
 	crlog.InitControllerRuntimeLogger("transfer-pvc")
-	readSourceStep, uploadStep, cleanupStep := "[1/6]", "[3/6]", "[6/6]"
+	readSourceStep, uploadStep, cloudCleanupStep, cleanupStep := "[1/6]", "[3/6]", "[5/6]", "[6/6]"
 	if t.UploadOnly {
-		readSourceStep, uploadStep, cleanupStep = "[1/3]", "[2/3]", "[3/3]"
+		readSourceStep, uploadStep, cloudCleanupStep, cleanupStep = "[1/4]", "[2/4]", "[3/4]", "[4/4]"
 	}
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
@@ -215,10 +215,15 @@ func (t *TransferPVCCommand) runIndirect() error {
 	fmt.Fprintf(os.Stderr, "%s Uploading data to cloud storage ... ok\n", uploadStep)
 
 	if t.UploadOnly {
+		cleanupCloudData()
 		fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 		fmt.Fprintf(os.Stderr, "PVC data upload: succeeded\n")
 		fmt.Fprintf(os.Stderr, "Transfer ID:       %s/%s\n", srcPVC.Namespace, srcPVC.Name)
-		fmt.Fprintf(os.Stderr, "Cloud data path:   %s/%s/%s\n", t.CloudStorage, srcPVC.Namespace, srcPVC.Name)
+		if t.KeepCloudData {
+			fmt.Fprintf(os.Stderr, "Cloud data path:   %s/%s/%s\n", t.CloudStorage, srcPVC.Namespace, srcPVC.Name)
+		} else {
+			fmt.Fprintln(os.Stderr, "Cloud data:        cleaned up (use --keep-cloud-data for a later download)")
+		}
 		return nil
 	}
 
