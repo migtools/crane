@@ -53,6 +53,11 @@ func TestStripKubectlWarnings(t *testing.T) {
 			input: "Error: something went wrong",
 			want:  "Error: something went wrong",
 		},
+		{
+			name:  "does not strip E followed by digits without timestamp",
+			input: "E2024-report.txt",
+			want:  "E2024-report.txt",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

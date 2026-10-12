@@ -31,4 +31,4 @@ subjects:
   name: deployer
   namespace: mta-817-nginx
 userNames:
-- system:serviceaccount:simple-nginx-nopv:deployer
+- system:serviceaccount:mta-817-nginx:deployer

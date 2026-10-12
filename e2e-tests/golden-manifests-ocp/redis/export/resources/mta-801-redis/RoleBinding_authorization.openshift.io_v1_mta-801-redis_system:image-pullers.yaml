@@ -1,6 +1,6 @@
 apiVersion: authorization.openshift.io/v1
 groupNames:
-- system:serviceaccounts:redis
+- system:serviceaccounts:mta-801-redis
 kind: RoleBinding
 metadata:
   annotations:
@@ -28,5 +28,5 @@ roleRef:
   name: system:image-puller
 subjects:
 - kind: SystemGroup
-  name: system:serviceaccounts:redis
+  name: system:serviceaccounts:mta-801-redis
 userNames: null

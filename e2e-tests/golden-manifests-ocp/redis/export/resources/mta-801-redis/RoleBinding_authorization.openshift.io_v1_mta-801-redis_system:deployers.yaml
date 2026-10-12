@@ -31,4 +31,4 @@ subjects:
   name: deployer
   namespace: mta-801-redis
 userNames:
-- system:serviceaccount:redis:deployer
+- system:serviceaccount:mta-801-redis:deployer

@@ -30,4 +30,4 @@ subjects:
   name: builder
   namespace: mta-817-nginx
 userNames:
-- system:serviceaccount:simple-nginx-nopv:builder
+- system:serviceaccount:mta-817-nginx:builder

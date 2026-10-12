@@ -118,9 +118,10 @@ func StripKubectlWarnings(out string) string {
 
 // isKlogLine returns true for klog-style diagnostic lines such as
 // "E1012 08:43:54.084796 65479 websocket.go:296] Unknown stream id 1".
-// These start with a single letter (I/W/E/F) followed by a four-digit date.
+// These start with a single letter (I/W/E/F) followed by a four-digit date
+// and a space-separated HH:MM:SS timestamp.
 func isKlogLine(line string) bool {
-	if len(line) < 6 {
+	if len(line) < 14 {
 		return false
 	}
 	switch line[0] {
@@ -131,7 +132,16 @@ func isKlogLine(line string) bool {
 	return line[1] >= '0' && line[1] <= '9' &&
 		line[2] >= '0' && line[2] <= '9' &&
 		line[3] >= '0' && line[3] <= '9' &&
-		line[4] >= '0' && line[4] <= '9'
+		line[4] >= '0' && line[4] <= '9' &&
+		line[5] == ' ' &&
+		line[6] >= '0' && line[6] <= '9' &&
+		line[7] >= '0' && line[7] <= '9' &&
+		line[8] == ':' &&
+		line[9] >= '0' && line[9] <= '9' &&
+		line[10] >= '0' && line[10] <= '9' &&
+		line[11] == ':' &&
+		line[12] >= '0' && line[12] <= '9' &&
+		line[13] >= '0' && line[13] <= '9'
 }
 
 // CreateNamespace creates a namespace and treats AlreadyExists as success.

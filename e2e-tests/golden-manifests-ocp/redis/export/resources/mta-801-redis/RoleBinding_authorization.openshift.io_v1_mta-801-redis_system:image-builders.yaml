@@ -30,4 +30,4 @@ subjects:
   name: builder
   namespace: mta-801-redis
 userNames:
-- system:serviceaccount:redis:builder
+- system:serviceaccount:mta-801-redis:builder

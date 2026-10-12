@@ -1,6 +1,6 @@
 apiVersion: authorization.openshift.io/v1
 groupNames:
-- system:serviceaccounts:simple-nginx-nopv
+- system:serviceaccounts:mta-817-nginx
 kind: RoleBinding
 metadata:
   annotations:
@@ -28,5 +28,5 @@ roleRef:
   name: system:image-puller
 subjects:
 - kind: SystemGroup
-  name: system:serviceaccounts:simple-nginx-nopv
+  name: system:serviceaccounts:mta-817-nginx
 userNames: null
