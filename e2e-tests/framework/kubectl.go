@@ -93,9 +93,10 @@ func normalizeKubectlArgs(args ...string) []string {
 	return args
 }
 
-// StripKubectlWarnings removes warning lines from kubectl output.
-// This is useful because some kubectl warnings are written to stderr,
-// and our runner returns combined stdout/stderr output.
+// StripKubectlWarnings removes warning and diagnostic lines from kubectl output.
+// This covers "Warning: ..." lines from kubectl itself and klog-style messages
+// (e.g. "E1012 08:43:54.084796 65479 websocket.go:296] ...") that leak into
+// combined stdout/stderr output from kubectl exec and similar commands.
 func StripKubectlWarnings(out string) string {
 	lines := strings.Split(out, "\n")
 	filtered := make([]string, 0, len(lines))
@@ -107,9 +108,30 @@ func StripKubectlWarnings(out string) string {
 		if strings.HasPrefix(line, "Warning: ") {
 			continue
 		}
+		if isKlogLine(line) {
+			continue
+		}
 		filtered = append(filtered, line)
 	}
 	return strings.Join(filtered, "\n")
+}
+
+// isKlogLine returns true for klog-style diagnostic lines such as
+// "E1012 08:43:54.084796 65479 websocket.go:296] Unknown stream id 1".
+// These start with a single letter (I/W/E/F) followed by a four-digit date.
+func isKlogLine(line string) bool {
+	if len(line) < 6 {
+		return false
+	}
+	switch line[0] {
+	case 'I', 'W', 'E', 'F':
+	default:
+		return false
+	}
+	return line[1] >= '0' && line[1] <= '9' &&
+		line[2] >= '0' && line[2] <= '9' &&
+		line[3] >= '0' && line[3] <= '9' &&
+		line[4] >= '0' && line[4] <= '9'
 }
 
 // CreateNamespace creates a namespace and treats AlreadyExists as success.

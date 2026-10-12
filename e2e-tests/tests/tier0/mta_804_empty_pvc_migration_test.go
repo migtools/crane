@@ -86,7 +86,7 @@ var _ = Describe("Empty PVC migration", func() {
 		podName := srcApp.Name
 		output, err := kubectlSrcNonAdmin.Run("exec", podName, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(output).To(BeEmpty(), "expected PVC to be empty on source cluster, but found files: %s", output)
+		Expect(StripKubectlWarnings(output)).To(BeEmpty(), "expected PVC to be empty on source cluster, but found files: %s", output)
 		log.Printf("Verified PVC is empty on source cluster (namespace: %s)\n", srcApp.Namespace)
 
 		By("Run crane export/transform/apply pipeline")
