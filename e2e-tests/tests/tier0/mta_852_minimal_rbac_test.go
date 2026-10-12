@@ -16,8 +16,8 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		appName := "simple-nginx-nopv"
 		namespace := "mta-852-nginx"
 		serviceName := "my-" + appName
-		clusterRoleBindingName := "crane-e2e-pod-reader-binding"
-		clusterRoleName := "crane-e2e-pod-reader"
+		clusterRoleBindingName := "mta-852-pod-reader-binding"
+		clusterRoleName := "mta-852-pod-reader"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,

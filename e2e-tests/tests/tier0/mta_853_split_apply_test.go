@@ -24,8 +24,8 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		clusterRoleBindingName := "crane-e2e-pod-reader-binding"
-		clusterRoleName := "crane-e2e-pod-reader"
+		clusterRoleBindingName := "mta-853-pod-reader-binding"
+		clusterRoleName := "mta-853-pod-reader"
 		srcAppNonAdmin := scenario.SrcAppNonAdmin
 		tgtAppNonAdmin := scenario.TgtAppNonAdmin
 
