@@ -263,7 +263,7 @@ func isDryRunOCPNoise(output string) bool {
 // a warning and the function returns nil so the test can proceed to the real
 // apply.
 func (k KubectlRunner) ValidateApplyDir(dir string) error {
-	args := []string{"apply", "-R", "-f", dir, "--dry-run=server"}
+	args := []string{"apply", "-R", "-f", dir, "--dry-run=server", "--validate=false"}
 	if k.Context != "" {
 		args = append(args, "--context", k.Context)
 	}

@@ -126,6 +126,13 @@ func (c CraneRunner) Export(opts ExportOptions) error {
 
 // Transform runs crane transform from export directory to transform directory.
 func (c CraneRunner) Transform(opts TransformOptions) error {
+	_, err := c.TransformWithOutput(opts)
+	return err
+}
+
+// TransformWithOutput runs crane transform and returns its combined stdout and stderr.
+// This permits E2E tests to assert CLI output (e.g. absence of debug lines on console).
+func (c CraneRunner) TransformWithOutput(opts TransformOptions) (string, error) {
 	args := []string{"transform"}
 
 	if opts.ExportDir != "" {
@@ -166,9 +173,9 @@ func (c CraneRunner) Transform(opts TransformOptions) error {
 	out, err := cmd.CombinedOutput()
 	logVerboseOutput("crane transform", out)
 	if err != nil {
-		return fmt.Errorf("crane transform failed: %v, output: %s", err, string(out))
+		return string(out), fmt.Errorf("crane transform failed: %v, output: %s", err, string(out))
 	}
-	return nil
+	return string(out), nil
 }
 
 // Apply runs crane apply to render manifests into the output directory.

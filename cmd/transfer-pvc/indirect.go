@@ -31,9 +31,9 @@ import (
 func (t *TransferPVCCommand) runIndirect() error {
 	log := t.log
 	crlog.InitControllerRuntimeLogger("transfer-pvc")
-	readSourceStep, uploadStep, cloudCleanupStep, cleanupStep := "[1/6]", "[3/6]", "[5/6]", "[6/6]"
+	readSourceStep, uploadStep, cleanupStep := "[1/6]", "[3/6]", "[6/6]"
 	if t.UploadOnly {
-		readSourceStep, uploadStep, cloudCleanupStep, cleanupStep = "[1/4]", "[2/4]", "[3/4]", "[4/4]"
+		readSourceStep, uploadStep, cleanupStep = "[1/3]", "[2/3]", "[3/3]"
 	}
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
@@ -202,30 +202,6 @@ func (t *TransferPVCCommand) runIndirect() error {
 		}
 		fmt.Fprintf(os.Stderr, "%s Cleaning up transfer pods ... ok\n", cleanupStep)
 	}()
-	cleanupCloudData := func() {
-		fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ...\n", cloudCleanupStep)
-		if t.KeepCloudData {
-			fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ... skipped (--keep-cloud-data)\n", cloudCleanupStep)
-			return
-		}
-
-		cleanupSucceeded := true
-		cleanupPod, err := transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
-		if err != nil {
-			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
-			cleanupSucceeded = false
-		} else if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log); err != nil {
-			log.Printf("WARN: cloud storage cleanup failed: %v", err)
-			cleanupSucceeded = false
-		}
-
-		if cleanupSucceeded {
-			fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ... ok\n", cloudCleanupStep)
-		} else {
-			fmt.Fprintf(os.Stderr, "%s Cleaning up cloud storage ... failed (non-fatal)\n", cloudCleanupStep)
-		}
-	}
-
 	// Upload
 	fmt.Fprintf(os.Stderr, "%s Uploading data to cloud storage ...\n", uploadStep)
 	uploadPod, err := transfer.Upload(context.TODO(), srcPVC)
@@ -233,21 +209,16 @@ func (t *TransferPVCCommand) runIndirect() error {
 		log.Debugf("Upload failed: %v", err)
 		return fmt.Errorf("upload failed: %w", err)
 	}
-	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone", log); err != nil {
+	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone", log, nil); err != nil {
 		return fmt.Errorf("upload pod failed: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "%s Uploading data to cloud storage ... ok\n", uploadStep)
 
 	if t.UploadOnly {
-		cleanupCloudData()
 		fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 		fmt.Fprintf(os.Stderr, "PVC data upload: succeeded\n")
 		fmt.Fprintf(os.Stderr, "Transfer ID:       %s/%s\n", srcPVC.Namespace, srcPVC.Name)
-		if t.KeepCloudData {
-			fmt.Fprintf(os.Stderr, "Cloud data path:   %s/%s/%s\n", t.CloudStorage, srcPVC.Namespace, srcPVC.Name)
-		} else {
-			fmt.Fprintln(os.Stderr, "Cloud data:        cleaned up (use --keep-cloud-data for a later download)")
-		}
+		fmt.Fprintf(os.Stderr, "Cloud data path:   %s/%s/%s\n", t.CloudStorage, srcPVC.Namespace, srcPVC.Name)
 		return nil
 	}
 
@@ -258,18 +229,57 @@ func (t *TransferPVCCommand) runIndirect() error {
 		log.Debugf("Download failed: %v", err)
 		return fmt.Errorf("download failed: %w", err)
 	}
-	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log); err != nil {
+	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log, destPVC); err != nil {
 		return fmt.Errorf("download pod failed: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ... ok\n")
 
-	cleanupCloudData()
+	// Cleanup cloud data. Failures here are non-fatal (the data transfer has
+	// already succeeded), so this never aborts the transfer.
+	t.cleanupCloudStorage(os.Stderr,
+		func() (*corev1.Pod, error) {
+			return transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
+		},
+		func(pod *corev1.Pod) error {
+			return followPodLogsUntilComplete(srcCfg, srcClient, pod.Name, pod.Namespace, "rclone", log, nil)
+		},
+	)
 
 	fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 	fmt.Fprintf(os.Stderr, "PVC data copy: succeeded (indirect via cloud storage)\n")
 	fmt.Fprintf(os.Stderr, "Done.\n")
 
 	return nil
+}
+
+// cleanupCloudStorage runs the [5/6] cleanup step (skipped when --keep-cloud-data
+// is set), reporting progress to out. The transfer has already succeeded, so a
+// cleanup failure is logged as "failed (non-fatal)" and never returned as an error.
+//
+// cleanup and followLog are passed as functions so the failure paths can be
+// unit-tested without a cluster.
+func (t *TransferPVCCommand) cleanupCloudStorage(out io.Writer, cleanup func() (*corev1.Pod, error), followLog func(pod *corev1.Pod) error) {
+	// Progress writes to out are best-effort; a failed status write must not
+	// affect the transfer outcome, so the error is intentionally ignored.
+	status := func(msg string) { _, _ = io.WriteString(out, msg) }
+
+	status("[5/6] Cleaning up cloud storage ...\n")
+	if t.KeepCloudData {
+		status("[5/6] Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
+		return
+	}
+	cleanupPod, err := cleanup()
+	if err != nil {
+		t.log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
+		status("[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
+		return
+	}
+	if err := followLog(cleanupPod); err != nil {
+		t.log.Printf("WARN: cloud storage cleanup failed: %v", err)
+		status("[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
+		return
+	}
+	status("[5/6] Cleaning up cloud storage ... ok\n")
 }
 
 // hasRcloneSection reports whether configData contains an INI section with the
@@ -301,7 +311,7 @@ func hasRcloneSection(configData []byte, name string) bool {
 	return false
 }
 
-func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger) error {
+func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger, destinationPVC *corev1.PersistentVolumeClaim) error {
 	clientset, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		log.Debugf("Failed to create clientset: %v", err)
@@ -320,9 +330,17 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		case corev1.PodRunning, corev1.PodSucceeded, corev1.PodFailed:
 			return true, nil
 		default:
+			if destinationPVC != nil {
+				if provisioningErr := destinationPVCProvisioningError(ctx, c, destinationPVC, log); provisioningErr != nil {
+					return false, provisioningErr
+				}
+			}
 			return false, nil
 		}
 	}); err != nil {
+		if err != context.DeadlineExceeded {
+			return fmt.Errorf("waiting for pod %s/%s to start: %w", namespace, podName, err)
+		}
 		log.Debugf("Timed out waiting for pod %s/%s to start: %v", namespace, podName, err)
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
