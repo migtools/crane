@@ -2,6 +2,7 @@ package transfer_pvc
 
 import (
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
@@ -283,6 +284,63 @@ func TestValidateRcloneConfigSecret(t *testing.T) {
 	}
 }
 
+func TestExistingDownloadPVC(t *testing.T) {
+	basePVC := func() *corev1.PersistentVolumeClaim {
+		return &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: "target-data", Namespace: "target-ns"},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		objects []runtime.Object
+		wantErr string
+	}{
+		{
+			name:    "existing unused PVC is accepted",
+			objects: []runtime.Object{basePVC()},
+		},
+		{
+			name:    "missing PVC tells caller to apply manifest",
+			wantErr: "must exist before --download-only; apply the rendered PVC manifest",
+		},
+		{
+			name: "active pod using target PVC is rejected",
+			objects: []runtime.Object{
+				basePVC(),
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "target-ns"},
+					Spec: corev1.PodSpec{Volumes: []corev1.Volume{{
+						Name: "data",
+						VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "target-data",
+						}},
+					}}},
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
+				},
+			},
+			wantErr: `is in use by pod "app"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(tt.objects...).Build()
+			cmd := &TransferPVCCommand{Flags: Flags{PVC: PvcFlags{
+				Name:      mappedNameVar{destination: "target-data"},
+				Namespace: mappedNameVar{destination: "target-ns"},
+			}}}
+			_, err := cmd.existingDownloadPVC(context.Background(), c)
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("existingDownloadPVC() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("existingDownloadPVC() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // rcloneReveal decodes an rclone-obscured value for testing round-trips.
 func rcloneReveal(obscured string) (string, error) {
 	key := []byte{
@@ -546,7 +604,7 @@ func TestCleanupCloudStorage(t *testing.T) {
 				Flags: Flags{KeepCloudData: tt.keepCloudData},
 			}
 			var out bytes.Buffer
-			cmd.cleanupCloudStorage(&out,
+			cmd.cleanupCloudStorage(&out, "[5/6]",
 				func() (*corev1.Pod, error) {
 					cleanupCalled = true
 					if tt.cleanupErr != nil {
