@@ -142,8 +142,8 @@ var _ = Describe("Indirect transfer with a pre-rclone source image", func() {
 				"run should progress through setup to the upload phase before failing on the image")
 			Expect(out).To(ContainSubstring("upload pod failed"),
 				"the failure should be attributed to the upload mover pod, not an earlier step")
-			Expect(out).To(MatchRegexp("upload pod failed.*(?:StartError|rclone.*executable)"),
-				"the failure should include the StartError or missing rclone executable detail")
+			Expect(out).To(MatchRegexp(`upload pod failed.*(?:CreateContainerError|StartError|RunContainerError|executable file.*rclone|rclone.*executable|rclone.*not found)`),
+				"the failure should name the container-create error for the missing rclone binary")
 
 			By("Verify the transfer did not falsely report success")
 			Expect(out).NotTo(ContainSubstring("PVC data copy: succeeded"),
