@@ -134,7 +134,7 @@ var _ = Describe("Empty PVC migration", func() {
 		tgtPodName := tgtApp.Name
 		tgtOutput, err := kubectlTgtNonAdmin.Run("exec", tgtPodName, "-n", tgtApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(tgtOutput).To(BeEmpty(), "expected PVC to be empty on target cluster after migration, but found files: %s", tgtOutput)
+		Expect(StripKubectlWarnings(tgtOutput)).To(BeEmpty(), "expected PVC to be empty on target cluster after migration, but found files: %s", tgtOutput)
 		log.Printf("Verified PVC is empty on target cluster after migration (namespace: %s)\n", tgtApp.Namespace)
 
 	})
