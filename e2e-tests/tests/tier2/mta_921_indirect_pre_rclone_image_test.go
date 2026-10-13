@@ -103,10 +103,11 @@ var _ = Describe("Indirect transfer with a pre-rclone source image", func() {
 			// missing rclone binary, rather than getting stuck ContainerCreating on
 			// a volume still held by the app pod (which would time out for the wrong
 			// reason).
-			By("Scale the source app down so it releases the RWO PVC")
-			Expect(kubectlSrc.ScaleDeploymentIfPresent(srcApp.Namespace, appName, 0)).NotTo(HaveOccurred())
+			By("Delete the source app pod so it releases the RWO PVC")
+			_, err = kubectlSrc.Run("delete", "pod", appName, "-n", srcApp.Namespace, "--ignore-not-found=true")
+			Expect(err).NotTo(HaveOccurred(), "failed to delete source app pod %q", appName)
 			Eventually(func() (string, error) {
-				out, err := kubectlSrc.Run("get", "pods", "-n", namespace, "-l", "app="+appName, "-o", "name")
+				out, err := kubectlSrc.Run("get", "pods", "-n", srcApp.Namespace, "-l", "app="+appName, "-o", "name")
 				return strings.TrimSpace(out), err
 			}, "90s", "3s").Should(BeEmpty(), "source app pod should terminate and release the PVC")
 
