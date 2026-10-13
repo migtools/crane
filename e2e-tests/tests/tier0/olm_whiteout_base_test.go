@@ -32,7 +32,7 @@ var _ = Describe("OLM whiteout", func() {
 			}
 
 			appName := "olm-baseline"
-			namespace := appName
+			namespace := "olm-whiteout-base"
 			scenario := NewMigrationScenario(
 				appName,
 				namespace,
