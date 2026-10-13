@@ -14,7 +14,7 @@ import (
 var _ = Describe("MongoDB Migration", func() {
 	It("[BUG #213][MTA-811] Should migrate a MongoDB resource with data intact as nonadmin user", Label("BUG #213", "tier0", "pvc-transfer"), func() {
 		appName := "mongodb"
-		namespace := appName
+		namespace := "mta-811-mongodb"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,

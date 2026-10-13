@@ -14,7 +14,7 @@ import (
 var _ = Describe("Namespace-admin cluster-level migration", func() {
 	It("[MTA-853] Should migrate workload with split apply: namespace-admin + cluster-admin", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-853-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
@@ -24,8 +24,8 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 			config.SourceContext,
 			config.TargetContext,
 		)
-		clusterRoleBindingName := "crane-e2e-pod-reader-binding"
-		clusterRoleName := "crane-e2e-pod-reader"
+		clusterRoleBindingName := "mta-853-pod-reader-binding"
+		clusterRoleName := "mta-853-pod-reader"
 		srcAppNonAdmin := scenario.SrcAppNonAdmin
 		tgtAppNonAdmin := scenario.TgtAppNonAdmin
 

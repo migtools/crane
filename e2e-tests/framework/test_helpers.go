@@ -186,7 +186,7 @@ func MySQLAuthorsCount(k KubectlRunner, namespace, podName string) (int, error) 
 	if err != nil {
 		return 0, err
 	}
-	count, err := strconv.Atoi(strings.TrimSpace(out))
+	count, err := strconv.Atoi(strings.TrimSpace(StripKubectlWarnings(out)))
 	if err != nil {
 		return 0, fmt.Errorf("parse authors count %q: %w", strings.TrimSpace(out), err)
 	}
@@ -222,7 +222,7 @@ func MySQLTestDataMD5(k KubectlRunner, namespace, podName string) (actual string
 	if err != nil {
 		return "", "", err
 	}
-	return strings.TrimSpace(actualOut), strings.TrimSpace(expectedOut), nil
+	return strings.TrimSpace(StripKubectlWarnings(actualOut)), strings.TrimSpace(StripKubectlWarnings(expectedOut)), nil
 }
 
 // PodVolumeMount maps a PVC to a mount path inside a VerifierPodOptions pod.
