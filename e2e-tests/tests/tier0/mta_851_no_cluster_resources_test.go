@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level export control", func() {
 	It("[MTA-851] Should produce no _cluster output for namespace-only workload", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-851-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
