@@ -318,6 +318,9 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 			return fmt.Errorf("waiting for pod %s/%s to start: %w", namespace, podName, err)
 		}
 		log.Debugf("Timed out waiting for pod %s/%s to start: %v", namespace, podName, err)
+		if reason := podTerminationReason(c, podName, namespace, containerName, log); reason != "" {
+			return fmt.Errorf("timed out waiting for pod %s/%s to start (%s): %w", namespace, podName, reason, err)
+		}
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
 
