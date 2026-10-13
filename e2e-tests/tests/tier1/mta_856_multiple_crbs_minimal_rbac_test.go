@@ -42,9 +42,9 @@ var _ = Describe("Cluster-level RBAC export", func() {
 		firstSubject := "--serviceaccount=" + namespace + ":" + firstSa.Name
 		secondSubject := "--serviceaccount=" + namespace + ":" + secondSa.Name
 
-		cr := ClusterRole{Name: "crane-cr", Verb: "get,list,watch,create,update,delete", Resource: "pods"}
-		crb1 := ClusterRoleBinding{Name: "first-crb", ClusterRoleName: cr.Name, Subject: firstSubject}
-		crb2 := ClusterRoleBinding{Name: "second-crb", ClusterRoleName: cr.Name, Subject: secondSubject}
+		cr := ClusterRole{Name: "mta-856-cr", Verb: "get,list,watch,create,update,delete", Resource: "pods"}
+		crb1 := ClusterRoleBinding{Name: "mta-856-first-crb", ClusterRoleName: cr.Name, Subject: firstSubject}
+		crb2 := ClusterRoleBinding{Name: "mta-856-second-crb", ClusterRoleName: cr.Name, Subject: secondSubject}
 		tgtNamespace := Namespace{Name: namespace}
 
 		DeferCleanup(func() {
