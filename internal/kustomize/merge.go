@@ -1,0 +1,206 @@
+package kustomize
+
+import (
+	"fmt"
+	"net/url"
+	"path/filepath"
+	"strings"
+
+	"sigs.k8s.io/yaml"
+)
+
+// protectedFields are kustomization keys that must never be overridden by a
+// user-provided fragment, since changing them would break the stage pipeline.
+var protectedFields = map[string]bool{
+	"apiVersion": true,
+	"kind":       true,
+}
+
+// listMergeFields are keys whose fragment values are appended to the generated
+// values instead of replacing them.
+var listMergeFields = map[string]bool{
+	"resources": true,
+	"patches":   true,
+}
+
+// ParseFragment parses an inline kustomize fragment (YAML or JSON, since JSON is
+// a subset of YAML) into a generic map. It rejects empty input and any fragment
+// whose root is not a mapping (e.g. a list or a scalar).
+func ParseFragment(raw string) (map[string]interface{}, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, fmt.Errorf("kustomize fragment is empty")
+	}
+	var probe interface{}
+	if err := yaml.Unmarshal([]byte(raw), &probe); err != nil {
+		return nil, fmt.Errorf("invalid kustomize fragment: %w", err)
+	}
+	out, ok := probe.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("kustomize fragment must be a mapping, got %T", probe)
+	}
+	return out, nil
+}
+
+// MergeFragment merges a user-provided kustomize fragment into the generated
+// kustomization.yaml bytes and returns the merged YAML.
+//
+// Merge rules:
+//   - "resources" and "patches": fragment entries are appended to the generated
+//     entries. Resources are de-duplicated by value.
+//   - "apiVersion" and "kind": kept from the generated base, fragment values are
+//     ignored.
+//   - any other key: the fragment value replaces the generated value.
+//
+// An empty fragment returns the base unchanged.
+func MergeFragment(base []byte, fragment map[string]interface{}) ([]byte, error) {
+	if len(fragment) == 0 {
+		return base, nil
+	}
+
+	merged := map[string]interface{}{}
+	if err := yaml.Unmarshal(base, &merged); err != nil {
+		return nil, fmt.Errorf("failed to parse generated kustomization.yaml: %w", err)
+	}
+
+	for key, val := range fragment {
+		if protectedFields[key] {
+			continue
+		}
+		if listMergeFields[key] {
+			mergedList, err := appendList(key, merged[key], val)
+			if err != nil {
+				return nil, err
+			}
+			merged[key] = mergedList
+			continue
+		}
+		merged[key] = val
+	}
+
+	out, err := yaml.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal merged kustomization.yaml: %w", err)
+	}
+	return out, nil
+}
+
+// appendList appends the fragment list to the base list. For "resources" the
+// result is de-duplicated by string value, preserving base-then-fragment order.
+func appendList(key string, base, fragment interface{}) (interface{}, error) {
+	baseList, err := toList(key, base, true)
+	if err != nil {
+		return nil, err
+	}
+	fragList, err := toList(key, fragment, false)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]interface{}, 0, len(baseList)+len(fragList))
+	result = append(result, baseList...)
+
+	if key == "resources" {
+		seen := make(map[string]bool, len(baseList))
+		for _, item := range baseList {
+			if s, ok := item.(string); ok {
+				seen[s] = true
+			}
+		}
+		for _, item := range fragList {
+			if s, ok := item.(string); ok {
+				if seen[s] {
+					continue
+				}
+				seen[s] = true
+			}
+			result = append(result, item)
+		}
+		return result, nil
+	}
+
+	result = append(result, fragList...)
+	return result, nil
+}
+
+// toList coerces a value into a list and rejects non-list values with a
+// descriptive error. A missing generated base field may be treated as empty.
+func toList(key string, v interface{}, allowNil bool) ([]interface{}, error) {
+	if v == nil {
+		if allowNil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("kustomize fragment field %q must be a list, got %T", key, v)
+	}
+	list, ok := v.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("kustomize fragment field %q must be a list, got %T", key, v)
+	}
+	return list, nil
+}
+
+// ValidateFragmentPaths rejects local references inside the generated stage
+// because WriteStage removes that directory before regenerating its contents.
+func ValidateFragmentPaths(stageDir string, fragment map[string]interface{}) error {
+	stageDir, err := filepath.Abs(stageDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve stage directory %q: %w", stageDir, err)
+	}
+
+	if resources, ok := fragment["resources"].([]interface{}); ok {
+		for i, item := range resources {
+			resource, ok := item.(string)
+			if !ok || isRemoteReference(resource) {
+				continue
+			}
+			if err := validatePathOutsideStage(stageDir, resource); err != nil {
+				return fmt.Errorf("kustomize fragment field %q item %d: %w", "resources", i, err)
+			}
+		}
+	}
+
+	if patches, ok := fragment["patches"].([]interface{}); ok {
+		for i, item := range patches {
+			patch, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			path, ok := patch["path"].(string)
+			if !ok || isRemoteReference(path) {
+				continue
+			}
+			if err := validatePathOutsideStage(stageDir, path); err != nil {
+				return fmt.Errorf("kustomize fragment field %q item %d: %w", "patches", i, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func validatePathOutsideStage(stageDir, reference string) error {
+	resolved := reference
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(stageDir, resolved)
+	}
+	resolved = filepath.Clean(resolved)
+	relative, err := filepath.Rel(stageDir, resolved)
+	if err != nil {
+		return fmt.Errorf("failed to resolve local path %q: %w", reference, err)
+	}
+	if relative == "." || (relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))) {
+		return fmt.Errorf("local path %q resolves inside generated stage directory %q", reference, stageDir)
+	}
+	return nil
+}
+
+func isRemoteReference(reference string) bool {
+	if strings.HasPrefix(reference, "git::") {
+		return true
+	}
+	parsed, err := url.Parse(reference)
+	if err == nil && parsed.Scheme != "" {
+		return true
+	}
+	at := strings.Index(reference, "@")
+	colon := strings.Index(reference, ":")
+	return at > 0 && colon > at
+}
