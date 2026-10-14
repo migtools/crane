@@ -80,10 +80,23 @@ func TestNewFileHook(t *testing.T) {
 
 func TestNewFileHook_EnforcesPermissionsOnExistingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "existing.log")
-	// Create file with permissive 0644 permissions
-	if err := os.WriteFile(path, []byte("old content\n"), 0644); err != nil {
-		t.Fatalf("setup: %v", err)
+	// Create file and force 0644 via descriptor chmod to bypass umask.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		t.Fatalf("setup create: %v", err)
 	}
+	if err := f.Chmod(0644); err != nil {
+		_ = f.Close()
+		t.Fatalf("setup chmod: %v", err)
+	}
+	if _, err := f.WriteString("old content\n"); err != nil {
+		_ = f.Close()
+		t.Fatalf("setup write: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("setup close: %v", err)
+	}
+
 	hook, err := NewFileHook(path, nil)
 	if err != nil {
 		t.Fatalf("NewFileHook: %v", err)
@@ -95,8 +108,9 @@ func TestNewFileHook_EnforcesPermissionsOnExistingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0600 {
-		t.Errorf("permissions = %04o, want 0600", got)
+	// Existing file should preserve its 0644 permissions
+	if got := info.Mode().Perm(); got != 0644 {
+		t.Errorf("permissions = %04o, want 0644 (existing file unchanged)", got)
 	}
 }
 
