@@ -14,7 +14,7 @@ import (
 var _ = Describe("Stateless migration", func() {
 	It("[MTA-817] nginx app quiesce pod and apply to target cluster", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-817-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,

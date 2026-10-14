@@ -130,8 +130,9 @@ func PrepareDestinationStorageClass(contextName, sourceName, fallbackCloneName s
 		return "", nil, fmt.Errorf("failed listing StorageClasses (context=%q): %w", contextName, err)
 	}
 	for i := range list.Items {
-		if list.Items[i].Name != sourceName {
-			return list.Items[i].Name, func() error { return nil }, nil
+		name := list.Items[i].Name
+		if name != sourceName && !strings.HasPrefix(name, "crane-dest-") {
+			return name, func() error { return nil }, nil
 		}
 	}
 

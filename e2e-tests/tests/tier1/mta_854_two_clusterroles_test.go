@@ -12,7 +12,7 @@ import (
 var _ = Describe("Cluster-level RBAC export", func() {
 	It("[MTA-854] Should export two ClusterRoles and two ClusterRoleBindings for one Deployment", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-854-nginx"
 		serviceName := "my-" + appName
 		readClusterRole := "crane-e2e-pod-reader"
 		writeClusterRole := "crane-e2e-pod-writer"

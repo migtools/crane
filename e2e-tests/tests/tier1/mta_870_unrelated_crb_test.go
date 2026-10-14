@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level export filtering", func() {
 	It("[MTA-870] Should not export CRB with subject from another namespace", Label("cluster-admin"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-870-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
@@ -37,16 +37,16 @@ var _ = Describe("Cluster-level export filtering", func() {
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir,
 			OutputDir: paths.OutputDir}
 
-		cr := ClusterRole{Name: "crane-cr", Verb: "get,list,watch", Resource: "pods", Label: "app=" + appName}
+		cr := ClusterRole{Name: "mta-870-cr", Verb: "get,list,watch", Resource: "pods", Label: "app=" + appName}
 		unrelatedNamespace := Namespace{Name: "unrelated-name-space"}
 
 		unrelatedSA := ServiceAccount{Name: "unrelated-nginx-sa", Namespace: unrelatedNamespace.Name}
 		unrelatedSubject := "--serviceaccount=" + unrelatedNamespace.Name + ":" + unrelatedSA.Name
-		unrelatedCRB := ClusterRoleBinding{Name: "unrelated-crb", ClusterRoleName: cr.Name, Subject: unrelatedSubject}
+		unrelatedCRB := ClusterRoleBinding{Name: "mta-870-unrelated-crb", ClusterRoleName: cr.Name, Subject: unrelatedSubject}
 
 		relatedSa := ServiceAccount{Name: "nginx-sa", Namespace: namespace}
 		testSubject := "--serviceaccount=" + namespace + ":" + relatedSa.Name
-		testCRB := ClusterRoleBinding{Name: "test-crb", ClusterRoleName: cr.Name, Subject: testSubject}
+		testCRB := ClusterRoleBinding{Name: "mta-870-test-crb", ClusterRoleName: cr.Name, Subject: testSubject}
 
 		DeferCleanup(func() {
 			if err := ResourceCleanup([]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{

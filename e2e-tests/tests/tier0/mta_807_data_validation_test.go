@@ -15,7 +15,7 @@ var _ = Describe("Data validation with indirect migration of MySQL DB", func() {
 
 	It("[BUG #213][MTA-807] Should validate data", Label("BUG #213", "tier0", "pvc-transfer"), func() {
 		appName := "mysql"
-		namespace := appName
+		namespace := "mta-807-mysql"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
