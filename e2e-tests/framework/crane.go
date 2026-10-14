@@ -56,6 +56,7 @@ type ExportOptions struct {
 	QPS              float32
 	Burst            int
 	Overwrite        bool
+	ExtraArgs        []string
 }
 
 type TransformOptions struct {
@@ -112,6 +113,9 @@ func (c CraneRunner) Export(opts ExportOptions) error {
 	}
 	if opts.Overwrite {
 		args = append(args, "--overwrite")
+	}
+	if len(opts.ExtraArgs) > 0 {
+		args = append(args, opts.ExtraArgs...)
 	}
 	logVerboseCommand(c.Bin, args)
 	cmd := exec.Command(c.Bin, args...)
