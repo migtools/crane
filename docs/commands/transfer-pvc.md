@@ -17,6 +17,8 @@ The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its
 
 `transfer-pvc` supports transfers between different clusters or within the same cluster. When performing transfers within the same cluster and namespace, the source and destination PVC names must be different.
 
+Indirect mode can also be run as a **split workflow** using `--upload-only` and `--download-only` when the source and target clusters cannot be accessed from the same Crane invocation. See [Split Indirect Transfer Workflow](#split-indirect-transfer-workflow) for details.
+
 ## Example
 
 ### Direct Transfer
@@ -39,8 +41,8 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 
 | Flag | Type | Required | Description |
 |------|------|----------|-------------|
-| `--source-context` | string | Yes | Kube context of the source cluster |
-| `--destination-context` | string | Yes | Kube context of the destination cluster |
+| `--source-context` | string | Complete and upload-only workflows | Kube context of the source cluster |
+| `--destination-context` | string | Complete and download-only workflows | Kube context of the destination cluster |
 | `--pvc-name` | string | Yes | Mapping of source/destination PVC names (see [PVC Options](#pvc-options)) |
 | `--pvc-namespace` | string | No | Mapping of source/destination PVC namespaces (see [PVC Options](#pvc-options)) |
 | `--dest-storage-class` | string | No | Storage class of destination PVC (defaults to source PVC's storage class; **required** when destination lacks a class by that name, e.g. cross-provider transfers). See [Cross-provider transfers](#cross-provider-transfers). |
@@ -53,10 +55,12 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 | `--output` | string | No | Output transfer stats in the specified file |
 | `--verify` | bool | No | Verify transferred files using checksums |
 | `--cloud-storage` | string | No | S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket) |
-| `--rclone-config-secret` | string | No | Name of a Secret containing `rclone.conf` in both transfer namespaces |
-| `--rclone-config-file` | string | No | Local path to `rclone.conf`; crane creates temporary Secrets on both clusters |
+| `--rclone-config-secret` | string | No | Name of a Secret containing `rclone.conf` in the namespaces required by the selected workflow |
+| `--rclone-config-file` | string | No | Local path to `rclone.conf`; crane creates temporary Secrets in each cluster it contacts |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
 | `--keep-cloud-data` | bool | No | Retain the uploaded object prefix after the transfer instead of cleaning it up |
+| `--upload-only` | bool | No | Upload source PVC data to cloud storage without contacting the destination cluster; requires `--source-context`, `--cloud-storage`, and `--keep-cloud-data` |
+| `--download-only` | bool | No | Download cloud storage data into an existing destination PVC without contacting the source cluster; requires `--destination-context` and `--cloud-storage` |
 | `--audit-log` | string | No | Path to the audit log file (defaults to `audit/.crane-audit.log`) |
 
 ### PVC Options
@@ -137,14 +141,94 @@ In an OpenShift cluster, `route` endpoint can be used. A subdomain option can be
 
 Indirect transfer enables PVC migration between clusters without direct network connectivity. Data is uploaded to an S3-compatible cloud storage bucket by the source cluster and then downloaded by the destination cluster.
 
+#### Complete Indirect Transfer Workflow
+
+Use the complete workflow when one Crane invocation can access both clusters. Crane reads the source PVC, creates the destination PVC, uploads the data to cloud storage, downloads it to the destination PVC, and cleans up the cloud data.
+
+```bash
+crane transfer-pvc \
+  --source-context source \
+  --destination-context destination \
+  --pvc-name source-pvc:destination-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage remote:bucket/transfer-prefix \
+  --rclone-config-file rclone.conf
+```
+
+`--keep-cloud-data` is optional in the complete workflow. It retains the uploaded object prefix after a successful transfer.
+
+#### Split Indirect Transfer Workflow
+
+Use the split workflow when the source and target clusters cannot be accessed from the same Crane invocation. The upload and download commands use the same `--cloud-storage` value and source PVC identity.
+
+**Phase 1 — Upload from the source cluster:**
+
+```bash
+crane transfer-pvc \
+  --upload-only \
+  --source-context source \
+  --pvc-name source-pvc:destination-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage remote:bucket/transfer-prefix \
+  --rclone-config-file source-rclone.conf \
+  --keep-cloud-data
+```
+
+`--destination-context` is intentionally omitted: `--upload-only` does not contact the target cluster. The destination half of the PVC mapping is not used during upload, but it keeps the two commands consistent.
+
+Crane uploads the data to:
+
+```text
+remote:bucket/transfer-prefix/source-ns/source-pvc
+```
+
+`--keep-cloud-data` is required so the uploaded data remains available for the later download.
+
+**Phase 2 — Create the destination PVC:**
+
+Apply only the rendered target PVC manifest from the normal `crane export` / `crane transform` output. The PVC must exist before download because `--download-only` cannot read the source PVC or create the destination PVC.
+
+```bash
+kubectl --context destination apply \
+  -f output/resources/destination-ns/PersistentVolumeClaim__v1_destination-ns_destination-pvc.yaml
+```
+
+The rendered manifest preserves transformed target settings such as storage class, capacity, access modes, name, and namespace. Wait for the PVC to be ready to mount, and keep workloads that use it scaled down until the restore finishes.
+
+**Phase 3 — Download to the target cluster:**
+
+```bash
+crane transfer-pvc \
+  --download-only \
+  --destination-context destination \
+  --pvc-name source-pvc:destination-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage remote:bucket/transfer-prefix \
+  --rclone-config-file target-rclone.conf
+```
+
+`--source-context` is intentionally omitted: `--download-only` does not contact the source cluster. The source PVC name and namespace locate the cloud data, while the destination PVC name and namespace identify the existing target PVC.
+
+After a successful download, cloud data is cleaned up by default. Pass `--keep-cloud-data` only if you need to retain the data for a retry. Then apply or scale up the remaining rendered workload resources.
+
+**Workflow rules:**
+
+- `--upload-only` and `--download-only` are mutually exclusive.
+- The complete workflow requires both `--source-context` and `--destination-context`.
+- `--upload-only` requires `--source-context`, `--cloud-storage`, `--keep-cloud-data`, and an rclone configuration; it does not use `--destination-context`.
+- `--download-only` requires `--destination-context`, `--cloud-storage`, an rclone configuration, and an existing destination PVC; it does not use `--source-context`.
+- Use the same `--cloud-storage` value and source PVC identity in both split commands. Avoid a trailing slash in the prefix because Crane appends `/source-namespace/source-pvc-name`.
+- The upload and download commands may use different rclone credentials if both configurations define the same remote name and can access the same effective path.
+- Automatic `--encrypt` is not supported in the split workflow because its generated crypt configuration is ephemeral. Use a stable user-managed rclone crypt remote with compatible passwords, salt, and encryption settings if encryption is required.
+
 #### Configuration
 
-When using `--cloud-storage`, provide rclone configuration using **one** of the following mutually exclusive options. In either case, the rclone remote named in `--cloud-storage` must be usable from Pods in **both** clusters and must grant each side access to the same bucket and prefix.
+When using `--cloud-storage`, provide rclone configuration using **one** of the following mutually exclusive options. For a complete indirect transfer, the rclone remote named in `--cloud-storage` must be usable from Pods in **both** clusters and must grant each side access to the same bucket and prefix. For a split workflow, the upload configuration must work from Pods in the source cluster and the download configuration must work from Pods in the destination cluster.
 
-- `--rclone-config-file` — A local file on the machine running `crane`. Crane reads it, creates temporary Secrets containing it in the source and destination PVC namespaces, validates both Secrets, and deletes those temporary Secrets when the command finishes. No manually created Secrets are needed. The identity running Crane needs permission to create, read, and delete Secrets in both namespaces.
-- `--rclone-config-secret` — The name of an existing Secret. You must create that Secret in **both clusters**: once in the source PVC namespace and once in the destination PVC namespace. The Secrets must have the same name (the one passed to the flag) and each must contain a non-empty `rclone.conf` key. Crane does not copy or create a user-managed Secret.
+- `--rclone-config-file` — A local file on the machine running `crane`. Crane reads it, creates a temporary Secret in each PVC namespace it contacts, validates that Secret, and deletes it when the command finishes. A complete transfer contacts both clusters; `--upload-only` contacts only the source cluster and `--download-only` contacts only the destination cluster. No manually created Secrets are needed.
+- `--rclone-config-secret` — The name of an existing Secret. For a complete transfer, create that Secret with the same name in both clusters: once in the source PVC namespace and once in the destination PVC namespace. For a split workflow, create it in the source PVC namespace for upload and in the destination PVC namespace for download. Each Secret must contain a non-empty `rclone.conf` key, and Crane does not copy or create a user-managed Secret.
 
-The two Secrets may use different credentials when appropriate, but both `rclone.conf` files must define the remote name used by `--cloud-storage` and their credentials must be authorized for the transfer path.
+The two configurations may use different credentials when appropriate, but both `rclone.conf` files must define the remote name used by `--cloud-storage` and their credentials must be authorized for the transfer path. If the path is wrapped by a user-managed rclone crypt remote, both configurations must use compatible passwords or passphrases, salt, and encryption settings.
 
 For example, for `--cloud-storage remote:my-bucket/transfer-path`, both configurations need a `[remote]` section. A MinIO endpoint expressed as an in-cluster DNS name is normally reachable only from that cluster; use an endpoint that is reachable from Pods on both clusters.
 
@@ -315,6 +399,8 @@ crane transfer-pvc \
   --encrypt \
   --keep-cloud-data
 ```
+
+For the split indirect workflow, see [Split Indirect Transfer Workflow](#split-indirect-transfer-workflow).
 
 ## Next Steps
 
