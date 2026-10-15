@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/dynamic"
 )
 
 // ValidateOptions holds CLI flags and runtime state for a validate run.
@@ -174,6 +176,7 @@ func (o *ValidateOptions) Run() error {
 	}
 
 	var report *internalValidate.ValidationReport
+	var targetWarnings targetObjectWarnings
 
 	if o.apiResourcesFile != "" {
 		index, err := internalValidate.ParseAPIResourcesJSON(o.apiResourcesFile, log)
@@ -206,9 +209,28 @@ func (o *ValidateOptions) Run() error {
 		} else {
 			log.Warn("No current context set in kubeconfig; ClusterContext will be empty")
 		}
+
+		restConfig, err := o.configFlags.ToRESTConfig()
+		if err != nil {
+			log.Warnf("Could not configure target-object inspection: %v", err)
+			targetWarnings.unknown = append(targetWarnings.unknown, targetObjectInspectionError{
+				reason: fmt.Sprintf("could not configure target-object inspection: %v", err),
+			})
+		} else {
+			dynamicClient, err := dynamic.NewForConfig(restConfig)
+			if err != nil {
+				log.Warnf("Could not create target-object inspection client: %v", err)
+				targetWarnings.unknown = append(targetWarnings.unknown, targetObjectInspectionError{
+					reason: fmt.Sprintf("could not create target-object inspection client: %v", err),
+				})
+			} else {
+				targetWarnings = inspectTargetObjects(context.Background(), dynamicClient, entries, report)
+			}
+		}
 	}
 
 	internalValidate.FormatTable(o.Out, report)
+	formatTargetObjectWarnings(o.Out, targetWarnings)
 
 	if _, err := os.Stat(o.validateDir); err == nil {
 		if !o.overwrite {
