@@ -99,6 +99,9 @@ var _ = Describe("File metadata fidelity across an indirect transfer", func() {
 				"non_admin_user": "true",
 				"has_scc":        isOCP,
 			}
+			tgtApp.ExtraVars = map[string]any{
+				"non_admin_user": "true",
+			}
 
 			By("Grant namespace-admin permissions to the non-admin user on source and target")
 			kubectlSrc, kubectlTgt, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
