@@ -1769,6 +1769,30 @@ func TestUploadOnlyDoesNotRequireDestinationContext(t *testing.T) {
 	}
 }
 
+func TestDownloadOnlyDoesNotRequireSourceContext(t *testing.T) {
+	const destinationContext = "destination"
+	kubeconfig := writeTempKubeconfig(t, destinationContext)
+	configFlags := genericclioptions.NewConfigFlags(false)
+	configFlags.KubeConfig = &kubeconfig
+
+	cmd := &TransferPVCCommand{
+		configFlags: configFlags,
+		Flags: Flags{
+			DestinationContext: destinationContext,
+			DownloadOnly:       true,
+		},
+	}
+	if err := cmd.Complete(nil, nil); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if cmd.sourceContext != nil || cmd.SourceContext != "" {
+		t.Fatalf("download-only unexpectedly resolved source context %q", cmd.SourceContext)
+	}
+	if cmd.destinationContext == nil {
+		t.Fatal("download-only did not resolve destination context")
+	}
+}
+
 func TestValidateUploadOnly(t *testing.T) {
 	validFlags := func() Flags {
 		return Flags{
@@ -1828,6 +1852,77 @@ func TestValidateUploadOnly(t *testing.T) {
 			cmd := &TransferPVCCommand{
 				Flags:         flags,
 				sourceContext: &clientcmdapi.Context{},
+			}
+			err := cmd.Validate()
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateDownloadOnly(t *testing.T) {
+	validFlags := func() Flags {
+		return Flags{
+			DownloadOnly: true,
+			PVC: PvcFlags{
+				Name:      mappedNameVar{source: "source-data", destination: "target-data"},
+				Namespace: mappedNameVar{source: "source-ns", destination: "target-ns"},
+			},
+			CloudStorage:       "remote:bucket/crane",
+			RcloneConfigSecret: "rclone-config",
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Flags)
+		wantErr string
+	}{
+		{name: "valid without source context"},
+		{
+			name: "requires cloud storage",
+			mutate: func(f *Flags) {
+				f.CloudStorage = ""
+			},
+			wantErr: "--download-only requires --cloud-storage",
+		},
+		{
+			name: "requires source identity for cloud path",
+			mutate: func(f *Flags) {
+				f.PVC.Namespace.source = ""
+			},
+			wantErr: "--download-only requires source PVC name and namespace",
+		},
+		{
+			name: "rejects automatic encryption",
+			mutate: func(f *Flags) {
+				f.Encrypt = true
+			},
+			wantErr: "--download-only does not support --encrypt",
+		},
+		{
+			name: "is mutually exclusive with upload only",
+			mutate: func(f *Flags) {
+				f.UploadOnly = true
+				f.KeepCloudData = true
+			},
+			wantErr: "--upload-only and --download-only cannot be used together",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := validFlags()
+			if tt.mutate != nil {
+				tt.mutate(&flags)
+			}
+			cmd := &TransferPVCCommand{
+				Flags:              flags,
+				destinationContext: &clientcmdapi.Context{},
 			}
 			err := cmd.Validate()
 			if tt.wantErr == "" && err != nil {

@@ -87,6 +87,7 @@ type Flags struct {
 	Encrypt            bool
 	KeepCloudData      bool
 	UploadOnly         bool
+	DownloadOnly       bool
 }
 
 // EndpointFlags defines command line flags specific
@@ -201,7 +202,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&c.Encrypt, "encrypt", false, "Enable client-side encryption for indirect transfer")
 	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer; required with --upload-only for a later download")
 	cmd.Flags().BoolVar(&c.UploadOnly, "upload-only", false, "Upload source PVC data to cloud storage without contacting the destination cluster")
-	cmd.MarkFlagRequired("source-context")
+	cmd.Flags().BoolVar(&c.DownloadOnly, "download-only", false, "Download cloud storage data into an existing destination PVC without contacting the source cluster")
 	cmd.MarkFlagRequired("pvc-name")
 }
 
@@ -224,7 +225,7 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 	}
 
 	for name, context := range rawConfig.Contexts {
-		if name == t.Flags.SourceContext {
+		if !t.DownloadOnly && name == t.Flags.SourceContext {
 			t.sourceContext = context
 		}
 		if !t.UploadOnly && name == t.DestinationContext {
@@ -259,14 +260,23 @@ func (t *TransferPVCCommand) Validate() error {
 	}
 	cloudStorage := t.CloudStorage
 
+	if t.UploadOnly && t.DownloadOnly {
+		return fmt.Errorf("--upload-only and --download-only cannot be used together")
+	}
 	if t.UploadOnly && cloudStorage == "" {
 		return fmt.Errorf("--upload-only requires --cloud-storage")
+	}
+	if t.DownloadOnly && cloudStorage == "" {
+		return fmt.Errorf("--download-only requires --cloud-storage")
 	}
 	if t.UploadOnly && !t.KeepCloudData {
 		return fmt.Errorf("--upload-only requires --keep-cloud-data so a later download can access the uploaded data")
 	}
 	if t.UploadOnly && t.Encrypt {
 		return fmt.Errorf("--upload-only does not support --encrypt until a download handoff is available; use a user-managed rclone crypt remote")
+	}
+	if t.DownloadOnly && t.Encrypt {
+		return fmt.Errorf("--download-only does not support --encrypt until a download handoff is available; use a user-managed rclone crypt remote")
 	}
 	if t.Encrypt && cloudStorage == "" {
 		return fmt.Errorf("--encrypt requires --cloud-storage")
@@ -282,7 +292,7 @@ func (t *TransferPVCCommand) Validate() error {
 		return fmt.Errorf("--rclone-config-file requires --cloud-storage")
 	}
 
-	if t.sourceContext == nil {
+	if !t.DownloadOnly && t.sourceContext == nil {
 		log.Debugf("Cannot evaluate source context")
 		return fmt.Errorf("cannot evaluate source context")
 	}
@@ -303,6 +313,13 @@ func (t *TransferPVCCommand) Validate() error {
 		}
 		if t.PVC.Namespace.source == "" {
 			return fmt.Errorf("source pvc namespace cannot be empty")
+		}
+	} else if t.DownloadOnly {
+		if t.PVC.Name.source == "" || t.PVC.Namespace.source == "" {
+			return fmt.Errorf("--download-only requires source PVC name and namespace to locate cloud data")
+		}
+		if t.PVC.Name.destination == "" || t.PVC.Namespace.destination == "" {
+			return fmt.Errorf("--download-only requires destination PVC name and namespace")
 		}
 	} else {
 		err := t.PVC.Validate()
