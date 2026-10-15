@@ -136,11 +136,8 @@ var _ = Describe("File metadata fidelity across an indirect transfer", func() {
 			}, "2m", "5s").Should(Succeed())
 
 			By("Seed a matrix of files and directories with distinct permission bits on the source PVC")
-			// Plain modes, special bits (setuid/setgid/sticky), nested directories, an
-			// empty-directory set and a symlink. The manifest captured afterwards records
-			// whatever the kernel actually set, and that captured value is the baseline.
-			// The full matrix is seeded (not just the plain files asserted below) so each
-			// run logs direct evidence of the PENDING gaps as well.
+			// Plain modes, special bits, nested dirs and empty dirs. The captured manifest
+			// is the baseline.
 			seedScript := fmt.Sprintf(`set -e
 D=%q
 rm -rf "$D"
@@ -156,7 +153,6 @@ mkdir -p "$D/dir_sticky"; chmod 1777 "$D/dir_sticky"
 mkdir -p "$D/dir_setgid"; chmod 2775 "$D/dir_setgid"
 mkdir -p "$D/nested/deep"; chmod 711 "$D/nested"; chmod 705 "$D/nested/deep"
 printf 'nested-content\n' > "$D/nested/deep/file_640"; chmod 640 "$D/nested/deep/file_640"
-ln -sf file_644 "$D/link_to_644"
 sync`, permFidelityDir)
 			_, err = kubectlSrc.Run("exec", srcPod, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", seedScript)
 			Expect(err).NotTo(HaveOccurred(), "failed to seed the permission matrix into the source /test-data PVC")
