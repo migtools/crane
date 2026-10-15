@@ -45,10 +45,9 @@ func padMode(m string) string {
 }
 
 // captureStatManifest lists every regular file and directory under dir inside the
-// given pod and returns a map keyed by the path relative to dir. It intentionally
-// skips symlinks (stat would follow them to the target's mode). Using find+stat on
-// the live filesystem captures the ACTUAL resulting modes, so the comparison is
-// robust even if the kernel declined to set a special bit at chmod time.
+// given pod, keyed by path relative to dir. find+stat reads the real on-disk mode
+// on both source and target, so a special bit the filesystem silently dropped at
+// chmod time isn't blamed on the transfer.
 func captureStatManifest(k KubectlRunner, namespace, pod, dir string) (map[string]statEntry, error) {
 	script := fmt.Sprintf(
 		`cd %q && find . -mindepth 1 \( -type f -o -type d \) | sort | `+
@@ -73,8 +72,8 @@ func captureStatManifest(k KubectlRunner, namespace, pod, dir string) (map[strin
 	return manifest, nil
 }
 
-var _ = Describe("Metadata fidelity across an indirect transfer", func() {
-	It("[MTA-923] Should preserve regular-file permission bits and uniformly normalize UID when migrating a PVC via S3",
+var _ = Describe("File metadata fidelity across an indirect transfer", func() {
+	It("[MTA-923] Should preserve file permission bits and uniformly normalize UID/GID when migrating a PVC via S3",
 		Label("tier1", "pvc-transfer", "indirect"), func() {
 
 			if config.CloudStorage == "" || config.RcloneConfigFile == "" {
@@ -298,5 +297,22 @@ sync`, permFidelityDir)
 			}
 			log.Printf("UID uniformly normalized on target to uid=%s (source entries were owned by uid=%s)",
 				normUID, srcManifest[srcNames[0]].uid)
+
+			By("Verify GID is uniformly normalized across regular files")
+			// Indirect mode normalizes every downloaded file's group to one
+			// resolved GID (RunAsGroup -> FSGroup -> UID). Verify that uniformity:
+			// all regular files share one GID, no stray source group.
+			var normFileGID string
+			for _, n := range plainRegularFiles {
+				tgt, ok := tgtManifest[n]
+				Expect(ok).To(BeTrue(), "regular file %q present on source is missing on target after transfer", n)
+				if normFileGID == "" {
+					normFileGID = tgt.gid
+				}
+				Expect(tgt.gid).To(Equal(normFileGID),
+					"all regular files should share one normalized gid; %q has gid=%s, expected %s", n, tgt.gid, normFileGID)
+			}
+			log.Printf("GID uniformly normalized across %d regular files to gid=%s (source regular files were owned by gid=%s)",
+				len(plainRegularFiles), normFileGID, srcManifest[plainRegularFiles[0]].gid)
 		})
 })
