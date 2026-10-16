@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/konveyor/crane/e2e-tests/config"
@@ -42,6 +43,25 @@ func padMode(m string) string {
 		m = "0" + m
 	}
 	return m
+}
+
+// fsGroupAdjustedMode returns the mode a file is expected to carry on the target.
+// On OpenShift the PVC mounts under the namespace fsGroup (crane sets it on the
+// download pod), so the kubelet ORs the group RW mask into every entry: 0660 for
+// files, 0770 for dirs. On vanilla k8s there is no fsGroup, so the raw mode shows.
+func fsGroupAdjustedMode(srcMode string, isOCP, isDir bool) string {
+	if !isOCP {
+		return srcMode
+	}
+	m, err := strconv.ParseInt(strings.TrimSpace(srcMode), 8, 64)
+	if err != nil {
+		return srcMode
+	}
+	mask := int64(0660)
+	if isDir {
+		mask = 0770
+	}
+	return padMode(strconv.FormatInt(m|mask, 8))
 }
 
 // captureStatManifest lists every regular file and directory under dir inside the
@@ -267,18 +287,21 @@ sync`, permFidelityDir)
 				}
 			}
 
-			By("Verify regular-file permission bits are preserved across the indirect transfer")
-			// The documented, currently-honored guarantee: ordinary regular files arrive
-			// with identical mode bits.
+			By("Verify regular-file permission bits survive the indirect transfer (fsGroup-adjusted on OpenShift)")
+			// crane writes each file's original mode via rclone --metadata; on OCP the fsGroup
+			// then ORs in 0660, which is the mode the destination app actually sees. Compare
+			// against that delivered value on OCP, and the raw source mode on vanilla k8s.
+			isTgtOCP := scenario.KubectlTgt.IsOpenShift()
 			for _, n := range plainRegularFiles {
 				src, ok := srcManifest[n]
 				Expect(ok).To(BeTrue(), "test setup: expected to have seeded %q on the source", n)
 				tgt, ok := tgtManifest[n]
 				Expect(ok).To(BeTrue(), "regular file %q present on source is missing on target after transfer", n)
-				Expect(tgt.mode).To(Equal(src.mode),
-					"permission bits for regular file %q should survive the indirect transfer (source=%s target=%s)", n, src.mode, tgt.mode)
+				want := fsGroupAdjustedMode(src.mode, isTgtOCP, false)
+				Expect(tgt.mode).To(Equal(want),
+					"permission bits for regular file %q should survive the indirect transfer (source=%s expected=%s target=%s ocp=%t)", n, src.mode, want, tgt.mode, isTgtOCP)
 			}
-			log.Printf("Permission bits preserved for all %d plain regular files", len(plainRegularFiles))
+			log.Printf("Permission bits preserved for all %d plain regular files (fsGroup-adjusted on OCP=%t)", len(plainRegularFiles), isTgtOCP)
 
 			By("Verify UID is uniformly normalized to a single value across every migrated entry")
 			// Indirect transfer rewrites UID to the download pod's identity (crane-lib
