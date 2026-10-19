@@ -196,7 +196,7 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.Endpoint.IngressClass, "ingress-class", "", "IngressClass to use for the ingress endpoint")
 	cmd.Flags().BoolVar(&c.Verify, "verify", false, "Enable checksum verification")
 	cmd.Flags().StringVar(&c.ProgressOutput, "output", "", "Write data transfer stats to specified output file")
-	cmd.Flags().StringVar(&c.CloudStorage, "cloud-storage", "", "S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket)")
+	cmd.Flags().StringVar(&c.CloudStorage, "cloud-storage", "", "rclone cloud storage path for indirect transfer (e.g. remote:my-bucket)")
 	cmd.Flags().StringVar(&c.RcloneConfigSecret, "rclone-config-secret", "", "Name of the K8s Secret containing rclone.conf for indirect transfer")
 	cmd.Flags().StringVar(&c.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer (crane creates temporary Secrets)")
 	cmd.Flags().BoolVar(&c.Encrypt, "encrypt", false, "Enable client-side encryption for indirect transfer")
