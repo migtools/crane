@@ -186,7 +186,7 @@ remote:bucket/transfer-prefix/source-ns/source-pvc
 
 **Phase 2 — Create the destination PVC:**
 
-Apply only the rendered target PVC manifest from the normal `crane export` / `crane transform` output. The PVC must exist before download because `--download-only` cannot read the source PVC or create the destination PVC.
+Apply only the rendered target PVC manifest from the normal `crane export` / `crane transform`  / `crane apply` output. The PVC must exist before download because `--download-only` cannot read the source PVC or create the destination PVC.
 
 ```bash
 kubectl --context destination apply \
