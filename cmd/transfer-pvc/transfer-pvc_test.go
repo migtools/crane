@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1438,6 +1439,66 @@ func TestValidateKeepCloudDataRequiresCloudStorage(t *testing.T) {
 			}
 			if !tt.wantGuardError && hasGuardErr {
 				t.Errorf("unexpected guard error: %v", err)
+			}
+		})
+	}
+}
+
+// TestValidateRcloneConfigFile is a regression test for issue #899: a
+// non-existent (or empty) --rclone-config-file must be rejected by Validate(),
+// before Run() creates the destination PVC, so no orphaned PVC is left behind.
+func TestValidateRcloneConfigFile(t *testing.T) {
+	dir := t.TempDir()
+
+	goodFile := filepath.Join(dir, "rclone.conf")
+	if err := os.WriteFile(goodFile, []byte("[remote]\ntype = s3\n"), 0o600); err != nil {
+		t.Fatalf("writing config file: %v", err)
+	}
+	emptyFile := filepath.Join(dir, "empty.conf")
+	if err := os.WriteFile(emptyFile, []byte("   \n"), 0o600); err != nil {
+		t.Fatalf("writing empty config file: %v", err)
+	}
+	missingFile := filepath.Join(dir, "nope.conf")
+
+	newCmd := func(configFile string) TransferPVCCommand {
+		return TransferPVCCommand{
+			sourceContext:      &clientcmdapi.Context{Cluster: "cluster-a"},
+			destinationContext: &clientcmdapi.Context{Cluster: "cluster-b"},
+			Flags: Flags{
+				CloudStorage:     "remote:bucket",
+				RcloneConfigFile: configFile,
+				PVC: PvcFlags{
+					Name:      mappedNameVar{source: "data", destination: "data"},
+					Namespace: mappedNameVar{source: "ns1", destination: "ns2"},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name       string
+		configFile string
+		wantErr    string
+	}{
+		{name: "missing file is rejected", configFile: missingFile, wantErr: "failed to read rclone config file"},
+		{name: "empty file is rejected", configFile: emptyFile, wantErr: "is empty"},
+		{name: "valid file passes", configFile: goodFile, wantErr: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newCmd(tt.configFile)
+			err := cmd.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() unexpected error = %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate() expected error containing %q, got nil", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %q, want it to contain %q", err.Error(), tt.wantErr)
 			}
 		})
 	}

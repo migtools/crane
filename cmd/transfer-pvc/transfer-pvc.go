@@ -342,6 +342,12 @@ func (t *TransferPVCCommand) Validate() error {
 			log.Debugf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
 			return fmt.Errorf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
 		}
+		// Preflight the config file before Run() creates any cluster resources
+		// (issue #899: a bad path used to orphan the destination PVC).
+		if err := t.validateRcloneConfigFile(); err != nil {
+			log.Debugf("rclone config file validation failed: %v", err)
+			return err
+		}
 		return nil
 	}
 
@@ -351,6 +357,22 @@ func (t *TransferPVCCommand) Validate() error {
 		return err
 	}
 
+	return nil
+}
+
+// validateRcloneConfigFile checks that --rclone-config-file exists, is readable,
+// and is non-empty early enough.
+func (t *TransferPVCCommand) validateRcloneConfigFile() error {
+	if t.RcloneConfigFile == "" {
+		return nil
+	}
+	data, err := os.ReadFile(t.RcloneConfigFile)
+	if err != nil {
+		return fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
+	}
 	return nil
 }
 
