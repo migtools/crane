@@ -16,7 +16,6 @@ var _ = Describe("transfer-pvc --verify flag", func() {
 			const (
 				appName         = "pvc"
 				pvcName         = "data-pvc"
-				seedPodName     = "mta-887-seed"
 				originalContent = "original-data!!"
 				tamperedContent = "tampered-data!!"
 				knownMtime      = "2024-01-01 00:00:00"
@@ -70,96 +69,48 @@ var _ = Describe("transfer-pvc --verify flag", func() {
 			Expect(srcApp.Deploy()).NotTo(HaveOccurred())
 			log.Printf("Source app %s deployed successfully\n", srcApp.Name)
 
-			By("Seed source PVC with a known file at a fixed mtime using a temporary pod")
-			seedManifest := fmt.Sprintf(`apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  restartPolicy: Never
-  containers:
-  - name: seed
-    image: busybox:1.36
-    command:
-    - sh
-    - -c
-    - |
-      set -eux
-      printf '%s\n' > /data/check.txt
-      touch -d '%s' /data/check.txt
-      sleep 3600
-    volumeMounts:
-    - name: data
-      mountPath: /data
-  volumes:
-  - name: data
-    persistentVolumeClaim:
-      claimName: %s
-`, seedPodName, namespace, originalContent, knownMtime, pvcName)
-			Expect(kubectlSrc.ApplyYAMLSpec(seedManifest, namespace)).NotTo(HaveOccurred())
-			_, err = kubectlSrc.Run("wait", "--for=condition=Ready", "pod/"+seedPodName, "-n", namespace, "--timeout=120s")
+			By("Seed source PVC: write known file at fixed mtime and wait for pod completion")
+			Expect(kubectlSrc.ApplyYAMLSpec(writePodManifest("mta-887-seed", namespace, pvcName, originalContent, knownMtime), namespace)).NotTo(HaveOccurred())
+			_, err = kubectlSrc.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/mta-887-seed", "-n", namespace, "--timeout=120s")
 			Expect(err).NotTo(HaveOccurred())
-
-			By("Confirm source file content and mtime")
-			srcFileContent, err := ReadFileFromPod(kubectlSrc, namespace, seedPodName, "/data/check.txt")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(srcFileContent).To(Equal(originalContent))
-			log.Printf("Source file content: %q\n", srcFileContent)
-
-			By("Delete seed pod so the source PVC is unattached")
-			_, err = kubectlSrc.Run("delete", "pod", seedPodName, "-n", namespace, "--wait=true")
-			Expect(err).NotTo(HaveOccurred())
+			log.Printf("Seed pod completed: /data/check.txt = %q at mtime %s\n", originalContent, knownMtime)
 
 			tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 			Expect(err).NotTo(HaveOccurred())
 			baseOpts := TransferPVCOptions{
-				SourceContext:        srcApp.Context,
-				TargetContext:        tgtApp.Context,
-				PVCName:              pvcName,
-				PVCNamespaceMap:      fmt.Sprintf("%s:%s", namespace, namespace),
-				Subdomain:            fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
-				DisableCloudStorage:  true,
+				SourceContext:       srcApp.Context,
+				TargetContext:       tgtApp.Context,
+				PVCName:             pvcName,
+				PVCNamespaceMap:     fmt.Sprintf("%s:%s", namespace, namespace),
+				Subdomain:           fmt.Sprintf("%s.%s.%s.nip.io", pvcName, namespace, tgtIP),
+				DisableCloudStorage: true,
 			}
 
 			// ── Phase 1: Transfer WITH --verify (happy path) ──────────────────────────
 			By("Transfer PVC with --verify and confirm correct data arrives on target")
 			log.Printf("Running transfer-pvc with --verify for PVC %s\n", pvcName)
-			opts := baseOpts
-			opts.Verify = true
-			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
+			opts1 := baseOpts
+			opts1.Verify = true
+			Expect(runner.TransferPVC(opts1)).NotTo(HaveOccurred())
 			log.Printf("transfer-pvc (--verify) completed\n")
 
-			By("Verify target PVC contains the original content after --verify transfer")
-			const verifyPod1 = "mta-887-verify-1"
-			Expect(kubectlTgt.ApplyYAMLSpec(VerifyPodManifest(namespace, verifyPod1, pvcName), namespace)).NotTo(HaveOccurred())
-			_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifyPod1, "-n", namespace, "--timeout=120s")
-			Expect(err).NotTo(HaveOccurred())
-			tgtContent1, err := ReadFileFromPod(kubectlTgt, namespace, verifyPod1, "/data/check.txt")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(tgtContent1).To(Equal(originalContent),
+			phase1Content := readFromVerifyPod(kubectlTgt, namespace, pvcName, "mta-887-phase1-check")
+			Expect(phase1Content).To(Equal(originalContent),
 				"target PVC must contain original content after transfer with --verify")
-			log.Printf("Phase 1: target content %q matches source %q\n", tgtContent1, originalContent)
-			_, err = kubectlTgt.Run("delete", "pod", verifyPod1, "-n", namespace, "--wait=true")
-			Expect(err).NotTo(HaveOccurred())
+			log.Printf("Phase 1: target content %q matches source\n", phase1Content)
 
-			// ── Phase 2: Corrupt target (same size, same forced mtime as source) ──────
-			By("Corrupt target PVC: write equal-length tampered content with the same fixed mtime")
+			// ── Phase 2: Corrupt target (same size + same forced mtime) ───────────────
+			By("Corrupt target PVC: write equal-length tampered content at the same fixed mtime and wait for pod completion")
 			Expect(len(tamperedContent)).To(Equal(len(originalContent)),
 				"tampered content must be the same byte length as original to fool mtime+size comparison")
-			corrupt1Name := "mta-887-corrupt-1"
-			corrupt1Manifest := corruptPodManifest(corrupt1Name, namespace, pvcName, tamperedContent, knownMtime)
-			Expect(kubectlTgt.ApplyYAMLSpec(corrupt1Manifest, namespace)).NotTo(HaveOccurred())
-			_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+corrupt1Name, "-n", namespace, "--timeout=120s")
+			Expect(kubectlTgt.ApplyYAMLSpec(writePodManifest("mta-887-corrupt-1", namespace, pvcName, tamperedContent, knownMtime), namespace)).NotTo(HaveOccurred())
+			_, err = kubectlTgt.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/mta-887-corrupt-1", "-n", namespace, "--timeout=120s")
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Confirm corruption was applied on target")
-			corruptedContent, err := ReadFileFromPod(kubectlTgt, namespace, corrupt1Name, "/data/check.txt")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(corruptedContent).To(Equal(tamperedContent))
-			log.Printf("Phase 2: target file corrupted to %q (same size, same mtime as source)\n", corruptedContent)
-			_, err = kubectlTgt.Run("delete", "pod", corrupt1Name, "-n", namespace, "--wait=true")
-			Expect(err).NotTo(HaveOccurred())
+			corrupt1Content := readFromVerifyPod(kubectlTgt, namespace, pvcName, "mta-887-corrupt-1-check")
+			Expect(corrupt1Content).To(Equal(tamperedContent))
+			log.Printf("Phase 2: target file corrupted to %q (same size, same mtime as source)\n", corrupt1Content)
 
 			// ── Phase 3: Re-transfer WITHOUT --verify → corruption NOT detected ────────
 			By("Re-transfer without --verify: rsync uses mtime+size comparison and skips the corrupted file")
@@ -170,31 +121,21 @@ spec:
 			log.Printf("transfer-pvc (no --verify) completed\n")
 
 			By("Confirm corruption persists: without --verify, rsync skipped the file (mtime+size matched)")
-			const verifyPod2 = "mta-887-verify-2"
-			Expect(kubectlTgt.ApplyYAMLSpec(VerifyPodManifest(namespace, verifyPod2, pvcName), namespace)).NotTo(HaveOccurred())
-			_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifyPod2, "-n", namespace, "--timeout=120s")
-			Expect(err).NotTo(HaveOccurred())
-			tgtContent2, err := ReadFileFromPod(kubectlTgt, namespace, verifyPod2, "/data/check.txt")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(tgtContent2).To(Equal(tamperedContent),
+			phase3Content := readFromVerifyPod(kubectlTgt, namespace, pvcName, "mta-887-phase3-check")
+			Expect(phase3Content).To(Equal(tamperedContent),
 				"without --verify, rsync skips the file because mtime+size match source: corruption is NOT detected")
-			log.Printf("Phase 3: target still has tampered content %q — corruption undetected (expected)\n", tgtContent2)
-			_, err = kubectlTgt.Run("delete", "pod", verifyPod2, "-n", namespace, "--wait=true")
-			Expect(err).NotTo(HaveOccurred())
+			log.Printf("Phase 3: target still has tampered content %q — corruption undetected (expected)\n", phase3Content)
 
 			// ── Phase 4: Re-corrupt and transfer WITH --verify → corruption DETECTED ──
-			By("Re-corrupt target with the same tampered content and fixed mtime")
-			corrupt2Name := "mta-887-corrupt-2"
-			corrupt2Manifest := corruptPodManifest(corrupt2Name, namespace, pvcName, tamperedContent, knownMtime)
-			Expect(kubectlTgt.ApplyYAMLSpec(corrupt2Manifest, namespace)).NotTo(HaveOccurred())
-			_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+corrupt2Name, "-n", namespace, "--timeout=120s")
+			By("Re-corrupt target with the same tampered content and fixed mtime and wait for pod completion")
+			Expect(kubectlTgt.ApplyYAMLSpec(writePodManifest("mta-887-corrupt-2", namespace, pvcName, tamperedContent, knownMtime), namespace)).NotTo(HaveOccurred())
+			_, err = kubectlTgt.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/mta-887-corrupt-2", "-n", namespace, "--timeout=120s")
 			Expect(err).NotTo(HaveOccurred())
-			reCorruptedContent, err := ReadFileFromPod(kubectlTgt, namespace, corrupt2Name, "/data/check.txt")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(reCorruptedContent).To(Equal(tamperedContent))
-			log.Printf("Phase 4: target re-corrupted to %q\n", reCorruptedContent)
-			_, err = kubectlTgt.Run("delete", "pod", corrupt2Name, "-n", namespace, "--wait=true")
-			Expect(err).NotTo(HaveOccurred())
+
+			By("Confirm re-corruption was applied on target")
+			corrupt2Content := readFromVerifyPod(kubectlTgt, namespace, pvcName, "mta-887-corrupt-2-check")
+			Expect(corrupt2Content).To(Equal(tamperedContent))
+			log.Printf("Phase 4: target re-corrupted to %q\n", corrupt2Content)
 
 			By("Re-transfer WITH --verify: rsync uses checksums, detects the mismatch, and re-copies the original content")
 			log.Printf("Running transfer-pvc WITH --verify for PVC %s\n", pvcName)
@@ -204,26 +145,18 @@ spec:
 			log.Printf("transfer-pvc (--verify) completed\n")
 
 			By("Confirm --verify detected the corruption and restored the original content")
-			const verifyPod3 = "mta-887-verify-3"
-			Expect(kubectlTgt.ApplyYAMLSpec(VerifyPodManifest(namespace, verifyPod3, pvcName), namespace)).NotTo(HaveOccurred())
-			_, err = kubectlTgt.Run("wait", "--for=condition=Ready", "pod/"+verifyPod3, "-n", namespace, "--timeout=120s")
-			Expect(err).NotTo(HaveOccurred())
-			tgtContent3, err := ReadFileFromPod(kubectlTgt, namespace, verifyPod3, "/data/check.txt")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(tgtContent3).To(Equal(originalContent),
+			phase4Content := readFromVerifyPod(kubectlTgt, namespace, pvcName, "mta-887-phase4-check")
+			Expect(phase4Content).To(Equal(originalContent),
 				"with --verify, rsync detects the checksum mismatch and re-copies: original content must be restored")
-			log.Printf("Phase 4: target content %q restored to original — --verify detected and fixed the corruption\n", tgtContent3)
-			_, err = kubectlTgt.Run("delete", "pod", verifyPod3, "-n", namespace, "--wait=true")
-			Expect(err).NotTo(HaveOccurred())
-
-			log.Printf("MTA-887: --verify flag confirmed: mtime+size skipped corruption (%q→%q silently), --checksum detected it and restored %q\n",
-				originalContent, tamperedContent, originalContent)
+			log.Printf("MTA-887: target content %q restored — --verify detected and fixed the corruption\n", phase4Content)
 		})
 })
 
-// corruptPodManifest returns a pod spec that overwrites /data/check.txt with
-// tamperedContent and sets its mtime to knownMtime, then stays alive for exec.
-func corruptPodManifest(podName, namespace, pvcName, tamperedContent, knownMtime string) string {
+// writePodManifest returns a one-shot pod spec that writes content to
+// /data/check.txt at the given mtime and exits (restartPolicy: Never).
+// Wait with --for=jsonpath={.status.phase}=Succeeded to guarantee the
+// file operations completed before reading.
+func writePodManifest(podName, namespace, pvcName, content, mtime string) string {
 	return fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata:
@@ -232,7 +165,7 @@ metadata:
 spec:
   restartPolicy: Never
   containers:
-  - name: corrupt
+  - name: write
     image: busybox:1.36
     command:
     - sh
@@ -241,7 +174,6 @@ spec:
       set -eux
       printf '%s\n' > /data/check.txt
       touch -d '%s' /data/check.txt
-      sleep 3600
     volumeMounts:
     - name: data
       mountPath: /data
@@ -249,5 +181,40 @@ spec:
   - name: data
     persistentVolumeClaim:
       claimName: %s
-`, podName, namespace, tamperedContent, knownMtime, pvcName)
+`, podName, namespace, content, mtime, pvcName)
+}
+
+// readFromVerifyPod mounts pvcName in a short-lived pod, reads /data/check.txt
+// via kubectl exec, deletes the pod, and returns the trimmed content.
+// terminationGracePeriodSeconds: 1 keeps --wait=true deletion fast.
+func readFromVerifyPod(k KubectlRunner, namespace, pvcName, podName string) string {
+	GinkgoHelper()
+	manifest := fmt.Sprintf(`apiVersion: v1
+kind: Pod
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 1
+  containers:
+  - name: verify
+    image: busybox:1.36
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: data
+      mountPath: /data
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: %s
+`, podName, namespace, pvcName)
+	Expect(k.ApplyYAMLSpec(manifest, namespace)).NotTo(HaveOccurred())
+	_, err := k.Run("wait", "--for=condition=Ready", "pod/"+podName, "-n", namespace, "--timeout=120s")
+	Expect(err).NotTo(HaveOccurred())
+	content, err := ReadFileFromPod(k, namespace, podName, "/data/check.txt")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = k.Run("delete", "pod", podName, "-n", namespace, "--wait=true")
+	Expect(err).NotTo(HaveOccurred())
+	return content
 }
