@@ -69,11 +69,13 @@ var _ = Describe("transfer-pvc --verify flag", func() {
 			Expect(srcApp.Deploy()).NotTo(HaveOccurred())
 			log.Printf("Source app %s deployed successfully\n", srcApp.Name)
 
-			By("Seed source PVC: write known file at fixed mtime and wait for pod completion")
+			By("Seed source PVC: write known file at fixed mtime, wait for completion, then delete the pod")
 			Expect(kubectlSrc.ApplyYAMLSpec(writePodManifest("mta-887-seed", namespace, pvcName, originalContent, knownMtime), namespace)).NotTo(HaveOccurred())
 			_, err = kubectlSrc.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/mta-887-seed", "-n", namespace, "--timeout=120s")
 			Expect(err).NotTo(HaveOccurred())
-			log.Printf("Seed pod completed: /data/check.txt = %q at mtime %s\n", originalContent, knownMtime)
+			_, err = kubectlSrc.Run("delete", "pod", "mta-887-seed", "-n", namespace, "--wait=true")
+			Expect(err).NotTo(HaveOccurred())
+			log.Printf("Seed pod completed and deleted: /data/check.txt = %q at mtime %s\n", originalContent, knownMtime)
 
 			tgtIP, err := GetClusterNodeIP(scenario.TgtApp.Context)
 			Expect(err).NotTo(HaveOccurred())
@@ -94,17 +96,22 @@ var _ = Describe("transfer-pvc --verify flag", func() {
 			Expect(runner.TransferPVC(opts1)).NotTo(HaveOccurred())
 			log.Printf("transfer-pvc (--verify) completed\n")
 
+			By("Wait for ephemeral rsync pods from transfer 1 to be fully removed")
+			waitForRsyncPodsGone(kubectlSrc, kubectlTgt, namespace)
+
 			phase1Content := readFromVerifyPod(kubectlTgt, namespace, pvcName, "mta-887-phase1-check")
 			Expect(phase1Content).To(Equal(originalContent),
 				"target PVC must contain original content after transfer with --verify")
 			log.Printf("Phase 1: target content %q matches source\n", phase1Content)
 
 			// ── Phase 2: Corrupt target (same size + same forced mtime) ───────────────
-			By("Corrupt target PVC: write equal-length tampered content at the same fixed mtime and wait for pod completion")
+			By("Corrupt target PVC: write equal-length tampered content at the same fixed mtime, wait for completion, then delete the pod")
 			Expect(len(tamperedContent)).To(Equal(len(originalContent)),
 				"tampered content must be the same byte length as original to fool mtime+size comparison")
 			Expect(kubectlTgt.ApplyYAMLSpec(writePodManifest("mta-887-corrupt-1", namespace, pvcName, tamperedContent, knownMtime), namespace)).NotTo(HaveOccurred())
 			_, err = kubectlTgt.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/mta-887-corrupt-1", "-n", namespace, "--timeout=120s")
+			Expect(err).NotTo(HaveOccurred())
+			_, err = kubectlTgt.Run("delete", "pod", "mta-887-corrupt-1", "-n", namespace, "--wait=true")
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Confirm corruption was applied on target")
@@ -120,6 +127,9 @@ var _ = Describe("transfer-pvc --verify flag", func() {
 			Expect(runner.TransferPVC(opts2)).NotTo(HaveOccurred())
 			log.Printf("transfer-pvc (no --verify) completed\n")
 
+			By("Wait for ephemeral rsync pods from transfer 2 to be fully removed")
+			waitForRsyncPodsGone(kubectlSrc, kubectlTgt, namespace)
+
 			By("Confirm corruption persists: without --verify, rsync skipped the file (mtime+size matched)")
 			phase3Content := readFromVerifyPod(kubectlTgt, namespace, pvcName, "mta-887-phase3-check")
 			Expect(phase3Content).To(Equal(tamperedContent),
@@ -127,9 +137,11 @@ var _ = Describe("transfer-pvc --verify flag", func() {
 			log.Printf("Phase 3: target still has tampered content %q — corruption undetected (expected)\n", phase3Content)
 
 			// ── Phase 4: Re-corrupt and transfer WITH --verify → corruption DETECTED ──
-			By("Re-corrupt target with the same tampered content and fixed mtime and wait for pod completion")
+			By("Re-corrupt target with the same tampered content and fixed mtime, wait for completion, then delete the pod")
 			Expect(kubectlTgt.ApplyYAMLSpec(writePodManifest("mta-887-corrupt-2", namespace, pvcName, tamperedContent, knownMtime), namespace)).NotTo(HaveOccurred())
 			_, err = kubectlTgt.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/mta-887-corrupt-2", "-n", namespace, "--timeout=120s")
+			Expect(err).NotTo(HaveOccurred())
+			_, err = kubectlTgt.Run("delete", "pod", "mta-887-corrupt-2", "-n", namespace, "--wait=true")
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Confirm re-corruption was applied on target")
@@ -152,10 +164,22 @@ var _ = Describe("transfer-pvc --verify flag", func() {
 		})
 })
 
+// waitForRsyncPodsGone waits until there are no pods whose name contains
+// "rsync" in the given namespace on either cluster. This ensures transfer-pvc's
+// garbage collection has completed before the next transfer or PVC operation.
+func waitForRsyncPodsGone(src, tgt KubectlRunner, namespace string) {
+	GinkgoHelper()
+	for _, k := range []KubectlRunner{src, tgt} {
+		Eventually(func() (string, error) {
+			return k.Run("get", "pods", "-n", namespace, "-o", "name")
+		}, "60s", "2s").ShouldNot(ContainSubstring("rsync"))
+	}
+}
+
 // writePodManifest returns a one-shot pod spec that writes content to
 // /data/check.txt at the given mtime and exits (restartPolicy: Never).
 // Wait with --for=jsonpath={.status.phase}=Succeeded to guarantee the
-// file operations completed before reading.
+// file operations completed, then delete the pod to release the PVC attachment.
 func writePodManifest(podName, namespace, pvcName, content, mtime string) string {
 	return fmt.Sprintf(`apiVersion: v1
 kind: Pod
