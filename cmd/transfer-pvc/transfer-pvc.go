@@ -344,7 +344,7 @@ func (t *TransferPVCCommand) Validate() error {
 		}
 		// Preflight the config file before Run() creates any cluster resources
 		// (issue #899: a bad path used to orphan the destination PVC).
-		if err := t.validateRcloneConfigFile(); err != nil {
+		if _, err := t.readRcloneConfigFile(); err != nil {
 			log.Debugf("rclone config file validation failed: %v", err)
 			return err
 		}
@@ -360,20 +360,21 @@ func (t *TransferPVCCommand) Validate() error {
 	return nil
 }
 
-// validateRcloneConfigFile checks that --rclone-config-file exists, is readable,
-// and is non-empty early enough.
-func (t *TransferPVCCommand) validateRcloneConfigFile() error {
+// readRcloneConfigFile reads --rclone-config-file and verifies it is readable
+// and non-empty, returning its raw contents. It returns (nil, nil) when no file
+// is configured.
+func (t *TransferPVCCommand) readRcloneConfigFile() ([]byte, error) {
 	if t.RcloneConfigFile == "" {
-		return nil
+		return nil, nil
 	}
 	data, err := os.ReadFile(t.RcloneConfigFile)
 	if err != nil {
-		return fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
+		return nil, fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
 	}
 	if len(strings.TrimSpace(string(data))) == 0 {
-		return fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
+		return nil, fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
 	}
-	return nil
+	return data, nil
 }
 
 func (t *TransferPVCCommand) Run() error {

@@ -99,16 +99,13 @@ func (t *TransferPVCCommand) readSourcePVC(srcClient client.Client) (*corev1.Per
 }
 
 func (t *TransferPVCCommand) readRcloneConfigData() ([]byte, error) {
-	if t.RcloneConfigFile == "" {
-		return nil, nil
-	}
-	configData, err := os.ReadFile(t.RcloneConfigFile)
+	configData, err := t.readRcloneConfigFile()
 	if err != nil {
 		t.log.Debugf("Failed to read rclone config file: %v", err)
-		return nil, fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
+		return nil, err
 	}
-	if len(bytes.TrimSpace(configData)) == 0 {
-		return nil, fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
+	if configData == nil {
+		return nil, nil
 	}
 	if t.Encrypt {
 		if hasRcloneSection(configData, "encrypted") {

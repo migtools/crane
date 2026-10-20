@@ -1444,9 +1444,9 @@ func TestValidateKeepCloudDataRequiresCloudStorage(t *testing.T) {
 	}
 }
 
-// TestValidateRcloneConfigFile is a regression test for issue #899: a
-// non-existent (or empty) --rclone-config-file must be rejected by Validate(),
-// before Run() creates the destination PVC, so no orphaned PVC is left behind.
+// TestValidateRcloneConfigFile checks that a non-existent (or empty)
+// --rclone-config-file is rejected by Validate(), before Run() creates the
+// destination PVC, so no orphaned PVC is left behind.
 func TestValidateRcloneConfigFile(t *testing.T) {
 	dir := t.TempDir()
 
