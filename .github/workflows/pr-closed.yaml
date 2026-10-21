@@ -67,7 +67,7 @@ jobs:
             }
 
             console.log(`Valid target branches for cherry-pick: ${validBranches.join(', ')}`);
-            return validBranches;   
+            return validBranches;
 
   cherry-pick:
     runs-on: ubuntu-latest
