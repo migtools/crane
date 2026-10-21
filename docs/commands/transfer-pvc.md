@@ -13,7 +13,7 @@ crane transfer-pvc [flags]
 The `transfer-pvc` subcommand transfers a PersistentVolumeClaim resource and its volume data to a destination cluster. It supports two primary transfer modes:
 
 1. **Direct Mode**: Establishes a direct connection between source and destination clusters by creating a public endpoint (e.g., `route` or `ingress`) in the destination namespace. An rsync client Pod in the source transfers data directly to an rsync daemon Pod in the destination.
-2. **Indirect Mode**: Enables transfers between clusters without direct network connectivity. Data is uploaded to an S3-compatible cloud storage bucket by a source Pod and then downloaded to the destination PVC by a destination Pod.
+2. **Indirect Mode**: Enables transfers between clusters without direct network connectivity. Data is uploaded to cloud storage by a source Pod and then downloaded to the destination PVC by a destination Pod.
 
 `transfer-pvc` supports transfers between different clusters or within the same cluster. When performing transfers within the same cluster and namespace, the source and destination PVC names must be different.
 
@@ -26,7 +26,7 @@ Indirect mode can also be run as a **split workflow** using `--upload-only` and 
 crane transfer-pvc --source-context=<source> --destination-context=<destination> --pvc-name=<pvc_name> --endpoint=route
 ```
 
-### Indirect Transfer (via S3)
+### Indirect Transfer (via Cloud Storage)
 ```bash
 crane transfer-pvc --source-context=source --destination-context=destination \
   --pvc-name=data-pvc \
@@ -54,7 +54,7 @@ See [Indirect Transfer Options](#indirect-transfer-options) for detailed configu
 | `--subdomain` | string | When endpoint is nginx-ingress | Custom subdomain to use for the endpoint |
 | `--output` | string | No | Output transfer stats in the specified file |
 | `--verify` | bool | No | Verify transferred files using checksums |
-| `--cloud-storage` | string | No | S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket) |
+| `--cloud-storage` | string | No | rclone cloud storage path for indirect transfer (e.g. remote:my-bucket) |
 | `--rclone-config-secret` | string | No | Name of a Secret containing `rclone.conf` in the namespaces required by the selected workflow |
 | `--rclone-config-file` | string | No | Local path to `rclone.conf`; crane creates temporary Secrets in each cluster it contacts |
 | `--encrypt` | bool | No | Enable client-side encryption for indirect transfer |
@@ -139,7 +139,7 @@ In an OpenShift cluster, `route` endpoint can be used. A subdomain option can be
 
 ### Indirect Transfer Options
 
-Indirect transfer enables PVC migration between clusters without direct network connectivity. Data is uploaded to an S3-compatible cloud storage bucket by the source cluster and then downloaded by the destination cluster.
+Indirect transfer enables PVC migration between clusters without direct network connectivity. Data is uploaded to cloud storage by the source cluster and then downloaded by the destination cluster. The transfer image must include the rclone backend selected by the remote; Azure Blob Storage requires the `azureblob` backend.
 
 #### Complete Indirect Transfer Workflow
 
@@ -231,6 +231,41 @@ When using `--cloud-storage`, provide rclone configuration using **one** of the 
 The two configurations may use different credentials when appropriate, but both `rclone.conf` files must define the remote name used by `--cloud-storage` and their credentials must be authorized for the transfer path. If the path is wrapped by a user-managed rclone crypt remote, both configurations must use compatible passwords or passphrases, salt, and encryption settings.
 
 For example, for `--cloud-storage remote:my-bucket/transfer-path`, both configurations need a `[remote]` section. A MinIO endpoint expressed as an in-cluster DNS name is normally reachable only from that cluster; use an endpoint that is reachable from Pods on both clusters.
+
+Azure Blob Storage supports storage account key and service principal authentication. The following examples use a remote named `azure`; the remote name is arbitrary, and `type = azureblob` selects the backend.
+
+```ini
+[azure]
+type = azureblob
+account = <storage-account>
+key = <storage-account-key>
+```
+
+A storage-account key can access all data in the storage account.
+
+Service principal authentication uses the tenant ID, client ID, and client secret from an Azure service principal that has the `Storage Blob Data Contributor` role on the target container. That role permits access to all blobs in the container:
+
+```ini
+[azure]
+type = azureblob
+account = <storage-account>
+tenant = <tenant-id>
+client_id = <client-id>
+client_secret = <client-secret>
+```
+
+Then use the remote name, container, and transfer prefix in `--cloud-storage`:
+
+```bash
+crane transfer-pvc \
+  --source-context source --destination-context destination \
+  --pvc-name data-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage azure:my-container/transfer-prefix \
+  --rclone-config-file /secure/path/rclone.conf
+```
+
+The storage-account-key example can access all data in the storage account. The service-principal example can access all blobs in the target container; it is not restricted to `transfer-prefix`. To restrict the service principal to `transfer-prefix`, add an Azure ABAC condition for both the blob `path` and listing `prefix`. Keep `rclone.conf` out of source control.
 
 #### Using a local config file
 
