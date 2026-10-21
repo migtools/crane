@@ -1,9 +1,13 @@
 package transfer_pvc
 
 import (
+	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -280,6 +284,63 @@ func TestValidateRcloneConfigSecret(t *testing.T) {
 	}
 }
 
+func TestExistingDownloadPVC(t *testing.T) {
+	basePVC := func() *corev1.PersistentVolumeClaim {
+		return &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: "target-data", Namespace: "target-ns"},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		objects []runtime.Object
+		wantErr string
+	}{
+		{
+			name:    "existing unused PVC is accepted",
+			objects: []runtime.Object{basePVC()},
+		},
+		{
+			name:    "missing PVC tells caller to apply manifest",
+			wantErr: "must exist before --download-only; apply the rendered PVC manifest",
+		},
+		{
+			name: "active pod using target PVC is rejected",
+			objects: []runtime.Object{
+				basePVC(),
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "target-ns"},
+					Spec: corev1.PodSpec{Volumes: []corev1.Volume{{
+						Name: "data",
+						VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: "target-data",
+						}},
+					}}},
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
+				},
+			},
+			wantErr: `is in use by pod "app"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(tt.objects...).Build()
+			cmd := &TransferPVCCommand{Flags: Flags{PVC: PvcFlags{
+				Name:      mappedNameVar{destination: "target-data"},
+				Namespace: mappedNameVar{destination: "target-ns"},
+			}}}
+			_, err := cmd.existingDownloadPVC(context.Background(), c)
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("existingDownloadPVC() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("existingDownloadPVC() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 // rcloneReveal decodes an rclone-obscured value for testing round-trips.
 func rcloneReveal(obscured string) (string, error) {
 	key := []byte{
@@ -489,4 +550,94 @@ func TestCheckRclonePartialSuccessTerminationDetail(t *testing.T) {
 			t.Errorf("error %q should not contain a detail suffix", err.Error())
 		}
 	})
+}
+
+// newQuietLogger returns a logrus logger whose output is discarded, so the
+// WARN lines cleanupCloudStorage emits on the failure paths do not pollute test
+// output.
+func newQuietLogger() *logrus.Logger {
+	l := logrus.New()
+	l.SetOutput(io.Discard)
+	return l
+}
+
+// TestCleanupCloudStorage covers the [5/6] cleanup decision tree, in particular
+// that a failure is reported as "failed (non-fatal)" and never aborts the transfer.
+func TestCleanupCloudStorage(t *testing.T) {
+	cleanupPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "cleanup", Namespace: "ns"}}
+
+	tests := []struct {
+		name          string
+		keepCloudData bool
+		cleanupErr    error // error returned by the cleanup-pod launch
+		followErr     error // error returned while following the cleanup-pod logs
+		wantContains  string
+		wantNotRun    bool // cleanup/followLog must not be invoked at all
+	}{
+		{
+			name:          "keep-cloud-data skips cleanup entirely",
+			keepCloudData: true,
+			wantContains:  "skipped (--keep-cloud-data)",
+			wantNotRun:    true,
+		},
+		{
+			name:         "successful cleanup reports ok",
+			wantContains: "... ok",
+		},
+		{
+			name:         "cleanup pod fails to start is non-fatal",
+			cleanupErr:   errors.New("boom: cannot create cleanup pod"),
+			wantContains: "failed (non-fatal)",
+		},
+		{
+			name:         "cleanup pod log-follow failure is non-fatal",
+			followErr:    errors.New("boom: cleanup pod exited non-zero"),
+			wantContains: "failed (non-fatal)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var cleanupCalled, followCalled bool
+			cmd := &TransferPVCCommand{
+				log:   newQuietLogger(),
+				Flags: Flags{KeepCloudData: tt.keepCloudData},
+			}
+			var out bytes.Buffer
+			cmd.cleanupCloudStorage(&out, "[5/6]",
+				func() (*corev1.Pod, error) {
+					cleanupCalled = true
+					if tt.cleanupErr != nil {
+						return nil, tt.cleanupErr
+					}
+					return cleanupPod, nil
+				},
+				func(pod *corev1.Pod) error {
+					followCalled = true
+					return tt.followErr
+				},
+			)
+
+			got := out.String()
+			if !strings.Contains(got, tt.wantContains) {
+				t.Fatalf("cleanupCloudStorage output = %q, want it to contain %q", got, tt.wantContains)
+			}
+
+			if tt.wantNotRun {
+				if cleanupCalled || followCalled {
+					t.Fatalf("with --keep-cloud-data no cleanup should run, but cleanupCalled=%v followCalled=%v", cleanupCalled, followCalled)
+				}
+				return
+			}
+
+			// Once the cleanup pod fails to launch, the logs must not be followed.
+			if tt.cleanupErr != nil && followCalled {
+				t.Fatalf("followLog should not run when the cleanup pod fails to start")
+			}
+			// Every non-skip, non-launch-failure case must follow the pod logs.
+			if tt.cleanupErr == nil && !followCalled {
+				t.Fatalf("followLog should run after a successful cleanup-pod launch")
+			}
+		})
+	}
 }

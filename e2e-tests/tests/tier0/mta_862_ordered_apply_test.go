@@ -13,7 +13,7 @@ import (
 var _ = Describe("Ordered apply for Role and RoleBinding migration", func() {
 	It("[BUG #266][MTA-862] Should apply ordered output manifests to a fresh namespace in a single pass", Label("BUG #266", "tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := appName
+		namespace := "mta-862-nginx"
 
 		scenario := NewMigrationScenario(
 			appName,

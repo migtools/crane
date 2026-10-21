@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -22,19 +23,28 @@ func NewFileHook(path string, cmd *string) (*FileHook, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return nil, err
+	// Try to create with exclusive access. If it succeeds, we created a new file.
+	// If it fails with ErrExist, the file already existed.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_APPEND|os.O_WRONLY, 0600)
+	if err == nil {
+		return &FileHook{
+			file:      f,
+			cmd:       cmd,
+			formatter: &logrus.JSONFormatter{},
+		}, nil
+	} else if errors.Is(err, os.ErrExist) {
+		// File already existed. Open in append mode without changing permissions.
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+		if err != nil {
+			return nil, err
+		}
+		return &FileHook{
+			file:      f,
+			cmd:       cmd,
+			formatter: &logrus.JSONFormatter{},
+		}, nil
 	}
-	if err := f.Chmod(0600); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	return &FileHook{
-		file:      f,
-		cmd:       cmd,
-		formatter: &logrus.JSONFormatter{},
-	}, nil
+	return nil, err
 }
 
 // Levels returns all log levels down to Debug. Trace is excluded because the

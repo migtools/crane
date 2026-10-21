@@ -14,13 +14,17 @@ import (
 	"github.com/konveyor/crane-lib/transform/kubernetes"
 	rsynctransfer "github.com/migtools/pvc-transfer/transfer/rsync"
 	"github.com/migtools/pvc-transfer/transport"
+	"github.com/sirupsen/logrus"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -110,6 +114,94 @@ func newTestScheme() *runtime.Scheme {
 	_ = appsv1.AddToScheme(s)
 	_ = batchv1.AddToScheme(s)
 	return s
+}
+
+func TestDestinationPVCStorageClassError(t *testing.T) {
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
+	tests := []struct {
+		name    string
+		event   *corev1.Event
+		wantErr string
+	}{
+		{
+			name: "reports missing storage class provisioning failure",
+			event: &corev1.Event{
+				ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("current-pvc")},
+				Reason:         "ProvisioningFailed",
+				Message:        `storageclass.storage.k8s.io "missing-class" not found`,
+			},
+			wantErr: `storageclass.storage.k8s.io "missing-class" not found`,
+		},
+		{
+			name: "ignores other pvc provisioning failures",
+			event: &corev1.Event{
+				ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("current-pvc")},
+				Reason:         "ProvisioningFailed",
+				Message:        "waiting for a volume to be created",
+			},
+		},
+		{
+			name: "ignores a stale event for a deleted pvc with the same name",
+			event: &corev1.Event{
+				ObjectMeta:     metav1.ObjectMeta{Name: "old-pvc-provisioning", Namespace: "target-ns"},
+				InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("deleted-pvc")},
+				Reason:         "ProvisioningFailed",
+				Message:        `storageclass.storage.k8s.io "missing-class" not found`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objects := []client.Object{pvc.DeepCopy()}
+			if tt.event != nil {
+				objects = append(objects, tt.event)
+			}
+			c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objects...).Build()
+			got, err := destinationPVCStorageClassError(context.Background(), c, pvc)
+			if err != nil {
+				t.Fatalf("destinationPVCStorageClassError() unexpected error = %v", err)
+			}
+			if got != tt.wantErr {
+				t.Errorf("destinationPVCStorageClassError() = %q, want %q", got, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDestinationPVCProvisioningErrorReportsMissingStorageClassEvent(t *testing.T) {
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
+	event := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "pvc-provisioning", Namespace: "target-ns"},
+		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: "target-ns", Name: "target-pvc", UID: types.UID("current-pvc")},
+		Reason:         "ProvisioningFailed",
+		Message:        `storageclass.storage.k8s.io "missing-class" not found`,
+	}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(pvc, event).Build()
+
+	err := destinationPVCProvisioningError(context.Background(), c, pvc, logrus.New())
+	if err == nil || !strings.Contains(err.Error(), `storageclass.storage.k8s.io "missing-class" not found`) {
+		t.Fatalf("destinationPVCProvisioningError() error = %v, want missing StorageClass event", err)
+	}
+}
+
+func TestDestinationPVCProvisioningErrorIgnoresEventAccessError(t *testing.T) {
+	pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "target-pvc", Namespace: "target-ns", UID: types.UID("current-pvc")}}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(pvc).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(_ context.Context, _ client.WithWatch, list client.ObjectList, _ ...client.ListOption) error {
+			if _, ok := list.(*corev1.EventList); ok {
+				return apierrors.NewForbidden(schema.GroupResource{Resource: "events"}, "", fmt.Errorf("forbidden for test"))
+			}
+			return nil
+		},
+	}).Build()
+
+	err := destinationPVCProvisioningError(context.Background(), c, pvc, logrus.New())
+	if err != nil {
+		t.Fatalf("destinationPVCProvisioningError() error = %v, want nil when events cannot be listed", err)
+	}
 }
 
 func TestCreateDestinationPVC(t *testing.T) {
@@ -1723,6 +1815,193 @@ func TestCompleteTrimsCloudStorageWhitespace(t *testing.T) {
 			}
 			if cmd.CloudStorage != tt.wantValue {
 				t.Errorf("CloudStorage = %q, want %q", cmd.CloudStorage, tt.wantValue)
+			}
+		})
+	}
+}
+
+func TestUploadOnlyDoesNotRequireDestinationContext(t *testing.T) {
+	const sourceContext = "source"
+	kubeconfig := writeTempKubeconfig(t, sourceContext)
+	configFlags := genericclioptions.NewConfigFlags(false)
+	configFlags.KubeConfig = &kubeconfig
+
+	cmd := &TransferPVCCommand{
+		configFlags: configFlags,
+		Flags: Flags{
+			SourceContext: sourceContext,
+			UploadOnly:    true,
+		},
+	}
+	if err := cmd.Complete(nil, nil); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if cmd.destinationContext != nil || cmd.DestinationContext != "" {
+		t.Fatalf("upload-only unexpectedly resolved destination context %q", cmd.DestinationContext)
+	}
+}
+
+func TestDownloadOnlyDoesNotRequireSourceContext(t *testing.T) {
+	const destinationContext = "destination"
+	kubeconfig := writeTempKubeconfig(t, destinationContext)
+	configFlags := genericclioptions.NewConfigFlags(false)
+	configFlags.KubeConfig = &kubeconfig
+
+	cmd := &TransferPVCCommand{
+		configFlags: configFlags,
+		Flags: Flags{
+			DestinationContext: destinationContext,
+			DownloadOnly:       true,
+		},
+	}
+	if err := cmd.Complete(nil, nil); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if cmd.sourceContext != nil || cmd.SourceContext != "" {
+		t.Fatalf("download-only unexpectedly resolved source context %q", cmd.SourceContext)
+	}
+	if cmd.destinationContext == nil {
+		t.Fatal("download-only did not resolve destination context")
+	}
+}
+
+func TestValidateUploadOnly(t *testing.T) {
+	validFlags := func() Flags {
+		return Flags{
+			UploadOnly: true,
+			PVC: PvcFlags{
+				Name:      mappedNameVar{source: "data"},
+				Namespace: mappedNameVar{source: "source-ns"},
+			},
+			CloudStorage:       "remote:bucket",
+			RcloneConfigSecret: "rclone-config",
+			KeepCloudData:      true,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Flags)
+		wantErr string
+	}{
+		{name: "valid without destination context"},
+		{
+			name: "requires cloud storage",
+			mutate: func(f *Flags) {
+				f.CloudStorage = ""
+			},
+			wantErr: "--upload-only requires --cloud-storage",
+		},
+		{
+			name: "requires cloud data retention",
+			mutate: func(f *Flags) {
+				f.KeepCloudData = false
+			},
+			wantErr: "--upload-only requires --keep-cloud-data",
+		},
+		{
+			name: "requires source namespace",
+			mutate: func(f *Flags) {
+				f.PVC.Namespace.source = ""
+			},
+			wantErr: "source pvc namespace cannot be empty",
+		},
+		{
+			name: "rejects automatic encryption",
+			mutate: func(f *Flags) {
+				f.Encrypt = true
+			},
+			wantErr: "--upload-only does not support --encrypt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := validFlags()
+			if tt.mutate != nil {
+				tt.mutate(&flags)
+			}
+			cmd := &TransferPVCCommand{
+				Flags:         flags,
+				sourceContext: &clientcmdapi.Context{},
+			}
+			err := cmd.Validate()
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateDownloadOnly(t *testing.T) {
+	validFlags := func() Flags {
+		return Flags{
+			DownloadOnly: true,
+			PVC: PvcFlags{
+				Name:      mappedNameVar{source: "source-data", destination: "target-data"},
+				Namespace: mappedNameVar{source: "source-ns", destination: "target-ns"},
+			},
+			CloudStorage:       "remote:bucket/crane",
+			RcloneConfigSecret: "rclone-config",
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Flags)
+		wantErr string
+	}{
+		{name: "valid without source context"},
+		{
+			name: "requires cloud storage",
+			mutate: func(f *Flags) {
+				f.CloudStorage = ""
+			},
+			wantErr: "--download-only requires --cloud-storage",
+		},
+		{
+			name: "requires source identity for cloud path",
+			mutate: func(f *Flags) {
+				f.PVC.Namespace.source = ""
+			},
+			wantErr: "--download-only requires source PVC name and namespace",
+		},
+		{
+			name: "rejects automatic encryption",
+			mutate: func(f *Flags) {
+				f.Encrypt = true
+			},
+			wantErr: "--download-only does not support --encrypt",
+		},
+		{
+			name: "is mutually exclusive with upload only",
+			mutate: func(f *Flags) {
+				f.UploadOnly = true
+				f.KeepCloudData = true
+			},
+			wantErr: "--upload-only and --download-only cannot be used together",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := validFlags()
+			if tt.mutate != nil {
+				tt.mutate(&flags)
+			}
+			cmd := &TransferPVCCommand{
+				Flags:              flags,
+				destinationContext: &clientcmdapi.Context{},
+			}
+			err := cmd.Validate()
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}

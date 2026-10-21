@@ -14,7 +14,7 @@ import (
 var _ = Describe("Default Ignored resources", func() {
 	It("[MTA-802] should be ignored", Label("tier0"), func() {
 		appName := "empty-namespace"
-		namespace := appName
+		namespace := "mta-802-empty-ns"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
