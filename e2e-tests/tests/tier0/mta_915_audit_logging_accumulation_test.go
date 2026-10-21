@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
@@ -64,7 +65,9 @@ var _ = Describe("Audit logging multi-command accumulation", func() {
 		By("Verify audit log file exists with 0600 permissions")
 		fileInfo, err := os.Stat(defaultAuditLog)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(fileInfo.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+		if runtime.GOOS != "windows" {
+			Expect(fileInfo.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+		}
 		log.Printf("Audit log file exists with 0600 permissions: %s\n", defaultAuditLog)
 
 		By("Read and parse audit log entries")
