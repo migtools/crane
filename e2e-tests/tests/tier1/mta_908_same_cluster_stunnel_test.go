@@ -139,8 +139,19 @@ var _ = Describe("Same-cluster transfer TLS", func() {
 		}
 		transferDone := make(chan error, 1)
 		go func() {
+			defer GinkgoRecover()
 			transferDone <- runner.TransferPVC(transferOpts)
 		}()
+		var transferErr error
+		transferFinished := false
+		waitTransfer := func() error {
+			if !transferFinished {
+				transferErr = <-transferDone
+				transferFinished = true
+			}
+			return transferErr
+		}
+		DeferCleanup(func() { _ = waitTransfer() })
 
 		resources := waitForSecureTransferResources(
 			kubectl,
@@ -172,7 +183,7 @@ var _ = Describe("Same-cluster transfer TLS", func() {
 		Expect(serverConfig).To(ContainSubstring("connect = 8080"))
 
 		By("Wait for the transfer to complete")
-		Expect(<-transferDone).NotTo(HaveOccurred())
+		Expect(waitTransfer()).NotTo(HaveOccurred())
 
 		By("Verify the destination PVC uses the requested StorageClass")
 		destinationPVC, err := GetPVC(tgtApp.Context, namespace, destinationPVCName)
