@@ -241,7 +241,9 @@ account = <storage-account>
 key = <storage-account-key>
 ```
 
-Service principal authentication uses the tenant ID, client ID, and client secret from an Azure service principal that has the `Storage Blob Data Contributor` role on the target container:
+A storage-account key can access all data in the storage account.
+
+Service principal authentication uses the tenant ID, client ID, and client secret from an Azure service principal that has the `Storage Blob Data Contributor` role on the target container. That role permits access to all blobs in the container:
 
 ```ini
 [azure]
@@ -263,7 +265,7 @@ crane transfer-pvc \
   --rclone-config-file /secure/path/rclone.conf
 ```
 
-Grant credentials access only to the target container and transfer prefix, and keep `rclone.conf` out of source control.
+The storage-account-key example can access all data in the storage account. The service-principal example can access all blobs in the target container; it is not restricted to `transfer-prefix`. To restrict the service principal to `transfer-prefix`, add an Azure ABAC condition for both the blob `path` and listing `prefix`. Keep `rclone.conf` out of source control.
 
 #### Using a local config file
 
