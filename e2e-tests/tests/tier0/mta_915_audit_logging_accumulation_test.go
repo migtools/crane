@@ -68,8 +68,10 @@ var _ = Describe("Audit logging multi-command accumulation", func() {
 		if runtime.GOOS != "windows" {
 			By("Verify audit log file has 0600 permissions")
 			Expect(fileInfo.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+			log.Printf("Audit log file exists with 0600 permissions: %s\n", defaultAuditLog)
+		} else {
+			log.Printf("Audit log file exists (permission check skipped on Windows): %s\n", defaultAuditLog)
 		}
-		log.Printf("Audit log file exists with 0600 permissions: %s\n", defaultAuditLog)
 
 		By("Read and parse audit log entries")
 		entries, err := utils.ReadAuditLogEntries(defaultAuditLog)
