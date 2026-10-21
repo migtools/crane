@@ -62,10 +62,11 @@ var _ = Describe("Audit logging multi-command accumulation", func() {
 		Expect(info.IsDir()).To(BeTrue(), "audit directory should exist")
 		log.Printf("Audit directory exists: %s\n", auditDir)
 
-		By("Verify audit log file exists with 0600 permissions")
+		By("Verify audit log file exists")
 		fileInfo, err := os.Stat(defaultAuditLog)
 		Expect(err).NotTo(HaveOccurred())
 		if runtime.GOOS != "windows" {
+			By("Verify audit log file has 0600 permissions")
 			Expect(fileInfo.Mode().Perm()).To(Equal(os.FileMode(0o600)))
 		}
 		log.Printf("Audit log file exists with 0600 permissions: %s\n", defaultAuditLog)
