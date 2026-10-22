@@ -388,6 +388,7 @@ metadata:
   namespace: %s
 spec:
   restartPolicy: Never
+  terminationGracePeriodSeconds: 1
   containers:
     - name: verify
       image: busybox:1.36
