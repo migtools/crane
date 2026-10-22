@@ -210,30 +210,9 @@ spec:
 
 // readFromVerifyPod mounts pvcName in a short-lived pod, reads /data/check.txt
 // via kubectl exec, deletes the pod, and returns the trimmed content.
-// terminationGracePeriodSeconds: 1 keeps --wait=true deletion fast.
 func readFromVerifyPod(k KubectlRunner, namespace, pvcName, podName string) string {
 	GinkgoHelper()
-	manifest := fmt.Sprintf(`apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  restartPolicy: Never
-  terminationGracePeriodSeconds: 1
-  containers:
-  - name: verify
-    image: busybox:1.36
-    command: ["sleep", "3600"]
-    volumeMounts:
-    - name: data
-      mountPath: /data
-  volumes:
-  - name: data
-    persistentVolumeClaim:
-      claimName: %s
-`, podName, namespace, pvcName)
-	Expect(k.ApplyYAMLSpec(manifest, namespace)).NotTo(HaveOccurred())
+	Expect(k.ApplyYAMLSpec(VerifyPodManifest(namespace, podName, pvcName), namespace)).NotTo(HaveOccurred())
 	_, err := k.Run("wait", "--for=condition=Ready", "pod/"+podName, "-n", namespace, "--timeout=120s")
 	Expect(err).NotTo(HaveOccurred())
 	content, err := ReadFileFromPod(k, namespace, podName, "/data/check.txt")
