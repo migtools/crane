@@ -507,9 +507,9 @@ kubectl --context "${SOURCE_CONTEXT}" delete namespace "${NAMESPACE}"
 
 To migrate PVC data to a different StorageClass (e.g., during a storage backend upgrade), see the [StorageClass Conversion Guide](./storageclass-conversion.md).
 
-### Indirect Transfer (S3)
+### Indirect Transfer (Cloud Storage)
 
-For clusters without direct network connectivity, `transfer-pvc` supports indirect transfer via S3-compatible storage:
+For clusters without direct network connectivity, `transfer-pvc` supports indirect transfer via cloud storage:
 
 ```bash
 crane transfer-pvc \
@@ -522,7 +522,7 @@ crane transfer-pvc \
   --verify
 ```
 
-Both clusters only need outbound access to the S3 bucket. No endpoint or ingress setup required. Add `--encrypt` for client-side encryption.
+Both clusters only need outbound access to the storage bucket or container. No endpoint or ingress setup required. Add `--encrypt` for client-side encryption. See the [transfer-pvc command reference](./commands/transfer-pvc.md#indirect-transfer-options) for Azure Blob Storage configuration.
 
 ### PVC Rename with Workload Reference Update
 

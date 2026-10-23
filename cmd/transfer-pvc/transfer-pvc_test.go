@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -24,6 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -36,36 +39,70 @@ func int32Ptr(v int32) *int32 { return &v }
 
 func TestTransferSummaryStatus(t *testing.T) {
 	tests := []struct {
-		name          string
-		retErr        error
-		rsyncExitCode *int32
-		want          string
+		name     string
+		retErr   error
+		progress *Progress
+		want     string
 	}{
 		{
-			name: "successful rsync",
-			want: "succeeded",
+			name:     "successful rsync",
+			progress: &Progress{ExitCode: int32Ptr(0)},
+			want:     "succeeded",
 		},
 		{
-			name:          "partial rsync transfer",
-			rsyncExitCode: int32Ptr(23),
-			want:          "succeeded (with warnings — some files could not be transferred)",
+			name:     "partial rsync transfer",
+			progress: &Progress{ExitCode: int32Ptr(23), TransferredFiles: 1},
+			want:     "succeeded (with warnings — some files could not be transferred)",
 		},
 		{
-			name:          "unexpected rsync failure",
-			rsyncExitCode: int32Ptr(12),
-			want:          "failed",
+			name:     "partial rsync transfer without copied data",
+			progress: &Progress{ExitCode: int32Ptr(23)},
+			want:     "failed",
 		},
 		{
-			name:   "transfer failure takes precedence over rsync exit code",
-			retErr: fmt.Errorf("cleanup failed"),
-			want:   "failed",
+			name:     "unexpected rsync failure",
+			progress: &Progress{ExitCode: int32Ptr(12)},
+			want:     "failed",
+		},
+		{
+			name:     "transfer failure takes precedence over rsync exit code",
+			retErr:   fmt.Errorf("cleanup failed"),
+			progress: &Progress{ExitCode: int32Ptr(0)},
+			want:     "failed",
+		},
+		{
+			name: "unknown rsync result",
+			want: "failed",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := transferSummaryStatus(tt.retErr, tt.rsyncExitCode); got != tt.want {
+			if got := transferSummaryStatus(tt.retErr, tt.progress); got != tt.want {
 				t.Errorf("transferSummaryStatus() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRsyncResultError(t *testing.T) {
+	tests := []struct {
+		name     string
+		progress *Progress
+		wantErr  bool
+	}{
+		{name: "successful rsync", progress: &Progress{ExitCode: int32Ptr(0)}},
+		{name: "partial rsync transfer with files copied", progress: &Progress{ExitCode: int32Ptr(23), TransferredFiles: 1}},
+		{name: "partial rsync transfer with bytes copied", progress: &Progress{ExitCode: int32Ptr(23), TransferredData: &dataSize{val: 1, unit: "bytes"}}},
+		{name: "partial rsync transfer without copied data", progress: &Progress{ExitCode: int32Ptr(23)}, wantErr: true},
+		{name: "other rsync failure", progress: &Progress{ExitCode: int32Ptr(12)}, wantErr: true},
+		{name: "missing final status", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := rsyncResultError(tt.progress); (err != nil) != tt.wantErr {
+				t.Errorf("rsyncResultError() error = %v, wantErr %t", err, tt.wantErr)
 			}
 		})
 	}
@@ -1723,6 +1760,282 @@ func TestValidateIndirectFlagGuardsFireBeforeContextCheck(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tt.wantMsg) {
 				t.Errorf("Validate() error = %q, want to contain %q", err.Error(), tt.wantMsg)
+			}
+		})
+	}
+}
+
+// writeTempKubeconfig writes a minimal single-context kubeconfig and returns its
+// path, letting Complete()'s kubeconfig load succeed.
+func writeTempKubeconfig(t *testing.T, ctxName string) string {
+	t.Helper()
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["cluster"] = &clientcmdapi.Cluster{Server: "https://example.test:6443"}
+	cfg.AuthInfos["user"] = &clientcmdapi.AuthInfo{Token: "fake-token"}
+	cfg.Contexts[ctxName] = &clientcmdapi.Context{Cluster: "cluster", AuthInfo: "user"}
+	cfg.CurrentContext = ctxName
+
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := clientcmd.WriteToFile(*cfg, path); err != nil {
+		t.Fatalf("failed to write temp kubeconfig: %v", err)
+	}
+	return path
+}
+
+// TestCompleteTrimsCloudStorageWhitespace covers the whitespace handling added to
+// Complete() in PR #859: leading/trailing whitespace is trimmed from --cloud-storage,
+// and a value that is only whitespace is rejected instead of silently accepted.
+func TestCompleteTrimsCloudStorageWhitespace(t *testing.T) {
+	const ctxName = "test-context"
+	kubeconfig := writeTempKubeconfig(t, ctxName)
+
+	tests := []struct {
+		name         string
+		cloudStorage string
+		wantErr      bool
+		wantValue    string // expected CloudStorage after Complete, when no error
+	}{
+		{
+			name:         "surrounding whitespace is trimmed",
+			cloudStorage: "  remote:my-bucket  ",
+			wantErr:      false,
+			wantValue:    "remote:my-bucket",
+		},
+		{
+			name:         "tab and newline are trimmed",
+			cloudStorage: "\tremote:my-bucket\n",
+			wantErr:      false,
+			wantValue:    "remote:my-bucket",
+		},
+		{
+			name:         "whitespace-only value is rejected",
+			cloudStorage: "   ",
+			wantErr:      true,
+		},
+		{
+			name:         "empty value is left empty and accepted",
+			cloudStorage: "",
+			wantErr:      false,
+			wantValue:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configFlags := genericclioptions.NewConfigFlags(false)
+			configFlags.KubeConfig = &kubeconfig
+
+			cmd := &TransferPVCCommand{
+				configFlags: configFlags,
+				Flags: Flags{
+					SourceContext:      ctxName,
+					DestinationContext: ctxName,
+					CloudStorage:       tt.cloudStorage,
+				},
+			}
+
+			err := cmd.Complete(nil, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("Complete() expected error for %q, got nil", tt.cloudStorage)
+				}
+				if !strings.Contains(err.Error(), "cannot be empty or whitespace") {
+					t.Errorf("Complete() error = %q, want it to mention whitespace rejection", err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Complete() unexpected error: %v", err)
+			}
+			if cmd.CloudStorage != tt.wantValue {
+				t.Errorf("CloudStorage = %q, want %q", cmd.CloudStorage, tt.wantValue)
+			}
+		})
+	}
+}
+
+func TestUploadOnlyDoesNotRequireDestinationContext(t *testing.T) {
+	const sourceContext = "source"
+	kubeconfig := writeTempKubeconfig(t, sourceContext)
+	configFlags := genericclioptions.NewConfigFlags(false)
+	configFlags.KubeConfig = &kubeconfig
+
+	cmd := &TransferPVCCommand{
+		configFlags: configFlags,
+		Flags: Flags{
+			SourceContext: sourceContext,
+			UploadOnly:    true,
+		},
+	}
+	if err := cmd.Complete(nil, nil); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if cmd.destinationContext != nil || cmd.DestinationContext != "" {
+		t.Fatalf("upload-only unexpectedly resolved destination context %q", cmd.DestinationContext)
+	}
+}
+
+func TestDownloadOnlyDoesNotRequireSourceContext(t *testing.T) {
+	const destinationContext = "destination"
+	kubeconfig := writeTempKubeconfig(t, destinationContext)
+	configFlags := genericclioptions.NewConfigFlags(false)
+	configFlags.KubeConfig = &kubeconfig
+
+	cmd := &TransferPVCCommand{
+		configFlags: configFlags,
+		Flags: Flags{
+			DestinationContext: destinationContext,
+			DownloadOnly:       true,
+		},
+	}
+	if err := cmd.Complete(nil, nil); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if cmd.sourceContext != nil || cmd.SourceContext != "" {
+		t.Fatalf("download-only unexpectedly resolved source context %q", cmd.SourceContext)
+	}
+	if cmd.destinationContext == nil {
+		t.Fatal("download-only did not resolve destination context")
+	}
+}
+
+func TestValidateUploadOnly(t *testing.T) {
+	validFlags := func() Flags {
+		return Flags{
+			UploadOnly: true,
+			PVC: PvcFlags{
+				Name:      mappedNameVar{source: "data"},
+				Namespace: mappedNameVar{source: "source-ns"},
+			},
+			CloudStorage:       "remote:bucket",
+			RcloneConfigSecret: "rclone-config",
+			KeepCloudData:      true,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Flags)
+		wantErr string
+	}{
+		{name: "valid without destination context"},
+		{
+			name: "requires cloud storage",
+			mutate: func(f *Flags) {
+				f.CloudStorage = ""
+			},
+			wantErr: "--upload-only requires --cloud-storage",
+		},
+		{
+			name: "requires cloud data retention",
+			mutate: func(f *Flags) {
+				f.KeepCloudData = false
+			},
+			wantErr: "--upload-only requires --keep-cloud-data",
+		},
+		{
+			name: "requires source namespace",
+			mutate: func(f *Flags) {
+				f.PVC.Namespace.source = ""
+			},
+			wantErr: "source pvc namespace cannot be empty",
+		},
+		{
+			name: "rejects automatic encryption",
+			mutate: func(f *Flags) {
+				f.Encrypt = true
+			},
+			wantErr: "--upload-only does not support --encrypt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := validFlags()
+			if tt.mutate != nil {
+				tt.mutate(&flags)
+			}
+			cmd := &TransferPVCCommand{
+				Flags:         flags,
+				sourceContext: &clientcmdapi.Context{},
+			}
+			err := cmd.Validate()
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidateDownloadOnly(t *testing.T) {
+	validFlags := func() Flags {
+		return Flags{
+			DownloadOnly: true,
+			PVC: PvcFlags{
+				Name:      mappedNameVar{source: "source-data", destination: "target-data"},
+				Namespace: mappedNameVar{source: "source-ns", destination: "target-ns"},
+			},
+			CloudStorage:       "remote:bucket/crane",
+			RcloneConfigSecret: "rclone-config",
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*Flags)
+		wantErr string
+	}{
+		{name: "valid without source context"},
+		{
+			name: "requires cloud storage",
+			mutate: func(f *Flags) {
+				f.CloudStorage = ""
+			},
+			wantErr: "--download-only requires --cloud-storage",
+		},
+		{
+			name: "requires source identity for cloud path",
+			mutate: func(f *Flags) {
+				f.PVC.Namespace.source = ""
+			},
+			wantErr: "--download-only requires source PVC name and namespace",
+		},
+		{
+			name: "rejects automatic encryption",
+			mutate: func(f *Flags) {
+				f.Encrypt = true
+			},
+			wantErr: "--download-only does not support --encrypt",
+		},
+		{
+			name: "is mutually exclusive with upload only",
+			mutate: func(f *Flags) {
+				f.UploadOnly = true
+				f.KeepCloudData = true
+			},
+			wantErr: "--upload-only and --download-only cannot be used together",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flags := validFlags()
+			if tt.mutate != nil {
+				tt.mutate(&flags)
+			}
+			cmd := &TransferPVCCommand{
+				Flags:              flags,
+				destinationContext: &clientcmdapi.Context{},
+			}
+			err := cmd.Validate()
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("Validate() error = %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Validate() error = %v, want %q", err, tt.wantErr)
 			}
 		})
 	}

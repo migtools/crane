@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"crypto/sha256"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"log"
@@ -86,6 +87,8 @@ type Flags struct {
 	RcloneConfigFile   string
 	Encrypt            bool
 	KeepCloudData      bool
+	UploadOnly         bool
+	DownloadOnly       bool
 }
 
 // EndpointFlags defines command line flags specific
@@ -194,13 +197,13 @@ func addFlagsToTransferPVCCommand(c *Flags, cmd *cobra.Command) {
 	cmd.Flags().StringVar(&c.Endpoint.IngressClass, "ingress-class", "", "IngressClass to use for the ingress endpoint")
 	cmd.Flags().BoolVar(&c.Verify, "verify", false, "Enable checksum verification")
 	cmd.Flags().StringVar(&c.ProgressOutput, "output", "", "Write data transfer stats to specified output file")
-	cmd.Flags().StringVar(&c.CloudStorage, "cloud-storage", "", "S3-compatible cloud storage path for indirect transfer (e.g. remote:my-bucket)")
+	cmd.Flags().StringVar(&c.CloudStorage, "cloud-storage", "", "rclone cloud storage path for indirect transfer (e.g. remote:my-bucket)")
 	cmd.Flags().StringVar(&c.RcloneConfigSecret, "rclone-config-secret", "", "Name of the K8s Secret containing rclone.conf for indirect transfer")
 	cmd.Flags().StringVar(&c.RcloneConfigFile, "rclone-config-file", "", "Path to local rclone.conf file for indirect transfer (crane creates temporary Secrets)")
 	cmd.Flags().BoolVar(&c.Encrypt, "encrypt", false, "Enable client-side encryption for indirect transfer")
-	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer")
-	cmd.MarkFlagRequired("source-context")
-	cmd.MarkFlagRequired("destination-context")
+	cmd.Flags().BoolVar(&c.KeepCloudData, "keep-cloud-data", false, "Skip cloud storage cleanup after indirect transfer; required with --upload-only for a later download")
+	cmd.Flags().BoolVar(&c.UploadOnly, "upload-only", false, "Upload source PVC data to cloud storage without contacting the destination cluster")
+	cmd.Flags().BoolVar(&c.DownloadOnly, "download-only", false, "Download cloud storage data into an existing destination PVC without contacting the source cluster")
 	cmd.MarkFlagRequired("pvc-name")
 }
 
@@ -218,15 +221,15 @@ func (t *TransferPVCCommand) Complete(c *cobra.Command, args []string) error {
 		return err
 	}
 
-	if t.Flags.DestinationContext == "" {
-		t.Flags.DestinationContext = *t.configFlags.Context
+	if t.DestinationContext == "" && !t.UploadOnly {
+		t.DestinationContext = *t.configFlags.Context
 	}
 
 	for name, context := range rawConfig.Contexts {
-		if name == t.Flags.SourceContext {
+		if !t.DownloadOnly && name == t.Flags.SourceContext {
 			t.sourceContext = context
 		}
-		if name == t.Flags.DestinationContext {
+		if !t.UploadOnly && name == t.DestinationContext {
 			t.destinationContext = context
 		}
 	}
@@ -258,6 +261,24 @@ func (t *TransferPVCCommand) Validate() error {
 	}
 	cloudStorage := t.CloudStorage
 
+	if t.UploadOnly && t.DownloadOnly {
+		return fmt.Errorf("--upload-only and --download-only cannot be used together")
+	}
+	if t.UploadOnly && cloudStorage == "" {
+		return fmt.Errorf("--upload-only requires --cloud-storage")
+	}
+	if t.DownloadOnly && cloudStorage == "" {
+		return fmt.Errorf("--download-only requires --cloud-storage")
+	}
+	if t.UploadOnly && !t.KeepCloudData {
+		return fmt.Errorf("--upload-only requires --keep-cloud-data so a later download can access the uploaded data")
+	}
+	if t.UploadOnly && t.Encrypt {
+		return fmt.Errorf("--upload-only does not support --encrypt until a download handoff is available; use a user-managed rclone crypt remote")
+	}
+	if t.DownloadOnly && t.Encrypt {
+		return fmt.Errorf("--download-only does not support --encrypt until a download handoff is available; use a user-managed rclone crypt remote")
+	}
 	if t.Encrypt && cloudStorage == "" {
 		return fmt.Errorf("--encrypt requires --cloud-storage")
 	}
@@ -272,25 +293,41 @@ func (t *TransferPVCCommand) Validate() error {
 		return fmt.Errorf("--rclone-config-file requires --cloud-storage")
 	}
 
-	if t.sourceContext == nil {
+	if !t.DownloadOnly && t.sourceContext == nil {
 		log.Debugf("Cannot evaluate source context")
 		return fmt.Errorf("cannot evaluate source context")
 	}
 
-	if t.destinationContext == nil {
+	if !t.UploadOnly && t.destinationContext == nil {
 		log.Debugf("Cannot evaluate destination context")
 		return fmt.Errorf("cannot evaluate destination context")
 	}
 
-	if t.isIntraClusterSameNamespace() && t.PVC.Name.source == t.PVC.Name.destination {
+	if !t.UploadOnly && t.isIntraClusterSameNamespace() && t.PVC.Name.source == t.PVC.Name.destination {
 		log.Debugf("Source and destination PVC names must differ for same-cluster same-namespace transfers")
 		return fmt.Errorf("source and destination PVC names must differ for same-cluster same-namespace transfers")
 	}
 
-	err := t.PVC.Validate()
-	if err != nil {
-		log.Errorf("PVC validation failed: %v", err)
-		return err
+	if t.UploadOnly {
+		if t.PVC.Name.source == "" {
+			return fmt.Errorf("source pvc name cannot be empty")
+		}
+		if t.PVC.Namespace.source == "" {
+			return fmt.Errorf("source pvc namespace cannot be empty")
+		}
+	} else if t.DownloadOnly {
+		if t.PVC.Name.source == "" || t.PVC.Namespace.source == "" {
+			return fmt.Errorf("--download-only requires source PVC name and namespace to locate cloud data")
+		}
+		if t.PVC.Name.destination == "" || t.PVC.Namespace.destination == "" {
+			return fmt.Errorf("--download-only requires destination PVC name and namespace")
+		}
+	} else {
+		err := t.PVC.Validate()
+		if err != nil {
+			log.Errorf("PVC validation failed: %v", err)
+			return err
+		}
 	}
 
 	if cloudStorage != "" {
@@ -309,7 +346,7 @@ func (t *TransferPVCCommand) Validate() error {
 		return nil
 	}
 
-	err = t.Endpoint.Validate()
+	err := t.Endpoint.Validate()
 	if err != nil {
 		log.Errorf("Endpoint validation failed: %v", err)
 		return err
@@ -372,10 +409,10 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		totalPhases = 8
 	}
 	phases := cli.NewPhaseTracker(t.ErrOut, totalPhases)
-	var rsyncExitCode *int32
+	var rsyncProgress *Progress
 	defer func() {
 		cli.PrintTransferSummary(t.ErrOut, &cli.TransferSummary{
-			Status:   transferSummaryStatus(retErr, rsyncExitCode),
+			Status:   transferSummaryStatus(retErr, rsyncProgress),
 			Duration: phases.Elapsed(),
 		})
 	}()
@@ -668,20 +705,27 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		return phases.Fail(err, "failed to create rsync client")
 	}
 
-	rsyncExitCode, err = followClientLogs(
+	rsyncProgress, err = followClientLogs(
 		srcCfg, types.NamespacedName{Name: srcPVC.Name, Namespace: srcPVC.Namespace}, clientLabels, t.ProgressOutput, log)
-	if err != nil {
-		log.Errorf("Error following rsync client logs: %v", err)
-		return phases.Fail(err, "error following rsync client logs")
+	copyErr := err
+	if copyErr == nil {
+		copyErr = rsyncResultError(rsyncProgress)
+	}
+	if copyErr != nil {
+		log.Errorf("Rsync data copy failed: %v", copyErr)
+		copyErr = phases.Fail(copyErr, "rsync data copy failed")
 	}
 	detail := ""
-	if rsyncExitCode != nil {
-		detail = fmt.Sprintf("exit=%d", *rsyncExitCode)
+	if rsyncProgress != nil && rsyncProgress.ExitCode != nil {
+		detail = fmt.Sprintf("exit=%d", *rsyncProgress.ExitCode)
 	}
-	phases.End("finished", detail)
+	if copyErr == nil {
+		phases.End("finished", detail)
+	}
 
 	// ---- Phase 7/8: Cleanup ----
 	log.Infof("Phase %d: Cleanup", totalPhases)
+	var cleanupErr error
 	if t.isIntraClusterSameNamespace() {
 		phases.Start("Cleaning up server resources")
 		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
@@ -693,30 +737,52 @@ func (t *TransferPVCCommand) run() (retErr error) {
 		phases.Start("Cleaning up client resources")
 		if err := garbageCollect(srcClient, destClient, clientLabels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
 			log.Errorf("Client-side cleanup failed: %v", err)
-			return phases.Fail(err, "client-side cleanup failed")
+			cleanupErr = phases.Fail(err, "client-side cleanup failed")
+		} else {
+			phases.End("ok", "")
 		}
-		phases.End("ok", "")
 	} else {
 		phases.Start("Cleaning up temporary resources")
 		if err := garbageCollect(srcClient, destClient, labels, t.Endpoint.Type, t.PVC.Namespace); err != nil {
 			log.Errorf("Cleanup failed: %v", err)
-			return phases.Fail(err, "cleanup failed")
+			cleanupErr = phases.Fail(err, "cleanup failed")
+		} else {
+			phases.End("ok", "")
 		}
-		phases.End("ok", "")
+	}
+	if copyErr != nil || cleanupErr != nil {
+		return stderrors.Join(copyErr, cleanupErr)
 	}
 
 	log.Infof("PVC transfer complete: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 	return nil
 }
 
-func transferSummaryStatus(retErr error, rsyncExitCode *int32) string {
+func rsyncResultError(progress *Progress) error {
+	if progress == nil || progress.ExitCode == nil {
+		return fmt.Errorf("rsync client pod terminated without an exit code")
+	}
+	if *progress.ExitCode == 0 {
+		return nil
+	}
+	if *progress.ExitCode == 23 && (progress.TransferredFiles > 0 ||
+		(progress.TransferredData != nil && progress.TransferredData.val > 0)) {
+		return nil
+	}
+	return fmt.Errorf("rsync client exited with code %d", *progress.ExitCode)
+}
+
+func transferSummaryStatus(retErr error, progress *Progress) string {
 	if retErr != nil {
 		return "failed"
 	}
-	if rsyncExitCode != nil && *rsyncExitCode == 23 {
+	if rsyncResultError(progress) != nil {
+		return "failed"
+	}
+	if *progress.ExitCode == 23 {
 		return "succeeded (with warnings — some files could not be transferred)"
 	}
-	if rsyncExitCode != nil && *rsyncExitCode != 0 {
+	if *progress.ExitCode != 0 {
 		return "failed"
 	}
 	return "succeeded"
@@ -1213,11 +1279,11 @@ type LogStreams interface {
 	Streams() (stdout chan string, stderr chan string, err chan error)
 	// Close closes log streams
 	Close()
-	// ExitCode returns the rsync process exit code, if available
-	ExitCode() *int32
+	// Progress returns the final rsync transfer progress, if available.
+	Progress() *Progress
 }
 
-func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string, log *logrus.Logger) (*int32, error) {
+func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels map[string]string, outputFile string, log *logrus.Logger) (*Progress, error) {
 	logReader := NewRsyncLogStream(srcConfig, pvc, labels, outputFile, log)
 	err := logReader.Init()
 	if err != nil {
@@ -1242,7 +1308,7 @@ func followClientLogs(srcConfig *rest.Config, pvc types.NamespacedName, labels m
 			break
 		}
 	}
-	return logReader.ExitCode(), err
+	return logReader.Progress(), err
 }
 
 // waitForEndpoint waits for endpoint to become ready. While it waits, it also
