@@ -8,6 +8,7 @@ import (
 
 	"github.com/konveyor/crane/e2e-tests/config"
 	. "github.com/konveyor/crane/e2e-tests/framework"
+	"github.com/konveyor/crane/e2e-tests/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -93,6 +94,7 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(destSCName).NotTo(Equal(srcSC))
 		log.Printf("Using destination StorageClass=%s", destSCName)
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, srcSC, destSCName)
 
 		By("Scale down source MongoDB so the RWO PVC is unmounted")
 		Expect(kubectlSrc.ScaleDeploymentIfPresent(srcNamespace, appName, 0)).NotTo(HaveOccurred())
@@ -103,6 +105,7 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		By("Run crane export/transform/apply pipeline")
 		runner.WorkDir = paths.TempDir
 		Expect(RunCranePipelineWithChecks(runner, exportOpts, transformOpts, applyOpts)).NotTo(HaveOccurred())
+		Expect(utils.AssertKindsInOutput(paths.OutputDir, []string{"PersistentVolumeClaim"})).NotTo(HaveOccurred())
 
 		By("Transfer PVC onto the destination StorageClass")
 		nodeIP, err := GetClusterNodeIP(scenario.SrcApp.Context)
@@ -143,4 +146,3 @@ var _ = Describe("Same-cluster single-PVC StorageClass conversion", func() {
 		AssertNoTransferPVCLeftovers(kubectlTgt, []string{srcNamespace, tgtNamespace}, pvcName)
 	})
 })
-

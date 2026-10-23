@@ -66,6 +66,8 @@ var _ = Describe("Indirect transfer with missing rclone config Secret", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", srcApp.Namespace)
 			log.Printf("Found %d PVC(s) in source namespace %q", len(pvcs), srcApp.Namespace)
+			targetStorageClass, err := DefaultStorageClassName(scenario.KubectlTgt.Context)
+			Expect(err).NotTo(HaveOccurred())
 
 			By("Verify the nonexistent Secret is truly absent")
 			const bogusSecret = "nonexistent-rclone-secret"
@@ -83,6 +85,7 @@ var _ = Describe("Indirect transfer with missing rclone config Secret", func() {
 				TargetContext:      tgtApp.Context,
 				PVCName:            pvcs[0].Name,
 				PVCNamespaceMap:    fmt.Sprintf("%s:%s", namespace, namespace),
+				DestStorageClass:   targetStorageClass,
 				CloudStorage:       "remote:crane-e2e",
 				RcloneConfigSecret: bogusSecret,
 			}

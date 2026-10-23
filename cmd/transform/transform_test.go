@@ -1253,6 +1253,63 @@ func TestRun_InstructionsFileAndStageOptionalsConflict(t *testing.T) {
 	}
 }
 
+func TestStageOptionalsForPlugin(t *testing.T) {
+	optionals := map[string]map[string]string{
+		"KubernetesPlugin": {"strip-default-rbac": "true"},
+		"OpenShiftPlugin":  {"strip-default-cabundle": "true"},
+	}
+
+	tests := []struct {
+		name     string
+		plugin   string
+		expected map[string]map[string]string
+	}{
+		{
+			name:   "returns only KubernetesPlugin optionals",
+			plugin: "KubernetesPlugin",
+			expected: map[string]map[string]string{
+				"KubernetesPlugin": {"strip-default-rbac": "true"},
+			},
+		},
+		{
+			name:   "returns only OpenShiftPlugin optionals",
+			plugin: "OpenShiftPlugin",
+			expected: map[string]map[string]string{
+				"OpenShiftPlugin": {"strip-default-cabundle": "true"},
+			},
+		},
+		{
+			name:     "returns nil for stage without optionals",
+			plugin:   "CustomEdits",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stageOptionalsForPlugin(optionals, tt.plugin)
+			if len(got) != len(tt.expected) {
+				t.Fatalf("expected %d stage optionals, got %d: %v", len(tt.expected), len(got), got)
+			}
+			for stage, expectedFlags := range tt.expected {
+				gotFlags, ok := got[stage]
+				if !ok {
+					t.Errorf("missing optionals for stage %q", stage)
+					continue
+				}
+				if len(gotFlags) != len(expectedFlags) {
+					t.Errorf("stage %q: expected %d flags, got %d", stage, len(expectedFlags), len(gotFlags))
+				}
+				for key, expectedValue := range expectedFlags {
+					if gotFlags[key] != expectedValue {
+						t.Errorf("stage %q flag %q: expected %q, got %q", stage, key, expectedValue, gotFlags[key])
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestValidate_MissingExportDir_FailsBeforeRun(t *testing.T) {
 	tmpDir := t.TempDir()
 	transformDir := filepath.Join(tmpDir, "transform")

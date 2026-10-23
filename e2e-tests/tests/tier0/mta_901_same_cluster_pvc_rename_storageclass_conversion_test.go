@@ -57,7 +57,6 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		transformOpts := TransformOptions{
 			ExportDir:    paths.ExportDir,
 			TransformDir: paths.TransformDir,
-			OptionalFlags: fmt.Sprintf(`{"pvc-rename-map":"%s:%s"}`, srcPVCName, dstPVCName),
 		}
 		applyOpts := ApplyOptions{TransformDir: paths.TransformDir, OutputDir: paths.OutputDir}
 
@@ -98,6 +97,10 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(destSCName).NotTo(Equal(srcSC))
 		log.Printf("Using destination StorageClass=%s", destSCName)
+		transformOpts.OptionalFlags = fmt.Sprintf(
+			`{"pvc-rename-map":"%s:%s","pvc-storage-class-map":"%s:%s"}`,
+			srcPVCName, dstPVCName, srcSC, destSCName,
+		)
 
 		By("Scale down source MongoDB so the RWO PVC is unmounted")
 		Expect(kubectlSrc.ScaleDeploymentIfPresent(srcNamespace, appName, 0)).NotTo(HaveOccurred())
@@ -155,4 +158,3 @@ var _ = Describe("Same-cluster PVC rename + StorageClass conversion", func() {
 		AssertNoTransferPVCLeftovers(kubectlTgt, []string{tgtNamespace}, srcPVCName)
 	})
 })
-

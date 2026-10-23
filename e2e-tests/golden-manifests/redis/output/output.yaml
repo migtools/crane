@@ -4,7 +4,7 @@ data:
 kind: Secret
 metadata:
   name: redis
-  namespace: redis
+  namespace: mta-801-redis
 type: Opaque
 ---
 apiVersion: v1
@@ -13,7 +13,7 @@ metadata:
   labels:
     name: redis
   name: redis
-  namespace: redis
+  namespace: mta-801-redis
 spec:
   internalTrafficPolicy: Cluster
   ipFamilies:
@@ -29,6 +29,20 @@ spec:
   sessionAffinity: None
   type: ClusterIP
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+  namespace: mta-801-redis
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+  volumeMode: Filesystem
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,7 +51,7 @@ metadata:
   labels:
     name: redis
   name: redis
-  namespace: redis
+  namespace: mta-801-redis
 spec:
   progressDeadlineSeconds: 600
   replicas: 0

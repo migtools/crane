@@ -192,7 +192,7 @@ For StatefulSets, run the same steps for each ordinal PVC (`data-<sts>-0`, `data
 
 ## Cross-cluster variant (example)
 
-The same workflow works across clusters. Replace `mycluster` with separate source and target contexts, and remap the namespace if needed:
+The same workflow works across clusters. Replace `mycluster` with separate source and target contexts, and remap the namespace if needed. For cross-provider transfers, see [Cross-provider transfers](commands/transfer-pvc.md#cross-provider-transfers):
 
 ```bash
 crane transfer-pvc \
@@ -209,7 +209,7 @@ crane transfer-pvc \
 
 ## Indirect transfer variant (example)
 
-For clusters without direct network connectivity, use indirect transfer via S3-compatible storage:
+For clusters without direct network connectivity, use indirect transfer via cloud storage:
 
 ```bash
 crane transfer-pvc \
@@ -223,4 +223,4 @@ crane transfer-pvc \
   --verify
 ```
 
-No endpoint or ingress setup required. Both clusters only need outbound access to the S3 bucket.
+No endpoint or ingress setup required. Both clusters only need outbound access to the storage bucket or container.

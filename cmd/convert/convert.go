@@ -38,8 +38,9 @@ func NewConvertOptions(streams genericclioptions.IOStreams, f *flags.GlobalFlags
 	}
 
 	cmd := &cobra.Command{
-		Use:   "convert",
-		Short: "Convert a deprecated resource to its replacement",
+		Use:        "convert",
+		Short:      "Convert a deprecated resource to its replacement",
+		Deprecated: "it has been replaced by the crane-plugin-buildconfig-to-shipwright plugin (https://github.com/migtools/crane-plugin-buildconfig-to-shipwright). Use it via `crane transform` instead.",
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := t.Complete(c, args); err != nil {
 				return err
@@ -75,7 +76,11 @@ func (t *ConvertOptions) Complete(c *cobra.Command, args []string) error {
 	if t.debug {
 		t.globalFlags.Debug = true
 	}
-	t.Logger = t.globalFlags.GetLoggerOrDefault()
+	logger, err := t.globalFlags.GetLoggerOrDefault()
+	if err != nil {
+		return err
+	}
+	t.Logger = logger
 	return nil
 }
 

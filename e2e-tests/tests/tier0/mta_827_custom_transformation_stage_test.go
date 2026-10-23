@@ -17,7 +17,7 @@ import (
 var _ = Describe("Custom transformation stage", func() {
 	It("[MTA-827] should migrate a simple nginx app with a custom transformation stage", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-827-nginx"
 		serviceName := "my-" + appName
 		targetNamespace := "migrated-app"
 		scenario := NewMigrationScenario(

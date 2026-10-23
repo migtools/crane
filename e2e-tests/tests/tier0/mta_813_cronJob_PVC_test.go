@@ -26,7 +26,6 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 			config.TargetContext,
 		)
 
-
 		srcApp := scenario.SrcAppNonAdmin
 		tgtApp := scenario.TgtAppNonAdmin
 		runner := scenario.CraneNonAdmin
@@ -156,6 +155,11 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 		}
 		pvcName := pvcs[0].Name
 		log.Printf("Using PVC name for data integrity check: %s\n", pvcName)
+		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.TgtApp.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 
 		runner.WorkDir = paths.TempDir
 		By("Run crane export/transform/apply pipeline as non-admin")
@@ -170,11 +174,12 @@ var _ = Describe("CronJob with attached PVC migration as non-admin user", func()
 
 		for _, pvc := range pvcs {
 			opts := TransferPVCOptions{
-				SourceContext:   srcApp.Context,
-				TargetContext:   tgtApp.Context,
-				PVCName:         pvc.Name,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, srcApp.Namespace, tgtIP),
+				SourceContext:    srcApp.Context,
+				TargetContext:    tgtApp.Context,
+				PVCName:          pvc.Name,
+				PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+				DestStorageClass: targetStorageClass,
+				Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvc.Name, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s -> namespace %s on target\n", pvc.Name, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())

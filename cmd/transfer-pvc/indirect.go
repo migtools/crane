@@ -29,10 +29,22 @@ import (
 )
 
 func (t *TransferPVCCommand) runIndirect() error {
-	log := t.log
 	crlog.InitControllerRuntimeLogger("transfer-pvc")
+	log := t.log
 	log.Infof("Starting indirect PVC transfer: %s/%s -> %s/%s", t.PVC.Namespace.source, t.PVC.Name.source, t.PVC.Namespace.destination, t.PVC.Name.destination)
 
+	t.printIndirectBanner()
+
+	if t.UploadOnly {
+		return t.runIndirectUploadOnly()
+	}
+	if t.DownloadOnly {
+		return t.runIndirectDownloadOnly()
+	}
+	return t.runIndirectFull()
+}
+
+func (t *TransferPVCCommand) printIndirectBanner() {
 	fmt.Fprintf(os.Stderr, "\ncrane transfer-pvc (indirect via cloud storage)\n")
 	fmt.Fprintf(os.Stderr, "source context:      %s\n", t.SourceContext)
 	fmt.Fprintf(os.Stderr, "destination context: %s\n", t.DestinationContext)
@@ -41,31 +53,278 @@ func (t *TransferPVCCommand) runIndirect() error {
 		t.PVC.Namespace.destination, t.PVC.Name.destination)
 	fmt.Fprintf(os.Stderr, "cloud storage:       %s\n", t.CloudStorage)
 	fmt.Fprintln(os.Stderr)
+}
 
+func (t *TransferPVCCommand) getSourceClients() (client.Client, *rest.Config, error) {
 	srcClient, err := t.getClientFromContext(t.SourceContext)
 	if err != nil {
-		log.Debugf("Unable to get source client: %v", err)
-		return fmt.Errorf("unable to get source client: %w", err)
+		t.log.Debugf("Unable to get source client: %v", err)
+		return nil, nil, fmt.Errorf("unable to get source client: %w", err)
 	}
-	destClient, err := t.getClientFromContext(t.DestinationContext)
-	if err != nil {
-		log.Debugf("Unable to get destination client: %v", err)
-		return fmt.Errorf("unable to get destination client: %w", err)
-	}
-
 	srcCfg, err := t.getRestConfigFromContext(t.SourceContext)
 	if err != nil {
-		log.Debugf("Unable to get source rest config: %v", err)
-		return fmt.Errorf("unable to get source rest config: %w", err)
+		t.log.Debugf("Unable to get source rest config: %v", err)
+		return nil, nil, fmt.Errorf("unable to get source rest config: %w", err)
+	}
+	return srcClient, srcCfg, nil
+}
+
+func (t *TransferPVCCommand) getDestClients() (client.Client, *rest.Config, error) {
+	destClient, err := t.getClientFromContext(t.DestinationContext)
+	if err != nil {
+		t.log.Debugf("Unable to get destination client: %v", err)
+		return nil, nil, fmt.Errorf("unable to get destination client: %w", err)
 	}
 	destCfg, err := t.getRestConfigFromContext(t.DestinationContext)
 	if err != nil {
-		log.Debugf("Unable to get destination rest config: %v", err)
-		return fmt.Errorf("unable to get destination rest config: %w", err)
+		t.log.Debugf("Unable to get destination rest config: %v", err)
+		return nil, nil, fmt.Errorf("unable to get destination rest config: %w", err)
+	}
+	return destClient, destCfg, nil
+}
+
+func (t *TransferPVCCommand) readSourcePVC(srcClient client.Client) (*corev1.PersistentVolumeClaim, error) {
+	fmt.Fprintln(os.Stderr, "[1/4] Reading source PVC ...")
+	srcPVC := &corev1.PersistentVolumeClaim{}
+	err := srcClient.Get(context.TODO(), client.ObjectKey{
+		Namespace: t.PVC.Namespace.source,
+		Name:      t.PVC.Name.source,
+	}, srcPVC)
+	if err != nil {
+		t.log.Debugf("Unable to get source PVC %s/%s: %v", t.PVC.Namespace.source, t.PVC.Name.source, err)
+		return nil, fmt.Errorf("unable to get source PVC: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "[1/4] Reading source PVC ... ok")
+	return srcPVC, nil
+}
+
+func (t *TransferPVCCommand) readRcloneConfigData() ([]byte, error) {
+	configData, err := t.readRcloneConfigFile()
+	if err != nil {
+		t.log.Debugf("Failed to read rclone config file: %v", err)
+		return nil, err
+	}
+	if configData == nil {
+		return nil, nil
+	}
+	if t.Encrypt {
+		if hasRcloneSection(configData, "encrypted") {
+			t.log.Debugf("Rclone config already contains an [encrypted] section")
+			return nil, fmt.Errorf("rclone config already contains an [encrypted] section; remove it or omit --encrypt")
+		}
+		remotePath := fmt.Sprintf("%s/%s/%s", t.CloudStorage, t.PVC.Namespace.source, t.PVC.Name.source)
+		cryptSection, err := generateCryptSection(remotePath, t.log)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate encryption config: %w", err)
+		}
+		configData = append(configData, '\n')
+		configData = append(configData, []byte(cryptSection)...)
+	}
+	return configData, nil
+}
+
+// setupRcloneSecret creates a temporary rclone Secret on the given cluster when
+// configData is non-nil, returning the secret name and a cleanup function. When
+// configData is nil (no --rclone-config-file), it falls back to the pre-existing
+// --rclone-config-secret value with a no-op cleanup. The secret is validated on
+// the given cluster before returning; if validation fails after creation, the
+// temporary secret is deleted before the error is returned.
+func (t *TransferPVCCommand) setupRcloneSecret(
+	c client.Client,
+	namespace, pvcName, side string,
+	configData []byte,
+) (string, func(), error) {
+	if configData == nil {
+		secretName := t.RcloneConfigSecret
+		if secretName == "" {
+			return "", func() {}, nil
+		}
+		if err := t.validateRcloneConfigSecretOnCluster(secretName, c, namespace, side); err != nil {
+			return "", nil, err
+		}
+		return secretName, func() {}, nil
 	}
 
-	// Read source PVC
-	fmt.Fprintf(os.Stderr, "[1/6] Reading source PVC ...\n")
+	secretName, err := t.createTempRcloneSecretFromData(c, namespace, configData, pvcName)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create rclone config secret on %s: %w", side, err)
+	}
+
+	cleanup := func() {
+		t.deleteTempRcloneSecret(c, secretName, namespace, side)
+	}
+
+	if err := t.validateRcloneConfigSecretOnCluster(secretName, c, namespace, side); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+
+	return secretName, cleanup, nil
+}
+
+func (t *TransferPVCCommand) runIndirectUploadOnly() error {
+	log := t.log
+
+	srcClient, srcCfg, err := t.getSourceClients()
+	if err != nil {
+		return err
+	}
+
+	srcPVC, err := t.readSourcePVC(srcClient)
+	if err != nil {
+		return err
+	}
+
+	configData, err := t.readRcloneConfigData()
+	if err != nil {
+		return err
+	}
+	configSecret, cleanupSecret, err := t.setupRcloneSecret(srcClient, t.PVC.Namespace.source, t.PVC.Name.source, "source", configData)
+	if err != nil {
+		return err
+	}
+	defer cleanupSecret()
+
+	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.SourceImage)
+	if err != nil {
+		log.Warnf("Could not determine source security context: %v", err)
+		uploadSecCtx = &corev1.PodSecurityContext{}
+	}
+
+	transfer := indirect.New(srcClient, nil, indirect.Options{
+		Image:                 t.SourceImage,
+		CloudStorage:          t.CloudStorage,
+		ConfigSecret:          configSecret,
+		Encrypt:               t.Encrypt,
+		KeepCloudData:         t.KeepCloudData,
+		UploadSecurityContext: *uploadSecCtx,
+	})
+
+	defer func() {
+		fmt.Fprintln(os.Stderr, "[4/4] Cleaning up transfer pods ...")
+		if err := transfer.Cleanup(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name); err != nil {
+			log.Warnf("Source cleanup warning: %v", err)
+		}
+		fmt.Fprintln(os.Stderr, "[4/4] Cleaning up transfer pods ... ok")
+	}()
+
+	fmt.Fprintln(os.Stderr, "[2/4] Uploading data to cloud storage ...")
+	uploadPod, err := transfer.Upload(context.TODO(), srcPVC)
+	if err != nil {
+		log.Debugf("Upload failed: %v", err)
+		return fmt.Errorf("upload failed: %w", err)
+	}
+	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone", log, nil); err != nil {
+		return fmt.Errorf("upload pod failed: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "[2/4] Uploading data to cloud storage ... ok")
+
+	t.cleanupCloudStorage(os.Stderr, "[3/4]",
+		func() (*corev1.Pod, error) {
+			return transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
+		},
+		func(pod *corev1.Pod) error {
+			return followPodLogsUntilComplete(srcCfg, srcClient, pod.Name, pod.Namespace, "rclone", log, nil)
+		},
+	)
+
+	fmt.Fprintln(os.Stderr, "\nSummary\n-------")
+	fmt.Fprintln(os.Stderr, "PVC data upload: succeeded")
+	fmt.Fprintf(os.Stderr, "Transfer ID:       %s/%s\n", srcPVC.Namespace, srcPVC.Name)
+	if t.KeepCloudData {
+		fmt.Fprintf(os.Stderr, "Cloud data path:   %s/%s/%s\n", t.CloudStorage, srcPVC.Namespace, srcPVC.Name)
+	} else {
+		fmt.Fprintln(os.Stderr, "Cloud data:        cleaned up (use --keep-cloud-data for a later download)")
+	}
+	return nil
+}
+
+func (t *TransferPVCCommand) runIndirectDownloadOnly() error {
+	log := t.log
+
+	destClient, destCfg, err := t.getDestClients()
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(os.Stderr, "[1/4] Reading destination PVC ...")
+	destPVC, err := t.existingDownloadPVC(context.TODO(), destClient)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "[1/4] Reading destination PVC ... ok")
+
+	configData, err := t.readRcloneConfigData()
+	if err != nil {
+		return err
+	}
+	configSecret, cleanupSecret, err := t.setupRcloneSecret(destClient, t.PVC.Namespace.destination, t.PVC.Name.destination, "destination", configData)
+	if err != nil {
+		return err
+	}
+	defer cleanupSecret()
+
+	downloadSecCtx, err := getTargetPodSecurityContext(destClient, destPVC.Namespace, destPVC.Name, t.SourceImage)
+	if err != nil {
+		log.Warnf("Could not determine target security context: %v", err)
+		downloadSecCtx = &corev1.PodSecurityContext{}
+	}
+
+	transfer := indirect.New(nil, destClient, indirect.Options{
+		Image:                   t.SourceImage,
+		CloudStorage:            t.CloudStorage,
+		ConfigSecret:            configSecret,
+		Encrypt:                 t.Encrypt,
+		KeepCloudData:           t.KeepCloudData,
+		DownloadSecurityContext: *downloadSecCtx,
+	})
+
+	defer func() {
+		fmt.Fprintln(os.Stderr, "[4/4] Cleaning up transfer pods ...")
+		if err := transfer.Cleanup(context.TODO(), destClient, destPVC.Namespace, destPVC.Name); err != nil {
+			log.Warnf("Destination cleanup warning: %v", err)
+		}
+		fmt.Fprintln(os.Stderr, "[4/4] Cleaning up transfer pods ... ok")
+	}()
+
+	fmt.Fprintln(os.Stderr, "[2/4] Downloading data from cloud storage ...")
+	downloadPod, err := transfer.Download(context.TODO(), destPVC, t.PVC.Namespace.source, t.PVC.Name.source)
+	if err != nil {
+		return fmt.Errorf("download failed: %w", err)
+	}
+	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log, destPVC); err != nil {
+		return fmt.Errorf("download pod failed: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "[2/4] Downloading data from cloud storage ... ok")
+
+	t.cleanupCloudStorage(os.Stderr, "[3/4]",
+		func() (*corev1.Pod, error) {
+			return transfer.CleanupCloudData(context.TODO(), destClient, destPVC.Namespace, destPVC.Name, t.PVC.Namespace.source, t.PVC.Name.source)
+		},
+		func(pod *corev1.Pod) error {
+			return followPodLogsUntilComplete(destCfg, destClient, pod.Name, pod.Namespace, "rclone", log, nil)
+		},
+	)
+
+	fmt.Fprintln(os.Stderr, "\nSummary\n-------")
+	fmt.Fprintln(os.Stderr, "PVC data download: succeeded")
+	fmt.Fprintf(os.Stderr, "Cloud data path:     %s/%s/%s\n", t.CloudStorage, t.PVC.Namespace.source, t.PVC.Name.source)
+	return nil
+}
+
+func (t *TransferPVCCommand) runIndirectFull() error {
+	log := t.log
+
+	srcClient, srcCfg, err := t.getSourceClients()
+	if err != nil {
+		return err
+	}
+	destClient, destCfg, err := t.getDestClients()
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(os.Stderr, "[1/6] Reading source PVC ...")
 	srcPVC := &corev1.PersistentVolumeClaim{}
 	err = srcClient.Get(context.TODO(), client.ObjectKey{
 		Namespace: t.PVC.Namespace.source,
@@ -75,78 +334,35 @@ func (t *TransferPVCCommand) runIndirect() error {
 		log.Debugf("Unable to get source PVC %s/%s: %v", t.PVC.Namespace.source, t.PVC.Name.source, err)
 		return fmt.Errorf("unable to get source PVC: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "[1/6] Reading source PVC ... ok\n")
+	fmt.Fprintln(os.Stderr, "[1/6] Reading source PVC ... ok")
 
-	// Resolve rclone config secret name and validate before creating destination resources
-	configSecret := t.RcloneConfigSecret
-	if t.RcloneConfigFile != "" {
-		configData, err := os.ReadFile(t.RcloneConfigFile)
-		if err != nil {
-			log.Debugf("Failed to read rclone config file: %v", err)
-			return fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
-		}
-		if len(bytes.TrimSpace(configData)) == 0 {
-			return fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
-		}
-
-		if t.Encrypt {
-			if strings.Contains(string(configData), "[encrypted]") {
-				log.Debugf("Rclone config already contains an [encrypted] section")
-				return fmt.Errorf("rclone config already contains an [encrypted] section; remove it or omit --encrypt")
-			}
-			remotePath := fmt.Sprintf("%s/%s/%s", t.CloudStorage, t.PVC.Namespace.source, t.PVC.Name.source)
-			cryptSection, err := generateCryptSection(remotePath, log)
-			if err != nil {
-				return fmt.Errorf("failed to generate encryption config: %w", err)
-			}
-			configData = append(configData, '\n')
-			configData = append(configData, []byte(cryptSection)...)
-		}
-
-		secretName, err := t.createTempRcloneSecretFromData(srcClient, t.PVC.Namespace.source, configData, t.PVC.Name.source)
-		if err != nil {
-			return fmt.Errorf("failed to create rclone config secret on source: %w", err)
-		}
-		defer func() {
-			if err := srcClient.Delete(context.TODO(), &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: t.PVC.Namespace.source},
-			}); err != nil && !errors.IsNotFound(err) {
-				log.Warnf("Failed to delete temp rclone config secret %q in source namespace %q: %v", secretName, t.PVC.Namespace.source, err)
-			}
-		}()
-		configSecret = secretName
-
-		destSecretName, err := t.createTempRcloneSecretFromData(destClient, t.PVC.Namespace.destination, configData, t.PVC.Name.destination)
-		if err != nil {
-			return fmt.Errorf("failed to create rclone config secret on destination: %w", err)
-		}
-		defer func() {
-			if err := destClient.Delete(context.TODO(), &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: destSecretName, Namespace: t.PVC.Namespace.destination},
-			}); err != nil && !errors.IsNotFound(err) {
-				log.Warnf("Failed to delete temp rclone config secret %q in destination namespace %q: %v", destSecretName, t.PVC.Namespace.destination, err)
-			}
-		}()
+	configData, err := t.readRcloneConfigData()
+	if err != nil {
+		return err
 	}
-
-	// Validate the secret that will actually be used for the transfer, regardless
-	// of whether it came from --rclone-config-secret or was created from
-	// --rclone-config-file
-	if configSecret != "" {
-		if err := t.validateRcloneConfigSecret(configSecret, srcClient, destClient); err != nil {
-			return err
-		}
+	// Both clusters receive the same config data; the source secret name is used
+	// as the configSecret for the transfer.
+	configSecret, cleanupSourceSecret, err := t.setupRcloneSecret(srcClient, t.PVC.Namespace.source, t.PVC.Name.source, "source", configData)
+	if err != nil {
+		return err
 	}
+	defer cleanupSourceSecret()
+
+	_, cleanupDestSecret, err := t.setupRcloneSecret(destClient, t.PVC.Namespace.destination, t.PVC.Name.destination, "destination", configData)
+	if err != nil {
+		return err
+	}
+	defer cleanupDestSecret()
 
 	// Create destination PVC
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ...\n")
+	fmt.Fprintln(os.Stderr, "[2/6] Creating destination PVC ...")
 	destPVC := t.buildDestinationPVC(srcPVC)
 	err = t.createDestinationPVC(context.TODO(), destClient, destPVC)
 	if err != nil {
 		log.Debugf("Unable to create destination PVC %s/%s: %v", destPVC.Namespace, destPVC.Name, err)
 		return fmt.Errorf("unable to create destination PVC: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "[2/6] Creating destination PVC ... ok\n")
+	fmt.Fprintln(os.Stderr, "[2/6] Creating destination PVC ... ok")
 
 	// Get security contexts for source and target separately
 	uploadSecCtx, err := getSourcePodSecurityContext(srcClient, srcPVC.Namespace, srcPVC.Name, t.SourceImage)
@@ -176,58 +392,48 @@ func (t *TransferPVCCommand) runIndirect() error {
 	})
 
 	defer func() {
-		fmt.Fprintf(os.Stderr, "[6/6] Cleaning up transfer pods ...\n")
+		fmt.Fprintln(os.Stderr, "[6/6] Cleaning up transfer pods ...")
 		if err := transfer.Cleanup(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name); err != nil {
 			log.Warnf("Source cleanup warning: %v", err)
 		}
 		if err := transfer.Cleanup(context.TODO(), destClient, destPVC.Namespace, destPVC.Name); err != nil {
 			log.Warnf("Destination cleanup warning: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "[6/6] Cleaning up transfer pods ... ok\n")
+		fmt.Fprintln(os.Stderr, "[6/6] Cleaning up transfer pods ... ok")
 	}()
 
-	// Upload
-	fmt.Fprintf(os.Stderr, "[3/6] Uploading data to cloud storage ...\n")
+	fmt.Fprintln(os.Stderr, "[3/6] Uploading data to cloud storage ...")
 	uploadPod, err := transfer.Upload(context.TODO(), srcPVC)
 	if err != nil {
 		log.Debugf("Upload failed: %v", err)
 		return fmt.Errorf("upload failed: %w", err)
 	}
-	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone", log); err != nil {
+	if err := followPodLogsUntilComplete(srcCfg, srcClient, uploadPod.Name, uploadPod.Namespace, "rclone", log, nil); err != nil {
 		return fmt.Errorf("upload pod failed: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "[3/6] Uploading data to cloud storage ... ok\n")
+	fmt.Fprintln(os.Stderr, "[3/6] Uploading data to cloud storage ... ok")
 
-	// Download
-	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ...\n")
+	fmt.Fprintln(os.Stderr, "[4/6] Downloading data from cloud storage ...")
 	downloadPod, err := transfer.Download(context.TODO(), destPVC, srcPVC.Namespace, srcPVC.Name)
 	if err != nil {
 		log.Debugf("Download failed: %v", err)
 		return fmt.Errorf("download failed: %w", err)
 	}
-	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log); err != nil {
+	if err := followPodLogsUntilComplete(destCfg, destClient, downloadPod.Name, downloadPod.Namespace, "rclone", log, destPVC); err != nil {
 		return fmt.Errorf("download pod failed: %w", err)
 	}
-	fmt.Fprintf(os.Stderr, "[4/6] Downloading data from cloud storage ... ok\n")
+	fmt.Fprintln(os.Stderr, "[4/6] Downloading data from cloud storage ... ok")
 
-	// Cleanup cloud data
-	fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ...\n")
-	if t.KeepCloudData {
-		fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
-	} else {
-		cleanupPod, err := transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
-		if err != nil {
-			log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
-			fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
-		} else {
-			if err := followPodLogsUntilComplete(srcCfg, srcClient, cleanupPod.Name, cleanupPod.Namespace, "rclone", log); err != nil {
-				log.Printf("WARN: cloud storage cleanup failed: %v", err)
-				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... failed (non-fatal)\n")
-			} else {
-				fmt.Fprintf(os.Stderr, "[5/6] Cleaning up cloud storage ... ok\n")
-			}
-		}
-	}
+	// Cleanup cloud data. Failures here are non-fatal (the data transfer has
+	// already succeeded), so this never aborts the transfer.
+	t.cleanupCloudStorage(os.Stderr, "[5/6]",
+		func() (*corev1.Pod, error) {
+			return transfer.CleanupCloudData(context.TODO(), srcClient, srcPVC.Namespace, srcPVC.Name, srcPVC.Namespace, srcPVC.Name)
+		},
+		func(pod *corev1.Pod) error {
+			return followPodLogsUntilComplete(srcCfg, srcClient, pod.Name, pod.Namespace, "rclone", log, nil)
+		},
+	)
 
 	fmt.Fprintf(os.Stderr, "\nSummary\n-------\n")
 	fmt.Fprintf(os.Stderr, "PVC data copy: succeeded (indirect via cloud storage)\n")
@@ -236,7 +442,99 @@ func (t *TransferPVCCommand) runIndirect() error {
 	return nil
 }
 
-func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger) error {
+// cleanupCloudStorage runs the [5/6] cleanup step (skipped when --keep-cloud-data
+// is set), reporting progress to out. The transfer has already succeeded, so a
+// cleanup failure is logged as "failed (non-fatal)" and never returned as an error.
+//
+// cleanup and followLog are passed as functions so the failure paths can be
+// unit-tested without a cluster.
+func (t *TransferPVCCommand) cleanupCloudStorage(out io.Writer, step string, cleanup func() (*corev1.Pod, error), followLog func(pod *corev1.Pod) error) {
+	// Progress writes to out are best-effort; a failed status write must not
+	// affect the transfer outcome, so the error is intentionally ignored.
+	status := func(msg string) { _, _ = io.WriteString(out, msg) }
+
+	status(step + " Cleaning up cloud storage ...\n")
+	if t.KeepCloudData {
+		status(step + " Cleaning up cloud storage ... skipped (--keep-cloud-data)\n")
+		return
+	}
+	cleanupPod, err := cleanup()
+	if err != nil {
+		t.log.Printf("WARN: cloud storage cleanup failed to start: %v", err)
+		status(step + " Cleaning up cloud storage ... failed (non-fatal)\n")
+		return
+	}
+	if err := followLog(cleanupPod); err != nil {
+		t.log.Printf("WARN: cloud storage cleanup failed: %v", err)
+		status(step + " Cleaning up cloud storage ... failed (non-fatal)\n")
+		return
+	}
+	status(step + " Cleaning up cloud storage ... ok\n")
+}
+
+// existingDownloadPVC returns the PVC that a --download-only invocation will
+// restore into. Unlike a complete indirect transfer, download-only must never
+// create the PVC: the caller applies the rendered PVC manifest beforehand.
+func (t *TransferPVCCommand) existingDownloadPVC(ctx context.Context, c client.Client) (*corev1.PersistentVolumeClaim, error) {
+	pvc := &corev1.PersistentVolumeClaim{}
+	key := client.ObjectKey{Namespace: t.PVC.Namespace.destination, Name: t.PVC.Name.destination}
+	if err := c.Get(ctx, key, pvc); err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("destination PVC %s must exist before --download-only; apply the rendered PVC manifest, wait for it to be ready, then retry", key)
+		}
+		return nil, fmt.Errorf("getting destination PVC %s for --download-only: %w", key, err)
+	}
+	if pvc.DeletionTimestamp != nil {
+		return nil, fmt.Errorf("destination PVC %s is terminating; wait for deletion to complete before --download-only", key)
+	}
+	pod, err := getActivePodUsingPVC(c, pvc.Namespace, pvc.Name)
+	if err != nil {
+		return nil, fmt.Errorf("checking whether destination PVC %s is in use: %w", key, err)
+	}
+	if pod != nil {
+		return nil, fmt.Errorf("destination PVC %s is in use by pod %q; scale it down before --download-only", key, pod.Name)
+	}
+	return pvc, nil
+}
+
+func (t *TransferPVCCommand) deleteTempRcloneSecret(c client.Client, secretName, namespace, side string) {
+	if err := c.Delete(context.TODO(), &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: namespace},
+	}); err != nil && !errors.IsNotFound(err) {
+		t.log.Warnf("Failed to delete temp rclone config secret %q in %s namespace %q: %v", secretName, side, namespace, err)
+	}
+}
+
+// hasRcloneSection reports whether configData contains an INI section with the
+// given name. It deliberately examines section-header lines rather than using
+// a whole-file substring search, so comments and ordinary setting values may
+// safely mention a section name.
+func hasRcloneSection(configData []byte, name string) bool {
+	header := "[" + name + "]"
+	for i, line := range strings.Split(string(configData), "\n") {
+		// A UTF-8 BOM is permitted at the start of an INI file, but it is not
+		// whitespace, so strings.TrimSpace does not remove it.
+		if i == 0 {
+			line = strings.TrimPrefix(line, "\uFEFF")
+		}
+		line = strings.TrimSpace(line)
+		if line == header {
+			return true
+		}
+
+		// INI permits a comment after a section header. Do not accept a prefix
+		// such as "[encrypted]-backup" as the generated "encrypted" remote.
+		if strings.HasPrefix(line, header) {
+			remainder := strings.TrimSpace(strings.TrimPrefix(line, header))
+			if strings.HasPrefix(remainder, "#") || strings.HasPrefix(remainder, ";") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, namespace, containerName string, log *logrus.Logger, destinationPVC *corev1.PersistentVolumeClaim) error {
 	clientset, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		log.Debugf("Failed to create clientset: %v", err)
@@ -255,10 +553,21 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 		case corev1.PodRunning, corev1.PodSucceeded, corev1.PodFailed:
 			return true, nil
 		default:
+			if destinationPVC != nil {
+				if provisioningErr := destinationPVCProvisioningError(ctx, c, destinationPVC, log); provisioningErr != nil {
+					return false, provisioningErr
+				}
+			}
 			return false, nil
 		}
 	}); err != nil {
+		if err != context.DeadlineExceeded {
+			return fmt.Errorf("waiting for pod %s/%s to start: %w", namespace, podName, err)
+		}
 		log.Debugf("Timed out waiting for pod %s/%s to start: %v", namespace, podName, err)
+		if reason := podTerminationReason(c, podName, namespace, containerName, log); reason != "" {
+			return fmt.Errorf("timed out waiting for pod %s/%s to start (%s): %w", namespace, podName, reason, err)
+		}
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
 
@@ -270,6 +579,12 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	stream, err := req.Stream(context.TODO())
 	if err != nil {
 		log.Debugf("Failed to stream logs for pod %s/%s: %v", namespace, podName, err)
+		// Add the container termination reason as context, but keep the stream
+		// error, since a non-empty reason (e.g. Completed, OOMKilled) is not
+		// proof of a startup failure.
+		if reason := podTerminationReason(c, podName, namespace, containerName, log); reason != "" {
+			return fmt.Errorf("failed to stream logs for pod %s/%s (%s): %w", namespace, podName, reason, err)
+		}
 		return fmt.Errorf("failed to stream logs for pod %s/%s: %w", namespace, podName, err)
 	}
 	defer func() {
@@ -320,9 +635,61 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 	}
 
 	if podFailed {
+		// Surface the container termination reason before the deferred cleanup
+		// deletes the pod
+		if terminationMsg := podTerminationReason(c, podName, namespace, containerName, log); terminationMsg != "" {
+			return checkRclonePartialSuccess(logOutput.String(), podName, namespace, log, terminationMsg)
+		}
 		return checkRclonePartialSuccess(logOutput.String(), podName, namespace, log)
 	}
 	return nil
+}
+
+// podTerminationReason fetches the pod and returns its container termination
+// reason, or "" if the pod cannot be read or has no reason recorded. It is used
+// on paths where the pod object is not already in hand (e.g. when log streaming
+// fails because the container never started).
+func podTerminationReason(c client.Client, podName, namespace, containerName string, log *logrus.Logger) string {
+	// Best-effort lookup: bound it so a wedged API server cannot block error
+	// reporting or delay the deferred pod cleanup.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pod := &corev1.Pod{}
+	if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+		log.Debugf("Failed to get pod %s/%s to capture termination reason: %v", namespace, podName, err)
+		return ""
+	}
+	return captureTerminationReason(pod, containerName)
+}
+
+// captureTerminationReason extracts the termination reason and message from a
+// pod's named container status.
+func captureTerminationReason(pod *corev1.Pod, containerName string) string {
+	if pod == nil || len(pod.Status.ContainerStatuses) == 0 {
+		return ""
+	}
+
+	var containerStatus *corev1.ContainerStatus
+	for i := range pod.Status.ContainerStatuses {
+		if pod.Status.ContainerStatuses[i].Name == containerName {
+			containerStatus = &pod.Status.ContainerStatuses[i]
+			break
+		}
+	}
+	if containerStatus == nil {
+		return ""
+	}
+
+	if containerStatus.State.Waiting != nil && containerStatus.State.Waiting.Reason != "" {
+		return strings.TrimSpace(fmt.Sprintf("container waiting: %s: %s",
+			containerStatus.State.Waiting.Reason, containerStatus.State.Waiting.Message))
+	}
+	if containerStatus.State.Terminated != nil && containerStatus.State.Terminated.Reason != "" {
+		return strings.TrimSpace(fmt.Sprintf("container terminated: %s: %s",
+			containerStatus.State.Terminated.Reason, containerStatus.State.Terminated.Message))
+	}
+	return ""
 }
 
 // checkRclonePartialSuccess examines rclone output when the pod exits non-zero.
@@ -331,7 +698,7 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 // This function detects that case and treats it as success when files were transferred.
 // It returns an error only when no files were transferred or the failure is not
 // a permission issue.
-func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Logger) error {
+func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Logger, terminationReasons ...string) error {
 	// Parse the last "Transferred: N / M, P%" file count line
 	var lastTransferred, lastTotal int
 	fileCountFound := false
@@ -362,15 +729,21 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 		fileCountFound = true
 	}
 
+	// Build a termination detail suffix from the first non-empty reason, if any.
+	terminationDetail := ""
+	if len(terminationReasons) > 0 && terminationReasons[0] != "" {
+		terminationDetail = " (" + terminationReasons[0] + ")"
+	}
+
 	if !fileCountFound {
 		log.Debugf("Pod %s/%s failed: no file count found in rclone output", namespace, podName)
-		return fmt.Errorf("pod %s/%s failed", namespace, podName)
+		return fmt.Errorf("pod %s/%s failed%s", namespace, podName, terminationDetail)
 	}
 
 	if lastTransferred == 0 && lastTotal > 0 {
 		log.Debugf("Pod %s/%s: rclone transferred 0 of %d files", namespace, podName, lastTotal)
-		return fmt.Errorf("pod %s/%s: rclone transferred 0 of %d files — all files may be unreadable (check UID/permissions)",
-			namespace, podName, lastTotal)
+		return fmt.Errorf("pod %s/%s: rclone transferred 0 of %d files — all files may be unreadable (check UID/permissions)%s",
+			namespace, podName, lastTotal, terminationDetail)
 	}
 
 	hasPermissionError := strings.Contains(output, "permission denied")
@@ -381,29 +754,30 @@ func checkRclonePartialSuccess(output, podName, namespace string, log *logrus.Lo
 	}
 
 	log.Debugf("Pod %s/%s failed", namespace, podName)
-	return fmt.Errorf("pod %s/%s failed", namespace, podName)
+	return fmt.Errorf("pod %s/%s failed%s", namespace, podName, terminationDetail)
 }
 
 func (t *TransferPVCCommand) validateRcloneConfigSecret(secretName string, srcClient, destClient client.Client) error {
-	for _, check := range []struct {
-		c         client.Client
-		namespace string
-		side      string
-	}{
-		{srcClient, t.PVC.Namespace.source, "source"},
-		{destClient, t.PVC.Namespace.destination, "destination"},
-	} {
-		secret := &corev1.Secret{}
-		if err := check.c.Get(context.TODO(), client.ObjectKey{
-			Name: secretName, Namespace: check.namespace,
-		}, secret); err != nil {
-			return fmt.Errorf("rclone config secret %q (namespace %q, %s cluster): %w",
-				secretName, check.namespace, check.side, err)
+	if srcClient != nil {
+		if err := t.validateRcloneConfigSecretOnCluster(secretName, srcClient, t.PVC.Namespace.source, "source"); err != nil {
+			return err
 		}
-		if len(bytes.TrimSpace(secret.Data["rclone.conf"])) == 0 {
-			return fmt.Errorf("rclone config secret %q in namespace %q on %s cluster is missing the rclone.conf key or it is empty",
-				secretName, check.namespace, check.side)
+	}
+	if destClient != nil {
+		if err := t.validateRcloneConfigSecretOnCluster(secretName, destClient, t.PVC.Namespace.destination, "destination"); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func (t *TransferPVCCommand) validateRcloneConfigSecretOnCluster(secretName string, c client.Client, namespace, side string) error {
+	secret := &corev1.Secret{}
+	if err := c.Get(context.TODO(), client.ObjectKey{Name: secretName, Namespace: namespace}, secret); err != nil {
+		return fmt.Errorf("rclone config secret %q (namespace %q, %s cluster): %w", secretName, namespace, side, err)
+	}
+	if len(bytes.TrimSpace(secret.Data["rclone.conf"])) == 0 {
+		return fmt.Errorf("rclone config secret %q in namespace %q on %s cluster is missing the rclone.conf key or it is empty", secretName, namespace, side)
 	}
 	return nil
 }

@@ -14,7 +14,7 @@ import (
 var _ = Describe("Empty PVC migration", func() {
 	It("[MTA-804] Migrate an empty PVC associated with an application", Label("tier0", "pvc-transfer"), func() {
 		appName := "app-with-empty-pvc"
-		namespace := appName
+		namespace := "mta-804-empty-pvc"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -72,6 +72,11 @@ var _ = Describe("Empty PVC migration", func() {
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pvcs).NotTo(BeEmpty(), "expected at least one PVC in source namespace %q", srcApp.Namespace)
+		sourceStorageClass, err := ResolvePVCStorageClass(srcApp.Context, pvcs[0])
+		Expect(err).NotTo(HaveOccurred())
+		targetStorageClass, err := DefaultStorageClassName(scenario.TgtApp.Context)
+		Expect(err).NotTo(HaveOccurred())
+		transformOpts.OptionalFlags = fmt.Sprintf(`{"pvc-storage-class-map":"%s:%s"}`, sourceStorageClass, targetStorageClass)
 		log.Printf("Found %d PVCs in source namespace %q", len(pvcs), srcApp.Namespace)
 		for _, pvc := range pvcs {
 			log.Printf("Found PVC %s in source namespace %q\n", pvc.Name, pvc.Namespace)
@@ -81,7 +86,7 @@ var _ = Describe("Empty PVC migration", func() {
 		podName := srcApp.Name
 		output, err := kubectlSrcNonAdmin.Run("exec", podName, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(output).To(BeEmpty(), "expected PVC to be empty on source cluster, but found files: %s", output)
+		Expect(StripKubectlWarnings(output)).To(BeEmpty(), "expected PVC to be empty on source cluster, but found files: %s", output)
 		log.Printf("Verified PVC is empty on source cluster (namespace: %s)\n", srcApp.Namespace)
 
 		By("Run crane export/transform/apply pipeline")
@@ -98,11 +103,12 @@ var _ = Describe("Empty PVC migration", func() {
 			pvcName := pvc.Name
 
 			opts := TransferPVCOptions{
-				SourceContext:   srcApp.Context,
-				TargetContext:   tgtApp.Context,
-				PVCName:         pvcName,
-				PVCNamespaceMap: fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
-				Subdomain:       fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
+				SourceContext:    srcApp.Context,
+				TargetContext:    tgtApp.Context,
+				PVCName:          pvcName,
+				PVCNamespaceMap:  fmt.Sprintf("%s:%s", srcApp.Namespace, tgtApp.Namespace),
+				DestStorageClass: targetStorageClass,
+				Subdomain:        fmt.Sprintf("%s.%s.%s.nip.io", pvcName, srcApp.Namespace, tgtIP),
 			}
 			log.Printf("Transferring PVC %s to namespace %s on target cluster", pvcName, tgtApp.Namespace)
 			Expect(runner.TransferPVC(opts)).NotTo(HaveOccurred())
@@ -128,7 +134,7 @@ var _ = Describe("Empty PVC migration", func() {
 		tgtPodName := tgtApp.Name
 		tgtOutput, err := kubectlTgtNonAdmin.Run("exec", tgtPodName, "-n", tgtApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(tgtOutput).To(BeEmpty(), "expected PVC to be empty on target cluster after migration, but found files: %s", tgtOutput)
+		Expect(StripKubectlWarnings(tgtOutput)).To(BeEmpty(), "expected PVC to be empty on target cluster after migration, but found files: %s", tgtOutput)
 		log.Printf("Verified PVC is empty on target cluster after migration (namespace: %s)\n", tgtApp.Namespace)
 
 	})
