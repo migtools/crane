@@ -8,6 +8,34 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func TestScanManifests_RetainsNamesWithoutChangingCompatibilityAggregation(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "deployments.yaml"), `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: prod
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: prod
+`)
+
+	entries, err := ScanManifests(ScanOptions{Dirs: []string{dir}}, testLogger())
+	if err != nil {
+		t.Fatalf("ScanManifests() error = %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("ScanManifests() returned %d compatibility entries, want 1", len(entries))
+	}
+	if got := entries[0].Names; len(got) != 2 || got[0] != "api" || got[1] != "worker" {
+		t.Fatalf("Names = %v, want [api worker]", got)
+	}
+}
+
 func testLogger() *logrus.Logger {
 	l := logrus.New()
 	l.SetOutput(os.Stderr)

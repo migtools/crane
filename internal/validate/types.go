@@ -9,6 +9,7 @@ type ManifestEntry struct {
 	Group       string   // parsed from APIVersion (e.g. "apps" from "apps/v1")
 	Version     string   // parsed from APIVersion (e.g. "v1")
 	Namespace   string   // from metadata.namespace; empty for cluster-scoped
+	Names       []string // distinct metadata.name values for target-object inspection
 	SourceFiles []string // which files contributed this entry
 }
 
