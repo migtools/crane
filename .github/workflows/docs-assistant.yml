@@ -3,6 +3,8 @@ name: Documentation Assistant
 on:
   issue_comment:
     types: [created]
+  pull_request_target:
+    types: [closed]
 
 permissions:
   contents: write
@@ -13,7 +15,8 @@ jobs:
   docs-assistant:
     runs-on: ubuntu-latest
     if: |
-      github.event.issue.pull_request && 
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
       (
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
         contains(fromJSON('["stillalearner", "aufi", "Tamar-Dinavetsky", "nachandr", "midays", "istein1", "msajidmansoori12", "RanWurmbrand"]'), github.event.comment.user.login)
@@ -88,3 +91,68 @@ jobs:
           #  google-sa-key: ${{ secrets.GOOGLE_SA_KEY }}
           # Optional: Uncomment and configure if custom context limits are needed
           #  max-context-chars: ${{ secrets.MAX_CONTEXT_CHARS }}
+
+  docs-assistant-auto:
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.title, ':sparkles:') &&
+      contains(fromJSON('["stillalearner", "aufi", "Tamar-Dinavetsky", "nachandr", "midays", "istein1", "msajidmansoori12", "RanWurmbrand"]'), github.event.pull_request.user.login)
+
+    steps:
+      - name: Get PR information
+        id: pr_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          HEAD_REPO=${{ github.event.pull_request.head.repo.full_name }}
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          BASE_REF=${{ github.event.pull_request.base.ref }}
+
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
+          echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Checkout PR Code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr_info.outputs.head_repo }}
+          ref: ${{ steps.pr_info.outputs.head_sha }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch PR Base Branch
+        env:
+          BASE_REF: ${{ steps.pr_info.outputs.base_ref }}
+        run: |
+          git remote add canonical "https://github.com/${{ github.repository }}.git" || true
+          git fetch canonical "$BASE_REF:$BASE_REF" || true
+
+      - name: Rebind Origin to Main Repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git remote set-url origin "https://github.com/migtools/crane.git"
+          git config --local http.https://github.com/.extraheader "AUTHORIZATION: basic $(echo -n "x-access-token:${GH_TOKEN}" | base64 -w 0)"
+
+      - name: Documentation Assistant (Auto)
+        uses: redhat-community-ai-tools/code-to-docs@main
+        with:
+          model-api-base: ${{ secrets.MODEL_API_BASE }}
+          model-api-key: ${{ secrets.MODEL_API_KEY }}
+          model-name: ${{ secrets.MODEL_NAME }}
+          docs-repo-url: ${{ secrets.DOCS_REPO_URL }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ steps.pr_info.outputs.pr_number }}
+          pr-base: ${{ steps.pr_info.outputs.base_sha }}
+          pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
+          docs-subfolder: ${{ secrets.DOCS_SUBFOLDER }}
+          comment-body: '[review-docs]'
+          docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH }}
+          style-config-path: ".code-to-docs/style.md"
