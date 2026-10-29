@@ -105,14 +105,13 @@ jobs:
         id: pr_info
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          HEAD_SHA=${{ github.event.pull_request.head.sha }}
-          HEAD_REPO=${{ github.event.pull_request.head.repo.full_name }}
-          BASE_SHA=${{ github.event.pull_request.base.sha }}
-          BASE_REF=${{ github.event.pull_request.base.ref }}
-
           echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
           echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
           echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
