@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -411,6 +412,71 @@ func TestRun_EmptyInputDirReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no manifests found") {
 		t.Fatalf("expected 'no manifests found' error, got: %v", err)
+	}
+}
+
+// Regression test for issue #375: a relative --api-resources path must be
+// recorded as an absolute path in the report.
+func TestRun_OfflineReportPreservesAbsoluteAPIResourcesPath(t *testing.T) {
+	workDir := t.TempDir()
+	t.Chdir(workDir)
+
+	// A manifest to scan (relative to workDir).
+	inputDir := filepath.Join(workDir, "output")
+	if err := os.MkdirAll(inputDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: prod
+`
+	if err := os.WriteFile(filepath.Join(inputDir, "deploy.yaml"), []byte(manifest), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// An API surface file referenced via a RELATIVE path.
+	relAPIFile := "target-api.json"
+	apiContent := `{"apiResourceLists":[{"groupVersion":"apps/v1","resources":[{"name":"deployments","kind":"Deployment","namespaced":true}]}]}`
+	if err := os.WriteFile(filepath.Join(workDir, relAPIFile), []byte(apiContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	validateDir := filepath.Join(workDir, "validate")
+	o := &ValidateOptions{
+		log:              logrus.StandardLogger(),
+		configFlags:      genericclioptions.NewConfigFlags(true),
+		IOStreams:        genericclioptions.NewTestIOStreamsDiscard(),
+		inputDir:         "output",
+		validateDir:      validateDir,
+		outputFormat:     "json",
+		apiResourcesFile: relAPIFile,
+		globalFlags:      &flags.GlobalFlags{},
+	}
+
+	if err := o.Run(); err != nil {
+		t.Fatalf("Run() failed: %v", err)
+	}
+
+	reportBytes, err := os.ReadFile(filepath.Join(validateDir, "report.json"))
+	if err != nil {
+		t.Fatalf("reading report: %v", err)
+	}
+
+	var report struct {
+		APIResourcesSource string `json:"apiResourcesSource"`
+	}
+	if err := json.Unmarshal(reportBytes, &report); err != nil {
+		t.Fatalf("parsing report: %v", err)
+	}
+
+	if !filepath.IsAbs(report.APIResourcesSource) {
+		t.Errorf("apiResourcesSource = %q, want an absolute path", report.APIResourcesSource)
+	}
+	wantAbs := filepath.Join(workDir, relAPIFile)
+	if report.APIResourcesSource != wantAbs {
+		t.Errorf("apiResourcesSource = %q, want %q", report.APIResourcesSource, wantAbs)
 	}
 }
 
