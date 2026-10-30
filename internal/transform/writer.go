@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -160,7 +161,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 			}
 
 			patches = append(patches, kustomize.Patch{
-				Path: filepath.Join("patches", patchFilename),
+				Path: path.Join("patches", patchFilename),
 				Target: kustomize.PatchTarget{
 					Group:     artifact.Target.Group,
 					Version:   artifact.Target.Version,
@@ -224,7 +225,7 @@ func (w *KustomizeWriter) WriteStage(artifacts []StageArtifact, force bool) erro
 		}
 
 		if activeResourceIDs[resourceID] {
-			resourcePaths = append(resourcePaths, filepath.Join(dirPrefix, filename))
+			resourcePaths = append(resourcePaths, path.Join(dirPrefix, filename))
 		} else {
 			whiteoutComments = append(whiteoutComments, fmt.Sprintf("# - %s/%s", dirPrefix, filename))
 		}
