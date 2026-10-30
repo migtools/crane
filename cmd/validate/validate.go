@@ -182,7 +182,15 @@ func (o *ValidateOptions) Run() error {
 		}
 		report = internalValidate.MatchResultsFromIndex(entries, index, log)
 		report.Mode = "offline"
-		report.APIResourcesSource = o.apiResourcesFile
+		// Record the absolute path so the report is self-describing (issue #375);
+		// fall back to the given path if it can't be resolved.
+		apiResourcesSource := o.apiResourcesFile
+		if absPath, err := filepath.Abs(o.apiResourcesFile); err != nil {
+			log.Warnf("Could not resolve absolute path for api-resources file %q: %v; using path as given", o.apiResourcesFile, err)
+		} else {
+			apiResourcesSource = absPath
+		}
+		report.APIResourcesSource = apiResourcesSource
 		log.Infof("Validating in offline mode using api-resources file %q", o.apiResourcesFile)
 	} else {
 		discoveryClient, err := o.configFlags.ToDiscoveryClient()
