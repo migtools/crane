@@ -98,6 +98,7 @@ jobs:
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.merged == true &&
       contains(github.event.pull_request.title, ':sparkles:') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) &&
       contains(fromJSON('["stillalearner", "aufi", "Tamar-Dinavetsky", "nachandr", "midays", "istein1", "msajidmansoori12", "RanWurmbrand"]'), github.event.pull_request.user.login)
 
     steps:
