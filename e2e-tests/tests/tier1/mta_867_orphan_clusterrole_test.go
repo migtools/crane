@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level export filtering", func() {
 	It("[MTA-867] Should not export orphan ClusterRole with no CRB linking it to exported SAs", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-867-nginx"
 		serviceName := "my-" + appName
 
 		scenario := NewMigrationScenario(

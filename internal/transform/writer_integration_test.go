@@ -358,6 +358,23 @@ func TestWriteStage_MixedNamespacedAndClusterScoped(t *testing.T) {
 		t.Fatalf("Failed to parse kustomization.yaml: %v", err)
 	}
 
+	for _, resourcePath := range kustFile.Resources {
+		if !strings.HasPrefix(resourcePath, "input/") {
+			t.Errorf("resource reference must use the input directory, got %q", resourcePath)
+		}
+		if strings.Contains(resourcePath, `\`) {
+			t.Errorf("resource reference must use slash separators, got %q", resourcePath)
+		}
+	}
+	for _, patch := range kustFile.Patches {
+		if !strings.HasPrefix(patch.Path, "patches/") {
+			t.Errorf("patch reference must use the patches directory, got %q", patch.Path)
+		}
+		if strings.Contains(patch.Path, `\`) {
+			t.Errorf("patch reference must use slash separators, got %q", patch.Path)
+		}
+	}
+
 	for _, patch := range kustFile.Patches {
 		if patch.Target.Kind == "Deployment" && patch.Target.Name == "web" {
 			if patch.Target.Namespace != "my-app" {

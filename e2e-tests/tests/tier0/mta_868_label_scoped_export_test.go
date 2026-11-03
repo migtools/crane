@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level export filtering", func() {
 	It("[MTA-868] Should export only labeled workload and its RBAC with --label-selector", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-868-nginx"
 		serviceName := "my-" + appName
 
 		scenario := NewMigrationScenario(

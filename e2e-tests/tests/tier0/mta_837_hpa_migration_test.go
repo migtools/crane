@@ -16,7 +16,7 @@ import (
 var _ = Describe("HPA migration", func() {
 	It("[MTA-837] HPA is exported, transformed, and applied to target cluster", Label("tier0"), func() {
 		appName := "nginx-with-hpa"
-		namespace := appName
+		namespace := "mta-837-hpa"
 		deploymentName := appName + "-deployment"
 		hpaName := appName + "-hpa"
 		serviceName := "my-" + appName

@@ -13,7 +13,7 @@ import (
 var _ = Describe("Role and RoleBinding migration", func() {
 	It("[BUG #266][MTA-812] Should migrate a project with Role and RoleBinding as namespace-admin user", Label("BUG #266", "tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := appName
+		namespace := "mta-812-nginx"
 
 		scenario := NewMigrationScenario(
 			appName,

@@ -14,7 +14,7 @@ import (
 var _ = Describe("Empty PVC migration", func() {
 	It("[MTA-804] Migrate an empty PVC associated with an application", Label("tier0", "pvc-transfer"), func() {
 		appName := "app-with-empty-pvc"
-		namespace := appName
+		namespace := "mta-804-empty-pvc"
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -86,7 +86,7 @@ var _ = Describe("Empty PVC migration", func() {
 		podName := srcApp.Name
 		output, err := kubectlSrcNonAdmin.Run("exec", podName, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(output).To(BeEmpty(), "expected PVC to be empty on source cluster, but found files: %s", output)
+		Expect(StripKubectlWarnings(output)).To(BeEmpty(), "expected PVC to be empty on source cluster, but found files: %s", output)
 		log.Printf("Verified PVC is empty on source cluster (namespace: %s)\n", srcApp.Namespace)
 
 		By("Run crane export/transform/apply pipeline")
@@ -134,7 +134,7 @@ var _ = Describe("Empty PVC migration", func() {
 		tgtPodName := tgtApp.Name
 		tgtOutput, err := kubectlTgtNonAdmin.Run("exec", tgtPodName, "-n", tgtApp.Namespace, "--", "/bin/sh", "-c", "find /data -type f")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(tgtOutput).To(BeEmpty(), "expected PVC to be empty on target cluster after migration, but found files: %s", tgtOutput)
+		Expect(StripKubectlWarnings(tgtOutput)).To(BeEmpty(), "expected PVC to be empty on target cluster after migration, but found files: %s", tgtOutput)
 		log.Printf("Verified PVC is empty on target cluster after migration (namespace: %s)\n", tgtApp.Namespace)
 
 	})

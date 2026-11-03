@@ -12,10 +12,10 @@ import (
 )
 
 var _ = Describe("CRD group filtering during export", func() {
-	appName := "simple-nginx-nopv"
-	namespace := "simple-nginx-nopv"
-	serviceName := "my-" + appName
 	It("[MTA-869A] Should skip CRD when --crd-skip-group matches", Label("tier0"), func() {
+		appName := "simple-nginx-nopv"
+		namespace := "mta-869a-nginx"
+		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,
@@ -101,6 +101,9 @@ var _ = Describe("CRD group filtering during export", func() {
 	})
 
 	It("[MTA-869b] Should include CRD when --crd-include-group matches", Label("tier0"), func() {
+		appName := "simple-nginx-nopv"
+		namespace := "mta-869b-nginx"
+		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
 			namespace,

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/konveyor/crane/internal/flags"
@@ -221,9 +222,23 @@ func (o *Options) run(args []string) error {
 	return nil
 }
 
+func validateFileInput(dir, filename string) error {
+	if filename == "" || filename == "." || filename == ".." || strings.ContainsRune(filename, '\\') || filename != filepath.Base(filename) {
+		return fmt.Errorf("invalid plugin name %q: must be a bare file name without path separators or traversal sequences", filename)
+	}
+
+	existingPath := filepath.Join(dir, filename)
+	if _, err := os.Lstat(existingPath); err == nil {
+		return fmt.Errorf("a plugin named %q already exists at %s, please remove it first before installing", filename, existingPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to check destination %s: %w", existingPath, err)
+	}
+	return nil
+}
+
 func downloadBinary(pluginDir string, filename string, url string, log *logrus.Logger) error {
-	if filepath.Base(filename) != filename || filename == "." || filename == ".." {
-		return fmt.Errorf("invalid plugin filename %q", filename)
+	if err := validateFileInput(pluginDir, filename); err != nil {
+		return err
 	}
 
 	var binaryContents io.Reader
@@ -244,19 +259,38 @@ func downloadBinary(pluginDir string, filename string, url string, log *logrus.L
 			return err
 		}
 		defer resp.Body.Close()
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			return fmt.Errorf("failed to download plugin binary from %s: server returned %s", url, resp.Status)
+		}
 		binaryContents = resp.Body
 	}
-	// Create dir if not exists
-	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-		err = os.MkdirAll(pluginDir, os.ModePerm)
+	// Create dir if not exists and remove group/other write permissions from existing dirs.
+	dirInfo, err := os.Stat(pluginDir)
+	if os.IsNotExist(err) {
+		err = os.MkdirAll(pluginDir, 0755)
 		if err != nil {
 			log.Errorf("Failed to create plugin directory %s: %v", pluginDir, err)
+			return err
+		}
+		dirInfo, err = os.Stat(pluginDir)
+	}
+	if err != nil {
+		log.Errorf("Failed to inspect plugin directory %s: %v", pluginDir, err)
+		return err
+	}
+	// Drop group and other write. Perm() omits setuid, setgid, and sticky, so
+	// building the new mode from Perm() alone would clear those on Chmod.
+	if perm := dirInfo.Mode().Perm(); perm&0022 != 0 {
+		const specialBits = os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+		dirMode := (dirInfo.Mode() & specialBits) | (perm &^ 0022)
+		if err := os.Chmod(pluginDir, dirMode); err != nil {
+			log.Errorf("Failed to secure plugin directory %s: %v", pluginDir, err)
 			return err
 		}
 	}
 
 	// Create the file
-	pluginBinary, err := os.OpenFile(filepath.Join(pluginDir, filename), syscall.O_RDWR|syscall.O_CREAT|syscall.O_TRUNC, 0755)
+	pluginBinary, err := os.OpenFile(filepath.Join(pluginDir, filename), syscall.O_RDWR|syscall.O_CREAT|syscall.O_EXCL, 0755)
 	if err != nil {
 		log.Errorf("Failed to create plugin file %s/%s: %v", pluginDir, filename, err)
 		return err
