@@ -135,7 +135,7 @@ func (p *PvcFlags) Validate() error {
 		return fmt.Errorf("source pvc name cannot be empty")
 	}
 	if p.Name.destination == "" {
-		return fmt.Errorf("destnation pvc name cannot be empty")
+		return fmt.Errorf("destination pvc name cannot be empty")
 	}
 	if p.Namespace.source == "" {
 		return fmt.Errorf("source pvc namespace cannot be empty")
@@ -343,6 +343,12 @@ func (t *TransferPVCCommand) Validate() error {
 			log.Debugf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
 			return fmt.Errorf("--encrypt requires --rclone-config-file; it cannot be used with --rclone-config-secret")
 		}
+		// Preflight the config file before Run() creates any cluster resources
+		// (issue #899: a bad path used to orphan the destination PVC).
+		if _, err := t.readRcloneConfigFile(); err != nil {
+			log.Debugf("rclone config file validation failed: %v", err)
+			return err
+		}
 		return nil
 	}
 
@@ -353,6 +359,23 @@ func (t *TransferPVCCommand) Validate() error {
 	}
 
 	return nil
+}
+
+// readRcloneConfigFile reads --rclone-config-file and verifies it is readable
+// and non-empty, returning its raw contents. It returns (nil, nil) when no file
+// is configured.
+func (t *TransferPVCCommand) readRcloneConfigFile() ([]byte, error) {
+	if t.RcloneConfigFile == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(t.RcloneConfigFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rclone config file %s: %w", t.RcloneConfigFile, err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return nil, fmt.Errorf("rclone config file %s is empty", t.RcloneConfigFile)
+	}
+	return data, nil
 }
 
 func (t *TransferPVCCommand) Run() error {

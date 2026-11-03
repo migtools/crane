@@ -264,11 +264,27 @@ func downloadBinary(pluginDir string, filename string, url string, log *logrus.L
 		}
 		binaryContents = resp.Body
 	}
-	// Create dir if not exists
-	if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-		err = os.MkdirAll(pluginDir, os.ModePerm)
+	// Create dir if not exists and remove group/other write permissions from existing dirs.
+	dirInfo, err := os.Stat(pluginDir)
+	if os.IsNotExist(err) {
+		err = os.MkdirAll(pluginDir, 0755)
 		if err != nil {
 			log.Errorf("Failed to create plugin directory %s: %v", pluginDir, err)
+			return err
+		}
+		dirInfo, err = os.Stat(pluginDir)
+	}
+	if err != nil {
+		log.Errorf("Failed to inspect plugin directory %s: %v", pluginDir, err)
+		return err
+	}
+	// Drop group and other write. Perm() omits setuid, setgid, and sticky, so
+	// building the new mode from Perm() alone would clear those on Chmod.
+	if perm := dirInfo.Mode().Perm(); perm&0022 != 0 {
+		const specialBits = os.ModeSetuid | os.ModeSetgid | os.ModeSticky
+		dirMode := (dirInfo.Mode() & specialBits) | (perm &^ 0022)
+		if err := os.Chmod(pluginDir, dirMode); err != nil {
+			log.Errorf("Failed to secure plugin directory %s: %v", pluginDir, err)
 			return err
 		}
 	}

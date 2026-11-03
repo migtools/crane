@@ -18,6 +18,17 @@ import (
 // after an indirect transfer.
 const permFidelityDir = "/test-data/perm-fidelity"
 
+// A symbolic link is seeded alongside the permission matrix to verify indirect
+// transfer recreates symlinks intact. rclone stores it on S3 as a *.rclonelink
+// object (via --links) and recreates the real link on download. symlinkName is
+// relative to permFidelityDir, points at symlinkTarget (a seeded regular file),
+// and reading through it returns symlinkTargetContent.
+const (
+	symlinkName          = "link_to_644"
+	symlinkTarget        = "file_644"
+	symlinkTargetContent = "content-644"
+)
+
 // plainRegularFiles are the entries (relative to permFidelityDir, "./"-prefixed to
 // match `find`'s output) whose permission-bit fidelity crane currently guarantees:
 // regular files with ordinary rwx modes and no special bits.
@@ -173,7 +184,8 @@ mkdir -p "$D/dir_sticky"; chmod 1777 "$D/dir_sticky"
 mkdir -p "$D/dir_setgid"; chmod 2775 "$D/dir_setgid"
 mkdir -p "$D/nested/deep"; chmod 711 "$D/nested"; chmod 705 "$D/nested/deep"
 printf 'nested-content\n' > "$D/nested/deep/file_640"; chmod 640 "$D/nested/deep/file_640"
-sync`, permFidelityDir)
+ln -s %q "$D/%s"
+sync`, permFidelityDir, symlinkTarget, symlinkName)
 			_, err = kubectlSrc.Run("exec", srcPod, "-n", srcApp.Namespace, "--", "/bin/sh", "-c", seedScript)
 			Expect(err).NotTo(HaveOccurred(), "failed to seed the permission matrix into the source /test-data PVC")
 
@@ -336,5 +348,28 @@ sync`, permFidelityDir)
 			}
 			log.Printf("GID uniformly normalized across %d regular files to gid=%s (source regular files were owned by gid=%s)",
 				len(plainRegularFiles), normFileGID, srcManifest[plainRegularFiles[0]].gid)
+
+			By("Verify the seeded symlink survives the indirect transfer intact and resolves to its target")
+			// rclone --links stores the symlink on S3 as a *.rclonelink object and
+			// recreates the real link on download. Specifically, verify
+			//   1. it's still a symlink (readlink succeeds),
+			//   2. it points at the right target (file_644),
+			//   3. reading through it resolves to the right content (content-644).
+			// The link's own mode/ownership are intentionally not asserted: a symlink's
+			// permission bits are inert on Linux (access is governed by the target) and
+			// its uid/gid are normalized to the mover pod like every other entry.
+			linkPath := permFidelityDir + "/" + symlinkName
+			target, err := kubectlTgt.Run("exec", verifierPod, "-n", tgtApp.Namespace, "--",
+				"/bin/sh", "-c", fmt.Sprintf("readlink %q", linkPath))
+			Expect(err).NotTo(HaveOccurred(),
+				"symlink %q present on source should be a readable symlink on the target after transfer", symlinkName)
+			Expect(strings.TrimSpace(StripKubectlWarnings(target))).To(Equal(symlinkTarget),
+				"symlink %q should point at %q on the target", symlinkName, symlinkTarget)
+			content, err := kubectlTgt.Run("exec", verifierPod, "-n", tgtApp.Namespace, "--",
+				"/bin/sh", "-c", fmt.Sprintf("cat %q", linkPath))
+			Expect(err).NotTo(HaveOccurred(), "reading through symlink %q should succeed on the target", symlinkName)
+			Expect(strings.TrimSpace(StripKubectlWarnings(content))).To(Equal(symlinkTargetContent),
+				"reading through symlink %q should return its target's content", symlinkName)
+			log.Printf("Symlink %s -> %s survived the indirect transfer intact and resolves", symlinkName, symlinkTarget)
 		})
 })
