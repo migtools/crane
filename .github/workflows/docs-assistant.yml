@@ -94,7 +94,7 @@ jobs:
 
   docs-assistant-auto:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && !github.event.forced
 
     steps:
       - name: Get merged PR information
@@ -118,9 +118,16 @@ jobs:
           PR_ASSOCIATION=$(echo "$PR_DATA" | jq -r '.author_association')
           PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number')
           PR_MERGED_AT=$(echo "$PR_DATA" | jq -r '.merged_at')
+          PR_BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
 
           if [ "$PR_MERGED_AT" = "null" ] || [ -z "$PR_MERGED_AT" ]; then
             echo "PR not merged, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ "$PR_BASE_REF" != "main" ]; then
+            echo "PR base ref is $PR_BASE_REF, not main, skipping"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
