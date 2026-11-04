@@ -101,6 +101,10 @@ runs:
       shell: bash
       run: go build -o crane .
 
+    - name: Build OpenShift plugin
+      id: openshift_plugin
+      uses: ./.github/actions/build-openshift-plugin
+
     - name: Run crane e2e tests
       shell: bash
       run: |
@@ -111,6 +115,7 @@ runs:
           --target-context="${{ inputs.target_context }}"
           --source-nonadmin-context="${{ inputs.source_nonadmin_context }}"
           --target-nonadmin-context="${{ inputs.target_nonadmin_context }}"
+          --plugin-dir="${{ steps.openshift_plugin.outputs.plugin_dir }}"
         )
 
         if [ "${{ inputs.verbose_logs }}" = "true" ]; then
