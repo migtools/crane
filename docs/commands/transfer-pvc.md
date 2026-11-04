@@ -276,7 +276,7 @@ service_account_credentials = <contents-of-service-account-json>
 bucket_policy_only = true
 ```
 
-`service_account_credentials` must contain the complete service-account JSON. If the key file contains line breaks, convert it to a single line before adding it to `rclone.conf`, for example with `tr -d '\n' < service-account.json`. Do not use `service_account_file` with Crane's generated or pre-created rclone Secrets unless you also mount that JSON file into both transfer Pods; Crane copies only the `rclone.conf` file into the Secret.
+`service_account_credentials` must contain the complete service-account JSON. If the key file contains line breaks, convert it to a single line before adding it to `rclone.conf`, for example with `tr -d '\n' < service-account.json`. Do not use `service_account_file` with Crane's generated or pre-created rclone Secrets; put the service-account JSON in `service_account_credentials` instead.
 
 For a complete transfer or default cleanup behavior, the service account must be able to create, list, read, and delete objects in the bucket. Granting the built-in `roles/storage.objectAdmin` role on the bucket is the simplest working configuration. A custom role can use the equivalent `storage.objects.create`, `storage.objects.get`, `storage.objects.list`, and `storage.objects.delete` permissions. The built-in role grants access to all objects in the bucket; it is not restricted to `transfer-prefix`.
 
@@ -445,7 +445,7 @@ provider = GCS
 access_key_id = <gcs-access-key-id>
 secret_access_key = <gcs-secret-access-key>
 endpoint = https://storage.googleapis.com
-``+
+```
 
 The native backend uses a Google service-account JSON key. The S3-compatible alternative uses GCS HMAC credentials and requires the transfer image to include rclone's S3 backend. Prefer the native backend unless you specifically need S3-compatible credentials or tooling.
 
