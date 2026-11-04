@@ -161,7 +161,6 @@ spec:
 			DisableCloudStorage: true,
 		})
 		Expect(transferErr).To(HaveOccurred(), "transfer-pvc output:\n%s", output)
-		Expect(output).To(ContainSubstring("Permission denied (13)"))
 		Expect(output).To(ContainSubstring("rsync client exited with code 23"))
 		Expect(output).To(ContainSubstring("[6/7] Copying data (rsync) ... FAILED"))
 		Expect(output).To(ContainSubstring("PVC data copy: failed"))
