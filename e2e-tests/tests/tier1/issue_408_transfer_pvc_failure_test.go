@@ -10,6 +10,7 @@ import (
 	. "github.com/konveyor/crane/e2e-tests/framework"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	openshiftuid "github.com/openshift/library-go/pkg/security/uid"
 )
 
 var _ = Describe("transfer-pvc rsync failure reporting", func() {
@@ -41,6 +42,20 @@ var _ = Describe("transfer-pvc rsync failure reporting", func() {
 		By("Create isolated source and target namespaces")
 		Expect(kubectl.CreateNamespace(sourceNamespace)).To(Succeed())
 		Expect(kubectl.CreateNamespace(targetNamespace)).To(Succeed())
+
+		// Crane prefers the OpenShift namespace UID range over the workload UID.
+		clientUID := int64(1000)
+		uidRange, err := kubectl.Run("get", "namespace", sourceNamespace, "-o", `jsonpath={.metadata.annotations.openshift\.io/sa\.scc\.uid-range}`)
+		Expect(err).NotTo(HaveOccurred())
+		if uidRange = strings.TrimSpace(uidRange); uidRange != "" {
+			block, err := openshiftuid.ParseBlock(uidRange)
+			Expect(err).NotTo(HaveOccurred())
+			clientUID = int64(block.Start)
+		}
+		ownerUID := int64(2000)
+		if ownerUID == clientUID {
+			ownerUID++
+		}
 
 		By("Create a source PVC and a workload security context for UID 1000")
 		manifest := fmt.Sprintf(`apiVersion: v1
@@ -88,7 +103,10 @@ spec:
 `, pvcName, sourceNamespace)
 		Expect(kubectl.ApplyYAMLSpec(manifest, sourceNamespace)).To(Succeed())
 
-		By("Seed only data that UID 1000 cannot read")
+		By("Seed data with an ACL that denies access to the rsync client UID")
+		// Mode bits alone are insufficient: CSI drivers can grant group access
+		// when mounting with fsGroup. A named-user ACL still denies this UID
+		// after the mount changes the owning group and ACL mask.
 		seedManifest := fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata:
@@ -96,9 +114,12 @@ metadata:
   namespace: %[2]s
 spec:
   restartPolicy: Never
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0
   containers:
     - name: seed
-      image: busybox:1.36
+      image: quay.io/konveyor/rsync-transfer:latest
       command:
         - sh
         - -c
@@ -106,9 +127,11 @@ spec:
           set -eux
           mkdir -p /data/restricted
           echo 'must-not-transfer' > /data/restricted/secret.txt
-          chown -R 2000:2000 /data/restricted
+          chown -R %[5]d:%[5]d /data/restricted
           chmod 0700 /data/restricted
           chmod 0600 /data/restricted/secret.txt
+          setfacl -m u:%[4]d:--- /data/restricted
+          getfacl -n /data/restricted
       volumeMounts:
         - name: data
           mountPath: /data
@@ -116,10 +139,12 @@ spec:
     - name: data
       persistentVolumeClaim:
         claimName: %[3]s
-`, seedPodName, sourceNamespace, pvcName)
+`, seedPodName, sourceNamespace, pvcName, clientUID, ownerUID)
 		Expect(kubectl.ApplyYAMLSpec(seedManifest, sourceNamespace)).To(Succeed())
 		_, err = kubectl.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/"+seedPodName, "-n", sourceNamespace, "--timeout=120s")
-		Expect(err).NotTo(HaveOccurred())
+		seedOutput, logsErr := kubectl.Run("logs", seedPodName, "-n", sourceNamespace)
+		Expect(logsErr).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), "seeding requires a filesystem with POSIX ACL support; seed output:\n%s", seedOutput)
 		_, err = kubectl.Run("delete", "pod", seedPodName, "-n", sourceNamespace, "--wait=true", "--timeout=120s")
 		Expect(err).NotTo(HaveOccurred())
 
@@ -135,8 +160,8 @@ spec:
 			Subdomain:           fmt.Sprintf("%s.%s.%s.nip.io", pvcName, targetNamespace, nodeIP),
 			DisableCloudStorage: true,
 		})
-		Expect(transferErr).To(HaveOccurred())
-		Expect(output).To(MatchRegexp(`rsync client exited with code [1-9][0-9]*`))
+		Expect(transferErr).To(HaveOccurred(), "transfer-pvc output:\n%s", output)
+		Expect(output).To(ContainSubstring("rsync client exited with code 23"))
 		Expect(output).To(ContainSubstring("[6/7] Copying data (rsync) ... FAILED"))
 		Expect(output).To(ContainSubstring("PVC data copy: failed"))
 		Expect(output).NotTo(ContainSubstring("Done."))
