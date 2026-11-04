@@ -52,7 +52,10 @@ var _ = Describe("transfer-pvc rsync failure reporting", func() {
 			Expect(err).NotTo(HaveOccurred())
 			clientUID = int64(block.Start)
 		}
-		Expect(clientUID).NotTo(Equal(int64(2000)), "the rsync client must not own the restricted data")
+		ownerUID := int64(2000)
+		if ownerUID == clientUID {
+			ownerUID++
+		}
 
 		By("Create a source PVC and a workload security context for UID 1000")
 		manifest := fmt.Sprintf(`apiVersion: v1
@@ -124,7 +127,7 @@ spec:
           set -eux
           mkdir -p /data/restricted
           echo 'must-not-transfer' > /data/restricted/secret.txt
-          chown -R 2000:2000 /data/restricted
+          chown -R %[5]d:%[5]d /data/restricted
           chmod 0700 /data/restricted
           chmod 0600 /data/restricted/secret.txt
           setfacl -m u:%[4]d:--- /data/restricted
@@ -136,7 +139,7 @@ spec:
     - name: data
       persistentVolumeClaim:
         claimName: %[3]s
-`, seedPodName, sourceNamespace, pvcName, clientUID)
+`, seedPodName, sourceNamespace, pvcName, clientUID, ownerUID)
 		Expect(kubectl.ApplyYAMLSpec(seedManifest, sourceNamespace)).To(Succeed())
 		_, err = kubectl.Run("wait", "--for=jsonpath={.status.phase}=Succeeded", "pod/"+seedPodName, "-n", sourceNamespace, "--timeout=120s")
 		seedOutput, logsErr := kubectl.Run("logs", seedPodName, "-n", sourceNamespace)
