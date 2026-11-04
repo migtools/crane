@@ -139,7 +139,7 @@ In an OpenShift cluster, `route` endpoint can be used. A subdomain option can be
 
 ### Indirect Transfer Options
 
-Indirect transfer enables PVC migration between clusters without direct network connectivity. Data is uploaded to cloud storage by the source cluster and then downloaded by the destination cluster. The transfer image must include the rclone backend selected by the remote; Azure Blob Storage requires the `azureblob` backend.
+Indirect transfer enables PVC migration between clusters without direct network connectivity. Data is uploaded to cloud storage by the source cluster and then downloaded by the destination cluster. The transfer image must include the rclone backend selected by the remote; Azure Blob Storage requires the `azureblob` backend, and Google Cloud Storage requires the `google cloud storage` backend.
 
 #### Complete Indirect Transfer Workflow
 
@@ -266,6 +266,34 @@ crane transfer-pvc \
 ```
 
 The storage-account-key example can access all data in the storage account. The service-principal example can access all blobs in the target container; it is not restricted to `transfer-prefix`. To restrict the service principal to `transfer-prefix`, add an Azure ABAC condition for both the blob `path` and listing `prefix`. Keep `rclone.conf` out of source control.
+
+Google Cloud Storage supports service-account authentication. Create a service account, generate a JSON key for it, and grant that service account access to the target bucket. The remote name is arbitrary, and `type = google cloud storage` selects the native rclone backend:
+
+```ini
+[gcp]
+type = google cloud storage
+service_account_credentials = <contents-of-service-account-json>
+bucket_policy_only = true
+```
+
+`service_account_credentials` must contain the complete service-account JSON. If the key file contains line breaks, convert it to a single line before adding it to `rclone.conf`, for example with `tr -d '\n' < service-account.json`. Do not use `service_account_file` with Crane's generated or pre-created rclone Secrets; put the service-account JSON in `service_account_credentials` instead.
+
+For a complete transfer or default cleanup behavior, the service account must be able to create, list, read, and delete objects in the bucket. Granting the built-in `roles/storage.objectAdmin` role on the bucket is the simplest working configuration. A custom role can use the equivalent `storage.objects.create`, `storage.objects.get`, `storage.objects.list`, and `storage.objects.delete` permissions. The built-in role grants access to all objects in the bucket; it is not restricted to `transfer-prefix`.
+
+Set `bucket_policy_only = true` when the bucket uses uniform bucket-level access. This tells rclone not to set or rely on object ACLs. Both clusters also need outbound network access to Google Cloud Storage.
+
+Then use the remote name, bucket, and transfer prefix in `--cloud-storage`:
+
+```bash
+crane transfer-pvc \
+  --source-context source --destination-context destination \
+  --pvc-name data-pvc \
+  --pvc-namespace source-ns:destination-ns \
+  --cloud-storage gcp:my-bucket/transfer-prefix \
+  --rclone-config-file /secure/path/rclone.conf
+```
+
+For the split workflow, the source and destination configurations may use different service accounts, but both accounts must have access to the same bucket and effective prefix. If cloud data is cleaned up after download, the account used by the download command also needs permission to delete objects.
 
 #### Using a local config file
 
@@ -401,7 +429,15 @@ secret_access_key = <aws-secret-access-key>
 region = us-east-1
 ```
 
-**GCS (S3-compatible mode):**
+**Google Cloud Storage (native backend):**
+```ini
+[remote]
+type = google cloud storage
+service_account_credentials = <contents-of-service-account-json>
+bucket_policy_only = true
+```
+
+**Google Cloud Storage (S3-compatible alternative):**
 ```ini
 [remote]
 type = s3
@@ -410,6 +446,8 @@ access_key_id = <gcs-access-key-id>
 secret_access_key = <gcs-secret-access-key>
 endpoint = https://storage.googleapis.com
 ```
+
+The native backend uses a Google service-account JSON key. The S3-compatible alternative uses GCS HMAC credentials and requires the transfer image to include rclone's S3 backend. Prefer the native backend unless you specifically need S3-compatible credentials or tooling.
 
 The section name `[remote]` must match the prefix in `--cloud-storage`. For example, `--cloud-storage "remote:my-bucket"` uses the `[remote]` section.
 

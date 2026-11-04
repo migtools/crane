@@ -522,7 +522,7 @@ crane transfer-pvc \
   --verify
 ```
 
-Both clusters only need outbound access to the storage bucket or container. No endpoint or ingress setup required. Add `--encrypt` for client-side encryption. See the [transfer-pvc command reference](./commands/transfer-pvc.md#indirect-transfer-options) for Azure Blob Storage configuration.
+Both clusters only need outbound access to the storage bucket or container. No endpoint or ingress setup required. Add `--encrypt` for client-side encryption. See the [transfer-pvc command reference](./commands/transfer-pvc.md#indirect-transfer-options) for Azure Blob Storage and Google Cloud Storage configuration.
 
 ### PVC Rename with Workload Reference Update
 
