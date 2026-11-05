@@ -1,0 +1,43 @@
+name: ticket-guard
+
+on:
+  # Use the base branch workflow so fork PRs can receive comments safely.
+  pull_request_target:
+    types: [opened, edited, reopened]
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created, edited, deleted]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: ticket-guard-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  check-links:
+    runs-on: ubuntu-latest
+    # Ignore our own notifications, but allow other bots to supply links.
+    if: >-
+      !(github.event.comment.user.login == 'github-actions[bot]' &&
+        contains(github.event.comment.body, '<!-- ticket-guard -->'))
+    steps:
+      - name: Checkout trusted workflow code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Never check out or execute the PR head with a writable token.
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+      - name: Check issue and Jira links
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TICKET_GUARD_JIRA_BASE_URL: ${{ vars.TICKET_GUARD_JIRA_BASE_URL || 'https://redhat.atlassian.net' }}
+        run: python3 .github/scripts/ticket_guard.py
