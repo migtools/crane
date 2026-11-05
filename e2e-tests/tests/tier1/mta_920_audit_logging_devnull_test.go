@@ -17,7 +17,7 @@ var _ = Describe("Audit logging /dev/null support", func() {
 		Expect(err).NotTo(HaveOccurred())
 		log.Printf("Created temp directory: %s\n", paths.TempDir)
 
-		devNullInfo, err := os.Stat("/dev/null")
+		devNullInfo, err := os.Stat(os.DevNull)
 		Expect(err).NotTo(HaveOccurred())
 		devNullMode := devNullInfo.Mode()
 		log.Printf("/dev/null permissions before transform: %v\n", devNullMode)
@@ -27,8 +27,8 @@ var _ = Describe("Audit logging /dev/null support", func() {
 			if err := os.RemoveAll(paths.TempDir); err != nil {
 				log.Printf("cleanup: failed to remove temp dir: %v", err)
 			}
-			if info, err := os.Stat("/dev/null"); err == nil && info.Mode() != devNullMode {
-				if err := os.Chmod("/dev/null", devNullMode); err != nil {
+			if info, err := os.Stat(os.DevNull); err == nil && info.Mode() != devNullMode {
+				if err := os.Chmod(os.DevNull, devNullMode); err != nil {
 					log.Printf("cleanup: failed to restore /dev/null permissions: %v", err)
 				}
 			}
@@ -47,7 +47,7 @@ var _ = Describe("Audit logging /dev/null support", func() {
 		consoleOutput, err := runner.TransformWithOutput(TransformOptions{
 			ExportDir:    testdataExportDir,
 			TransformDir: paths.TransformDir,
-			AuditLogPath: "/dev/null",
+			AuditLogPath: os.DevNull,
 		})
 		Expect(err).NotTo(HaveOccurred(), "crane transform should succeed with --audit-log /dev/null")
 		log.Printf("Transform completed successfully\n")
@@ -57,7 +57,7 @@ var _ = Describe("Audit logging /dev/null support", func() {
 		Expect(consoleOutput).NotTo(ContainSubstring("Failed to open audit log"), "output should not warn about audit log failure")
 
 		By("Verify /dev/null permissions are unchanged")
-		devNullInfoAfter, err := os.Stat("/dev/null")
+		devNullInfoAfter, err := os.Stat(os.DevNull)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(devNullInfoAfter.Mode()).To(Equal(devNullMode), "/dev/null permission bits must not be changed by crane transform")
 
