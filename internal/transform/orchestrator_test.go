@@ -2,14 +2,18 @@ package transform
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
+	kubernetesplugin "github.com/konveyor/crane-lib/transform/kubernetes"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestFilterPluginsByStage(t *testing.T) {
@@ -21,10 +25,10 @@ func TestFilterPluginsByStage(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		stage          Stage
-		expectedCount  int
-		expectedNames  []string
+		name          string
+		stage         Stage
+		expectedCount int
+		expectedNames []string
 	}{
 		{
 			name:          "empty plugin name returns all plugins",
@@ -162,7 +166,7 @@ resources: []
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent", // Won't be used in this test
-		Overwrite:        true,             // Use overwrite to overwrite existing directories
+		Overwrite:    true,           // Use overwrite to overwrite existing directories
 	}
 
 	tests := []struct {
@@ -277,7 +281,7 @@ resources:
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent",
-		Overwrite:        false,
+		Overwrite:    false,
 	}
 
 	// Test: Try to run stage 20 which should depend on stage 10
@@ -460,7 +464,6 @@ func TestExecuteStage_PluginFiltering(t *testing.T) {
 	}
 }
 
-
 func TestPluginStageNameMatching(t *testing.T) {
 	// This test documents the plugin-to-stage name matching behavior:
 	// - Stage directory name format: <priority>_<PluginName>
@@ -469,10 +472,10 @@ func TestPluginStageNameMatching(t *testing.T) {
 	// - User stages that don't match any plugin will have no plugins applied
 
 	tests := []struct {
-		stageName      string
-		pluginName     string
-		shouldMatch    bool
-		description    string
+		stageName   string
+		pluginName  string
+		shouldMatch bool
+		description string
 	}{
 		{
 			stageName:   "10_KubernetesPlugin",
@@ -702,7 +705,7 @@ resources: []
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent", // No plugins
-		Overwrite:        true,
+		Overwrite:    true,
 	}
 
 	// Execute multi-stage pipeline
@@ -1533,7 +1536,7 @@ data:
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent",
-		Overwrite:        true,
+		Overwrite:    true,
 	}
 
 	// Test 1: No stages found
@@ -1726,7 +1729,7 @@ resources:
 		ExportDir:    exportDir,
 		TransformDir: transformDir,
 		PluginDir:    "/nonexistent",
-		Overwrite:        true,
+		Overwrite:    true,
 	}
 
 	selector := StageSelector{} // Run all stages
@@ -1901,6 +1904,284 @@ func TestResolveOptionalFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidatePVCRenameConflicts(t *testing.T) {
+	tests := []struct {
+		name          string
+		plugin        cranelib.Plugin
+		optionalFlags map[string]string
+		resources     []unstructured.Unstructured
+		expectedError string
+	}{
+		{
+			name:          "destination PVC exists in source namespace",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "postgres-data:postgres-data-rbd"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "postgres-data"),
+				sourcePVC("mtc-demo", "postgres-data-rbd"),
+			},
+			expectedError: "pvc-rename-map conflict: PersistentVolumeClaim mtc-demo/postgres-data-rbd would be produced by both mtc-demo/postgres-data and mtc-demo/postgres-data-rbd",
+		},
+		{
+			name:          "two source PVCs map to the same destination",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "data-a:shared,data-b:shared"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "data-a"),
+				sourcePVC("mtc-demo", "data-b"),
+			},
+			expectedError: "pvc-rename-map conflict: PersistentVolumeClaim mtc-demo/shared would be produced by both mtc-demo/data-a and mtc-demo/data-b",
+		},
+		{
+			name:          "chained PVC renames do not conflict",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "a:b,b:c"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "a"),
+				sourcePVC("mtc-demo", "b"),
+			},
+		},
+		{
+			name:          "destination PVC in another namespace does not conflict",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "postgres-data:postgres-data-rbd"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "postgres-data"),
+				sourcePVC("other-namespace", "postgres-data-rbd"),
+			},
+		},
+		{
+			name:          "destination PVC does not exist",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "postgres-data:postgres-data-rbd"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "postgres-data"),
+			},
+		},
+		{
+			name:          "plugin without pvc-rename-map support is not validated",
+			plugin:        unsupportedOptionalFieldPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "postgres-data:postgres-data-rbd"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "postgres-data"),
+				sourcePVC("mtc-demo", "postgres-data-rbd"),
+			},
+		},
+		{
+			name:          "invalid pvc-rename-map",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "postgres-data"},
+			expectedError: "invalid pvc-rename-map",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orchestrator := &Orchestrator{
+				Log:           logrus.New(),
+				OptionalFlags: tt.optionalFlags,
+			}
+
+			err := orchestrator.validatePVCRenameConflicts(Stage{PluginName: "KubernetesPlugin"}, tt.plugin, tt.resources)
+			if tt.expectedError == "" {
+				if err != nil {
+					t.Fatalf("validatePVCRenameConflicts() returned unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("validatePVCRenameConflicts() expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.expectedError) {
+				t.Errorf("validatePVCRenameConflicts() error = %q, want it to contain %q", err.Error(), tt.expectedError)
+			}
+		})
+	}
+}
+
+func sourcePVC(namespace, name string) unstructured.Unstructured {
+	return unstructured.Unstructured{Object: map[string]interface{}{
+		"apiVersion": "v1",
+		"kind":       "PersistentVolumeClaim",
+		"metadata": map[string]interface{}{
+			"name":      name,
+			"namespace": namespace,
+		},
+	}}
+}
+
+func TestExecuteStage_FailsEarlyForPVCRenameConflict(t *testing.T) {
+	tests := []struct {
+		name          string
+		pvcRenameMap  string
+		resources     []unstructured.Unstructured
+		expectedError string
+	}{
+		{
+			name:         "renamed source collides with existing destination",
+			pvcRenameMap: "postgres-data:postgres-data-rbd",
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "postgres-data"),
+				sourcePVC("mtc-demo", "postgres-data-rbd"),
+			},
+			expectedError: "PersistentVolumeClaim mtc-demo/postgres-data-rbd would be produced by both mtc-demo/postgres-data and mtc-demo/postgres-data-rbd",
+		},
+		{
+			name:         "two renamed sources collide on one destination",
+			pvcRenameMap: "data-a:shared,data-b:shared",
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "data-a"),
+				sourcePVC("mtc-demo", "data-b"),
+			},
+			expectedError: "PersistentVolumeClaim mtc-demo/shared would be produced by both mtc-demo/data-a and mtc-demo/data-b",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orchestrator := &Orchestrator{
+				Log:           logrus.New(),
+				OptionalFlags: map[string]string{"pvc-rename-map": tt.pvcRenameMap},
+			}
+
+			err := orchestrator.executeStage(
+				Stage{PluginName: "KubernetesPlugin", DirName: "10_KubernetesPlugin"},
+				tt.resources,
+				[]cranelib.Plugin{&kubernetesplugin.KubernetesTransformPlugin{}},
+			)
+			if err == nil {
+				t.Fatal("executeStage should fail before running the plugin")
+			}
+			if !strings.Contains(err.Error(), tt.expectedError) {
+				t.Errorf("executeStage error = %q, want it to contain %q", err.Error(), tt.expectedError)
+			}
+		})
+	}
+}
+
+func TestKubernetesPluginPVCRenameMapPerResourceBehavior(t *testing.T) {
+	pvc := func(name string) unstructured.Unstructured {
+		return unstructured.Unstructured{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "PersistentVolumeClaim",
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": "mtc-demo",
+			},
+		}}
+	}
+
+	tests := []struct {
+		name         string
+		pvcRenameMap string
+		pvcName      string
+		wantRename   bool
+		wantName     string
+	}{
+		{
+			name:         "source is renamed to the existing destination",
+			pvcRenameMap: "postgres-data:postgres-data-rbd",
+			pvcName:      "postgres-data",
+			wantRename:   true,
+			wantName:     "postgres-data-rbd",
+		},
+		{
+			name:         "existing destination is left unchanged",
+			pvcRenameMap: "postgres-data:postgres-data-rbd",
+			pvcName:      "postgres-data-rbd",
+		},
+		{
+			name:         "chained mappings rename each source directly",
+			pvcRenameMap: "a:b,b:c",
+			pvcName:      "a",
+			wantRename:   true,
+			wantName:     "b",
+		},
+		{
+			name:         "second chained source moves to the final name",
+			pvcRenameMap: "a:b,b:c",
+			pvcName:      "b",
+			wantRename:   true,
+			wantName:     "c",
+		},
+		{
+			name:         "unmapped final destination is left unchanged",
+			pvcRenameMap: "a:b,b:c",
+			pvcName:      "c",
+		},
+		{
+			name:         "two sources can independently request the same destination",
+			pvcRenameMap: "data-a:shared,data-b:shared",
+			pvcName:      "data-b",
+			wantRename:   true,
+			wantName:     "shared",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			plugin := &kubernetesplugin.KubernetesTransformPlugin{}
+			response, err := plugin.Run(cranelib.PluginRequest{
+				Unstructured: pvc(tt.pvcName),
+				Extras: map[string]string{
+					kubernetesplugin.PVCRenameMap: tt.pvcRenameMap,
+				},
+			})
+			if err != nil {
+				t.Fatalf("plugin.Run failed: %v", err)
+			}
+
+			renamedName, foundRename := metadataNamePatchValue(t, response.Patches)
+			if foundRename != tt.wantRename {
+				t.Fatalf("metadata.name rename patch found = %v, want %v; patches: %v", foundRename, tt.wantRename, response.Patches)
+			}
+			if foundRename && renamedName != tt.wantName {
+				t.Errorf("metadata.name patch value = %q, want %q", renamedName, tt.wantName)
+			}
+		})
+	}
+}
+
+func metadataNamePatchValue(t *testing.T, patches jsonpatch.Patch) (string, bool) {
+	t.Helper()
+
+	for _, patch := range patches {
+		var path string
+		if err := json.Unmarshal(*patch["path"], &path); err != nil {
+			t.Fatalf("failed to decode patch path: %v", err)
+		}
+		if path != "/metadata/name" {
+			continue
+		}
+
+		var operation string
+		if err := json.Unmarshal(*patch["op"], &operation); err != nil {
+			t.Fatalf("failed to decode patch operation: %v", err)
+		}
+		if operation != "replace" {
+			t.Fatalf("unexpected metadata.name patch operation: %v", patch)
+		}
+
+		var value string
+		if err := json.Unmarshal(*patch["value"], &value); err != nil {
+			t.Fatalf("failed to decode metadata.name patch value: %v", err)
+		}
+		return value, true
+	}
+
+	return "", false
+}
+
+type unsupportedOptionalFieldPlugin struct{}
+
+func (unsupportedOptionalFieldPlugin) Metadata() cranelib.PluginMetadata {
+	return cranelib.PluginMetadata{Name: "UnsupportedPlugin"}
+}
+
+func (unsupportedOptionalFieldPlugin) Run(cranelib.PluginRequest) (cranelib.PluginResponse, error) {
+	return cranelib.PluginResponse{}, nil
 }
 
 func TestValidateStageOptionalFlags(t *testing.T) {

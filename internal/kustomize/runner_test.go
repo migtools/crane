@@ -177,6 +177,53 @@ func TestBuild_InvalidDir(t *testing.T) {
 	}
 }
 
+func TestBuild_DuplicateResourcesReturnsError(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "kustomize-runner-duplicate-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	resourceYAML := `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-config
+  namespace: default
+data:
+  key: value
+`
+	kustomizationYAML := `apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- configmap-1.yaml
+- configmap-2.yaml
+`
+
+	for _, filename := range []string{"configmap-1.yaml", "configmap-2.yaml"} {
+		if err := os.WriteFile(filepath.Join(tmpDir, filename), []byte(resourceYAML), 0644); err != nil {
+			t.Fatalf("Failed to write resource: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "kustomization.yaml"), []byte(kustomizationYAML), 0644); err != nil {
+		t.Fatalf("Failed to write kustomization: %v", err)
+	}
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel)
+	runner := &Runner{Log: logger}
+
+	output, err := runner.Build(tmpDir)
+	if err == nil {
+		t.Fatal("Build should return an error for duplicate resources")
+	}
+	if !strings.Contains(err.Error(), "may not add resource with an already registered id") {
+		t.Errorf("Build error should identify the duplicate resource, got: %v", err)
+	}
+	if output != nil {
+		t.Error("Build output should be nil when it fails")
+	}
+}
+
 func TestBuild_MixedNamespacedAndClusterScoped(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "kustomize-runner-mixed-*")
 	if err != nil {
