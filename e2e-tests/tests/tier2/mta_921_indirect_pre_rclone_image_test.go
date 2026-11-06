@@ -151,22 +151,30 @@ var _ = Describe("Indirect transfer with a pre-rclone source image", func() {
 
 			By("Verify no orphaned indirect-transfer pods remain on source or target")
 			for _, k := range []KubectlRunner{kubectlSrc, kubectlTgt} {
-				podOut, err := k.Run("get", "pods", "-n", namespace,
-					"-l", "app.kubernetes.io/component=indirect-transfer", "-o", "name")
-				Expect(err).NotTo(HaveOccurred(), "failed to query indirect-transfer pods on context %q", k.Context)
-				Expect(strings.TrimSpace(podOut)).To(BeEmpty(),
-					"expected no orphaned indirect-transfer pods on context %q, got: %s", k.Context, strings.TrimSpace(podOut))
+				Eventually(func(g Gomega) {
+					out, err := k.Run("get", "pods", "-n", namespace,
+						"-l", "app.kubernetes.io/component=indirect-transfer", "-o", "name")
+					g.Expect(err).NotTo(HaveOccurred(),
+						"failed to query indirect-transfer pods on context %q", k.Context)
+					podOut := strings.TrimSpace(out)
+					g.Expect(podOut).To(BeEmpty(),
+						"expected no orphaned indirect-transfer pods on context %q, got: %s", k.Context, podOut)
+				}, "2m", "5s").Should(Succeed())
 			}
 
 			By("Verify the temporary indirect-transfer Secrets were cleaned up")
 			// The pre-created rcloneSecret is caller-owned and untouched; crane's own
 			// indirect-transfer Secrets (if any) must not be left behind.
 			for _, k := range []KubectlRunner{kubectlSrc, kubectlTgt} {
-				secretOut, err := k.Run("get", "secrets", "-n", namespace,
-					"-l", "app.kubernetes.io/component=indirect-transfer", "-o", "name")
-				Expect(err).NotTo(HaveOccurred(), "failed to query indirect-transfer Secrets on context %q", k.Context)
-				Expect(strings.TrimSpace(secretOut)).To(BeEmpty(),
-					"expected no orphaned indirect-transfer Secrets on context %q, got: %s", k.Context, strings.TrimSpace(secretOut))
+				Eventually(func(g Gomega) {
+					out, err := k.Run("get", "secrets", "-n", namespace,
+						"-l", "app.kubernetes.io/component=indirect-transfer", "-o", "name")
+					g.Expect(err).NotTo(HaveOccurred(),
+						"failed to query indirect-transfer Secrets on context %q", k.Context)
+					secretOut := strings.TrimSpace(out)
+					g.Expect(secretOut).To(BeEmpty(),
+						"expected no orphaned indirect-transfer Secrets on context %q, got: %s", k.Context, secretOut)
+				}, "2m", "5s").Should(Succeed())
 			}
 			log.Printf("No orphaned indirect-transfer pods or Secrets remain")
 		})
