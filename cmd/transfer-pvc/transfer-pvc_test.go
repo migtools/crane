@@ -1577,6 +1577,20 @@ func TestCertSecretNaming(t *testing.T) {
 			serverSecret: "stunnel-creds-certs-data",
 			wantCopyName: "stunnel-creds-certs-data",
 		},
+		{
+			name:         "different long PVC name — hash-truncate to client expectation",
+			srcPVCName:   "persistence-rotation-test-2-urdmjod-nyi-server-0",
+			destPVCName:  "renamed-pvc",
+			serverSecret: "stunnel-creds-certs-renamed-pvc",
+			wantCopyName: "stunnel-creds-certs-persistence-rotation-test-2-u-34d7770eebf7",
+		},
+		{
+			name:         "different PVC name longer than Kubernetes resource limit — use client validated resource name",
+			srcPVCName:   "persistence-rotation-test-2-urdmjod-nyi-server-with-a-name-longer-than-sixty-two-characters",
+			destPVCName:  "renamed-pvc",
+			serverSecret: "stunnel-creds-certs-renamed-pvc",
+			wantCopyName: "stunnel-creds-certs-crane-916c52e029318317962908a6153f8f34",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
