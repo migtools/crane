@@ -14,7 +14,7 @@ import (
 var _ = Describe("Namespace-admin cluster-level migration", func() {
 	It("[MTA-872] Should migrate CRD + CR with split apply: cluster-admin applies CRD, namespace-admin applies CR", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-872-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
@@ -67,8 +67,15 @@ var _ = Describe("Namespace-admin cluster-level migration", func() {
 		kubectlSrcNonAdmin, kubectlTgtNonAdmin, rbacCleanup, err := SetupActiveKubectlRunners(scenario, namespace)
 		Expect(err).NotTo(HaveOccurred())
 
+		DeferCleanup(func() {
+			By("Delete test namespace on source and target (wait for completion)")
+			for _, k := range []KubectlRunner{scenario.KubectlSrc, scenario.KubectlTgt} {
+				if _, err := k.Run("delete", "namespace", namespace, "--ignore-not-found=true", "--wait=true"); err != nil {
+					log.Printf("cleanup: failed to delete namespace %q on context %q: %v", namespace, k.Context, err)
+				}
+			}
+		})
 		DeferCleanup(rbacCleanup)
-
 		DeferCleanup(func() {
 			if err := ResourceCleanup(
 				[]KubectlRunner{kubectlSrc, kubectlTgt}, []Resource{cr, crd, tgtNameSpace}); err != nil {

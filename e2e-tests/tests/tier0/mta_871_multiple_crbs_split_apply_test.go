@@ -14,7 +14,7 @@ import (
 var _ = Describe("Namespace-admin cluster-level migration", func() {
 	It("[MTA-871]Should migrate workload with one CR and two CRBs using split apply", Label("tier0"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-871-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,

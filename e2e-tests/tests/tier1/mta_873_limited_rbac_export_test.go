@@ -14,7 +14,7 @@ import (
 var _ = Describe("Namespace-admin cluster-level migration", func() {
 	It("[MTA-873] Should export namespace resources and record failures under limited RBAC", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-873-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,
