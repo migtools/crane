@@ -36,20 +36,27 @@ type groupResourceError struct {
 	Error       error              `json:"error"`
 }
 
-// hasClusterScopedManifests reports whether any object in resources would be written
+// clusterScopedManifestCount returns how many objects in resources would be written
 // under clusterResourceDir (objects with empty namespace).
-func hasClusterScopedManifests(resources []*groupResource) bool {
+func clusterScopedManifestCount(resources []*groupResource) int {
+	count := 0
 	for _, g := range resources {
 		if g == nil || g.objects == nil {
 			continue
 		}
 		for _, obj := range g.objects.Items {
 			if obj.GetNamespace() == "" {
-				return true
+				count++
 			}
 		}
 	}
-	return false
+	return count
+}
+
+// hasClusterScopedManifests reports whether any object in resources would be written
+// under clusterResourceDir (objects with empty namespace).
+func hasClusterScopedManifests(resources []*groupResource) bool {
+	return clusterScopedManifestCount(resources) > 0
 }
 
 // prepareClusterResourceDir removes any previous _cluster export at clusterResourceDir
@@ -84,7 +91,8 @@ func prepareFailuresDir(failuresDir string) error {
 
 // writeResources writes each object in resources to a YAML file under resourceDir
 // or clusterResourceDir when the object has no namespace.
-func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
+func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) (int, []error) {
+	filesWritten := 0
 	errs := []error{}
 	for _, r := range resources {
 		log.Debugf("Writing objects of resource: %s to the output directory", r.APIResource.Name)
@@ -124,11 +132,12 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 				errs = append(errs, err)
 				continue
 			}
+			filesWritten++
 
 		}
 	}
 
-	return errs
+	return filesWritten, errs
 }
 
 // writeErrors persists list failures as YAML files named by API resource in failuresDir.
@@ -269,7 +278,7 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 
 			if len(objs.Items) > 0 {
 				g.objects = objs
-				log.Infof("Adding resource: %s to the list of GVRs to be extracted", resource.Name)
+				log.Debugf("Adding resource: %s to the list of GVRs to be extracted", resource.Name)
 				resources = append(resources, g)
 				continue
 			}
@@ -306,7 +315,7 @@ func getObjects(requestTimeout time.Duration, g *groupResource, namespace string
 		if requestTimeout > 0 {
 			ctx, cancel = context.WithTimeout(pagerCtx, requestTimeout)
 		}
-		defer cancel() 
+		defer cancel()
 
 		if g.APIResource.Namespaced {
 			return c.Namespace(namespace).List(ctx, opts)
@@ -357,12 +366,12 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		}
 		// Create fresh context with timeout for each Get request
 		ctx := context.Background()
-		cancel := func() {} 
-		
+		cancel := func() {}
+
 		if requestTimeout > 0 {
 			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
 		}
-		
+
 		obj, err := c.Namespace(namespace).Get(ctx, u.GetName(), metav1.GetOptions{})
 		cancel()
 		if err != nil {

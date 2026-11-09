@@ -3,9 +3,12 @@ package export
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/konveyor/crane/internal/cli"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
@@ -742,6 +745,77 @@ func TestComplete_DefaultExcludeEvent(t *testing.T) {
 				if o.excludeGK[i] != want {
 					t.Errorf("excludeGK[%d] = %q, want %q", i, o.excludeGK[i], want)
 				}
+			}
+		})
+	}
+}
+
+func TestClusterPhaseDetail(t *testing.T) {
+	tests := []struct {
+		name          string
+		namespace     string
+		resourceCount int
+		want          string
+	}{
+		{
+			name:          "no cluster resources omits path",
+			namespace:     "shop",
+			resourceCount: 0,
+			want:          "0 resources",
+		},
+		{
+			name:          "cluster resources include path",
+			namespace:     "shop",
+			resourceCount: 4,
+			want:          "4 resources → resources/shop/_cluster/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := clusterPhaseDetail(tt.namespace, tt.resourceCount); got != tt.want {
+				t.Errorf("clusterPhaseDetail() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExportSummaryFields(t *testing.T) {
+	tests := []struct {
+		name                 string
+		clusterResourceCount int
+		issueCount           int
+		duration             time.Duration
+		want                 []cli.OutputField
+	}{
+		{
+			name:                 "successful export without cluster resources or issues",
+			clusterResourceCount: 0,
+			issueCount:           0,
+			duration:             64 * time.Second,
+			want: []cli.OutputField{
+				{Label: "resources", Value: "/tmp/out/resources/shop"},
+				{Label: "duration", Value: "1m4s"},
+			},
+		},
+		{
+			name:                 "cluster resources and recorded issues",
+			clusterResourceCount: 4,
+			issueCount:           3,
+			duration:             45 * time.Second,
+			want: []cli.OutputField{
+				{Label: "resources", Value: "/tmp/out/resources/shop  (+ _cluster/)"},
+				{Label: "failures", Value: "/tmp/out/failures/shop  (3 list/write issues recorded)"},
+				{Label: "duration", Value: "45s"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := exportSummaryFields("/tmp/out/resources/shop", "/tmp/out/failures/shop", tt.clusterResourceCount, tt.issueCount, tt.duration)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("exportSummaryFields() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}

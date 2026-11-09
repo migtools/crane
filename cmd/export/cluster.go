@@ -81,10 +81,10 @@ func (c *ClusterScopeHandler) filterRbacResources(resources []*groupResource, lo
 		for kind, count := range acceptedCounts {
 			parts = append(parts, fmt.Sprintf("%d %s", count, kind))
 		}
-		log.Infof("Cluster-scoped resources exported to _cluster/ directory: %s",
+		log.Debugf("Cluster-scoped resources exported to _cluster/ directory: %s",
 			strings.Join(parts, ", "))
 	} else {
-		log.Info("No matching cluster-scoped resources found; _cluster/ directory will be empty")
+		log.Debug("No matching cluster-scoped resources found; _cluster/ directory will be empty")
 	}
 
 	return filteredResources
@@ -117,7 +117,7 @@ func (c *ClusterScopedRbacHandler) exportedSANamespaces() map[string]struct{} {
 			m[ns] = struct{}{}
 		}
 	}
-	
+
 	return m
 }
 
@@ -199,14 +199,14 @@ func (c *ClusterScopedRbacHandler) filteredResourcesOfKind(resource admittedReso
 
 		filtered := make([]unstructured.Unstructured, 0)
 		initialLen := len(clusterGroupResource.objects.Items)
-		c.log.Infof("Filtering for kind %s (%d found)", kind, initialLen)
+		c.log.Debugf("Filtering for kind %s (%d found)", kind, initialLen)
 		for _, r := range clusterGroupResource.objects.Items {
 			if c.accept(kind, r) {
 				filtered = append(filtered, r)
 			}
 		}
 		clusterGroupResource.objects.Items = filtered
-		c.log.Infof("After filtering %d remained out of %d", len(clusterGroupResource.objects.Items), initialLen)
+		c.log.Debugf("After filtering %d remained out of %d", len(clusterGroupResource.objects.Items), initialLen)
 	}
 	return clusterGroupResource, ok
 }

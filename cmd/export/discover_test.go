@@ -102,9 +102,9 @@ func TestHasClusterScopedManifests(t *testing.T) {
 			want:      false,
 		},
 		{
-			name: "nil groupResource entry",
+			name:      "nil groupResource entry",
 			resources: []*groupResource{nil},
-			want: false,
+			want:      false,
 		},
 		{
 			name: "nil objects field",
@@ -212,6 +212,20 @@ func TestPrepareFailuresDir(t *testing.T) {
 	}
 	if _, err := os.Stat(failuresDir); err != nil {
 		t.Fatalf("directory should exist after second call: %v", err)
+	}
+}
+
+func TestClusterScopedManifestCount(t *testing.T) {
+	namespaced := namespacedObj("test-ns", "config")
+	clusterOne := clusterScopedObj("role-one")
+	clusterTwo := clusterScopedObj("role-two")
+	resources := []*groupResource{
+		{objects: &unstructured.UnstructuredList{Items: []unstructured.Unstructured{namespaced, clusterOne}}},
+		{objects: &unstructured.UnstructuredList{Items: []unstructured.Unstructured{clusterTwo}}},
+	}
+
+	if got := clusterScopedManifestCount(resources); got != 2 {
+		t.Fatalf("clusterScopedManifestCount() = %d, want 2", got)
 	}
 }
 
@@ -350,9 +364,12 @@ func TestWriteResources(t *testing.T) {
 		},
 	}
 
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 2 {
+		t.Fatalf("filesWritten = %d, want 2", filesWritten)
 	}
 
 	// Namespaced resource written to resourceDir.
@@ -381,9 +398,12 @@ func TestWriteResources_SkipsEmptyKind(t *testing.T) {
 		},
 	}
 
-	errs := writeResources(resources, dir, dir, log)
+	filesWritten, errs := writeResources(resources, dir, dir, log)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 
 	// No files should be written.
@@ -648,9 +668,12 @@ func TestWriteResources_createFailsWhenTargetPathIsDirectory(t *testing.T) {
 			objects:     &unstructured.UnstructuredList{Items: []unstructured.Unstructured{nsObj}},
 		},
 	}
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 error, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -676,9 +699,12 @@ func TestWriteResources_marshalFails(t *testing.T) {
 			objects:     &unstructured.UnstructuredList{Items: []unstructured.Unstructured{nsObj}},
 		},
 	}
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 marshal error, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -708,9 +734,12 @@ func TestWriteResources_createFailsWhenDestinationFileNotWritable(t *testing.T) 
 			objects:     &unstructured.UnstructuredList{Items: []unstructured.Unstructured{nsObj}},
 		},
 	}
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 error opening/truncating read-only destination file, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -1271,7 +1300,7 @@ func TestGetObjects_clusterScopedSkipsLabelSelector(t *testing.T) {
 		APIGroupVersion: "rbac.authorization.k8s.io/v1",
 		APIResource:     metav1.APIResource{Name: "clusterrolebindings", Kind: "ClusterRoleBinding", Namespaced: false},
 	}
-	_, err := getObjects(0,g, "", "app=test", client, testLogger())
+	_, err := getObjects(0, g, "", "app=test", client, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
