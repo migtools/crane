@@ -53,6 +53,19 @@ func clusterScopedManifestCount(resources []*groupResource) int {
 	return count
 }
 
+// namespacedResourceTypeCount returns the number of non-empty API types whose
+// objects belong to the requested namespace. Cluster-scoped RBAC and SCC types
+// are handled separately in the related-resources phase.
+func namespacedResourceTypeCount(resources []*groupResource) int {
+	count := 0
+	for _, g := range resources {
+		if g != nil && g.APIResource.Namespaced {
+			count++
+		}
+	}
+	return count
+}
+
 // hasClusterScopedManifests reports whether any object in resources would be written
 // under clusterResourceDir (objects with empty namespace).
 func hasClusterScopedManifests(resources []*groupResource) bool {
@@ -94,6 +107,7 @@ func prepareFailuresDir(failuresDir string) error {
 func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) (int, []error) {
 	filesWritten := 0
 	errs := []error{}
+	writtenPaths := map[string]string{}
 	for _, r := range resources {
 		log.Debugf("Writing objects of resource: %s to the output directory", r.APIResource.Name)
 
@@ -109,6 +123,12 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 				targetDir = clusterResourceDir
 			}
 			path := filepath.Join(targetDir, file.GetResourceFilename(obj))
+			resourceID := fmt.Sprintf("%s %s/%s", obj.GetKind(), obj.GetNamespace(), obj.GetName())
+			if previousResourceID, alreadyWritten := writtenPaths[path]; alreadyWritten {
+				errs = append(errs, fmt.Errorf("refusing to overwrite manifest at %q: %s and %s resolve to the same output path", path, previousResourceID, resourceID))
+				continue
+			}
+			writtenPaths[path] = resourceID
 			f, err := os.Create(path)
 			if err != nil {
 				errs = append(errs, err)
@@ -141,7 +161,8 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 }
 
 // writeErrors persists list failures as YAML files named by API resource in failuresDir.
-func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) []error {
+func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) (int, []error) {
+	filesWritten := 0
 	errs := []error{}
 	for _, r := range errors {
 		log.Debugf("Writing error for resource %s, error: %v", r.APIResource.Name, r.Error)
@@ -176,9 +197,10 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 			errs = append(errs, err)
 			continue
 		}
+		filesWritten++
 	}
 
-	return errs
+	return filesWritten, errs
 }
 
 // discoverPreferredResources returns server-preferred API resource lists, filtered to

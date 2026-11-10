@@ -305,7 +305,7 @@ func (o *ExportOptions) Run() error {
 	}
 
 	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, gkFilter, dynamicClient, resourceLists, log)
-	phases.Complete("Listing namespace resources", fmt.Sprintf("%d API types with ≥1 object", len(resources)))
+	phases.Complete("Listing namespace resources", fmt.Sprintf("%d API types with ≥1 object", namespacedResourceTypeCount(resources)))
 	log.Debugf("Extracted %d resources (%d errors)", len(resources), len(resourceErrs))
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
@@ -344,7 +344,7 @@ func (o *ExportOptions) Run() error {
 		log.Warnf("Error writing manifests to file: %v, continuing", e)
 	}
 
-	writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
+	failureRecordsWritten, writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
 	for _, e := range writeErrorsErrors {
 		log.Warnf("Error writing errors to file: %v, continuing", e)
 	}
@@ -352,7 +352,7 @@ func (o *ExportOptions) Run() error {
 
 	errs = append(errs, writeResourcesErrors...)
 	errs = append(errs, writeErrorsErrors...)
-	issueCount := len(resourceErrs) + len(writeResourcesErrors) + len(writeErrorsErrors)
+	writeErrorCount := len(writeResourcesErrors) + len(writeErrorsErrors)
 	if allResourceListsForbidden(resources, resourceErrs) {
 		log.Warnf("All resource types returned Forbidden for namespace %q", o.userSpecifiedNamespace)
 		errs = append(errs, fmt.Errorf(
@@ -361,7 +361,7 @@ func (o *ExportOptions) Run() error {
 		))
 	}
 
-	summaryFields := exportSummaryFields(resourceDir, failuresDir, finalClusterResourceCount, issueCount, phases.Elapsed())
+	summaryFields := exportSummaryFields(resourceDir, failuresDir, finalClusterResourceCount, len(resourceErrs), failureRecordsWritten, writeErrorCount, phases.Elapsed())
 
 	if len(errs) > 0 {
 		log.Warnf("Export completed with %d error(s) for namespace %q", len(errs), o.userSpecifiedNamespace)
@@ -378,16 +378,26 @@ func clusterPhaseDetail(namespace string, resourceCount int) string {
 	return fmt.Sprintf("%s → resources/%s/_cluster/", detail, namespace)
 }
 
-func exportSummaryFields(resourceDir, failuresDir string, clusterResourceCount, issueCount int, duration time.Duration) []cli.OutputField {
+func exportSummaryFields(resourceDir, failuresDir string, clusterResourceCount, listIssueCount, failureRecordsWritten, writeErrorCount int, duration time.Duration) []cli.OutputField {
 	resourcesValue := resourceDir
 	if clusterResourceCount > 0 {
 		resourcesValue += "  (+ _cluster/)"
 	}
 	fields := []cli.OutputField{{Label: "resources", Value: resourcesValue}}
-	if issueCount > 0 {
+	if listIssueCount > 0 {
+		failureDetail := fmt.Sprintf("%d list issues recorded", failureRecordsWritten)
+		if failureRecordsWritten != listIssueCount {
+			failureDetail = fmt.Sprintf("%d of %d list issues recorded; see warnings above", failureRecordsWritten, listIssueCount)
+		}
 		fields = append(fields, cli.OutputField{
 			Label: "failures",
-			Value: fmt.Sprintf("%s  (%d list/write issues recorded)", failuresDir, issueCount),
+			Value: fmt.Sprintf("%s  (%s)", failuresDir, failureDetail),
+		})
+	}
+	if writeErrorCount > 0 {
+		fields = append(fields, cli.OutputField{
+			Label: "write errors",
+			Value: fmt.Sprintf("%d encountered; see warnings above", writeErrorCount),
 		})
 	}
 	return append(fields, cli.OutputField{

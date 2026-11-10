@@ -782,38 +782,58 @@ func TestClusterPhaseDetail(t *testing.T) {
 
 func TestExportSummaryFields(t *testing.T) {
 	tests := []struct {
-		name                 string
-		clusterResourceCount int
-		issueCount           int
-		duration             time.Duration
-		want                 []cli.OutputField
+		name                  string
+		clusterResourceCount  int
+		listIssueCount        int
+		failureRecordsWritten int
+		writeErrorCount       int
+		duration              time.Duration
+		want                  []cli.OutputField
 	}{
 		{
-			name:                 "successful export without cluster resources or issues",
-			clusterResourceCount: 0,
-			issueCount:           0,
-			duration:             64 * time.Second,
+			name:                  "successful export without cluster resources or issues",
+			clusterResourceCount:  0,
+			listIssueCount:        0,
+			failureRecordsWritten: 0,
+			writeErrorCount:       0,
+			duration:              64 * time.Second,
 			want: []cli.OutputField{
 				{Label: "resources", Value: "/tmp/out/resources/shop"},
 				{Label: "duration", Value: "1m4s"},
 			},
 		},
 		{
-			name:                 "cluster resources and recorded issues",
-			clusterResourceCount: 4,
-			issueCount:           3,
-			duration:             45 * time.Second,
+			name:                  "cluster resources and recorded list issues",
+			clusterResourceCount:  4,
+			listIssueCount:        3,
+			failureRecordsWritten: 3,
+			writeErrorCount:       0,
+			duration:              45 * time.Second,
 			want: []cli.OutputField{
 				{Label: "resources", Value: "/tmp/out/resources/shop  (+ _cluster/)"},
-				{Label: "failures", Value: "/tmp/out/failures/shop  (3 list/write issues recorded)"},
+				{Label: "failures", Value: "/tmp/out/failures/shop  (3 list issues recorded)"},
 				{Label: "duration", Value: "45s"},
+			},
+		},
+		{
+			name:                  "partially recorded list issues and write errors",
+			clusterResourceCount:  0,
+			listIssueCount:        3,
+			failureRecordsWritten: 2,
+			writeErrorCount:       2,
+			duration:              time.Second,
+			want: []cli.OutputField{
+				{Label: "resources", Value: "/tmp/out/resources/shop"},
+				{Label: "failures", Value: "/tmp/out/failures/shop  (2 of 3 list issues recorded; see warnings above)"},
+				{Label: "write errors", Value: "2 encountered; see warnings above"},
+				{Label: "duration", Value: "1s"},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := exportSummaryFields("/tmp/out/resources/shop", "/tmp/out/failures/shop", tt.clusterResourceCount, tt.issueCount, tt.duration)
+			got := exportSummaryFields("/tmp/out/resources/shop", "/tmp/out/failures/shop", tt.clusterResourceCount, tt.listIssueCount, tt.failureRecordsWritten, tt.writeErrorCount, tt.duration)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("exportSummaryFields() = %#v, want %#v", got, tt.want)
 			}
