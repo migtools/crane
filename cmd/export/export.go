@@ -370,6 +370,7 @@ func (o *ExportOptions) Run() error {
 	return errorsutil.NewAggregate(errs)
 }
 
+// clusterPhaseDetail formats the related cluster-scoped resources phase result.
 func clusterPhaseDetail(namespace string, resourceCount int) string {
 	detail := fmt.Sprintf("%d resources", resourceCount)
 	if resourceCount == 0 {
@@ -378,6 +379,7 @@ func clusterPhaseDetail(namespace string, resourceCount int) string {
 	return fmt.Sprintf("%s → resources/%s/_cluster/", detail, namespace)
 }
 
+// exportSummaryFields returns the fields printed in the final export Summary.
 func exportSummaryFields(resourceDir, failuresDir string, clusterResourceCount, listIssueCount, failureRecordsWritten, writeErrorCount int, duration time.Duration) []cli.OutputField {
 	resourcesValue := resourceDir
 	if clusterResourceCount > 0 {
