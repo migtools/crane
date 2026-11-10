@@ -53,9 +53,10 @@ func clusterScopedManifestCount(resources []*groupResource) int {
 	return count
 }
 
-// namespacedResourceTypeCount returns the number of non-empty API types whose
-// objects belong to the requested namespace. Cluster-scoped RBAC and SCC types
-// are handled separately in the related-resources phase.
+// namespacedResourceTypeCount returns the number of namespaced API types in
+// resources. The caller provides only types with at least one listed object.
+// Cluster-scoped RBAC and SCC types are handled separately in the
+// related-resources phase.
 func namespacedResourceTypeCount(resources []*groupResource) int {
 	count := 0
 	for _, g := range resources {
