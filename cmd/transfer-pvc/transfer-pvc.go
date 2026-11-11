@@ -813,7 +813,9 @@ func transferSummaryStatus(retErr error, progress *Progress) string {
 
 func certificateSecretName(serverSecret, srcPVCName, destPVCName string) string {
 	if srcPVCName != destPVCName {
-		return fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(srcPVCName))
+		return stunneltransport.TruncateWithHash(
+			fmt.Sprintf("stunnel-creds-certs-%s", getValidatedResourceName(srcPVCName)),
+		)
 	}
 	return serverSecret
 }
