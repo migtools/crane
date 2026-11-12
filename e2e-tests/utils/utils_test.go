@@ -1677,6 +1677,9 @@ func TestAssertResourcesExist(t *testing.T) {
 		}
 		for _, f := range files {
 			path := filepath.Join(dir, f)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
 			if err := os.WriteFile(path, []byte("dummy"), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -1801,6 +1804,16 @@ func TestAssertResourcesExist(t *testing.T) {
 			},
 			wantFound: false,
 		},
+		{
+			name: "finds_resource_in_subdirectory",
+			files: []string{
+				filepath.Join("_cluster", "ClusterRole_rbac.authorization.k8s.io_v1_clusterscoped_my-role.yaml"),
+			},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRole", Name: "my-role", Group: "rbac.authorization.k8s.io", Version: "v1"},
+			},
+			wantFound: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -1834,6 +1847,9 @@ func TestAssertResourcesDontExist(t *testing.T) {
 		}
 		for _, f := range files {
 			path := filepath.Join(dir, f)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
 			if err := os.WriteFile(path, []byte("dummy"), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -1915,6 +1931,16 @@ func TestAssertResourcesDontExist(t *testing.T) {
 			},
 			resources: []ResourceMatch{
 				{Kind: "Widget", Name: "test-widget", Scope: "myns"},
+			},
+			wantExcluded: false,
+		},
+		{
+			name: "returns_false_when_resource_exists_in_subdirectory",
+			files: []string{
+				filepath.Join("_cluster", "ClusterRoleBinding_rbac.authorization.k8s.io_v1_clusterscoped_my-crb.yaml"),
+			},
+			resources: []ResourceMatch{
+				{Kind: "ClusterRoleBinding", Name: "my-crb"},
 			},
 			wantExcluded: false,
 		},
