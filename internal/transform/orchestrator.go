@@ -19,6 +19,7 @@ import (
 	"github.com/sirupsen/logrus"
 	yamlv3 "gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/yaml"
 )
 
@@ -402,9 +403,8 @@ func (o *Orchestrator) validatePVCRenameConflicts(stage Stage, stagePlugin crane
 	return nil
 }
 
-// isRetainedCorePVC reports whether a PVC will be present after the Kubernetes
-// plugin runs. The rename map only applies to core/v1 PVCs, and collision
-// validation must not consider resources that the plugin whiteouts.
+// isRetainedCorePVC matches the KubernetesPlugin whiteout rules relevant to a
+// core PVC without running the plugin during validation.
 func isRetainedCorePVC(resource unstructured.Unstructured, flags map[string]string) bool {
 	if resource.GroupVersionKind().Group != "" || resource.GetKind() != "PersistentVolumeClaim" {
 		return false
@@ -414,7 +414,25 @@ func isRetainedCorePVC(resource unstructured.Unstructured, flags map[string]stri
 		return false
 	}
 
+	groupKind := resource.GroupVersionKind().GroupKind()
+	if includeOnly := flags[kubernetesplugin.IncludeOnlyFlag]; includeOnly != "" {
+		return groupKindInOptionalFlag(groupKind, includeOnly)
+	}
+	if groupKindInOptionalFlag(groupKind, flags[kubernetesplugin.ExtraWhiteoutsFlag]) {
+		return false
+	}
+
 	return optionalBool(flags, kubernetesplugin.DisableWhiteoutOwnedFlag) || len(resource.GetOwnerReferences()) == 0
+}
+
+func groupKindInOptionalFlag(groupKind schema.GroupKind, value string) bool {
+	for _, candidate := range cranelib.ParseOptionalFieldSliceVal(value) {
+		if schema.ParseGroupKind(candidate) == groupKind {
+			return true
+		}
+	}
+
+	return false
 }
 
 func optionalBool(flags map[string]string, flagName string) bool {

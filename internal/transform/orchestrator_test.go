@@ -1953,6 +1953,24 @@ func TestValidatePVCRenameConflicts(t *testing.T) {
 			},
 		},
 		{
+			name:          "PVC excluded by include-only is ignored",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "data-a:data-b", "include-only": "Deployment.apps"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "data-a"),
+				sourcePVC("mtc-demo", "data-b"),
+			},
+		},
+		{
+			name:          "PVC excluded by extra-whiteouts is ignored",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "data-a:data-b", "extra-whiteouts": "PersistentVolumeClaim"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "data-a"),
+				sourcePVC("mtc-demo", "data-b"),
+			},
+		},
+		{
 			name:          "owned PVC retained when whiteout is disabled still conflicts",
 			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
 			optionalFlags: map[string]string{"pvc-rename-map": "data-a:data-b", "disable-whiteout-owned": "true"},
