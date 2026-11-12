@@ -225,6 +225,7 @@ func (o *ExportOptions) Run() error {
 	var err error
 
 	log := o.log
+	logExportStarted(log, o.userSpecifiedNamespace)
 	cli.PrintBanner(o.ErrOut, "crane export", []cli.OutputField{
 		{Label: "namespace", Value: o.userSpecifiedNamespace},
 		{Label: "export-dir", Value: o.exportDir},
@@ -365,9 +366,21 @@ func (o *ExportOptions) Run() error {
 
 	if len(errs) > 0 {
 		log.Warnf("Export completed with %d error(s) for namespace %q", len(errs), o.userSpecifiedNamespace)
+	} else {
+		logExportCompleted(log, o.userSpecifiedNamespace)
 	}
 	cli.PrintSummary(o.ErrOut, summaryFields, len(errs) == 0)
 	return errorsutil.NewAggregate(errs)
+}
+
+// logExportStarted records the export start in the audit log without adding output at normal verbosity.
+func logExportStarted(log logrus.FieldLogger, namespace string) {
+	log.Debugf("Starting export for namespace %q", namespace)
+}
+
+// logExportCompleted records a successful export completion in the audit log.
+func logExportCompleted(log logrus.FieldLogger, namespace string) {
+	log.Debugf("Export complete for namespace %q", namespace)
 }
 
 // clusterPhaseDetail formats the related cluster-scoped resources phase result.

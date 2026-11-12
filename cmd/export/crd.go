@@ -137,6 +137,7 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 				log.Warnf("Error getting CustomResourceDefinition %q: %v", crdName, err)
 			}
 			outErrs = append(outErrs, &groupResourceError{
+				APIGroupVersion: crdGVR.Group + "/" + crdGVR.Version,
 				APIResource: metav1.APIResource{
 					Name:         crdFailureAPIResourceName(crdName),
 					SingularName: "customresourcedefinition",

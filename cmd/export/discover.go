@@ -32,8 +32,9 @@ type groupResource struct {
 }
 
 type groupResourceError struct {
-	APIResource metav1.APIResource `json:",inline"`
-	Error       error              `json:"error"`
+	APIGroupVersion string             `json:"apiGroupVersion,omitempty"`
+	APIResource     metav1.APIResource `json:",inline"`
+	Error           error              `json:"error"`
 }
 
 // clusterScopedManifestCount returns how many objects in resources would be written
@@ -161,7 +162,17 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 	return filesWritten, errs
 }
 
-// writeErrors persists list failures as YAML files named by API resource in failuresDir.
+// failureFilename returns a unique filename for a failed API resource list.
+func failureFilename(resourceErr *groupResourceError) string {
+	if resourceErr.APIGroupVersion == "" {
+		return resourceErr.APIResource.Name + ".yaml"
+	}
+	groupVersion := strings.ReplaceAll(resourceErr.APIGroupVersion, "/", "_")
+	return fmt.Sprintf("%s_%s.yaml", resourceErr.APIResource.Name, groupVersion)
+}
+
+// writeErrors persists list failures as YAML files in failuresDir. Group and
+// version are included in each filename to prevent collisions across API groups.
 func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) (int, []error) {
 	filesWritten := 0
 	errs := []error{}
@@ -174,7 +185,7 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 			continue
 		}
 
-		path := filepath.Join(failuresDir, r.APIResource.Name+".yaml")
+		path := filepath.Join(failuresDir, failureFilename(r))
 		f, err := os.Create(path)
 		if err != nil {
 			errs = append(errs, err)
@@ -283,7 +294,11 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				// Check if error is due to timeout/deadline exceeded - fail fast
 				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
 					log.Errorf("Request timeout exceeded for groupVersion %s, resource: %s, kind: %s: %v", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind, err)
-					return nil, []*groupResourceError{{resource, err}}
+					return nil, []*groupResourceError{{
+						APIGroupVersion: g.APIGroupVersion,
+						APIResource:     resource,
+						Error:           err,
+					}}
 				}
 				switch {
 				case apierrors.IsForbidden(err):
@@ -295,7 +310,11 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				default:
 					log.Errorf("Error listing objects: %v, groupVersion %s, resource: %s, kind: %s", err, g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				}
-				errors = append(errors, &groupResourceError{resource, err})
+				errors = append(errors, &groupResourceError{
+					APIGroupVersion: g.APIGroupVersion,
+					APIResource:     resource,
+					Error:           err,
+				})
 				continue
 			}
 

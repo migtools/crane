@@ -3,11 +3,15 @@ package export
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/konveyor/crane/internal/audit"
 	"github.com/konveyor/crane/internal/cli"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -615,6 +619,40 @@ func TestAllResourceListsForbidden(t *testing.T) {
 				t.Fatalf("allResourceListsForbidden() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExportLifecycleLogsReachAuditFile(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.log")
+	command := "export"
+	auditHook, err := audit.NewFileHook(auditPath, &command)
+	if err != nil {
+		t.Fatalf("NewFileHook: %v", err)
+	}
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.DebugLevel)
+	logger.SetOutput(io.Discard)
+	logger.AddHook(auditHook)
+
+	logExportStarted(logger, "shop")
+	logExportCompleted(logger, "shop")
+
+	if err := auditHook.Close(); err != nil {
+		t.Fatalf("close audit hook: %v", err)
+	}
+
+	entries, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	for _, message := range []string{
+		`"msg":"Starting export for namespace \"shop\""`,
+		`"msg":"Export complete for namespace \"shop\""`,
+	} {
+		if !strings.Contains(string(entries), message) {
+			t.Errorf("audit file does not contain %s: %s", message, entries)
+		}
 	}
 }
 

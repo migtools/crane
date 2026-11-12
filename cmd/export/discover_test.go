@@ -499,6 +499,40 @@ func TestWriteErrors(t *testing.T) {
 	}
 }
 
+func TestWriteErrors_KeepsSameResourceNameFromDifferentAPIGroups(t *testing.T) {
+	log := testLogger()
+	dir := t.TempDir()
+	errors := []*groupResourceError{
+		{
+			APIGroupVersion: "one.example.com/v1",
+			APIResource:     metav1.APIResource{Name: "widgets", Kind: "Widget"},
+			Error:           errors.New("list widgets.one.example.com failed"),
+		},
+		{
+			APIGroupVersion: "two.example.com/v1",
+			APIResource:     metav1.APIResource{Name: "widgets", Kind: "Widget"},
+			Error:           errors.New("list widgets.two.example.com failed"),
+		},
+	}
+
+	filesWritten, errs := writeErrors(errors, dir, log)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 2 {
+		t.Fatalf("filesWritten = %d, want 2", filesWritten)
+	}
+
+	for _, name := range []string{
+		"widgets_one.example.com_v1.yaml",
+		"widgets_two.example.com_v1.yaml",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("failure file %q not written: %v", name, err)
+		}
+	}
+}
+
 func TestWriteErrors_SkipsEmptyKind(t *testing.T) {
 	log := testLogger()
 	dir := t.TempDir()
