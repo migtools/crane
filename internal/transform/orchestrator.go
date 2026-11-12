@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
@@ -376,7 +377,7 @@ func (o *Orchestrator) validatePVCRenameConflicts(stage Stage, stagePlugin crane
 
 	finalIdentities := make(map[string]string)
 	for _, resource := range inputResources {
-		if resource.GetKind() != "PersistentVolumeClaim" {
+		if !isRetainedCorePVC(resource, flags) {
 			continue
 		}
 
@@ -399,6 +400,31 @@ func (o *Orchestrator) validatePVCRenameConflicts(stage Stage, stagePlugin crane
 	}
 
 	return nil
+}
+
+// isRetainedCorePVC reports whether a PVC will be present after the Kubernetes
+// plugin runs. The rename map only applies to core/v1 PVCs, and collision
+// validation must not consider resources that the plugin whiteouts.
+func isRetainedCorePVC(resource unstructured.Unstructured, flags map[string]string) bool {
+	if resource.GroupVersionKind().Group != "" || resource.GetKind() != "PersistentVolumeClaim" {
+		return false
+	}
+
+	if optionalBool(flags, kubernetesplugin.WhiteoutPVCFlag) {
+		return false
+	}
+
+	return optionalBool(flags, kubernetesplugin.DisableWhiteoutOwnedFlag) || len(resource.GetOwnerReferences()) == 0
+}
+
+func optionalBool(flags map[string]string, flagName string) bool {
+	value, found := flags[flagName]
+	if !found || value == "" {
+		return false
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	return err == nil && parsed
 }
 
 func pluginSupportsPVCRenameMap(stagePlugin cranelib.Plugin) bool {

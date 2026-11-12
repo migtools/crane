@@ -1935,6 +1935,43 @@ func TestValidatePVCRenameConflicts(t *testing.T) {
 			expectedError: "pvc-rename-map conflict: PersistentVolumeClaim mtc-demo/shared would be produced by both mtc-demo/data-a and mtc-demo/data-b",
 		},
 		{
+			name:          "owned PVC whiteouted by the plugin is ignored",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "data-a:data-b"},
+			resources: []unstructured.Unstructured{
+				sourcePVCWithOwner("mtc-demo", "data-a"),
+				sourcePVC("mtc-demo", "data-b"),
+			},
+		},
+		{
+			name:          "unowned PVC whiteouted by option is ignored",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "data-a:data-b", "whiteout-pvc": "true"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "data-a"),
+				sourcePVC("mtc-demo", "data-b"),
+			},
+		},
+		{
+			name:          "owned PVC retained when whiteout is disabled still conflicts",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "data-a:data-b", "disable-whiteout-owned": "true"},
+			resources: []unstructured.Unstructured{
+				sourcePVCWithOwner("mtc-demo", "data-a"),
+				sourcePVC("mtc-demo", "data-b"),
+			},
+			expectedError: "pvc-rename-map conflict: PersistentVolumeClaim mtc-demo/data-b would be produced by both mtc-demo/data-a and mtc-demo/data-b",
+		},
+		{
+			name:          "custom resource with PVC kind is ignored",
+			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
+			optionalFlags: map[string]string{"pvc-rename-map": "data-a:data-b"},
+			resources: []unstructured.Unstructured{
+				sourcePVC("mtc-demo", "data-a"),
+				customPVC("mtc-demo", "data-b"),
+			},
+		},
+		{
 			name:          "chained PVC renames do not conflict",
 			plugin:        &kubernetesplugin.KubernetesTransformPlugin{},
 			optionalFlags: map[string]string{"pvc-rename-map": "a:b,b:c"},
@@ -2010,6 +2047,25 @@ func sourcePVC(namespace, name string) unstructured.Unstructured {
 			"namespace": namespace,
 		},
 	}}
+}
+
+func sourcePVCWithOwner(namespace, name string) unstructured.Unstructured {
+	pvc := sourcePVC(namespace, name)
+	pvc.Object["metadata"].(map[string]interface{})["ownerReferences"] = []interface{}{
+		map[string]interface{}{
+			"apiVersion": "apps/v1",
+			"kind":       "StatefulSet",
+			"name":       "database",
+			"uid":        "00000000-0000-0000-0000-000000000000",
+		},
+	}
+	return pvc
+}
+
+func customPVC(namespace, name string) unstructured.Unstructured {
+	pvc := sourcePVC(namespace, name)
+	pvc.SetAPIVersion("example.com/v1")
+	return pvc
 }
 
 func TestExecuteStage_FailsEarlyForPVCRenameConflict(t *testing.T) {
