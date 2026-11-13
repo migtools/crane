@@ -6,16 +6,20 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	jsonpatch "github.com/evanphx/json-patch"
 	cranelib "github.com/konveyor/crane-lib/transform"
+	kubernetesplugin "github.com/konveyor/crane-lib/transform/kubernetes"
+	pvcutil "github.com/konveyor/crane-lib/transform/util"
 	"github.com/konveyor/crane/internal/file"
 	"github.com/konveyor/crane/internal/kustomize"
 	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
 	yamlv3 "gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/yaml"
 )
 
@@ -29,15 +33,15 @@ type StageArtifact struct {
 
 // Orchestrator coordinates multi-stage transform execution
 type Orchestrator struct {
-	Log            *logrus.Logger
-	ExportDir      string
-	TransformDir   string
-	PluginDir      string
-	SkipPlugins    []string
-	OptionalFlags  map[string]string
+	Log                *logrus.Logger
+	ExportDir          string
+	TransformDir       string
+	PluginDir          string
+	SkipPlugins        []string
+	OptionalFlags      map[string]string
 	StageOptionalFlags map[string]map[string]string
-	Overwrite      bool
-	CraneVersion   string
+	Overwrite          bool
+	CraneVersion       string
 	// NewlyCreatedStages tracks stages created in this run that can be overwritten
 	// This prevents double-write errors when creating a stage and then running it
 	NewlyCreatedStages map[string]bool
@@ -212,6 +216,11 @@ func (o *Orchestrator) executeStage(stage Stage, inputResources []unstructured.U
 		return err
 	}
 
+	if err := o.validatePVCRenameConflicts(stage, stagePlugin, inputResources); err != nil {
+		o.Log.Errorf("Stage %s: PVC rename validation failed: %v", stage.DirName, err)
+		return fmt.Errorf("stage %s: %w", stage.DirName, err)
+	}
+
 	// Transform all resources through the plugin (or pass-through if no plugin)
 	artifacts, err := o.transformResources(stage, stagePlugin, inputResources)
 	if err != nil {
@@ -347,6 +356,121 @@ func (o *Orchestrator) transformResources(stage Stage, stagePlugin cranelib.Plug
 	return artifacts, nil
 }
 
+func (o *Orchestrator) validatePVCRenameConflicts(stage Stage, stagePlugin cranelib.Plugin, inputResources []unstructured.Unstructured) error {
+	if !pluginSupportsPVCRenameMap(stagePlugin) {
+		return nil
+	}
+
+	flags := o.resolveOptionalFlags(stage)
+	pvcRenameMap := flags[kubernetesplugin.PVCRenameMap]
+	if pvcRenameMap == "" {
+		return nil
+	}
+
+	if err := validatePVCRenameMapSyntax(pvcRenameMap); err != nil {
+		return err
+	}
+
+	pvcMap, err := pvcutil.ProcessPVCMap(pvcRenameMap)
+	if err != nil {
+		return fmt.Errorf("invalid %s: %w", kubernetesplugin.PVCRenameMap, err)
+	}
+
+	finalIdentities := make(map[string]string)
+	for _, resource := range inputResources {
+		if !isRetainedCorePVC(resource, flags) {
+			continue
+		}
+
+		sourceName := resource.GetName()
+		destinationName := sourceName
+		if mappedName, shouldRename := pvcMap[sourceName]; shouldRename {
+			destinationName = mappedName
+		}
+
+		destinationIdentity := resource.GetNamespace() + "/" + destinationName
+		sourceIdentity := resource.GetNamespace() + "/" + sourceName
+		if existingSource, exists := finalIdentities[destinationIdentity]; exists {
+			return fmt.Errorf(
+				"%s conflict: PersistentVolumeClaim %s would be produced by both %s and %s; choose unique destination PVC names or remove the conflicting destination PVC from the export",
+				kubernetesplugin.PVCRenameMap, destinationIdentity, existingSource, sourceIdentity,
+			)
+		}
+
+		finalIdentities[destinationIdentity] = sourceIdentity
+	}
+
+	return nil
+}
+
+// isRetainedCorePVC matches the KubernetesPlugin whiteout rules relevant to a
+// core PVC without running the plugin during validation.
+func isRetainedCorePVC(resource unstructured.Unstructured, flags map[string]string) bool {
+	if resource.GroupVersionKind().Group != "" || resource.GetKind() != "PersistentVolumeClaim" {
+		return false
+	}
+
+	if optionalBool(flags, kubernetesplugin.WhiteoutPVCFlag) {
+		return false
+	}
+
+	groupKind := resource.GroupVersionKind().GroupKind()
+	if includeOnly := flags[kubernetesplugin.IncludeOnlyFlag]; includeOnly != "" {
+		if !groupKindInOptionalFlag(groupKind, includeOnly) {
+			return false
+		}
+	} else if groupKindInOptionalFlag(groupKind, flags[kubernetesplugin.ExtraWhiteoutsFlag]) {
+		return false
+	}
+
+	return optionalBool(flags, kubernetesplugin.DisableWhiteoutOwnedFlag) || len(resource.GetOwnerReferences()) == 0
+}
+
+func groupKindInOptionalFlag(groupKind schema.GroupKind, value string) bool {
+	for _, candidate := range cranelib.ParseOptionalFieldSliceVal(value) {
+		if schema.ParseGroupKind(candidate) == groupKind {
+			return true
+		}
+	}
+
+	return false
+}
+
+func optionalBool(flags map[string]string, flagName string) bool {
+	value, found := flags[flagName]
+	if !found || value == "" {
+		return false
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	return err == nil && parsed
+}
+
+func pluginSupportsPVCRenameMap(stagePlugin cranelib.Plugin) bool {
+	if stagePlugin == nil {
+		return false
+	}
+
+	for _, optionalField := range stagePlugin.Metadata().OptionalFields {
+		if optionalField.FlagName == kubernetesplugin.PVCRenameMap {
+			return true
+		}
+	}
+
+	return false
+}
+
+func validatePVCRenameMapSyntax(pvcRenameMap string) error {
+	for _, mapping := range strings.Split(pvcRenameMap, ",") {
+		parts := strings.Split(mapping, ":")
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return fmt.Errorf("invalid %s mapping %q: expected <source-pvc>:<destination-pvc>", kubernetesplugin.PVCRenameMap, mapping)
+		}
+	}
+
+	return nil
+}
+
 // formatResourceID returns a human-readable identifier for a resource
 func (o *Orchestrator) formatResourceID(resource unstructured.Unstructured) string {
 	return fmt.Sprintf("%s/%s/%s", resource.GetKind(), resource.GetNamespace(), resource.GetName())
@@ -412,10 +536,10 @@ func (o *Orchestrator) applyStageTransforms(stageDir string) ([]unstructured.Uns
 	// Empty output means the stage has no resources to transform
 	if len(output) == 0 {
 		o.Log.Debugf("Stage directory %s produced no resources to transform", stageDir)
-		return nil, fmt.Errorf("stage produced no resources to transform.\n"+
-			"This can happen when:\n"+
-			"  - The stage received no input resources\n"+
-			"  - The plugin processed resources but produced no transformations\n"+
+		return nil, fmt.Errorf("stage produced no resources to transform.\n" +
+			"This can happen when:\n" +
+			"  - The stage received no input resources\n" +
+			"  - The plugin processed resources but produced no transformations\n" +
 			"  - A previous stage filtered out all resources")
 	}
 

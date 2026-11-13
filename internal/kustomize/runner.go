@@ -3,6 +3,7 @@ package kustomize
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -18,10 +19,28 @@ type Runner struct {
 }
 
 // Build runs kustomize build on the given directory and returns the rendered YAML.
-func (r *Runner) Build(dir string) ([]byte, error) {
+func (r *Runner) Build(dir string) (output []byte, err error) {
 	if r.Log == nil {
 		r.Log = logrus.StandardLogger()
 	}
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			return
+		}
+
+		var panicErr error
+		if value, ok := recovered.(error); ok {
+			panicErr = value
+		} else {
+			panicErr = fmt.Errorf("%v", recovered)
+		}
+
+		r.Log.Debugf("Kustomize build panic for %s: %v\n%s", dir, panicErr, debug.Stack())
+		output = nil
+		err = fmt.Errorf("kustomize build failed for %s: %w", dir, panicErr)
+	}()
+
 	r.Log.Debugf("Running kustomize build on %s", dir)
 
 	opts, envVars, err := r.buildOptions()
