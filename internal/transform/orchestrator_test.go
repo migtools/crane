@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -2132,6 +2133,58 @@ func TestExecuteStage_FailsEarlyForPVCRenameConflict(t *testing.T) {
 				t.Errorf("executeStage error = %q, want it to contain %q", err.Error(), tt.expectedError)
 			}
 		})
+	}
+}
+
+func TestExecuteStage_PVCRenameIgnoresOwnedPVCWithIncludeOnly(t *testing.T) {
+	flags := map[string]string{
+		"pvc-rename-map": "a:b",
+		"include-only":   "PersistentVolumeClaim,ConfigMap",
+	}
+	ownedPVC := sourcePVCWithOwner("demo", "a")
+	resources := []unstructured.Unstructured{
+		ownedPVC,
+		sourcePVC("demo", "b"),
+		{Object: map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMap",
+			"metadata": map[string]interface{}{
+				"name":      "keep",
+				"namespace": "demo",
+			},
+		}},
+	}
+
+	plugin := &kubernetesplugin.KubernetesTransformPlugin{}
+	orchestrator := &Orchestrator{
+		Log:           logrus.New(),
+		TransformDir:  t.TempDir(),
+		OptionalFlags: flags,
+	}
+	stage := Stage{PluginName: "KubernetesPlugin", DirName: "10_KubernetesPlugin"}
+
+	if err := orchestrator.executeStage(stage, resources, []cranelib.Plugin{plugin}); err != nil {
+		t.Fatalf("executeStage() returned error: %v", err)
+	}
+
+	pathOpts := file.PathOpts{
+		TransformDir: orchestrator.TransformDir,
+	}
+	output, err := orchestrator.applyStageTransforms(pathOpts.GetStageTransformDir(stage.DirName))
+	if err != nil {
+		t.Fatalf("applyStageTransforms() returned error: %v", err)
+	}
+
+	got := make(map[string]bool)
+	for _, resource := range output {
+		got[resource.GetKind()+"/"+resource.GetNamespace()+"/"+resource.GetName()] = true
+	}
+	want := map[string]bool{
+		"PersistentVolumeClaim/demo/b": true,
+		"ConfigMap/demo/keep":          true,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("rendered resources = %v, want %v", got, want)
 	}
 }
 

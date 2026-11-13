@@ -416,9 +416,10 @@ func isRetainedCorePVC(resource unstructured.Unstructured, flags map[string]stri
 
 	groupKind := resource.GroupVersionKind().GroupKind()
 	if includeOnly := flags[kubernetesplugin.IncludeOnlyFlag]; includeOnly != "" {
-		return groupKindInOptionalFlag(groupKind, includeOnly)
-	}
-	if groupKindInOptionalFlag(groupKind, flags[kubernetesplugin.ExtraWhiteoutsFlag]) {
+		if !groupKindInOptionalFlag(groupKind, includeOnly) {
+			return false
+		}
+	} else if groupKindInOptionalFlag(groupKind, flags[kubernetesplugin.ExtraWhiteoutsFlag]) {
 		return false
 	}
 
