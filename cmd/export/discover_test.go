@@ -472,8 +472,9 @@ func TestWriteErrors(t *testing.T) {
 
 	errors := []*groupResourceError{
 		{
-			APIResource: metav1.APIResource{Name: "widgets", Kind: "Widget"},
-			Error:       os.ErrPermission,
+			APIGroupVersion: "example.com/v1",
+			APIResource:     metav1.APIResource{Name: "widgets", Kind: "Widget"},
+			Error:           os.ErrPermission,
 		},
 	}
 

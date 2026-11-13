@@ -162,21 +162,56 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 	return filesWritten, errs
 }
 
-// failureFilename returns a unique filename for a failed API resource list.
-func failureFilename(resourceErr *groupResourceError) string {
-	if resourceErr.APIGroupVersion == "" {
+// failureFilename returns the filename for a failed API resource list. It keeps
+// the legacy resource-name filename unless another failure has the same name.
+func failureFilename(resourceErr *groupResourceError, hasNameCollision bool) string {
+	if !hasNameCollision || resourceErr.APIGroupVersion == "" {
 		return resourceErr.APIResource.Name + ".yaml"
 	}
 	groupVersion := strings.ReplaceAll(resourceErr.APIGroupVersion, "/", "_")
 	return fmt.Sprintf("%s_%s.yaml", resourceErr.APIResource.Name, groupVersion)
 }
 
-// writeErrors persists list failures as YAML files in failuresDir. Group and
-// version are included in each filename to prevent collisions across API groups.
+// failureFilenames returns one distinct filename for every writable failure.
+// Ordinary failures retain their legacy resource-name filenames. If multiple
+// failures share a resource name, group and version distinguish them.
+func failureFilenames(errors []*groupResourceError) []string {
+	nameCounts := make(map[string]int)
+	for _, resourceErr := range errors {
+		if resourceErr.APIResource.Kind != "" {
+			nameCounts[resourceErr.APIResource.Name]++
+		}
+	}
+
+	filenames := make([]string, len(errors))
+	used := make(map[string]struct{})
+	for i, resourceErr := range errors {
+		if resourceErr.APIResource.Kind == "" {
+			continue
+		}
+
+		filename := failureFilename(resourceErr, nameCounts[resourceErr.APIResource.Name] > 1)
+		base := strings.TrimSuffix(filename, ".yaml")
+		for suffix := 2; ; suffix++ {
+			if _, exists := used[filename]; !exists {
+				break
+			}
+			filename = fmt.Sprintf("%s_%d.yaml", base, suffix)
+		}
+		filenames[i] = filename
+		used[filename] = struct{}{}
+	}
+
+	return filenames
+}
+
+// writeErrors persists list failures as YAML files in failuresDir. Resource
+// names are kept unless duplicate names need group/version suffixes.
 func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) (int, []error) {
 	filesWritten := 0
 	errs := []error{}
-	for _, r := range errors {
+	filenames := failureFilenames(errors)
+	for i, r := range errors {
 		log.Debugf("Writing error for resource %s, error: %v", r.APIResource.Name, r.Error)
 
 		kind := r.APIResource.Kind
@@ -185,7 +220,7 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 			continue
 		}
 
-		path := filepath.Join(failuresDir, failureFilename(r))
+		path := filepath.Join(failuresDir, filenames[i])
 		f, err := os.Create(path)
 		if err != nil {
 			errs = append(errs, err)
