@@ -24,6 +24,64 @@ func TestPhaseStartEnd(t *testing.T) {
 	}
 }
 
+func TestPhaseComplete(t *testing.T) {
+	var buf bytes.Buffer
+	p := NewPhaseTracker(&buf, 5)
+
+	p.Complete("Discovery", "ok (preferred API lists refreshed)")
+
+	const want = "[1/5] Discovery ... ok (preferred API lists refreshed)\n"
+	if got := buf.String(); got != want {
+		t.Errorf("Complete output = %q, want %q", got, want)
+	}
+}
+
+func TestPrintBanner(t *testing.T) {
+	var buf bytes.Buffer
+	PrintBanner(&buf, "crane export", []OutputField{
+		{Label: "namespace", Value: "shop"},
+		{Label: "export-dir", Value: "./out"},
+	})
+
+	const want = "\ncrane export\nnamespace: shop\nexport-dir: ./out\n\n"
+	if got := buf.String(); got != want {
+		t.Errorf("PrintBanner output = %q, want %q", got, want)
+	}
+}
+
+func TestPrintSummary(t *testing.T) {
+	var buf bytes.Buffer
+	PrintSummary(&buf, []OutputField{
+		{Label: "resources", Value: "./out/resources/shop/"},
+		{Label: "duration", Value: "1m4s"},
+	}, true)
+
+	const want = "\nSummary\n-------\nresources: ./out/resources/shop/\nduration: 1m4s\nDone.\n"
+	if got := buf.String(); got != want {
+		t.Errorf("PrintSummary output = %q, want %q", got, want)
+	}
+}
+
+func TestPrintSummaryWithoutDone(t *testing.T) {
+	var buf bytes.Buffer
+	PrintSummary(&buf, nil, false)
+
+	if strings.Contains(buf.String(), "Done.") {
+		t.Errorf("PrintSummary should not print Done for an incomplete command, got: %q", buf.String())
+	}
+}
+
+func TestPrintSummaryWithFailures(t *testing.T) {
+	var buf bytes.Buffer
+	PrintSummary(&buf, []OutputField{
+		{Label: "failures", Value: "./out/failures/shop/  (3 list/write issues recorded)"},
+	}, true)
+
+	if !strings.Contains(buf.String(), "failures: ./out/failures/shop/  (3 list/write issues recorded)") {
+		t.Errorf("PrintSummary failure row missing, got: %q", buf.String())
+	}
+}
+
 func TestPhaseEndWithDetail(t *testing.T) {
 	var buf bytes.Buffer
 	p := NewPhaseTracker(&buf, 1)

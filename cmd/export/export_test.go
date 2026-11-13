@@ -3,9 +3,16 @@ package export
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/konveyor/crane/internal/audit"
+	"github.com/konveyor/crane/internal/cli"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	v1 "k8s.io/api/core/v1"
@@ -650,6 +657,40 @@ func TestAllResourceListsForbidden(t *testing.T) {
 	}
 }
 
+func TestExportLifecycleLogsReachAuditFile(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.log")
+	command := "export"
+	auditHook, err := audit.NewFileHook(auditPath, &command)
+	if err != nil {
+		t.Fatalf("NewFileHook: %v", err)
+	}
+
+	logger := logrus.New()
+	logger.SetLevel(logrus.DebugLevel)
+	logger.SetOutput(io.Discard)
+	logger.AddHook(auditHook)
+
+	logExportStarted(logger, "shop")
+	logExportCompleted(logger, "shop")
+
+	if err := auditHook.Close(); err != nil {
+		t.Fatalf("close audit hook: %v", err)
+	}
+
+	entries, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("read audit file: %v", err)
+	}
+	for _, message := range []string{
+		`"msg":"Starting export for namespace \"shop\""`,
+		`"msg":"Export complete for namespace \"shop\""`,
+	} {
+		if !strings.Contains(string(entries), message) {
+			t.Errorf("audit file does not contain %s: %s", message, entries)
+		}
+	}
+}
+
 func TestValidate_GKFilter(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -777,6 +818,97 @@ func TestComplete_DefaultExcludeEvent(t *testing.T) {
 				if o.excludeGK[i] != want {
 					t.Errorf("excludeGK[%d] = %q, want %q", i, o.excludeGK[i], want)
 				}
+			}
+		})
+	}
+}
+
+func TestClusterPhaseDetail(t *testing.T) {
+	tests := []struct {
+		name          string
+		namespace     string
+		resourceCount int
+		want          string
+	}{
+		{
+			name:          "no cluster resources omits path",
+			namespace:     "shop",
+			resourceCount: 0,
+			want:          "0 resources",
+		},
+		{
+			name:          "cluster resources include path",
+			namespace:     "shop",
+			resourceCount: 4,
+			want:          "4 resources → resources/shop/_cluster/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := clusterPhaseDetail(tt.namespace, tt.resourceCount); got != tt.want {
+				t.Errorf("clusterPhaseDetail() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExportSummaryFields(t *testing.T) {
+	tests := []struct {
+		name                  string
+		clusterResourceCount  int
+		listIssueCount        int
+		failureRecordsWritten int
+		writeErrorCount       int
+		duration              time.Duration
+		want                  []cli.OutputField
+	}{
+		{
+			name:                  "successful export without cluster resources or issues",
+			clusterResourceCount:  0,
+			listIssueCount:        0,
+			failureRecordsWritten: 0,
+			writeErrorCount:       0,
+			duration:              64 * time.Second,
+			want: []cli.OutputField{
+				{Label: "resources", Value: "/tmp/out/resources/shop"},
+				{Label: "duration", Value: "1m4s"},
+			},
+		},
+		{
+			name:                  "cluster resources and recorded list issues",
+			clusterResourceCount:  4,
+			listIssueCount:        3,
+			failureRecordsWritten: 3,
+			writeErrorCount:       0,
+			duration:              45 * time.Second,
+			want: []cli.OutputField{
+				{Label: "resources", Value: "/tmp/out/resources/shop  (+ _cluster/)"},
+				{Label: "failures", Value: "/tmp/out/failures/shop  (3 list issues recorded)"},
+				{Label: "duration", Value: "45s"},
+			},
+		},
+		{
+			name:                  "partially recorded list issues and write errors",
+			clusterResourceCount:  0,
+			listIssueCount:        3,
+			failureRecordsWritten: 2,
+			writeErrorCount:       2,
+			duration:              time.Second,
+			want: []cli.OutputField{
+				{Label: "resources", Value: "/tmp/out/resources/shop"},
+				{Label: "failures", Value: "/tmp/out/failures/shop  (2 of 3 list issues recorded; see warnings above)"},
+				{Label: "write errors", Value: "2 encountered; see warnings above"},
+				{Label: "duration", Value: "1s"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := exportSummaryFields("/tmp/out/resources/shop", "/tmp/out/failures/shop", tt.clusterResourceCount, tt.listIssueCount, tt.failureRecordsWritten, tt.writeErrorCount, tt.duration)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("exportSummaryFields() = %#v, want %#v", got, tt.want)
 			}
 		})
 	}
