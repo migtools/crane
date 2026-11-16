@@ -337,8 +337,8 @@ github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
-github.com/konveyor/crane-lib v0.1.6-0.20261001154521-926a5ffd044f h1:uCvTsCA6BrpQYT83YlJgrOaDyw6D+OrWO5SqgCDYrAw=
-github.com/konveyor/crane-lib v0.1.6-0.20261001154521-926a5ffd044f/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
+github.com/konveyor/crane-lib v0.1.7-0.20261116161109-73bf9144f352 h1:b44Wf7uBXLkB/ndivDWgMxfj/3XuL/8F/A/8E3D25wQ=
+github.com/konveyor/crane-lib v0.1.7-0.20261116161109-73bf9144f352/go.mod h1:oYw915/11lZhW5k+nVxZtWdpl5AGc0lL52Z1YcKjU7Y=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
@@ -376,8 +376,6 @@ github.com/maxatome/go-testdeep v1.11.0/go.mod h1:011SgQ6efzZYAen6fDn4BqQ+lUR72y
 github.com/mfridman/tparse v0.18.0 h1:wh6dzOKaIwkUGyKgOntDW4liXSo37qg5AXbIhkMV3vE=
 github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC8DvP0i/A=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
-github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a h1:bSsyUn96V8oLl6S//jWK78nHicx5u7Wr7qhPSZYbZkI=
-github.com/migtools/pvc-transfer v0.0.0-20260820041907-3bfa753b411a/go.mod h1:ep8dIwq9ZA5oIQKzYL0eVMugUaNWOfIr1fAq02yURgo=
 github.com/migtools/pvc-transfer v0.0.0-20261106101704-bc88d2ccd671 h1:QKV4sNTVcumzpW9WxMjQaVGBpAtKopSI+vzdVjvjOIY=
 github.com/migtools/pvc-transfer v0.0.0-20261106101704-bc88d2ccd671/go.mod h1:ep8dIwq9ZA5oIQKzYL0eVMugUaNWOfIr1fAq02yURgo=
 github.com/mitchellh/cli v1.0.0/go.mod h1:hNIlj7HEI86fIcpObd7a0FcrxTWetlwJDGcceTlRvqc=
