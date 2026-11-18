@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,10 +76,9 @@ var _ = Describe("Validate offline mode with empty API resources", func() {
 			APIResourcesFile: fixture.apiResourcesFile,
 		})
 		Expect(err).To(HaveOccurred(), "validate should fail when apiResourceLists is empty")
-		errMsg := filepath.ToSlash(err.Error())
-		Expect(errMsg).To(ContainSubstring("loading api-resources"))
-		Expect(errMsg).To(ContainSubstring(filepath.ToSlash(fixture.apiResourcesFile)))
-		Expect(errMsg).To(ContainSubstring("contains no API resource lists"))
+		Expect(err.Error()).To(ContainSubstring("loading api-resources"))
+		Expect(err.Error()).To(ContainSubstring(fmt.Sprintf("%q", fixture.apiResourcesFile)))
+		Expect(err.Error()).To(ContainSubstring("contains no API resource lists"))
 		Expect(stdout).NotTo(BeEmpty())
 
 		reportPath := filepath.Join(fixture.validateDir, "report.json")
