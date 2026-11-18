@@ -1048,7 +1048,7 @@ func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "input/") {
+		if !strings.Contains(filepath.ToSlash(rel), "input/") {
 			return nil
 		}
 		name := info.Name()
@@ -1088,7 +1088,7 @@ func AssertWhiteoutResourceFileCount(transformDir string, kind string, expectedC
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "input/") {
+		if !strings.Contains(filepath.ToSlash(rel), "input/") {
 			return nil
 		}
 		if strings.HasPrefix(info.Name(), kind+"_") || strings.HasPrefix(info.Name(), kind+".") {
