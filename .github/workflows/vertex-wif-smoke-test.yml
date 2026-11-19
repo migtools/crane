@@ -1,0 +1,103 @@
+name: Vertex WIF smoke test
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Claude model ID enabled in the GCP project
+        type: string
+        required: true
+        default: claude-sonnet-4-6
+      location:
+        description: Vertex location serving the model
+        type: string
+        required: true
+        default: global
+      invoke_model:
+        description: Also make one small Claude request after WIF authentication
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  smoke-test:
+    if: github.repository == 'migtools/crane'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    env:
+      GCP_PROJECT: mta-ops-fs-agents
+    steps:
+      # No checkout or credential file is needed: the REST call uses auth_token.
+      - name: Exchange GitHub identity for a GCP federated token
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ env.GCP_PROJECT }}
+          workload_identity_provider: projects/21066242673/locations/global/workloadIdentityPools/itpc-identity-pool/providers/github-com
+          create_credentials_file: false
+          export_environment_variables: false
+
+      - name: Invoke Claude on Vertex AI
+        if: inputs.invoke_model
+        env:
+          GCP_AUTH_TOKEN: ${{ steps.auth.outputs.auth_token }}
+          MODEL_ID: ${{ inputs.model }}
+          VERTEX_LOCATION: ${{ inputs.location }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.error
+          import urllib.request
+
+          project = os.environ["GCP_PROJECT"]
+          model = os.environ["MODEL_ID"]
+          location = os.environ["VERTEX_LOCATION"]
+          token = os.environ["GCP_AUTH_TOKEN"]
+          if not re.fullmatch(r"claude-[a-z0-9][a-z0-9.@-]*", model):
+              sys.exit("Invalid model ID. Use a Claude Vertex model ID, without a provider prefix.")
+          if not re.fullmatch(r"[a-z]+(?:-[a-z0-9]+)*", location):
+              sys.exit("Invalid Vertex location. Use global or a location such as us-east5.")
+          if not token:
+              sys.exit("WIF authentication did not return a federated token.")
+
+          host = "aiplatform.googleapis.com" if location == "global" else f"{location}-aiplatform.googleapis.com"
+          url = (
+              f"https://{host}/v1/projects/{project}/locations/{location}"
+              f"/publishers/anthropic/models/{model}:rawPredict"
+          )
+          payload = {
+              "anthropic_version": "vertex-2023-10-16",
+              "max_tokens": 16,
+              "messages": [{"role": "user", "content": "Reply with OK."}],
+          }
+          request = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode(),
+              headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  result = json.load(response)
+          except urllib.error.HTTPError as error:
+              # Report the API error without logging a bearer token or raw response.
+              try:
+                  message = json.load(error).get("error", {}).get("message", "No API error message.")
+              except (ValueError, AttributeError):
+                  message = "The endpoint returned a non-JSON error."
+              print(f"Vertex inference failed with HTTP {error.code}: {str(message).replace(token, '[REDACTED]')}", file=sys.stderr)
+              print("WIF exchange passed. Check project IAM, model enablement, location, and quota.", file=sys.stderr)
+              sys.exit(1)
+          except (urllib.error.URLError, TimeoutError) as error:
+              sys.exit(f"Vertex request failed: {str(error).replace(token, '[REDACTED]')}")
+
+          if not result.get("content") or not result.get("model"):
+              sys.exit("Vertex returned JSON without the expected Claude model and content fields.")
+          print(json.dumps({"project": project, "location": location, "model": result["model"], "usage": result.get("usage", {})}, indent=2))
+          PY
