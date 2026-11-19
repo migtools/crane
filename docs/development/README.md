@@ -8,7 +8,7 @@ This directory contains detailed guides for developers contributing to Crane.
 - [Development Setup](./setup.md) — Setting up your development environment
 - [Testing](./testing.md) — Unit tests, table-driven patterns, and E2E testing
 - [Plugin Development](./plugin-development.md) — Writing custom transformation plugins
-- [Vertex WIF smoke test](./vertex-wif-smoke-test.md) validates keyless Claude access from GitHub Actions.
+- [Vertex WIF smoke test](./vertex-wif-smoke-test.md) — Validating keyless Claude access from GitHub Actions
 
 ## Quick Reference
 
