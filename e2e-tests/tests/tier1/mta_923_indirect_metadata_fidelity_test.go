@@ -38,6 +38,13 @@ var plainRegularFiles = []string{
 	"./nested/deep/file_640",
 }
 
+// emptyDirs are seeded directories (relative to permFidelityDir) with no children.
+// crane-lib#163 (issue #1082) stopped rclone sync from dropping empty source dirs
+// during indirect transfer, so these now survive to the target.
+var emptyDirs = []string{
+	"./dir_0750", "./dir_setgid", "./dir_sticky",
+}
+
 // statEntry is one row of a stat manifest: the POSIX mode (octal, left-padded to
 // 4 digits so special bits compare cleanly) plus numeric owner uid and gid.
 type statEntry struct {
@@ -287,8 +294,9 @@ sync`, permFidelityDir, symlinkTarget, symlinkName)
 			}
 
 			// Log the full source->target delta as standing evidence of both the
-			// preserved attributes and the documented PENDING gaps (missing empty dirs,
-			// stripped special/dir mode bits, directory gid drift).
+			// preserved attributes (regular-file modes, symlinks, and — since
+			// crane-lib#163 — empty directories) and the remaining PENDING gaps
+			// (stripped special/dir mode bits, directory gid drift).
 			By("Log the source->target metadata delta (evidence; gaps are tracked as PENDING specs)")
 			for _, n := range srcNames {
 				src := srcManifest[n]
@@ -371,5 +379,24 @@ sync`, permFidelityDir, symlinkTarget, symlinkName)
 			Expect(strings.TrimSpace(StripKubectlWarnings(content))).To(Equal(symlinkTargetContent),
 				"reading through symlink %q should return its target's content", symlinkName)
 			log.Printf("Symlink %s -> %s survived the indirect transfer intact and resolves", symlinkName, symlinkTarget)
+
+			By("Verify empty source directories survive the indirect transfer (crane-lib#163, issue #1082)")
+			// For each seeded empty dir verify it is present on the target (not dropped),
+			// is still a directory, and still holds no entries.
+			for _, d := range emptyDirs {
+				_, ok := srcManifest[d]
+				Expect(ok).To(BeTrue(), "test setup: expected to have seeded empty dir %q on the source", d)
+				_, ok = tgtManifest[d]
+				Expect(ok).To(BeTrue(),
+					"empty directory %q present on source is missing on target after transfer (crane-lib#163)", d)
+				dirPath := permFidelityDir + "/" + strings.TrimPrefix(d, "./")
+				out, err := kubectlTgt.Run("exec", verifierPod, "-n", tgtApp.Namespace, "--",
+					"/bin/sh", "-c", fmt.Sprintf("test -d %q && ls -A %q | wc -l", dirPath, dirPath))
+				Expect(err).NotTo(HaveOccurred(),
+					"empty directory %q should be a directory on the target after transfer", d)
+				Expect(strings.TrimSpace(StripKubectlWarnings(out))).To(Equal("0"),
+					"directory %q should still be empty on the target", d)
+			}
+			log.Printf("All %d empty source directories survived the indirect transfer (crane-lib#163)", len(emptyDirs))
 		})
 })
