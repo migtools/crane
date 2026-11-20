@@ -1,0 +1,55 @@
+version: "1"
+forge: github
+runtime: claude
+roles:
+  - triage
+  - coder
+  - review
+  - fix
+  - retro
+  - prioritize
+
+mint_url: https://mint.fullsend.sh
+inference:
+  provider: vertex
+  region: global
+  # Workflows pass vars.VERTEX_PROJECT_ID and vars.VERTEX_WIF_PROVIDER
+  # through the reusable workflow's FULLSEND_GCP_* interface.
+
+tracker:
+  github:
+    allowed_targets:
+      repos:
+        - migtools/crane
+
+# Keep upstream defaults except for prioritize, which is request-only.
+agents:
+  - name: triage
+    source: harness/triage.yaml
+    enabled: true
+  - name: review
+    source: harness/review.yaml
+    enabled: true
+  - name: code
+    source: harness/code.yaml
+    enabled: true
+  - name: fix
+    source: harness/fix.yaml
+    enabled: true
+  - name: retro
+    source: harness/retro.yaml
+    enabled: true
+  - name: prioritize
+    source: harness/prioritize.yaml
+    enabled: true
+    # Override built-in routing explicitly so automatic events never select it.
+    trigger: >-
+      event.entity.kind in ["work_item", "change_proposal"]
+      && event.transition.kind == "comment_added"
+      && has(event.transition.comment.command)
+      && event.transition.comment.command == "/fs-prioritize"
+      && event.actor.kind == "human"
+
+allowed_remote_resources:
+  - https://raw.githubusercontent.com/fullsend-ai/fullsend/
+  - https://raw.githubusercontent.com/fullsend-ai/agents/
