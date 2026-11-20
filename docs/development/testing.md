@@ -123,7 +123,8 @@ GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
 go install "github.com/onsi/ginkgo/v2/ginkgo@$GINKGO_VERSION"
 GINKGO_BIN_DIR="$(go env GOBIN)"
 if [ -z "$GINKGO_BIN_DIR" ]; then
-  GINKGO_BIN_DIR="$(go env GOPATH)/bin"
+  GINKGO_GOPATH="$(go env GOPATH)"
+  GINKGO_BIN_DIR="${GINKGO_GOPATH%%:*}/bin"
 fi
 export PATH="$GINKGO_BIN_DIR:$PATH"
 ginkgo version

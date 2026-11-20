@@ -201,6 +201,11 @@ The following example selects an existing tier0 ConfigMap test. Replace
 derived from that file, and `--fail-on-empty` fails if the focus filter selects
 no specs in that suite:
 
+Use clusters containing only disposable test workloads. This example's cleanup
+deletes the fixed `mta-810-configmap` namespace on both source and target,
+including any resources already present there. Before running it, confirm that
+`mta-810-configmap` does not exist on either cluster.
+
 ```bash
 TEST_FILE=e2e-tests/tests/tier0/mta_810_configmap_test.go
 TEST_SUITE="$(dirname "$TEST_FILE")"
