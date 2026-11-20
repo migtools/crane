@@ -13,8 +13,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -508,6 +510,167 @@ func TestPodTerminationReason(t *testing.T) {
 				t.Errorf("podTerminationReason() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestPodStartupDiagnostics(t *testing.T) {
+	scheme := newTestScheme()
+	fast := "fast"
+	none := ""
+
+	pendingUnschedulablePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "rclone-download", Namespace: "test-ns"},
+		Spec: corev1.PodSpec{Volumes: []corev1.Volume{{
+			Name:         "vol",
+			VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "dest-pvc"}},
+		}}},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			Conditions: []corev1.PodCondition{{
+				Type:    corev1.PodScheduled,
+				Status:  corev1.ConditionFalse,
+				Reason:  "Unschedulable",
+				Message: "0/3 nodes are available",
+			}},
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name:  "rclone",
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}},
+			}},
+		},
+	}
+
+	missingSCPVC := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns", UID: types.UID("dest-uid")},
+		Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &fast},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+	}
+
+	provisioningEvent := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "evt-1", Namespace: "test-ns"},
+		Type:           corev1.EventTypeWarning,
+		Reason:         "ProvisioningFailed",
+		Message:        `storageclass.storage.k8s.io "fast" not found`,
+		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Name: "dest-pvc", Namespace: "test-ns", UID: types.UID("dest-uid")},
+		LastTimestamp:  metav1.Now(),
+	}
+
+	existingSC := &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "gp2",
+			Annotations: map[string]string{"storageclass.kubernetes.io/is-default-class": "true"},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		objs         []runtime.Object
+		destPVC      *corev1.PersistentVolumeClaim
+		podName      string
+		wantContains []string
+		wantOmits    []string
+		wantEmpty    bool
+	}{
+		{
+			name:    "unschedulable pod with missing storage class",
+			objs:    []runtime.Object{pendingUnschedulablePod, missingSCPVC, provisioningEvent, existingSC},
+			destPVC: missingSCPVC,
+			podName: "rclone-download",
+			wantContains: []string{
+				"pod phase: Pending",
+				"scheduled: False (Unschedulable): 0/3 nodes are available",
+				"container rclone waiting: ContainerCreating",
+				`PVC dest-pvc: phase=Pending storageClass="fast"`,
+				"warning events:",
+				`ProvisioningFailed: storageclass.storage.k8s.io "fast" not found`,
+				`re-run with --dest-storage-class set to one of: gp2 (default)`,
+			},
+		},
+		{
+			name:    "bound pvc produces no storage class hint",
+			destPVC: &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"}},
+			objs: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "rclone-download", Namespace: "test-ns"},
+					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"},
+					Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &fast},
+					Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound},
+				},
+				existingSC,
+			},
+			podName:      "rclone-download",
+			wantContains: []string{"pod phase: Pending", `PVC dest-pvc: phase=Bound storageClass="fast"`},
+			wantOmits:    []string{"hint:", "--dest-storage-class"},
+		},
+		{
+			name:    "explicit empty storage class reported as none",
+			destPVC: &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"}},
+			objs: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "rclone-download", Namespace: "test-ns"},
+					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"},
+					Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &none},
+					Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+				},
+			},
+			podName:      "rclone-download",
+			wantContains: []string{`PVC dest-pvc: phase=Pending storageClass="" (none)`},
+			wantOmits:    []string{"hint:"},
+		},
+		{
+			name:      "nothing readable returns empty",
+			destPVC:   nil,
+			objs:      nil,
+			podName:   "does-not-exist",
+			wantEmpty: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tt.objs...).Build()
+			got := podStartupDiagnostics(c, tt.podName, "test-ns", "rclone", tt.destPVC, logrus.StandardLogger())
+			if tt.wantEmpty {
+				if got != "" {
+					t.Fatalf("podStartupDiagnostics() = %q, want empty", got)
+				}
+				return
+			}
+			if got == "" {
+				t.Fatal("podStartupDiagnostics() returned empty, want diagnostics")
+			}
+			for _, want := range tt.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("podStartupDiagnostics() = %q\nmissing %q", got, want)
+				}
+			}
+			for _, omit := range tt.wantOmits {
+				if strings.Contains(got, omit) {
+					t.Errorf("podStartupDiagnostics() = %q\nshould not contain %q", got, omit)
+				}
+			}
+		})
+	}
+}
+
+func TestStorageClassHintNoStorageClassesDefined(t *testing.T) {
+	fast := "fast"
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).Build()
+	pvcs := map[string]*corev1.PersistentVolumeClaim{
+		"dest-pvc": {
+			ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"},
+			Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &fast},
+			Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+		},
+	}
+	got := storageClassHint(context.Background(), c, pvcs, logrus.StandardLogger())
+	if !strings.Contains(got, "no storage classes are defined") {
+		t.Errorf("storageClassHint() = %q, want mention of no storage classes defined", got)
 	}
 }
 
