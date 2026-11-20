@@ -1,0 +1,116 @@
+# Based on Fullsend v0.57.0 internal/scaffold/fullsend-repo/templates/shim-per-repo.yaml.
+# Local changes restrict execution to migtools/crane, read Vertex identifiers
+# from repository variables, and forward optional runner/telemetry secrets.
+# Refresh the complete shim on upgrade.
+name: fullsend
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize, ready_for_review, closed, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'migtools/crane'
+      && (github.event_name != 'pull_request' && github.event_name != 'pull_request_review'
+       || github.event.pull_request.head.ref != 'fullsend/scaffold-install')
+      && (github.event_name != 'pull_request'
+       || github.event.pull_request.head.repo.id == github.repository_id)
+      && (github.event_name != 'issue_comment'
+       || startsWith(github.event.comment.body, '/fs-'))
+    permissions:
+      actions: write
+      id-token: write
+      contents: write
+      issues: write
+      packages: read
+      pull-requests: write
+    uses: fullsend-ai/fullsend/.github/workflows/reusable-dispatch.yml@3381ce46ba810d0f4cefe64905b0e6bc3ce36b48 # v0.57.0
+    with:
+      event_action: ${{ github.event.action }}
+      mint_url: ${{ vars.FULLSEND_MINT_URL }}
+      gcp_region: ${{ vars.FULLSEND_GCP_REGION }}
+      project_number: ${{ vars.FULLSEND_PROJECT_NUMBER }}
+      runner_image: ubuntu-24.04
+    secrets:
+      # Upstream exposes these identifiers as secrets, but their source is vars.
+      FULLSEND_GCP_WIF_PROVIDER: ${{ vars.VERTEX_WIF_PROVIDER }}
+      FULLSEND_GCP_PROJECT_ID: ${{ vars.VERTEX_PROJECT_ID }}
+      FULLSEND_GITHUB_RUNNER_SECRETS: ${{ secrets.FULLSEND_GITHUB_RUNNER_SECRETS }}
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_TRACES_HEADERS }}
+      OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+
+  stop-fix:
+    # The step below authorizes via repository permission or PR authorship.
+    if: >-
+      github.repository == 'migtools/crane'
+        && github.event_name == 'issue_comment'
+        && github.event.issue.pull_request
+        && github.event.comment.user.type != 'Bot'
+        && github.event.comment.body == '/fs-fix-stop'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Add fullsend-no-fix label and notify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          COMMENT_USER_LOGIN: ${{ github.event.comment.user.login }}
+          ISSUE_USER_LOGIN: ${{ github.event.issue.user.login }}
+        run: |
+          set -euo pipefail
+          authorized=false
+          if [[ -n "$COMMENT_USER_LOGIN" && "$COMMENT_USER_LOGIN" == "$ISSUE_USER_LOGIN" ]]; then
+            authorized=true
+          else
+            if api_err=$(mktemp); then
+              # $p is a jq variable, not a shell variable.
+              # shellcheck disable=SC2016
+              if role=$(gh api "repos/$REPO/collaborators/$COMMENT_USER_LOGIN/permission" \
+                --jq '.user.permissions as $p
+                  | if (.role_name | type) != "string" or .role_name == "" then "none"
+                    elif (.role_name | IN("admin", "maintain", "write", "triage", "read")) then .role_name
+                    elif $p == null then
+                      if (.permission | IN("admin", "write", "read")) then .permission else "none" end
+                    elif ($p | type) == "object" then
+                      if $p.admin == true then "admin"
+                      elif $p.maintain == true then "maintain"
+                      elif $p.push == true then "write"
+                      elif $p.triage == true then "triage"
+                      elif $p.pull == true then "read"
+                      else "none" end
+                    else "none" end' 2>"$api_err"); then
+                case "$role" in
+                  admin|maintain|write) authorized=true ;;
+                esac
+              else
+                echo "::warning::Permission API call failed for $COMMENT_USER_LOGIN: $(cat "$api_err")"
+              fi
+              rm -f "$api_err"
+            else
+              echo "::warning::Failed to create temp file for permission check of $COMMENT_USER_LOGIN"
+            fi
+          fi
+          if [[ "$authorized" != "true" ]]; then
+            echo "::notice::User $COMMENT_USER_LOGIN is not authorized to stop the fix agent (requires write access or PR authorship)"
+            exit 0
+          fi
+          gh label create 'fullsend-no-fix' --repo "$REPO" \
+            --description 'Skip bot-triggered fix agent runs' --color 'FBCA04' \
+            2>/dev/null || true
+          gh pr edit "$PR_NUMBER" --repo "$REPO" \
+            --add-label 'fullsend-no-fix'
+          gh pr comment "$PR_NUMBER" --repo "$REPO" \
+            --body 'Fix agent disabled for this PR. Remove the `fullsend-no-fix` label or use `/fs-fix` to re-engage.'
