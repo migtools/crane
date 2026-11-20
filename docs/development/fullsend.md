@@ -1,175 +1,131 @@
-# Fullsend agents
+# Using Fullsend
 
-Fullsend provides triage, review, code, fix, retro, and prioritize agents for
-`migtools/crane`. The workflows use Fullsend v0.57.0, commit
-`3381ce46ba810d0f4cefe64905b0e6bc3ce36b48`. Agent sources in
-`.fullsend/config.yaml` reference `fullsend-ai/agents` v0.57.0, commit
-`41f89529863ea6c26e804a348f56953423d294a3`, with SHA-256 integrity checks.
+Fullsend helps with issue triage, implementation, pull request review, fixes,
+retrospectives, and prioritization in `migtools/crane`. Request work by posting
+a command in a GitHub issue or pull request comment. You do not need a local
+Fullsend installation or model credentials to use it through GitHub.
 
-All six agents use the Claude Code runtime on Google Vertex AI in `global`,
-billed to the project in `VERTEX_PROJECT_ID`. Model selection is inherited
-from upstream harnesses and personas, with no local model or tier overrides.
+For configuration, deployment status, GitHub Apps, models, and administration,
+see [Fullsend setup and operations](fullsend_setup.md).
 
-## Upstream model selection
+## Quick start
 
-All six v0.57.0 fleet harnesses select `opus` for the parent agent. Fullsend
-v0.57.0 resolves that alias to `claude-opus-5-5`, with
-`claude-opus-4-6` as its model-not-served fallback.
+1. Open or choose a focused issue or PR in
+   [migtools/crane](https://github.com/migtools/crane).
+2. Describe the expected behavior and how the result should be checked.
+3. Post one of the commands below as a new comment, with the command at the
+   start of the comment.
+4. Follow the agent's status comments and the linked GitHub Actions run.
+5. Review the result and CI checks through the normal PR process.
 
-Review personas select different tiers. Correctness, security, and challenger
-use Opus; cross-repository contracts, documentation, intent, risk, style, and
-user experience use Sonnet; security triage uses Haiku.
+For example, request a review by commenting on a PR:
 
-Claude Code resolves those native subagent aliases separately from Fullsend's
-parent aliases. The pinned fleet's `env/gcp-vertex.env` explicitly sets the
-native Sonnet tier to `claude-sonnet-4-6`. Native Opus and Haiku retain the
-Claude Code provider defaults. The documented Vertex defaults are Opus 5.5
-and Haiku 4.5.
-
-The following models are enabled in the
-[project's Model Garden](https://console.cloud.google.com/vertex-ai/model-garden?project=mta-ops-fs-agents),
-in addition to Sonnet 5.5:
-
-| Model | Purpose |
-| --- | --- |
-| Claude Opus 5.5, `claude-opus-5-5` | All parent agents and native Opus personas |
-| Claude Sonnet 4.6, `claude-sonnet-4-6` | Native Sonnet personas, pinned by the fleet environment |
-| Claude Haiku 4.5, `claude-haiku-4-5` | Native Haiku personas |
-
-Opus 4.6 is optional if the parent model-not-served fallback is needed.
-Enabling Haiku 5.5 alone does not provide access to the native Haiku 4.5
-default. Enable model access for the inference project and use models
-available at the `global` endpoint.
-
-## GitHub identity and inference
-
-The hosted mint at `https://mint.fullsend.sh` issues short-lived GitHub App
-tokens. These Apps must be installed in `migtools` with access to `crane`:
-
-| App | Agents |
-| --- | --- |
-| `fullsend-ai-triage` | triage |
-| `fullsend-ai-review` | review |
-| `fullsend-ai-coder` | code and fix |
-| `fullsend-ai-retro` | retro |
-| `fullsend-ai-prioritize` | prioritize |
-
-Inference uses the central ITPC WIF provider from `VERTEX_WIF_PROVIDER` and
-a repository-scoped `roles/aiplatform.user` binding in `VERTEX_PROJECT_ID`.
-The mint supplies GitHub identity; it does not supply model inference.
-Fullsend and Claude Code derive the Vertex request URL from the project,
-location, and model. The project and provider are supplied by the workflows,
-with no fixed project ID or provider URL in `.fullsend/config.yaml`.
-
-The workflows expect these Actions repository settings in `migtools/crane`:
-
-| Setting | Storage | Value |
-| --- | --- | --- |
-| `FULLSEND_MINT_URL` | Variable | `https://mint.fullsend.sh` |
-| `FULLSEND_APP_SET` | Variable | `fullsend-ai` |
-| `FULLSEND_PER_REPO_INSTALL` | Variable | `true` |
-| `FULLSEND_GCP_REGION` | Variable | `global` |
-| `FULLSEND_REVIEW_CLIENT_ID` | Variable | `Iv23li1nIorNLIQy6NWK`, public OAuth client ID of the review App |
-| `VERTEX_PROJECT_ID` | Variable | The GCP project ID used for inference and billing |
-| `VERTEX_WIF_PROVIDER` | Variable | The full central ITPC WIF provider resource name |
-
-Both workflows pass `vars.VERTEX_PROJECT_ID` as `FULLSEND_GCP_PROJECT_ID` and
-`vars.VERTEX_WIF_PROVIDER` as `FULLSEND_GCP_WIF_PROVIDER` in the reusable
-workflow's `secrets:` block. These names belong to the upstream interface;
-the values come from repository variables, and same-named repository secrets
-are not used. Authentication exchanges the Actions OIDC token through WIF;
-no service-account private key or model-provider API key is needed.
-`FULLSEND_GITHUB_RUNNER_SECRETS` and the OTLP header secrets are optional.
-
-Crane maintainers own `.fullsend/config.yaml`, its pinned agent sources, and the
-repository-specific workflow guards. Repository administrators maintain App
-access and Actions settings. GCP project administrators maintain model access
-and IAM. ITPC maintains the central WIF provider.
-
-## Commands and automatic behavior
-
-All six agents are enabled. Prioritize is request-only, with an explicit
-`agents[].trigger` matching a human `/fs-prioritize` command. The other agents
-retain upstream automatic routing and effort settings. Merging these files
-into `migtools/crane` activates the event handlers.
-
-Review publishes findings at medium severity and above. The
-`REVIEW_FINDING_SEVERITY_THRESHOLD` is set to `medium` in both runner and
-sandbox environments so analysis and publishing use the same threshold.
-
-| Agent | Manual command | Other upstream triggers |
-| --- | --- | --- |
-| triage | `/fs-triage` on an issue | Issue opened or edited, or `ready-for-triage` label |
-| review | `/fs-review` on a PR | Same-repo PR opened, updated, marked ready, or `ready-for-review` label |
-| code | `/fs-code` on an issue | `ready-to-code` label |
-| fix | `/fs-fix <instruction>` on a PR | Review feedback on eligible agent PRs; human PRs can opt in with `fullsend-fix` |
-| retro | `/fs-retro` on an issue or PR | Same-repo PR closed or merged |
-| prioritize | `/fs-prioritize` on an issue | Explicit dispatch through the manual `Prioritize` workflow only |
-
-Upstream authorization checks apply to every command and event. Triage keeps
-automatic code promotion enabled for `bug`, `documentation`, and `performance`.
-The `skip-triage` label suppresses automatic triage; a human `/fs-triage`
-request overrides it. Code and fix can create and update PR branches.
-`CODE_AUTO_MERGE` retains the upstream default of disabled, and normal branch
-rules govern merging. Issue creation targets are restricted to `migtools/crane`.
-
-The v0.57.0 shim uses `pull_request`, not `pull_request_target`. Fork PRs and
-Dependabot PRs do not receive automatic review or retro. Request a fork review
-with `/fs-review` as a user with repository triage permission or higher.
-This also works while a merge conflict prevents GitHub
-from running the `pull_request` workflow. Workflow jobs run only in
-`migtools/crane`, matching its authorized WIF principal.
-
-Prioritize posts RICE scoring as a comment. Optional variable
-`FULLSEND_PROJECT_NUMBER` enables updates to an organization Projects V2 board
-when the App has access and the expected fields exist. No board is selected
-by this installation. Prioritize does not run automatically on issue or PR
-changes, and there is no repository-local scheduled prioritization.
-
-## Current status
-
-| Capability | Status |
-| --- | --- |
-| GitHub Actions OIDC authentication through ITPC WIF | Working |
-| Vertex inference in `global` with Opus 5.5, Sonnet 4.6, Haiku 4.5, and Sonnet 5.5 | Working |
-| Fullsend GitHub App access and token minting | Not yet verified |
-| End-to-end Fullsend agent execution and native subagent model selection | Not yet verified |
-| Credential refresh during long-running agent sessions | Not yet verified |
-
-Use the [Vertex WIF smoke test](vertex-wif-smoke-test.md) to check model
-availability and cloud authentication. Fullsend execution, delegation, and
-credential refresh require agent runs.
-
-## Operations and updates
-
-Use `/fs-fix-stop` on a PR to stop automatic fixes for that PR. Set
-`kill_switch: true` in `.fullsend/config.yaml` to stop agent dispatch. Disabling
-the `fullsend` and `Prioritize` workflows stops new workflow runs; cancel
-already active runs separately when needed.
-
-On upgrade, refresh the complete shim and thin caller from the matching
-Fullsend scaffold, then retain the `migtools/crane` job guards, `VERTEX_*`
-variable mappings, and selected secret forwarding. Update workflow commit
-pins and all six fleet harness commit/integrity pins together. Inspect upstream
-model aliases, persona frontmatter, and the fleet Vertex environment for changes
-to the required model access, then run lint and actionlint.
-The inherited fleet harnesses already pin their sandbox images by digest.
-
-Check configuration changes from the repository root with Fullsend v0.57.0
-and actionlint:
-
-```bash
-fullsend lint --forge github
-actionlint .github/workflows/fullsend.yaml .github/workflows/prioritize.yml .github/workflows/vertex-wif-smoke-test.yml
-git diff --check
+```text
+/fs-review
 ```
 
-Lint resolves the six pinned harnesses and their dependencies. It may report
-deprecations from upstream harnesses; inspect their origins before changing
-repository configuration.
+## Commands and permissions
 
-Release notes: [Fullsend v0.57.0](https://github.com/fullsend-ai/fullsend/releases/tag/v0.57.0)
-and [fleet agents v0.57.0](https://github.com/fullsend-ai/agents/releases/tag/v0.57.0).
+| Command | Where | Result | Minimum repository permission |
+| --- | --- | --- | --- |
+| `/fs-triage` | Issue | Assess the issue, request missing details, and update triage labels | Triage |
+| `/fs-review` | PR | Review the proposed changes and publish findings | Triage |
+| `/fs-code` | Issue | Implement the issue and open a PR | Write |
+| `/fs-fix <instruction>` | PR | Update the PR to address the instruction | Write |
+| `/fs-retro` | Completed issue or PR | Analyze the completed work and suggest follow-up improvements | Write |
+| `/fs-prioritize` | Issue | Post RICE prioritization scores and reasoning | Write |
 
-For deployment plans, test results, and pilot findings, see the
-[Fullsend deployment and testing notes](https://github.com/aufi/move-crane/tree/main/fullsend-ai).
+GitHub maintain and admin roles satisfy both permission levels. Fullsend uses
+effective GitHub repository access, including access granted through teams.
+Being listed in `OWNERS` alone does not grant command access in this setup.
+
+## Describe implementation work in an issue
+
+Give the code agent a bounded task with reproduction steps or a concrete
+example, expected behavior, and acceptance criteria. Include relevant code
+paths, existing tests, and the source/target platforms when they matter.
+
+For E2E work, state whether clusters and test dependencies are available.
+Distinguish a request to add a test from a claim that the live scenario has
+already passed.
+
+Request implementation with a separate comment:
+
+```text
+/fs-code
+```
+
+The agent opens a PR for the implementation. Check the diff, tests, and any
+assumptions reported by the agent. Automatic merging is disabled; merging
+follows the repository's normal review and branch requirements.
+
+## Review a pull request
+
+Same-repository PRs can receive automatic reviews when opened, updated, or
+marked ready for review. The `ready-for-review` label also requests review
+through upstream routing.
+
+Fork PRs and Dependabot PRs do not receive automatic review or retro. An
+authorized user can comment `/fs-review` on a fork PR. Use the same command
+when a merge conflict prevents an automatic PR workflow from running.
+
+Review publishes findings at medium severity and above. Low-severity findings
+are filtered out. Read the findings alongside CI results and human reviews.
+
+## Request a fix
+
+On the PR, give a specific instruction after `/fs-fix`, for example:
+
+```text
+/fs-fix Add a regression test for an empty input directory and address the failing unit test.
+```
+
+Inspect the resulting commit and checks. Eligible Fullsend-authored PRs may
+also receive automatic fixes in response to review feedback. Human-authored
+PRs can opt in to automatic fixes with the `fullsend-fix` label.
+
+To stop automatic fixes for one PR, post this command as the entire comment:
+
+```text
+/fs-fix-stop
+```
+
+This requires write permission or PR authorship. It adds `fullsend-no-fix`.
+Remove that label or use `/fs-fix` to re-engage the fix agent.
+
+## Triage and automatic follow-ups
+
+New or edited issues and the `ready-for-triage` label can trigger triage,
+subject to Fullsend authorization checks. `/fs-triage` requests it explicitly.
+Answer any clarification questions in the issue before requesting another run.
+
+Triage can promote eligible `bug`, `documentation`, and `performance` tasks
+to implementation automatically. Adding `ready-to-code` can also trigger
+the code agent. Keep the issue's scope and acceptance criteria current.
+
+The `skip-triage` label suppresses automatic triage. An authorized human
+`/fs-triage` request overrides it.
+
+## Retrospectives and prioritization
+
+Retro analyzes completed work. It can run automatically when a same-repository
+PR is closed or merged, or on request with `/fs-retro`.
+
+Prioritize runs only on request. Comment `/fs-prioritize` on an issue to get
+Reach, Impact, Confidence, and Effort scores with written reasoning. It posts
+the result as a comment. No Projects board is selected in this installation.
+
+## Follow a run and troubleshoot
+
+Open the run linked from the agent's status comment, or find the matching
+`fullsend` run in the repository's
+[Actions tab](https://github.com/migtools/crane/actions/workflows/fullsend.yaml).
+Check the job for the requested agent and read its result or failure message.
+
+| Symptom | What to check |
+| --- | --- |
+| No agent starts after a command | The command starts a new comment, is posted on the right issue or PR, and your repository permission meets the requirement. Check deployment status in the setup guide. |
+| Automatic review does not start on a fork PR | Request it with `/fs-review` as a user with triage permission or higher. |
+| Automatic triage is skipped | Check for `skip-triage`; use `/fs-triage` when an explicit reassessment is needed. |
+| Review omits minor suggestions | The configured publication threshold is medium. |
+| A run fails during authentication or model access | Share the run URL and failing step with the repository administrators. See [setup and operations](fullsend_setup.md). |

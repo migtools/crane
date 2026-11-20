@@ -9,7 +9,8 @@ This directory contains detailed guides for developers contributing to Crane.
 - [Testing](./testing.md) — Unit tests, table-driven patterns, and E2E testing
 - [Plugin Development](./plugin-development.md) — Writing custom transformation plugins
 - [Vertex WIF smoke test](./vertex-wif-smoke-test.md) - Checking WIF and model availability on demand
-- [Fullsend agents](./fullsend.md) - Agent commands, Vertex inference, deployment, and operations
+- [Using Fullsend](./fullsend.md) - Request agent work and review results through GitHub
+- [Fullsend setup and operations](./fullsend_setup.md) - Configuration, GitHub Apps, Vertex inference, and administration
 
 ## Quick Reference
 
