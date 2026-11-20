@@ -85,8 +85,9 @@ func getOperatorManager(obj *unstructured.Unstructured) string {
 // collectRelatedCRDs returns synthetic groupResource rows for CRDs backing custom
 // API types that appear in resources (deduplicated by plural.group). Built-in API
 // groups are skipped. Failed GETs are returned as groupResourceError entries for
-// the same failures directory as list errors.
-func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource, dynamicClient dynamic.Interface, log logrus.FieldLogger, userSkipGroups, userIncludeGroups []string) ([]*groupResource, []*groupResourceError) {
+// the same failures directory as list errors. The final return value counts CRDs
+// intentionally skipped because an operator manages them.
+func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource, dynamicClient dynamic.Interface, log logrus.FieldLogger, userSkipGroups, userIncludeGroups []string) ([]*groupResource, []*groupResourceError, int) {
 	skipSet := normalizeGroupSet(userSkipGroups)
 	includeSet := normalizeGroupSet(userIncludeGroups)
 
@@ -107,13 +108,14 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 
 	if len(seen) == 0 {
 		log.Debug("No eligible custom resource groups found, skipping CRD collection")
-		return nil, nil
+		return nil, nil, 0
 	}
 	log.Debugf("Collecting CRDs for %d custom resource groups", len(seen))
 
 	crdClient := dynamicClient.Resource(crdGVR)
 	out := make([]*groupResource, 0, len(seen))
 	var outErrs []*groupResourceError
+	skipped := 0
 	for crdName := range seen {
 		// Create fresh context with timeout for each CRD Get request
 		ctx := context.Background()
@@ -135,6 +137,7 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 				log.Warnf("Error getting CustomResourceDefinition %q: %v", crdName, err)
 			}
 			outErrs = append(outErrs, &groupResourceError{
+				APIGroupVersion: crdGVR.Group + "/" + crdGVR.Version,
 				APIResource: metav1.APIResource{
 					Name:         crdFailureAPIResourceName(crdName),
 					SingularName: "customresourcedefinition",
@@ -149,6 +152,7 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 
 		if manager := getOperatorManager(obj); manager != "" {
 			log.Warnf("Skipping CRD %q: managed by %s; install the operator on the target cluster instead", crdName, manager)
+			skipped++
 			continue
 		}
 
@@ -169,5 +173,5 @@ func collectRelatedCRDs(requestTimeout time.Duration, resources []*groupResource
 			},
 		})
 	}
-	return out, outErrs
+	return out, outErrs, skipped
 }

@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/konveyor/crane/internal/cli"
 	"github.com/konveyor/crane/internal/flags"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -223,7 +225,12 @@ func (o *ExportOptions) Run() error {
 	var err error
 
 	log := o.log
-	log.Infof("Starting export for namespace %q", o.userSpecifiedNamespace)
+	logExportStarted(log, o.userSpecifiedNamespace)
+	cli.PrintBanner(o.ErrOut, "crane export", []cli.OutputField{
+		{Label: "namespace", Value: o.userSpecifiedNamespace},
+		{Label: "export-dir", Value: o.exportDir},
+	})
+	phases := cli.NewPhaseTracker(o.ErrOut, 5)
 
 	restConfig, err := o.configFlags.ToRESTConfig()
 	if err != nil {
@@ -284,6 +291,7 @@ func (o *ExportOptions) Run() error {
 	if err != nil {
 		return err
 	}
+	phases.Complete("Discovery", "ok (preferred API lists refreshed)")
 	log.Debugf("Discovered %d API resource lists", len(resourceLists))
 
 	var errs []error
@@ -298,14 +306,17 @@ func (o *ExportOptions) Run() error {
 	}
 
 	resources, resourceErrs := resourceToExtract(requestTimeout, o.userSpecifiedNamespace, o.labelSelector, gkFilter, dynamicClient, resourceLists, log)
+	phases.Complete("Listing namespace resources", fmt.Sprintf("%d API types with ≥1 object", namespacedResourceTypeCount(resources)))
 	log.Debugf("Extracted %d resources (%d errors)", len(resources), len(resourceErrs))
 	clusterScopeHandler := NewClusterScopeHandler()
 	resources = clusterScopeHandler.filterRbacResources(resources, log)
+	relatedClusterResourceCount := clusterScopedManifestCount(resources)
+	phases.Complete("Related cluster-scoped RBAC/SCC", clusterPhaseDetail(o.userSpecifiedNamespace, relatedClusterResourceCount))
 	log.Debugf("Resources after RBAC filter: %d", len(resources))
 
 	clusterResourceDir := filepath.Join(o.exportDir, "resources", o.userSpecifiedNamespace, "_cluster")
 
-	crdResources, crdErrs := collectRelatedCRDs(requestTimeout, resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
+	crdResources, crdErrs, crdSkippedCount := collectRelatedCRDs(requestTimeout, resources, dynamicClient, log, o.crdSkipGroups, o.crdIncludeGroups)
 	resourceErrs = append(resourceErrs, crdErrs...)
 	resources = append(resources, crdResources...)
 
@@ -319,6 +330,7 @@ func (o *ExportOptions) Run() error {
 			}
 		}
 	}
+	finalClusterResourceCount := clusterScopedManifestCount(resources)
 
 	// After merging CRDs: prepare _cluster so hasClusterScopedManifests sees cluster-scoped CRD objects.
 	if err = prepareClusterResourceDir(clusterResourceDir, resources); err != nil {
@@ -326,24 +338,22 @@ func (o *ExportOptions) Run() error {
 		return err
 	}
 
-	//count and log the no of crds
-	crdCount := len(crdResources)
-	if crdCount > 0 {
-		log.Infof("Collected %d CRDs for referenced custom resources", crdCount)
-	}
+	phases.Complete("Related CRDs", fmt.Sprintf("%d fetched, %d skipped", len(crdResources), crdSkippedCount))
 
-	writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
+	filesWritten, writeResourcesErrors := writeResources(resources, clusterResourceDir, resourceDir, log)
 	for _, e := range writeResourcesErrors {
 		log.Warnf("Error writing manifests to file: %v, continuing", e)
 	}
 
-	writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
+	failureRecordsWritten, writeErrorsErrors := writeErrors(resourceErrs, failuresDir, log)
 	for _, e := range writeErrorsErrors {
 		log.Warnf("Error writing errors to file: %v, continuing", e)
 	}
+	phases.Complete("Writing YAML", fmt.Sprintf("%d files written", filesWritten))
 
 	errs = append(errs, writeResourcesErrors...)
 	errs = append(errs, writeErrorsErrors...)
+	writeErrorCount := len(writeResourcesErrors) + len(writeErrorsErrors)
 	if allResourceListsForbidden(resources, resourceErrs) {
 		log.Warnf("All resource types returned Forbidden for namespace %q", o.userSpecifiedNamespace)
 		errs = append(errs, fmt.Errorf(
@@ -351,12 +361,64 @@ func (o *ExportOptions) Run() error {
 			o.userSpecifiedNamespace,
 		))
 	}
+
+	summaryFields := exportSummaryFields(resourceDir, failuresDir, finalClusterResourceCount, len(resourceErrs), failureRecordsWritten, writeErrorCount, phases.Elapsed())
+
 	if len(errs) > 0 {
 		log.Warnf("Export completed with %d error(s) for namespace %q", len(errs), o.userSpecifiedNamespace)
 	} else {
-		log.Infof("Export complete for namespace %q", o.userSpecifiedNamespace)
+		logExportCompleted(log, o.userSpecifiedNamespace)
 	}
+	cli.PrintSummary(o.ErrOut, summaryFields, len(errs) == 0)
 	return errorsutil.NewAggregate(errs)
+}
+
+// logExportStarted records the export start in the audit log without adding output at normal verbosity.
+func logExportStarted(log logrus.FieldLogger, namespace string) {
+	log.Debugf("Starting export for namespace %q", namespace)
+}
+
+// logExportCompleted records a successful export completion in the audit log.
+func logExportCompleted(log logrus.FieldLogger, namespace string) {
+	log.Debugf("Export complete for namespace %q", namespace)
+}
+
+// clusterPhaseDetail formats the related cluster-scoped resources phase result.
+func clusterPhaseDetail(namespace string, resourceCount int) string {
+	detail := fmt.Sprintf("%d resources", resourceCount)
+	if resourceCount == 0 {
+		return detail
+	}
+	return fmt.Sprintf("%s → resources/%s/_cluster/", detail, namespace)
+}
+
+// exportSummaryFields returns the fields printed in the final export Summary.
+func exportSummaryFields(resourceDir, failuresDir string, clusterResourceCount, listIssueCount, failureRecordsWritten, writeErrorCount int, duration time.Duration) []cli.OutputField {
+	resourcesValue := resourceDir
+	if clusterResourceCount > 0 {
+		resourcesValue += "  (+ _cluster/)"
+	}
+	fields := []cli.OutputField{{Label: "resources", Value: resourcesValue}}
+	if listIssueCount > 0 {
+		failureDetail := fmt.Sprintf("%d list issues recorded", failureRecordsWritten)
+		if failureRecordsWritten != listIssueCount {
+			failureDetail = fmt.Sprintf("%d of %d list issues recorded; see warnings above", failureRecordsWritten, listIssueCount)
+		}
+		fields = append(fields, cli.OutputField{
+			Label: "failures",
+			Value: fmt.Sprintf("%s  (%s)", failuresDir, failureDetail),
+		})
+	}
+	if writeErrorCount > 0 {
+		fields = append(fields, cli.OutputField{
+			Label: "write errors",
+			Value: fmt.Sprintf("%d encountered; see warnings above", writeErrorCount),
+		})
+	}
+	return append(fields, cli.OutputField{
+		Label: "duration",
+		Value: duration.Round(time.Second).String(),
+	})
 }
 
 // NewExportCommand builds the cobra export command with flags and viper wiring.

@@ -6,6 +6,19 @@ import (
 	"time"
 )
 
+// PrintSummary writes labeled command results and an optional completion marker to w.
+func PrintSummary(w io.Writer, fields []OutputField, done bool) {
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Summary")
+	fmt.Fprintln(w, "-------")
+	for _, field := range fields {
+		fmt.Fprintf(w, "%s: %s\n", field.Label, field.Value)
+	}
+	if done {
+		fmt.Fprintln(w, "Done.")
+	}
+}
+
 type TransferSummary struct {
 	Status   string
 	Duration time.Duration
