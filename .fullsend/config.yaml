@@ -22,25 +22,31 @@ tracker:
       repos:
         - migtools/crane
 
-# Keep upstream defaults except for prioritize, which is request-only.
+# Keep upstream defaults except for the review threshold and request-only prioritize.
 agents:
   - name: triage
-    source: harness/triage.yaml
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/triage.yaml#sha256=8b4ac709e08e93d5747fbe949e0728d1b635ed92d49d83b94768c8a8bc68c337
     enabled: true
   - name: review
-    source: harness/review.yaml
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/review.yaml#sha256=6d6e0941f5ce10edb1b5d104a896c2c871a3ca08259577ae2faf6f8932ff80aa
     enabled: true
+    harness:
+      env:
+        runner:
+          REVIEW_FINDING_SEVERITY_THRESHOLD: "medium"
+        sandbox:
+          REVIEW_FINDING_SEVERITY_THRESHOLD: "medium"
   - name: code
-    source: harness/code.yaml
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/code.yaml#sha256=f6fe03354a78f6e903d5186c8a7a348b5d0d5487cc48bb9633f7d583715ed6db
     enabled: true
   - name: fix
-    source: harness/fix.yaml
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/fix.yaml#sha256=41344ad24d492eaa3824cfca4d13d3799c091fa2271b9c54326efadb12e33785
     enabled: true
   - name: retro
-    source: harness/retro.yaml
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/retro.yaml#sha256=dc97087e1b7a10c0d300fe7bc5aaf9f4697060f98764dbb8fec68d8e97c354e4
     enabled: true
   - name: prioritize
-    source: harness/prioritize.yaml
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/prioritize.yaml#sha256=faf3a76621b8c49f16e4d5f2ae6059e773decb685c3fc8bb2c603bdc42e9a03b
     enabled: true
     # Override built-in routing explicitly so automatic events never select it.
     trigger: >-

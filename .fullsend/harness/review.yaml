@@ -1,2 +1,0 @@
-# Fleet agents v0.57.0. Inherit upstream model selection.
-base: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/review.yaml#sha256=6d6e0941f5ce10edb1b5d104a896c2c871a3ca08259577ae2faf6f8932ff80aa

@@ -62,7 +62,7 @@ counts without exposing bearer credentials or generated text.
   location. It does not distinguish those causes by itself.
 - HTTP 429 indicates quota or provider capacity constraints.
 
-The [Fullsend guide](fullsend.md#live-wif-model-validation) records successful
-Opus 5.5, Haiku 4.5, and Sonnet 4.6 checks. This standalone test verifies cloud
+The [Fullsend guide](fullsend.md#current-status) lists model availability and
+integration status. This standalone test verifies cloud
 access; agent execution, native subagent selection, and long-running credential
 refresh are verified separately through Fullsend runs.

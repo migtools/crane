@@ -2,8 +2,8 @@
 
 Fullsend provides triage, review, code, fix, retro, and prioritize agents for
 `migtools/crane`. The workflows use Fullsend v0.57.0, commit
-`3381ce46ba810d0f4cefe64905b0e6bc3ce36b48`. Local harness wrappers inherit
-`fullsend-ai/agents` v0.57.0, commit
+`3381ce46ba810d0f4cefe64905b0e6bc3ce36b48`. Agent sources in
+`.fullsend/config.yaml` reference `fullsend-ai/agents` v0.57.0, commit
 `41f89529863ea6c26e804a348f56953423d294a3`, with SHA-256 integrity checks.
 
 All six agents use the Claude Code runtime on Google Vertex AI in `global`,
@@ -24,36 +24,17 @@ Claude Code resolves those native subagent aliases separately from Fullsend's
 parent aliases. The pinned fleet's `env/gcp-vertex.env` explicitly sets the
 native Sonnet tier to `claude-sonnet-4-6`. Native Opus and Haiku retain the
 Claude Code provider defaults. The documented Vertex defaults are Opus 5.5
-and Haiku 4.5; confirm the served IDs in the first delegated review run.
+and Haiku 4.5.
 
-On November 20, 2026, the user confirmed enabling the following models in the
+The following models are enabled in the
 [project's Model Garden](https://console.cloud.google.com/vertex-ai/model-garden?project=mta-ops-fs-agents),
-in addition to the already enabled Sonnet 5.5. Live Fullsend inference with
-these additional models remains to be verified.
+in addition to Sonnet 5.5:
 
 | Model | Purpose |
 | --- | --- |
 | Claude Opus 5.5, `claude-opus-5-5` | All parent agents and native Opus personas |
 | Claude Sonnet 4.6, `claude-sonnet-4-6` | Native Sonnet personas, pinned by the fleet environment |
 | Claude Haiku 4.5, `claude-haiku-4-5` | Native Haiku personas |
-
-### Live WIF model validation
-
-On November 20, 2026, all three models passed the standalone WIF smoke test
-on `migtools/crane` `main`, using `VERTEX_PROJECT_ID` and
-`VERTEX_WIF_PROVIDER`. Each run completed the GitHub OIDC exchange and an
-authenticated Vertex `rawPredict` request in `mta-ops-fs-agents`, location
-`global`, with `invoke_model=true`.
-
-| Requested model | Served model | Input/output tokens | Successful run |
-| --- | --- | --- | --- |
-| `claude-opus-5-5` | `claude-opus-5-5` | 15 / 5 | [44704824536](https://github.com/migtools/crane/actions/runs/44704824536) |
-| `claude-haiku-4-5` | `claude-haiku-4-5-20251001` | 11 / 5 | [44704824636](https://github.com/migtools/crane/actions/runs/44704824636) |
-| `claude-sonnet-4-6` | `claude-sonnet-4-6` | 11 / 5 | [44704824961](https://github.com/migtools/crane/actions/runs/44704824961) |
-
-This verifies repository-scoped WIF and model access. Fullsend runtime,
-native subagent selection, and long-running credential refresh still need
-live agent validation after deployment.
 
 Opus 4.6 is optional if the parent model-not-served fallback is needed.
 Enabling Haiku 5.5 alone does not provide access to the native Haiku 4.5
@@ -100,7 +81,7 @@ are not used. Authentication exchanges the Actions OIDC token through WIF;
 no service-account private key or model-provider API key is needed.
 `FULLSEND_GITHUB_RUNNER_SECRETS` and the OTLP header secrets are optional.
 
-Crane maintainers own `.fullsend/config.yaml`, its harness wrappers, and the
+Crane maintainers own `.fullsend/config.yaml`, its pinned agent sources, and the
 repository-specific workflow guards. Repository administrators maintain App
 access and Actions settings. GCP project administrators maintain model access
 and IAM. ITPC maintains the central WIF provider.
@@ -111,6 +92,10 @@ All six agents are enabled. Prioritize is request-only, with an explicit
 `agents[].trigger` matching a human `/fs-prioritize` command. The other agents
 retain upstream automatic routing and effort settings. Merging these files
 into `migtools/crane` activates the event handlers.
+
+Review publishes findings at medium severity and above. The
+`REVIEW_FINDING_SEVERITY_THRESHOLD` is set to `medium` in both runner and
+sandbox environments so analysis and publishing use the same threshold.
 
 | Agent | Manual command | Other upstream triggers |
 | --- | --- | --- |
@@ -130,8 +115,8 @@ rules govern merging. Issue creation targets are restricted to `migtools/crane`.
 
 The v0.57.0 shim uses `pull_request`, not `pull_request_target`. Fork PRs and
 Dependabot PRs do not receive automatic review or retro. Request a fork review
-with `/fs-review` as a user with triage or higher permission, or an OWNERS
-reviewer or approver. This also works while a merge conflict prevents GitHub
+with `/fs-review` as a user with repository triage permission or higher.
+This also works while a merge conflict prevents GitHub
 from running the `pull_request` workflow. Workflow jobs run only in
 `migtools/crane`, matching its authorized WIF principal.
 
@@ -141,44 +126,19 @@ when the App has access and the expected fields exist. No board is selected
 by this installation. Prioritize does not run automatically on issue or PR
 changes, and there is no repository-local scheduled prioritization.
 
-## Activation and verification
+## Current status
 
-Before merging, confirm that all five GitHub Apps can access `migtools/crane`
-and that the settings above match the selected project and provider. The
-`VERTEX_PROJECT_ID` and `VERTEX_WIF_PROVIDER` variables were read back and
-verified on November 20, 2026. App installation access still needs verification.
+| Capability | Status |
+| --- | --- |
+| GitHub Actions OIDC authentication through ITPC WIF | Working |
+| Vertex inference in `global` with Opus 5.5, Sonnet 4.6, Haiku 4.5, and Sonnet 5.5 | Working |
+| Fullsend GitHub App access and token minting | Not yet verified |
+| End-to-end Fullsend agent execution and native subagent model selection | Not yet verified |
+| Credential refresh during long-running agent sessions | Not yet verified |
 
-From the repository root, using Fullsend v0.57.0 and actionlint:
-
-```bash
-fullsend --version
-fullsend lint --forge github
-actionlint .github/workflows/fullsend.yaml .github/workflows/prioritize.yml
-git diff --check
-```
-
-Lint resolves the six pinned harnesses and their dependencies. It may report
-deprecations from upstream harnesses; inspect their origins before changing
-repository configuration.
-
-After merge, verify the agents with small representative work items:
-
-1. Run `/fs-triage` and inspect WIF authentication, mint access, sandbox startup,
-   model, labels, and structured output. Check skip-label behavior on a separate
-   issue.
-2. Run `/fs-review` on a small PR and inspect native subagent model usage.
-   Also verify automatic review on a same-repo PR and manual review on a fork.
-3. Run `/fs-code` on a narrow issue, then `/fs-fix` on its resulting PR.
-   Confirm the branch and PR target `migtools/crane` and normal CI runs.
-4. Run `/fs-retro` on a completed change and `/fs-prioritize` on an issue.
-5. Check a run that crosses a credential-refresh interval and confirm model
-   requests still succeed afterward.
-
-Record run URLs, requested and served models, child-model usage, test results,
-latency, and token counts. Use the standalone
-[Vertex WIF smoke test](vertex-wif-smoke-test.md) for future model availability
-checks and cloud authentication diagnostics. Verify Fullsend execution,
-delegation, and credential refresh through the agent runs.
+Use the [Vertex WIF smoke test](vertex-wif-smoke-test.md) to check model
+availability and cloud authentication. Fullsend execution, delegation, and
+credential refresh require agent runs.
 
 ## Operations and updates
 
@@ -195,10 +155,21 @@ model aliases, persona frontmatter, and the fleet Vertex environment for changes
 to the required model access, then run lint and actionlint.
 The inherited fleet harnesses already pin their sandbox images by digest.
 
-The per-repository setup command uses GitHub APIs and writes remote settings
-and scaffold files. It does not install this local tree. For this prepared
-installation, submit the local files through the normal PR process rather
-than running setup again to publish them.
+Check configuration changes from the repository root with Fullsend v0.57.0
+and actionlint:
+
+```bash
+fullsend lint --forge github
+actionlint .github/workflows/fullsend.yaml .github/workflows/prioritize.yml .github/workflows/vertex-wif-smoke-test.yml
+git diff --check
+```
+
+Lint resolves the six pinned harnesses and their dependencies. It may report
+deprecations from upstream harnesses; inspect their origins before changing
+repository configuration.
 
 Release notes: [Fullsend v0.57.0](https://github.com/fullsend-ai/fullsend/releases/tag/v0.57.0)
 and [fleet agents v0.57.0](https://github.com/fullsend-ai/agents/releases/tag/v0.57.0).
+
+For deployment plans, test results, and pilot findings, see the
+[Fullsend deployment and testing notes](https://github.com/aufi/move-crane/tree/main/fullsend-ai).
