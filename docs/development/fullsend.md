@@ -99,9 +99,10 @@ New or edited issues and the `ready-for-triage` label can trigger triage,
 subject to Fullsend authorization checks. `/fs-triage` requests it explicitly.
 Answer any clarification questions in the issue before requesting another run.
 
-Triage can promote eligible `bug`, `documentation`, and `performance` tasks
-to implementation automatically. Adding `ready-to-code` can also trigger
-the code agent. Keep the issue's scope and acceptance criteria current.
+Triage does not promote issues to implementation automatically. A human with
+write permission or higher can start the code agent by adding `ready-to-code`
+to an issue or posting `/fs-code` on it. Keep the issue's scope and acceptance
+criteria current.
 
 The `skip-triage` label suppresses automatic triage. An authorized human
 `/fs-triage` request overrides it.

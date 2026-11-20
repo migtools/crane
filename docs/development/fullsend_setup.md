@@ -109,15 +109,21 @@ authorization is separate from the GitHub App permissions used by agents.
 
 All six agents are enabled. Prioritize is request-only, with an explicit
 `agents[].trigger` matching a human `/fs-prioritize` command. The other agents
-retain upstream automatic routing and effort settings. Configuration changes
-take effect when merged into the branch used by the trusted workflow.
+retain upstream routing and effort settings, with triage-to-code promotion
+disabled as described below. Configuration changes take effect when merged
+into the branch used by the trusted workflow.
 
 Review publishes findings at medium severity and above. The
 `REVIEW_FINDING_SEVERITY_THRESHOLD` is set to `medium` in both runner and
 sandbox environments so analysis and publishing use the same threshold.
 
-Upstream authorization checks apply to every command and event. Triage keeps
-automatic code promotion enabled for `bug`, `documentation`, and `performance`.
+Upstream authorization checks apply to every command and event. Triage sets
+`TRIAGE_AUTO_CODE: "off"` in both `harness.env.runner` and
+`harness.env.sandbox`, disabling its automatic promotion to implementation.
+An authorized human can still start code by adding `ready-to-code` to an issue
+or posting `/fs-code`. Label routing remains upstream behavior, including its
+bot handoff support; this setting disables promotion by triage rather than
+blocking all bot-added labels.
 The `skip-triage` label suppresses automatic triage; a human `/fs-triage`
 request overrides it. Code and fix can create and update PR branches.
 `CODE_AUTO_MERGE` retains the upstream default of disabled, and normal branch
