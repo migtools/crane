@@ -8,20 +8,31 @@ This directory contains detailed guides for developers contributing to Crane.
 - [Development Setup](./setup.md) — Setting up your development environment
 - [Testing](./testing.md) — Unit tests, table-driven patterns, and E2E testing
 - [Plugin Development](./plugin-development.md) — Writing custom transformation plugins
+- [Crane E2E agent skill](./crane-e2e-skill.md) - Using repository-specific E2E guidance with Claude Code
 - [Vertex WIF smoke test](./vertex-wif-smoke-test.md) — Validating keyless Claude access from GitHub Actions
 
 ## Quick Reference
 
 ```bash
-# Build
-go build -o crane main.go
+# Build all packages and write ./crane
+make build
 
-# Test
-go test ./...
+# Cluster-free unit tests, including E2E helpers
+make test-unit
 
-# Lint
-gofmt -l .
+# Compile every E2E suite without executing tests
+make test-e2e-compile
+
+# Check tracked Go formatting without rewriting files
+make fmt-check
 ```
+
+`go test ./...` also runs cluster-backed suites under `e2e-tests/tests/`.
+Use the shared commands above for cluster-free checks. CI uses the same build,
+unit-test, and E2E compilation targets. The format check is a local command.
+
+Shared contributor rules are in [AGENTS.md](../../AGENTS.md). Claude Code
+loads those rules through [CLAUDE.md](../../CLAUDE.md).
 
 ## Project Structure
 
