@@ -22,6 +22,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -725,9 +726,11 @@ func podStartupDiagnostics(c client.Client, podName, namespace, containerName st
 	}
 
 	pod := &corev1.Pod{}
+	var podUID types.UID
 	if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
 		log.Debugf("Cannot read pod %s/%s for startup diagnostics: %v", namespace, podName, err)
 	} else {
+		podUID = pod.UID
 		lines = append(lines, fmt.Sprintf("pod phase: %s", pod.Status.Phase))
 		for _, cond := range pod.Status.Conditions {
 			if cond.Type != corev1.PodScheduled {
@@ -764,7 +767,7 @@ func podStartupDiagnostics(c client.Client, podName, namespace, containerName st
 	}
 
 	// Recent Warning events on the pod and its PVCs.
-	if events := warningEvents(ctx, c, namespace, podName, pvcObjs, log); len(events) > 0 {
+	if events := warningEvents(ctx, c, namespace, podName, podUID, pvcObjs, log); len(events) > 0 {
 		lines = append(lines, "warning events:")
 		for _, e := range events {
 			lines = append(lines, "  - "+e)
@@ -820,7 +823,7 @@ func storageClassLabel(pvc *corev1.PersistentVolumeClaim) string {
 // warningEvents returns recent Warning event messages ("Reason: Message") for
 // the pod and the given PVCs, newest first and capped. Events are listed once
 // for the namespace; an access error yields no events rather than failing.
-func warningEvents(ctx context.Context, c client.Client, namespace, podName string, pvcs map[string]*corev1.PersistentVolumeClaim, log *logrus.Logger) []string {
+func warningEvents(ctx context.Context, c client.Client, namespace, podName string, podUID types.UID, pvcs map[string]*corev1.PersistentVolumeClaim, log *logrus.Logger) []string {
 	eventList := &corev1.EventList{}
 	if err := c.List(ctx, eventList, client.InNamespace(namespace)); err != nil {
 		log.Debugf("Cannot list events in %s for startup diagnostics: %v", namespace, err)
@@ -832,7 +835,9 @@ func warningEvents(ctx context.Context, c client.Client, namespace, podName stri
 			return false
 		}
 		if obj.Kind == "Pod" && obj.Name == podName {
-			return true
+			// Guard against a prior pod of the same name: accept only events
+			// whose UID matches the pod we read (or that record no UID).
+			return obj.UID == "" || obj.UID == podUID
 		}
 		if obj.Kind == "PersistentVolumeClaim" {
 			if pvc, ok := pvcs[obj.Name]; ok {
@@ -870,11 +875,15 @@ func warningEvents(ctx context.Context, c client.Client, namespace, podName stri
 }
 
 // eventTime returns the most representative timestamp for an event, preferring
-// the last-seen time and falling back for events that only set the newer
-// EventTime or none at all.
+// the last-seen time. For a repeated event under the newer Events API that time
+// lives in Series.LastObservedTime, so it is used before falling back to the
+// first-occurrence EventTime or the creation time for singleton events.
 func eventTime(e corev1.Event) time.Time {
 	if !e.LastTimestamp.IsZero() {
 		return e.LastTimestamp.Time
+	}
+	if e.Series != nil && !e.Series.LastObservedTime.IsZero() {
+		return e.Series.LastObservedTime.Time
 	}
 	if !e.EventTime.IsZero() {
 		return e.EventTime.Time
@@ -937,12 +946,17 @@ func storageClassHint(ctx context.Context, c client.Client, pvcs map[string]*cor
 	if len(missing) > 1 {
 		label = "storage classes"
 	}
+	// A PVC's storage class is immutable, so --dest-storage-class only affects a
+	// newly created PVC. If the destination PVC already exists with the wrong
+	// class it must be remediated by hand (crane will not delete it) before the
+	// flag takes effect — and it may hold data, so review it before removing it.
+	remediation := "; the existing destination PVC's storage class cannot be changed in place, so remediate it by hand (it may contain data — review before removing) before retrying"
 	if len(available) == 0 {
-		return fmt.Sprintf("the destination PVC requests %s %s which does not exist, and no storage classes are defined on the destination cluster",
-			label, strings.Join(quoted, ", "))
+		return fmt.Sprintf("the destination PVC requests %s %s which does not exist, and no storage classes are defined on the destination cluster%s",
+			label, strings.Join(quoted, ", "), remediation)
 	}
-	return fmt.Sprintf("the destination PVC requests %s %s which does not exist; re-run with --dest-storage-class set to one of: %s",
-		label, strings.Join(quoted, ", "), strings.Join(available, ", "))
+	return fmt.Sprintf("the destination PVC requests %s %s which does not exist; re-run with --dest-storage-class set to one of: %s%s",
+		label, strings.Join(quoted, ", "), strings.Join(available, ", "), remediation)
 }
 
 // checkRclonePartialSuccess examines rclone output when the pod exits non-zero.
