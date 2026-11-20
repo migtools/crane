@@ -72,6 +72,11 @@ when a merge conflict prevents an automatic PR workflow from running.
 Review publishes findings at medium severity and above. Low-severity findings
 are filtered out. Read the findings alongside CI results and human reviews.
 
+Until Fullsend earns the team's trust, positive verdicts are posted as comments
+instead of green `APPROVED` reviews, and the PR receives
+`requires-manual-review`. A human reviewer supplies the approval needed for
+merge. Fullsend can still submit `REQUEST_CHANGES` when it finds problems.
+
 ## Request a fix
 
 On the PR, give a specific instruction after `/fs-fix`, for example:

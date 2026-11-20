@@ -117,6 +117,30 @@ Review publishes findings at medium severity and above. The
 `REVIEW_FINDING_SEVERITY_THRESHOLD` is set to `medium` in both runner and
 sandbox environments so analysis and publishing use the same threshold.
 
+### Temporary approval policy
+
+Until Fullsend earns the team's trust, it must not issue formal `APPROVED`
+reviews. The review harness explicitly enables risk assessment with
+`REVIEW_RISK_ASSESSMENT_ENABLED: "true"` and sets
+`REVIEW_RISK_VERDICT_THRESHOLD: "1"` in both runner and sandbox environments.
+
+The pinned upstream risk gate converts every `approve` verdict into a
+`comment`, since valid risk scores are 1-5. Missing, invalid, or degraded risk
+assessments also withhold approval. The result receives the
+`requires-manual-review` label instead of `ready-for-merge`. Negative verdicts
+can still submit `REQUEST_CHANGES`.
+Risk notices describe the configured threshold, which also blocks low-risk
+approvals during this temporary period.
+
+Retire this policy only after the team agrees to trust bot approvals. Remove
+the two risk-variable overrides from both environment sections to inherit the
+pinned upstream defaults. Risk assessment is enabled and the approval-gating
+threshold is 4.
+Keep the independent medium finding-severity threshold. Changing this policy
+does not dismiss any previously submitted approvals.
+
+### Triage and implementation
+
 Upstream authorization checks apply to every command and event. Triage sets
 `TRIAGE_AUTO_CODE: "off"` in both `harness.env.runner` and
 `harness.env.sandbox`, disabling its automatic promotion to implementation.
