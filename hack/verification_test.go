@@ -76,12 +76,19 @@ func TestFmtCheck(t *testing.T) {
 	for _, tc := range []struct {
 		name, contents string
 		tracked        bool
+		deleted        bool
+		remaining      string
 		wantError      bool
 	}{
 		{name: "formatted tracked file", contents: "package sample\n", tracked: true},
 		{name: "unformatted tracked file", contents: "package sample\nfunc f( ){ }\n", tracked: true, wantError: true},
 		{name: "invalid Go file", contents: "not Go\n", tracked: true, wantError: true},
 		{name: "ignore untracked file", contents: "not Go\n"},
+		{name: "ignore unstaged deletion", contents: "package sample\n", tracked: true, deleted: true},
+		{
+			name: "check remaining files after unstaged deletion", contents: "package sample\n",
+			tracked: true, deleted: true, remaining: "package sample\nfunc f( ){ }\n", wantError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -95,9 +102,27 @@ func TestFmtCheck(t *testing.T) {
 					t.Fatalf("git add: %v: %s", err, output)
 				}
 			}
+			if tc.deleted {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.remaining != "" {
+				remaining := filepath.Join(dir, "remaining.go")
+				writeFile(t, remaining, tc.remaining, 0600)
+				if output, err := run(t, dir, nil, "git", "add", "--", remaining); err != nil {
+					t.Fatalf("git add: %v: %s", err, output)
+				}
+			}
 			output, err := run(t, dir, nil, "bash", script)
 			if (err != nil) != tc.wantError {
 				t.Fatalf("error = %v, output = %s", err, output)
+			}
+			if tc.deleted {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("fmt-check should leave the deleted file absent, got %v", err)
+				}
+				return
 			}
 			contents, err := os.ReadFile(path)
 			if err != nil {

@@ -192,11 +192,20 @@ unit check. Report unit and compilation results separately from live execution.
 `gofmt -w path/to/changed.go` and report unrelated existing differences
 separately.
 
-Run a focused scenario with Ginkgo after preparing the required environment:
+Install the pinned Ginkgo CLI as described in the
+[testing guide](testing.md#running-e2e-tests), then prepare the clusters,
+contexts, and dependencies required by the scenario.
+
+The following example selects an existing tier0 ConfigMap test. Replace
+`TEST_FILE` with the actual file for your scenario. The suite directory is
+derived from that file, and `--fail-on-empty` fails if the focus filter selects
+no specs in that suite:
 
 ```bash
-TEST_FILE=e2e-tests/tests/tier0/example_test.go
-ginkgo run -v -r --focus-file="$TEST_FILE" e2e-tests/tests -- \
+TEST_FILE=e2e-tests/tests/tier0/mta_810_configmap_test.go
+TEST_SUITE="$(dirname "$TEST_FILE")"
+test -f "$TEST_FILE"
+ginkgo run -v --fail-on-empty --focus-file="$TEST_FILE" "$TEST_SUITE" -- \
   --k8sdeploy-bin=k8sdeploy \
   --crane-bin="$PWD/crane" \
   --source-context=src \

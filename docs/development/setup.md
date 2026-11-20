@@ -10,6 +10,7 @@
 | Docker | Latest stable | Container-based testing (optional) |
 | kind or minikube | Latest stable | Local Kubernetes clusters for E2E tests |
 | k8sdeploy | See the E2E guide | App deployment and validation during live E2E execution |
+| Ginkgo CLI | Version declared in `go.mod` | Live E2E execution; see [installation instructions](testing.md#running-e2e-tests) |
 
 ## Getting Started
 

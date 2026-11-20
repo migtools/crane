@@ -115,14 +115,34 @@ execution disabled. It does not validate cluster behavior.
 
 ### Running E2E tests
 
-E2E tests require running Kubernetes clusters:
+From the repository root, install the Ginkgo CLI version declared in `go.mod`
+and add its installation directory to the current shell's `PATH`:
+
+```bash
+GINKGO_VERSION="$(go list -m -f '{{.Version}}' github.com/onsi/ginkgo/v2)"
+go install "github.com/onsi/ginkgo/v2/ginkgo@$GINKGO_VERSION"
+GINKGO_BIN_DIR="$(go env GOBIN)"
+if [ -z "$GINKGO_BIN_DIR" ]; then
+  GINKGO_BIN_DIR="$(go env GOPATH)/bin"
+fi
+export PATH="$GINKGO_BIN_DIR:$PATH"
+ginkgo version
+```
+
+Live E2E tests require running Kubernetes clusters, `kubectl`, `k8sdeploy`,
+and the configured kubeconfig contexts. The example below uses `src` and
+`tgt` for admin contexts and `src-dev` and `tgt-dev` for non-admin contexts.
+Replace these names and binary paths with those available in your environment.
+The default suite mode requires non-admin contexts for namespace-admin scenarios:
 
 ```bash
 ginkgo run -v --recurse e2e-tests/tests -- \
   --k8sdeploy-bin=/path/to/k8sdeploy \
   --crane-bin="$PWD/crane" \
   --source-context=src \
-  --target-context=tgt
+  --target-context=tgt \
+  --source-nonadmin-context=src-dev \
+  --target-nonadmin-context=tgt-dev
 ```
 
 See the [E2E guide](../../e2e-tests/README.md) for non-admin contexts,
