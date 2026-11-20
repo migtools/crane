@@ -130,6 +130,12 @@ Use the PR title aliases documented in `CONTRIBUTING.md`; these differ from Conv
 
 ## AI Assistant Guidelines
 
+### E2E test changes
+
+When creating, changing, reviewing, or debugging tests under `e2e-tests/`
+or their CI workflows, read and follow
+`.claude/skills/crane-e2e-tests/SKILL.md` before making changes.
+
 ### When fixing bugs:
 - Read the affected file first
 - Understand the context and data flow

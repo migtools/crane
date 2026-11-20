@@ -7,12 +7,14 @@ It covers:
 - Ginkgo tier organization and labels
 - `k8s-apps-deployer` and `k8sdeploy`
 - Crane framework helpers
+- admin/non-admin runner selection and inherited transfer settings
 - minikube and OpenShift differences
 - plugin builds and `--plugin-dir`
 - fixtures and golden output
 - resource lifecycle assertions
 - CI workflow integration
 - local and cluster-backed verification
+- distinguishing executed scenarios from skipped or unselected specs
 
 ## Getting the skill
 
@@ -32,6 +34,10 @@ claude
 Restart Claude Code after pulling a new or changed skill. Claude Code loads project skills when a session starts.
 
 No global installation or personal configuration is required.
+
+The root `AGENTS.md` also directs agents working on E2E changes to read this
+skill. Codex and pi can follow the same file as repository instructions without
+using Claude Code's native skill command.
 
 ## Invoking the skill
 
@@ -99,9 +105,9 @@ different OpenShiftPlugin version. Reproduce the narrowest part locally first.
 Identify the repository and immutable commit for an unmerged plugin change.
 
 ```text
-Use /crane-e2e-tests to test crane-plugin-openshift commit <sha>. Add a reusable
-CI build action, pass its output through --plugin-dir in full and focused jobs,
-and make the test skip clearly when the local flag is absent.
+Use /crane-e2e-tests to test crane-plugin-openshift commit <sha>. Reuse the CI
+plugin build action and pass its output through --plugin-dir in applicable
+full, focused, and indirect jobs. Confirm the requested scenario executes.
 ```
 
 ## Information to include
@@ -127,12 +133,13 @@ When the skill is active, Claude Code should:
 1. Read `e2e-tests/README.md`, nearby tests, and the framework wrappers involved in the scenario.
 2. Check full, focused, and indirect CI paths when introducing a flag or dependency.
 3. Choose between a live source application and a synthetic export fixture.
-4. Reuse `NewMigrationScenario`, `NewScenarioPaths`, pipeline helpers, and cleanup helpers where applicable.
+4. Reuse scenario and pipeline helpers. Select admin/non-admin runners through `SetupActiveKubectlRunners` and make the transfer mode explicit when the behavior requires it.
 5. Keep tests in the existing tier packages and use Ginkgo labels for selection.
 6. Add assertions for generated artifacts and target-cluster state.
 7. Account for asynchronous creation and deletion without adding fixed sleeps.
 8. Run the shared build, unit-test, E2E compilation, and formatting commands, followed by the focused Ginkgo scenario when its environment is available.
-9. Report compile and unit results separately from cluster-backed execution.
+9. If clusters are unavailable, create or update the task's PR and wait for its E2E CI. Analyze failures and review feedback, fix valid issues, and inspect follow-up runs.
+10. Report compile and unit results separately from live execution, including whether the requested scenario ran, passed, failed, or skipped.
 
 ## Reviewing the result
 
@@ -144,10 +151,13 @@ Before accepting generated changes, verify:
 - `Eventually` does not require independently deleted resources to coexist.
 - PVC usage checks include applicable non-terminal Pods, not only `Running` Pods.
 - A lifecycle test verifies both transient and final states.
-- Shared operations are in `framework/` or `utils/`, while one-off constants stay local to the spec.
+- Package-private helpers may be shared within a suite. Cross-suite cluster operations are in `framework/`, and shared fixture or comparison code is in `utils/`.
+- Non-admin tests respect `--run-as=admin` through the active-runner helpers and do not skip based only on missing raw non-admin contexts.
+- Direct-only transfer tests disable suite-wide cloud storage inheritance explicitly.
 - Golden manifests compare semantic content and do not capture unstable metadata.
 - OpenShift-specific behavior has an OCP test result when minikube cannot cover it.
 - Full, focused, and indirect CI jobs receive new flags and dependencies where needed.
+- Ginkgo output or reports confirm that the requested scenario executed; a green job with only skipped or unselected specs is not validation.
 - The final response states which tests actually ran and which require a cluster.
 
 ## Verification commands
@@ -197,6 +207,40 @@ ginkgo run -v -r --focus-file="$TEST_FILE" e2e-tests/tests -- \
 ```
 
 Add scenario-specific flags such as `--plugin-dir`, `--cloud-storage`, or `--rclone-config-file` only when required.
+
+Inspect the Ginkgo result for the requested spec and a non-zero executed-spec
+count. Report its status, platform, active admin/non-admin and transfer modes,
+and plugin revision when relevant. Explain any skipped scenario separately.
+
+### When clusters are unavailable
+
+After the cluster-free checks, push the changes and create a PR, or update
+the existing task PR. Use its E2E CI for live validation and wait for the
+relevant jobs to complete.
+
+Inspect CI logs, reports, artifacts, and review feedback. Check that the
+requested spec actually executed, address valid failures and findings, and
+inspect the next CI run after pushing fixes. Record run links and outcomes
+in the PR test plan. If CI or required platform coverage is unavailable,
+report the blocker and mark that live validation as incomplete.
+
+## Background
+
+The lifecycle and PVC-use rules reflect reviews of [#974](https://github.com/migtools/crane/pull/974),
+[#918](https://github.com/migtools/crane/pull/918), and
+[#927](https://github.com/migtools/crane/pull/927). Cross-platform and output
+expectations also draw on [#1009](https://github.com/migtools/crane/pull/1009),
+[#1015](https://github.com/migtools/crane/pull/1015),
+[#991](https://github.com/migtools/crane/pull/991),
+[#992](https://github.com/migtools/crane/pull/992),
+[#941](https://github.com/migtools/crane/pull/941), and
+[#952](https://github.com/migtools/crane/pull/952).
+
+Helper organization follows reviews of [#923](https://github.com/migtools/crane/pull/923),
+[#948](https://github.com/migtools/crane/pull/948),
+[#958](https://github.com/migtools/crane/pull/958),
+[#959](https://github.com/migtools/crane/pull/959), and
+[#897](https://github.com/migtools/crane/pull/897).
 
 ## Maintaining the skill
 

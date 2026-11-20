@@ -1,152 +1,135 @@
 ---
 name: crane-e2e-tests
-description: Create, change, review, and debug Crane end-to-end tests under e2e-tests/, including Ginkgo scenarios, k8s-apps-deployer setup, plugin builds, fixtures, CI wiring, and result validation.
+description: Create, review, or debug Crane E2E tests and CI, including migration scenarios, admin/non-admin runners, direct/indirect PVC transfers, synthetic OpenShift exports, plugin builds, and skipped-test diagnosis.
 ---
 
-# Crane e2e tests
+# Crane E2E tests
 
-Use this workflow when working on `e2e-tests/` or its GitHub Actions setup.
+Apply these repository-specific rules when working on `e2e-tests/` or its CI.
+Use `AGENTS.md` and `docs/development/testing.md` for shared verification
+commands, and `e2e-tests/README.md` for suite flags and live-test prerequisites.
 
-## Read before editing
+## Locate the scenario and execution path
 
-1. Read `e2e-tests/README.md` and the nearest tests in the target tier.
-2. Read the relevant wrappers in `e2e-tests/framework/` before invoking a command directly.
-3. Check `.github/actions/run-crane-e2e-tier/action.yml` and `.github/workflows/e2e-pr-tester.yaml` when a test needs a new binary, flag, cluster feature, or external repository.
-4. Check whether the source API exists on minikube. Use a synthetic export fixture for an OpenShift-only source resource that minikube cannot create.
-5. Check recent tests for the same resource lifecycle. Do not duplicate helpers or depend on an unexported function from another `_test.go` file.
+Read the nearest scenario and the framework code that supplies its behavior:
 
-## Runtime model
+| Concern | Source |
+| --- | --- |
+| Scenario runners and temporary artifact paths | `e2e-tests/framework/scenario.go` |
+| Pipeline setup, rendering, and target apply | `e2e-tests/framework/pipeline.go` |
+| App commands and Python virtualenv environment | `e2e-tests/framework/app.go` |
+| Admin/non-admin namespace setup | `e2e-tests/framework/rbac.go` |
+| Transfer mode and inherited suite options | `e2e-tests/framework/crane.go` |
 
-The suite uses Ginkgo v2 and Gomega. Tier packages have separate bootstrap files:
+Keep scenarios in the existing tier packages with matching Ginkgo labels.
+Discover all `e2e_suite_test.go` files when changing shared flags; updating one
+tier bootstrap does not update the others.
 
-- `e2e-tests/tests/tier0`: release-gating migration paths.
-- `e2e-tests/tests/tier1`: extended, plugin-specific, or environment-specific coverage.
+## Choose the source and target boundary
 
-Discover all suite packages under `e2e-tests/tests/` when changing shared flags
-or setup. Use the recursive compile target so additional tiers are covered.
+- When both clusters support the required APIs, use `NewMigrationScenario`,
+  `PrepareSourceApp`, `RunCranePipelineWithChecks`, and the appropriate target
+  apply helper from `pipeline.go`.
+- For an OpenShift-only source API unavailable on CI minikube, create a realistic
+  synthetic export below `paths.ExportDir`. Run `CraneRunner.Transform` and
+  `CraneRunner.Apply`, inspect `output.yaml`, and apply the result to the target.
+  This tests conversion and target acceptance without a live OpenShift source.
 
-CI performs these steps:
+Installing a substitute CRD merely to create an OpenShift built-in input does
+not reproduce OpenShift defaulting or admission. Minikube results do not cover
+SCC behavior, Routes, or downstream plugin packaging. Use
+`KubectlRunner.IsOpenShift()` where assertions depend on the platform and
+report any required OpenShift execution separately.
 
-1. `.github/actions/setup-minikube-clusters` creates `src` and `tgt` profiles on one Docker network. It may also create `src-dev` and `tgt-dev` certificate users.
-2. CI clones `migtools/k8s-apps-deployer`, installs it in a Python virtualenv, and invokes its `k8sdeploy` executable. Some discussions call this dependency `ocp-deployer`; use the repository and executable names present in the code.
-3. CI installs the Ginkgo version from `go.mod` and builds Crane.
-4. CI builds any test-specific plugins and passes their directory through `--plugin-dir`.
-5. Ginkgo passes arguments after `--` to the suite's Go flags.
+## Select credentials and transfer mode explicitly
 
-`K8sDeployApp` runs `k8sdeploy deploy`, `validate`, and `remove`. If the binary has a path, it prepends that directory to `PATH` so `ansible-playbook` from the same virtualenv remains available. Do not replace this wrapper with raw commands unless the test needs behavior the wrapper cannot express.
+- For namespace-admin scenarios, use `SetupActiveKubectlRunners` and register
+  its cleanup. It honors `config.RunAs`; calling
+  `SetupNamespaceAdminUsersForScenario` directly bypasses the admin override.
+- `NewMigrationScenario` maps its `NonAdmin` fields to admin contexts when
+  `--run-as=admin` is set. An early `Skip` based on missing raw non-admin
+  contexts defeats this behavior. These patterns are checked by
+  `.github/workflows/test-compliance.yml`.
+- `TransferPVCWithOutput` inherits `config.CloudStorage` when the per-call value
+  is empty. A direct-only scenario, such as rsync checksum verification, must
+  set `DisableCloudStorage: true` and leave `CloudStorage` empty. That switch
+  blocks inheritance; it does not clear an explicitly supplied storage value.
+- For indirect scenarios, identify the effective cloud storage and rclone
+  configuration. An empty per-call option can still inherit a suite setting.
 
-## Choose the test boundary
+## Use the existing artifact and app helpers
 
-Use a live migration scenario when both clusters support the source and target APIs. Start with `NewMigrationScenario`, `NewScenarioPaths`, `PrepareSourceApp`, `RunCranePipelineWithChecks`, and `ApplyOutputToTarget`.
+Create paths with `NewScenarioPaths` and set `runner.WorkDir = paths.TempDir`.
+CI uses parallel Ginkgo processes, so isolate namespaces and writable artifacts
+between specs. Register cleanup as each resource is allocated.
 
-Use a synthetic export when the input API is unavailable on CI minikube. Write a realistic source manifest below `paths.ExportDir`, run `CraneRunner.Transform` and `CraneRunner.Apply`, inspect `output.yaml`, then apply the output to `tgt`. This still tests the plugin protocol, Crane stage orchestration, new-resource handling, rendering, and target API acceptance.
+Keep `K8sDeployApp` for `k8sdeploy deploy`, `validate`, and `remove`. When given
+an executable path, it adds that directory to `PATH`, preserving access to
+`ansible-playbook` in the same virtualenv.
 
-Do not install an OpenShift CRD merely to make an input object creatable. That would not test OpenShift API defaulting and adds unrelated cluster setup.
+Package-private helpers can be shared within a suite package. Put reusable
+suite helpers in a dedicated helper file; keep spec-specific values near the
+spec. Use `framework/` for cluster operations shared across suites and `utils/`
+for shared fixture or semantic-comparison code.
 
-## Scenario rules
+Decode rendered resources to check GVK, identity, converted fields, warnings,
+and source-resource removal. When output retention or whiteout behavior
+changes, update the relevant golden fixtures and existing absence assertions.
 
-- Put the test in the lowest suitable existing tier and add its matching Ginkgo tier label.
-- Add a behavior label such as `plugin`, `validate`, or `pvc-transfer` when useful.
-- Keep feature-specific tests in the existing tier suites. Use labels for selection instead of adding another suite bootstrap or nested suite package.
-- Use a unique namespace and temp directory prefix.
-- Register `DeferCleanup` immediately after allocating resources. Cleanup must tolerate partial setup and test failure.
-- Set `runner.WorkDir = paths.TempDir` so relative Crane artifacts stay isolated.
-- Use `config.PluginDir` and `TransformOptions.PluginDir`; never assume a plugin exists in the user's default directory.
-- Skip a plugin-specific test with a clear message when its explicit suite flag is absent. CI must pass the flag, so the test runs there.
-- Assert behavior, not only command success. Inspect resource GVK, identity, transformed fields, removed source resources, warnings, and the target-cluster object.
-- Prefer typed or unstructured YAML decoding over substring-only assertions.
-- Use `Eventually` only for asynchronous cluster state. Do not add sleeps.
-- Keep constants and helpers inside the spec when only that spec uses them. Move behavior to `framework/` when multiple tests need it; add unit tests for parsing or argument-building helpers.
+## Observe transient resources without cleanup races
 
-## Lifecycle and polling
+- When creation and deletion are both part of the contract, observe each and
+  assert the final absence of temporary Secrets, Pods, and transfer helpers.
+- Independently deleted resources may never coexist in one polling attempt.
+  Retain per-resource observations across attempts, or synchronize observation
+  before cleanup, instead of requiring simultaneous presence.
+- A PVC may be referenced by Pending or initializing Pods. Match the product's
+  applicable non-terminal Pod rule rather than checking only `Running` Pods.
+- Use `Eventually` for asynchronous state transitions, including final deletion.
 
-Treat creation, observation, and deletion as separate assertions.
+## Carry dependencies through every applicable CI path
 
-- A final lifecycle assertion must verify that temporary Secrets, Pods, and other helper resources no longer exist. Use `Eventually` because Kubernetes deletion is asynchronous.
-- Do not require several short-lived resources to exist in the same polling attempt when the command may delete them independently. A poll can observe one resource before cleanup and query another after cleanup. Retain an observed flag for each resource across attempts, or synchronize the observation before the command reaches garbage collection.
-- Do not infer that a PVC is unused from the absence of a `Running` pod. Pending and initializing non-terminal Pods can already reference or mount the claim. Match the product rule against all applicable non-terminal Pods.
-- Query object state rather than relying on command timing. If the behavior has both a transient state and a final state, assert both explicitly.
+Inspect `e2e-pr-tester.yaml` and `e2e-indirect-pr-tester.yaml` under
+`.github/workflows/`, plus `.github/actions/run-crane-e2e-tier/action.yml`.
+Full, focused, and indirect jobs may set up and launch tests independently.
 
-These rules come from human review of [#974](https://github.com/migtools/crane/pull/974), [#918](https://github.com/migtools/crane/pull/918), and [#927](https://github.com/migtools/crane/pull/927).
+For plugin scenarios, reuse `.github/actions/build-openshift-plugin/action.yml`
+where applicable and select the required plugin revision. Pass its output via
+`--plugin-dir`, `config.PluginDir`, and `TransformOptions.PluginDir`. A change
+in the composite action alone does not update every focused job. Distinguish
+the CI build from registry-installed or downstream-bundled plugins.
+Pin an unmerged plugin build to its commit and record that revision.
 
-## Cross-platform coverage
+A local plugin test may skip with a clear reason when its required flag is
+absent. CI intended to cover it must supply that dependency and select the spec.
 
-Minikube CI does not cover OpenShift defaulting, SCC behavior, Routes, or downstream plugin packaging.
+## Use PR CI when no live cluster is accessible
 
-- For workload or PVC changes, use portable images and security contexts. Run the focused test on OpenShift when SCC admission can alter the result.
-- Use `KubectlRunner.IsOpenShift()` only where platform behavior differs. Keep the main scenario and assertions shared.
-- Record the OpenShift run in the PR test plan. A screenshot or job reference supplements, but does not replace, assertions in the test.
-- Distinguish an upstream plugin installed through `plugin-manager`, a downstream bundled plugin, and a custom plugin build. Do not silently test a different plugin version than the change requires.
-- When a product change adds a resource to pipeline output, update the golden manifests and every assertion that assumed the resource was whiteouted or absent.
+If source or target clusters are unavailable, run the cluster-free checks,
+then push the changes and create a PR, or update the existing PR for the task.
+Use its GitHub Actions E2E jobs for live validation instead of stopping at
+successful compilation.
 
-Relevant review and follow-up changes are in [#1009](https://github.com/migtools/crane/pull/1009), [#1015](https://github.com/migtools/crane/pull/1015), [#991](https://github.com/migtools/crane/pull/991), [#992](https://github.com/migtools/crane/pull/992), [#941](https://github.com/migtools/crane/pull/941), and [#952](https://github.com/migtools/crane/pull/952).
+Wait for the relevant CI jobs to finish. Use `gh` to inspect check results,
+failed-job logs, test reports, artifacts, and review feedback. Confirm that
+the intended spec executed in the required transfer mode. Investigate failures
+and review findings against the current code, push fixes for valid issues,
+and inspect the resulting runs again. Preserve the scenario's intended
+assertions and required coverage.
 
-## Test organization
+Update the PR test plan with run links and actual outcomes. Distinguish test
+defects from infrastructure failures or unrelated failures. If CI cannot run
+or required platform coverage is unavailable, report that blocker and leave
+the affected scenario's live validation explicitly incomplete.
 
-- Do not couple test files through package-private helper definitions. Shared cluster operations belong in `framework/`; shared fixture and semantic comparison code belongs in `utils/`.
-- Reuse verifier Pod creation, data reads, and cleanup when another scenario already implements the same operation.
-- Keep exact expected CLI output near its test when it is used once. Extract constants only when several tests share the contract.
-- For lifecycle scenarios, assert the final absence or retained state in addition to the successful command result.
+## Establish what actually ran
 
-Human reviewers requested these patterns in [#923](https://github.com/migtools/crane/pull/923), [#948](https://github.com/migtools/crane/pull/948), [#958](https://github.com/migtools/crane/pull/958), [#959](https://github.com/migtools/crane/pull/959), [#897](https://github.com/migtools/crane/pull/897), and [#918](https://github.com/migtools/crane/pull/918).
+Use the shared checks in `docs/development/testing.md` and the focused Ginkgo
+command in `docs/development/crane-e2e-skill.md#verification-commands`. Keep
+build/unit results, suite compilation, and live execution separate.
 
-## Local commands
-
-Run the shared cluster-free checks from the repository root:
-
-```bash
-make build
-make test-unit
-make test-e2e-compile
-make fmt-check
-```
-
-The unit target includes E2E config, framework, and utility packages while
-excluding live suites. The compilation target covers every suite package
-without running tests or benchmarks. Use `GO_TEST_ARGS` for extra test flags
-and `COVERAGE_PROFILE=coverage.out COVERAGE_MODE=atomic` for unit coverage.
-
-Run the focused test after the required clusters and `k8sdeploy` are available:
-
-```bash
-TEST_FILE=e2e-tests/tests/tier0/example_test.go
-ginkgo run -v -r --focus-file="$TEST_FILE" e2e-tests/tests -- \
-  --k8sdeploy-bin=k8sdeploy \
-  --crane-bin="$PWD/crane" \
-  --source-context=src \
-  --target-context=tgt \
-  --source-nonadmin-context=src-dev \
-  --target-nonadmin-context=tgt-dev \
-  --verbose-logs
-```
-
-Add scenario-specific flags such as `--plugin-dir`, `--cloud-storage`, or `--rclone-config-file` only when required.
-
-## Verification
-
-Use the shared commands above for complete cluster-free verification. For
-iteration, run the affected package directly, for example
-`go test ./e2e-tests/framework ./e2e-tests/utils`.
-
-Do not use an unqualified `go test ./...` as a local unit-test command. It also
-runs live Ginkgo suites under `e2e-tests/tests/`. Report build, unit, compilation,
-and live execution results separately. Compilation alone does not establish
-that a cluster scenario works.
-
-Format changed Go files with `gofmt -w path/to/changed.go`. The format check
-does not rewrite files and may report pre-existing differences elsewhere;
-report those separately instead of reformatting unrelated files.
-
-Before finishing, inspect the diff for these common failures:
-
-- A new suite flag exists in only one tier bootstrap.
-- The composite action path receives the dependency, but focused PR CI does not.
-- Cleanup runs only after all setup succeeds.
-- The test compares unstable server-generated metadata.
-- A source-only OpenShift object is applied to minikube.
-- The test checks output text but never validates or applies the rendered manifest.
-- One `Eventually` call requires independently deleted resources to coexist.
-- PVC-in-use logic considers only `Running` Pods.
-- A lifecycle test observes creation but never verifies deletion.
-- A tests-only PR does not say so in its title or summary.
-- A dependency PR or plugin version is assumed but not pinned, merged, or documented in the test plan.
+For live validation, inspect the Ginkgo output or test report for the intended
+spec, a non-zero executed-spec count, and its passed/failed/skipped result.
+A green job that selected zero specs or skipped the requested scenario does
+not validate it. Report the command, platform, admin/non-admin and direct/indirect
+modes, plugin revision when relevant, and any skipped scenario with its reason.
