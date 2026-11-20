@@ -9,6 +9,7 @@ This directory contains detailed guides for developers contributing to Crane.
 - [Testing](./testing.md) — Unit tests, table-driven patterns, and E2E testing
 - [Plugin Development](./plugin-development.md) — Writing custom transformation plugins
 - [Crane E2E agent skill](./crane-e2e-skill.md) - Using repository-specific E2E guidance with Claude Code
+- [Vertex WIF smoke test](./vertex-wif-smoke-test.md) — Validating keyless Claude access from GitHub Actions
 
 ## Quick Reference
 

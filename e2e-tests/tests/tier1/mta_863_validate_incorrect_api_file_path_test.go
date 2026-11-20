@@ -9,6 +9,7 @@ import (
 	. "github.com/konveyor/crane/e2e-tests/framework"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 )
 
 var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file path", Label("tier1", "validate"), func() {
@@ -54,8 +55,11 @@ var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file
 		}
 	})
 
+	// Each group must match (AND); within a group any substring is accepted (OR),
+	// so a group can hold equivalent platform-specific wording (Linux/macOS vs.
+	// Windows) for the same failure without weakening the error semantics.
 	DescribeTable("should fail gracefully with incorrect API resources file path",
-		func(testCase string, getAPIFilePath func(string) string, expectedErrorSubstrings []string) {
+		func(testCase string, getAPIFilePath func(string) string, expectedErrorGroups [][]string) {
 			By("Attempt to run crane validate with " + testCase)
 			apiFilePath := getAPIFilePath(tempDir)
 			validateDir := filepath.Join(tempDir, "validate-"+testCase)
@@ -71,13 +75,17 @@ var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file
 			log.Printf("Test case '%s' - Expected failure: %v", testCase, err)
 			log.Printf("Test case '%s' - Output: %s", testCase, stdout)
 
-			By("Verify error message contains expected substrings")
+			By("Verify error message matches an expected platform-specific error")
 			errMsg := err.Error()
-			for _, expectedSubstring := range expectedErrorSubstrings {
-				Expect(errMsg).To(ContainSubstring(expectedSubstring),
-					"error message should contain '%s'", expectedSubstring)
+			for _, alternatives := range expectedErrorGroups {
+				matchers := make([]types.GomegaMatcher, len(alternatives))
+				for idx, substr := range alternatives {
+					matchers[idx] = ContainSubstring(substr)
+				}
+				Expect(errMsg).To(Or(matchers...),
+					"error message should contain one of %v", alternatives)
 			}
-			log.Printf("Test case '%s' - All expected error substrings verified", testCase)
+			log.Printf("Test case '%s' - Expected error semantics verified", testCase)
 		},
 
 		Entry("[MTA-863] non-existent file path",
@@ -85,7 +93,12 @@ var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file
 			func(tmpDir string) string {
 				return filepath.Join(tmpDir, "non-existent-api-surface.json")
 			},
-			[]string{"no such file or directory"},
+			[][]string{
+				{
+					"no such file or directory",                 // Linux/macOS
+					"The system cannot find the file specified", // Windows
+				},
+			},
 		),
 
 		Entry("[MTA-863] provide directory path instead of file",
@@ -93,7 +106,12 @@ var _ = Describe("[MTA-863] Crane validate offline: incorrect API resources file
 			func(tmpDir string) string {
 				return tmpDir // Return directory path
 			},
-			[]string{"is a directory"},
+			[][]string{
+				{
+					"is a directory",     // Linux/macOS
+					"Incorrect function", // Windows (reading a directory as a file)
+				},
+			},
 		),
 	)
 })

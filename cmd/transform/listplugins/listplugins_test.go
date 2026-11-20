@@ -5,9 +5,69 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/konveyor/crane-lib/transform"
+	"github.com/konveyor/crane/internal/plugin"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
+
+type fakePlugin struct {
+	name    string
+	version string
+}
+
+func (p fakePlugin) Metadata() transform.PluginMetadata {
+	return transform.PluginMetadata{Name: p.name, Version: p.version}
+}
+
+func (p fakePlugin) Run(transform.PluginRequest) (transform.PluginResponse, error) {
+	return transform.PluginResponse{}, nil
+}
+
+func TestFormatPluginDescriptor(t *testing.T) {
+	tests := []struct {
+		name       string
+		descriptor plugin.PluginDescriptor
+		want       string
+	}{
+		{
+			name: "embedded default",
+			descriptor: plugin.PluginDescriptor{
+				Plugin:           fakePlugin{name: "KubernetesPlugin", version: "v0.0.10"},
+				Source:           plugin.PluginSourceEmbedded,
+				EnabledByDefault: true,
+			},
+			want: "Plugin: KubernetesPlugin (version v0.0.10, source embedded, run default)",
+		},
+		{
+			name: "embedded opt-in",
+			descriptor: plugin.PluginDescriptor{
+				Plugin:           fakePlugin{name: "BuildConfigToBuildsPlugin", version: "v0.1.0"},
+				Source:           plugin.PluginSourceEmbedded,
+				EnabledByDefault: false,
+			},
+			want: "Plugin: BuildConfigToBuildsPlugin (version v0.1.0, source embedded, run opt-in)",
+		},
+		{
+			name: "external default",
+			descriptor: plugin.PluginDescriptor{
+				Plugin:           fakePlugin{name: "ExamplePlugin", version: "v1.2.3"},
+				Source:           plugin.PluginSourceExternal,
+				SourceDirectory:  "/work/plugins",
+				EnabledByDefault: true,
+			},
+			want: "Plugin: ExamplePlugin (version v1.2.3, source external: /work/plugins, run default)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatPluginDescriptor(tt.descriptor)
+			assert.Equal(t, tt.want, got)
+			assert.Regexp(t, `^Plugin: .+ \(version `, got)
+		})
+	}
+}
 
 func TestGetPluginNames(t *testing.T) {
 	log := logrus.New()

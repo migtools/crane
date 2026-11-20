@@ -19,7 +19,7 @@ var _ = Describe("Crane validate: all compatible standard resources in offline m
 	It("[MTA-831][MTA-848] Generate and validate crane validate report in JSON and YAML formats",
 		Label("tier0", "validate"), func() {
 			appName := "multi-resource-app"
-			namespace := appName
+			namespace := "mta-831-multi-res"
 			scenario := NewMigrationScenario(
 				appName,
 				namespace,

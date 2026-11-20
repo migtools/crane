@@ -4,7 +4,7 @@ metadata:
   labels:
     app: simple-nginx-nopv
   name: my-simple-nginx-nopv
-  namespace: simple-nginx-nopv
+  namespace: mta-817-nginx
 spec:
   internalTrafficPolicy: Cluster
   ipFamilies:
@@ -28,7 +28,7 @@ metadata:
   labels:
     name: simple-nginx-nopv
   name: simple-nginx-nopv-deployment
-  namespace: simple-nginx-nopv
+  namespace: mta-817-nginx
 spec:
   progressDeadlineSeconds: 600
   replicas: 0
@@ -71,7 +71,7 @@ metadata:
   labels:
     app: simple-nginx-nopv
   name: my-simple-nginx-nopv
-  namespace: simple-nginx-nopv
+  namespace: mta-817-nginx
 spec:
   port:
     targetPort: http

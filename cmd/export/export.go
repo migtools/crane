@@ -370,6 +370,11 @@ func NewExportCommand(streams genericclioptions.IOStreams, f *flags.GlobalFlags)
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export the namespace resources in an output directory",
+		// export takes no positional arguments. The namespace is resolved from
+		// -n/--namespace or the kubeconfig context default, never from a positional
+		// arg. Rejecting args prevents users from silently exporting the wrong
+		// namespace when they mistakenly pass one (see issue #489).
+		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			if err := o.Complete(c, args); err != nil {
 				return err

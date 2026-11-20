@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level RBAC export", func() {
 	It("[MTA-858] Should export CRB with User subject referencing ServiceAccount", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-858-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,

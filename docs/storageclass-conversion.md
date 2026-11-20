@@ -209,7 +209,7 @@ crane transfer-pvc \
 
 ## Indirect transfer variant (example)
 
-For clusters without direct network connectivity, use indirect transfer via S3-compatible storage:
+For clusters without direct network connectivity, use indirect transfer via cloud storage:
 
 ```bash
 crane transfer-pvc \
@@ -223,4 +223,4 @@ crane transfer-pvc \
   --verify
 ```
 
-No endpoint or ingress setup required. Both clusters only need outbound access to the S3 bucket.
+No endpoint or ingress setup required. Both clusters only need outbound access to the storage bucket or container.

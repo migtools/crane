@@ -15,7 +15,7 @@ import (
 var _ = Describe("Multi-container pod migration", func() {
 	It("[MTA-838] nginx+sidecar deployment migrates to target with all containers intact as namespace-admin user", Label("tier0"), func() {
 		appName := "sidecar-app"
-		namespace := appName
+		namespace := "mta-838-sidecar"
 		deploymentName := appName + "-deployment"
 
 		const (

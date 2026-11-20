@@ -1,0 +1,49 @@
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: legacy-web
+  namespace: deploymentconfig-conversion
+  labels:
+    app: legacy-web
+  annotations:
+    example.com/preserved: "true"
+spec:
+  replicas: 0
+  selector:
+    app: legacy-web
+  strategy:
+    type: Rolling
+    rollingParams:
+      maxSurge: 25%
+      maxUnavailable: 0
+      timeoutSeconds: 600
+  triggers:
+    - type: ConfigChange
+    - type: ImageChange
+      imageChangeParams:
+        automatic: true
+        containerNames:
+          - web
+        from:
+          kind: ImageStreamTag
+          name: legacy-web:latest
+  template:
+    metadata:
+      labels:
+        app: legacy-web
+    spec:
+      securityContext:
+        runAsUser: 1000560000
+        fsGroup: 1000560000
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: legacy-data

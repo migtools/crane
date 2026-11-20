@@ -389,6 +389,41 @@ func TestNewExportCommand(t *testing.T) {
 	}
 }
 
+// TestExport_RejectsPositionalArgs is a regression test for issue #489:
+// export must not silently accept (and ignore) positional arguments. A user
+// passing a namespace positionally would otherwise export the kubeconfig
+// context default namespace with no warning.
+func TestExport_RejectsPositionalArgs(t *testing.T) {
+	streams := genericclioptions.NewTestIOStreamsDiscard()
+	cmd := NewExportCommand(streams, nil)
+
+	if cmd.Args == nil {
+		t.Fatal("export command has no Args validator; positional args would be silently accepted")
+	}
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr bool
+	}{
+		{name: "no args", args: []string{}, wantErr: false},
+		{name: "single positional namespace", args: []string{"app-with-cluster-deps"}, wantErr: true},
+		{name: "multiple positional args", args: []string{"ns1", "ns2"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := cmd.ValidateArgs(tt.args)
+			if tt.wantErr && err == nil {
+				t.Fatalf("ValidateArgs(%v) = nil, want error", tt.args)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("ValidateArgs(%v) = %v, want nil", tt.args, err)
+			}
+		})
+	}
+}
+
 func TestValidateExportNamespace(t *testing.T) {
 	t.Parallel()
 	log := logrus.New()

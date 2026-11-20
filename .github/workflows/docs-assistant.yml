@@ -3,6 +3,8 @@ name: Documentation Assistant
 on:
   issue_comment:
     types: [created]
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -13,7 +15,8 @@ jobs:
   docs-assistant:
     runs-on: ubuntu-latest
     if: |
-      github.event.issue.pull_request && 
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
       (
         contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
         contains(fromJSON('["stillalearner", "aufi", "Tamar-Dinavetsky", "nachandr", "midays", "istein1", "msajidmansoori12", "RanWurmbrand"]'), github.event.comment.user.login)
@@ -88,3 +91,87 @@ jobs:
           #  google-sa-key: ${{ secrets.GOOGLE_SA_KEY }}
           # Optional: Uncomment and configure if custom context limits are needed
           #  max-context-chars: ${{ secrets.MAX_CONTEXT_CHARS }}
+
+  docs-assistant-auto:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && !github.event.forced
+
+    steps:
+      - name: Get merged PR information
+        id: pr_info
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AFTER_SHA: ${{ github.event.after }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          PR_DATA=$(gh api "repos/${{ github.repository }}/commits/$AFTER_SHA/pulls" --jq '.[0] // empty')
+          if [ -z "$PR_DATA" ]; then
+            echo "No PR found for this push, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          PR_TITLE=$(echo "$PR_DATA" | jq -r '.title')
+          PR_AUTHOR=$(echo "$PR_DATA" | jq -r '.user.login')
+          PR_ASSOCIATION=$(echo "$PR_DATA" | jq -r '.author_association')
+          PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number')
+          PR_MERGED_AT=$(echo "$PR_DATA" | jq -r '.merged_at')
+          PR_BASE_REF=$(echo "$PR_DATA" | jq -r '.base.ref')
+
+          if [ "$PR_MERGED_AT" = "null" ] || [ -z "$PR_MERGED_AT" ]; then
+            echo "PR not merged, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if [ "$PR_BASE_REF" != "main" ]; then
+            echo "PR base ref is $PR_BASE_REF, not main, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          if ! echo "$PR_TITLE" | grep -qF ':sparkles:'; then
+            echo "PR title does not contain :sparkles:, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          ALLOWED_ASSOC='["OWNER","MEMBER","COLLABORATOR"]'
+          if ! echo "$ALLOWED_ASSOC" | jq -e --arg a "$PR_ASSOCIATION" 'contains([$a])' > /dev/null; then
+            echo "PR author_association $PR_ASSOCIATION not allowed, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "skip=false" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "head_sha=$AFTER_SHA" >> $GITHUB_OUTPUT
+          echo "base_sha=$BEFORE_SHA" >> $GITHUB_OUTPUT
+
+      - name: Checkout Main Repository
+        if: steps.pr_info.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.after }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Documentation Assistant (Auto)
+        if: steps.pr_info.outputs.skip != 'true'
+        uses: redhat-community-ai-tools/code-to-docs@main
+        with:
+          model-api-base: ${{ secrets.MODEL_API_BASE }}
+          model-api-key: ${{ secrets.MODEL_API_KEY }}
+          model-name: ${{ secrets.MODEL_NAME }}
+          docs-repo-url: ${{ secrets.DOCS_REPO_URL }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          pr-number: ${{ steps.pr_info.outputs.pr_number }}
+          pr-base: ${{ steps.pr_info.outputs.base_sha }}
+          pr-head-sha: ${{ steps.pr_info.outputs.head_sha }}
+          docs-subfolder: ${{ secrets.DOCS_SUBFOLDER }}
+          comment-body: '[review-docs]'
+          docs-base-branch: ${{ secrets.DOCS_BASE_BRANCH }}
+          style-config-path: ".code-to-docs/style.md"

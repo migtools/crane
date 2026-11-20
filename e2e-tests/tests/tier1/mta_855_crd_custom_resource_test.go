@@ -14,7 +14,7 @@ import (
 var _ = Describe("Cluster-level RBAC export", func() {
 	It("[MTA-855] Should export CRD to _cluster and custom resource to namespace directory", Label("tier1"), func() {
 		appName := "simple-nginx-nopv"
-		namespace := "simple-nginx-nopv"
+		namespace := "mta-855-nginx"
 		serviceName := "my-" + appName
 		scenario := NewMigrationScenario(
 			appName,

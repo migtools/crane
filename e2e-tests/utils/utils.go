@@ -440,7 +440,7 @@ func buildNormalizedExportIndex(dir string) (map[string][]exportIndexedDoc, erro
 		for i, doc := range docs {
 			identity, err := extractResourceIdentity(doc)
 			if err != nil {
-				if strings.Contains(relativeFilePath, "failures/") {
+				if strings.Contains(filepath.ToSlash(relativeFilePath), "failures/") {
 					continue
 				}
 				return nil, fmt.Errorf("extract identity for %q doc #%d: %w", relativeFilePath, i+1, err)
@@ -1048,7 +1048,7 @@ func AssertWhiteoutResourceFilesExist(transformDir string, kinds []string) error
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "input/") {
+		if !strings.Contains(filepath.ToSlash(rel), "input/") {
 			return nil
 		}
 		name := info.Name()
@@ -1088,7 +1088,7 @@ func AssertWhiteoutResourceFileCount(transformDir string, kind string, expectedC
 			return nil
 		}
 		rel, _ := filepath.Rel(transformDir, path)
-		if !strings.Contains(rel, "input/") {
+		if !strings.Contains(filepath.ToSlash(rel), "input/") {
 			return nil
 		}
 		if strings.HasPrefix(info.Name(), kind+"_") || strings.HasPrefix(info.Name(), kind+".") {
