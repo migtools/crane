@@ -47,8 +47,9 @@ fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 - Bug fixes should include regression tests when possible
 - Use table-driven tests for multiple scenarios
 - Test files: `*_test.go` in same package
-- Run tests: `go test ./...`
-- E2E tests live in `e2e-tests/`
+- Run cluster-free unit checks: `make test-unit`
+- Compile all E2E suites without executing them: `make test-e2e-compile`
+- Live E2E suites live in `e2e-tests/tests/` and require configured clusters and external tools. A bare `go test ./...` includes these suites.
 
 ### Code Organization
 - Commands in `cmd/<command>/` (apply, export, transform, etc.)
@@ -81,14 +82,20 @@ fmt.Errorf("expected *unstructured.Unstructured but got %T", object)
 
 ### Pull Requests
 **Title:** Clear, concise (< 70 chars)
+
+Use the PR title aliases documented in `CONTRIBUTING.md`; these differ from Conventional Commit prefixes.
+
 **Body must include:**
 - ## Summary - what changed and why
 - ## Impact - severity, affected components
 - ## Test plan - how to verify
 
 **Before submitting:**
-- [ ] Code compiles: `go build ./...`
-- [ ] Tests pass: `go test ./...`
+- [ ] Code compiles: `make build`
+- [ ] Cluster-free unit tests pass: `make test-unit`
+- [ ] E2E packages compile: `make test-e2e-compile`
+- [ ] Check tracked Go formatting: `make fmt-check`; report pre-existing differences separately
+- [ ] State whether focused live E2E execution ran and which prerequisites were unavailable if skipped
 - [ ] Error messages are informative
 - [ ] No unnecessary refactoring
 - [ ] Backward compatible (or documented breaking change)

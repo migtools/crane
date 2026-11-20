@@ -4,10 +4,12 @@
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| Go | 1.25+ (see `go.mod`) | Building and testing |
+| Go | 1.25+ (see `go.mod`) | Building and cluster-free testing |
+| GNU Make, Bash 4.4+, Git | Available on the development host | Shared verification commands |
 | kubectl | Latest stable | Deploying output to clusters; not required for `crane apply` (kustomize is embedded) |
 | Docker | Latest stable | Container-based testing (optional) |
 | kind or minikube | Latest stable | Local Kubernetes clusters for E2E tests |
+| k8sdeploy | See the E2E guide | App deployment and validation during live E2E execution |
 
 ## Getting Started
 
@@ -21,7 +23,7 @@ cd crane
 ### Build
 
 ```bash
-go build -o crane main.go
+make build
 ```
 
 ### Install Locally
@@ -39,23 +41,37 @@ sudo mv crane /usr/local/bin/
 ### Run Tests
 
 ```bash
-# All unit tests
-go test ./...
+# All cluster-free unit tests
+make test-unit
 
 # Specific package
 go test ./internal/transform/...
 
 # With verbose output
-go test -v ./cmd/export/...
+make test-unit GO_TEST_ARGS=-v
 
 # With race detection
-go test -race ./...
+make test-unit GO_TEST_ARGS=-race
+
+# Compile all E2E suites without running tests or benchmarks
+make test-e2e-compile
+
+# Unit coverage using the same settings as CI
+make test-unit GO_TEST_ARGS=-v COVERAGE_PROFILE=coverage.out COVERAGE_MODE=atomic
 ```
+
+The shared unit command excludes only the live `e2e-tests/tests/` subtree;
+it includes E2E config, framework, and utility packages. An unqualified
+`go test ./...` also executes live suites and is not a cluster-free check.
 
 ### Format Code
 
 ```bash
-gofmt -w .
+# Check tracked Go files without modifying them
+make fmt-check
+
+# Format the files changed by your task
+gofmt -w path/to/changed.go
 ```
 
 ## Project Layout
@@ -66,7 +82,10 @@ Internal packages in `internal/` contain the business logic. Commands are thin w
 
 ## Setting Up Test Clusters
 
-For E2E testing, you need source and target Kubernetes clusters:
+Live E2E execution needs source and target Kubernetes clusters, valid contexts,
+`kubectl`, and `k8sdeploy`. See the [E2E guide](../../e2e-tests/README.md)
+for suite flags and scenario-specific dependencies. The build and cluster-free
+checks above do not require this setup.
 
 ### Using kind
 

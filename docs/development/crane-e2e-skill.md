@@ -131,7 +131,7 @@ When the skill is active, Claude Code should:
 5. Keep tests in the existing tier packages and use Ginkgo labels for selection.
 6. Add assertions for generated artifacts and target-cluster state.
 7. Account for asynchronous creation and deletion without adding fixed sleeps.
-8. Run formatting, framework and utility tests, suite compilation, and the focused Ginkgo scenario when its environment is available.
+8. Run the shared build, unit-test, E2E compilation, and formatting commands, followed by the focused Ginkgo scenario when its environment is available.
 9. Report compile and unit results separately from cluster-backed execution.
 
 ## Reviewing the result
@@ -152,17 +152,35 @@ Before accepting generated changes, verify:
 
 ## Verification commands
 
-The skill recommends these checks before cluster-backed execution:
+Run the shared checks from the repository root before cluster-backed execution:
 
 ```bash
-TEST_FILE=e2e-tests/tests/tier0/example_test.go
-gofmt -w "$TEST_FILE"
-go test ./e2e-tests/framework ./e2e-tests/utils
-go test ./e2e-tests/tests/tier0 ./e2e-tests/tests/tier1 -run '^$'
-go test . ./cmd/... ./internal/...
+make build
+make test-unit
+make test-e2e-compile
+make fmt-check
 ```
 
-Do not treat an unqualified `go test ./...` as a unit-test command in this repository. It also runs the Ginkgo e2e suites under `e2e-tests/tests/tier0` and `e2e-tests/tests/tier1`. Some specs require configured clusters, binaries, or suite flags and can fail when that setup is unavailable.
+`make test-unit` includes E2E config, framework, and utility packages but
+excludes live suites. `make test-e2e-compile` recursively compiles every suite
+package without executing tests or benchmarks, including any additional tiers.
+Discover all current suite bootstrap files when adding a shared flag.
+
+Use `GO_TEST_ARGS` for test flags such as `-v` or `-race`. For CI-compatible
+unit coverage:
+
+```bash
+make test-unit GO_TEST_ARGS=-v COVERAGE_PROFILE=coverage.out COVERAGE_MODE=atomic
+```
+
+During iteration, a focused package check such as
+`go test ./e2e-tests/framework ./e2e-tests/utils` is useful. A bare
+`go test ./...` also runs the live Ginkgo suites and is not a cluster-free
+unit check. Report unit and compilation results separately from live execution.
+
+`make fmt-check` does not modify files. Format changed files with
+`gofmt -w path/to/changed.go` and report unrelated existing differences
+separately.
 
 Run a focused scenario with Ginkgo after preparing the required environment:
 

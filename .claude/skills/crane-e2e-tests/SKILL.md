@@ -22,6 +22,9 @@ The suite uses Ginkgo v2 and Gomega. Tier packages have separate bootstrap files
 - `e2e-tests/tests/tier0`: release-gating migration paths.
 - `e2e-tests/tests/tier1`: extended, plugin-specific, or environment-specific coverage.
 
+Discover all suite packages under `e2e-tests/tests/` when changing shared flags
+or setup. Use the recursive compile target so additional tiers are covered.
+
 CI performs these steps:
 
 1. `.github/actions/setup-minikube-clusters` creates `src` and `tgt` profiles on one Docker network. It may also create `src-dev` and `tgt-dev` certificate users.
@@ -42,7 +45,7 @@ Do not install an OpenShift CRD merely to make an input object creatable. That w
 
 ## Scenario rules
 
-- Put the test in the lowest suitable tier and add the matching `Label("tier0")` or `Label("tier1")`.
+- Put the test in the lowest suitable existing tier and add its matching Ginkgo tier label.
 - Add a behavior label such as `plugin`, `validate`, or `pvc-transfer` when useful.
 - Keep feature-specific tests in the existing tier suites. Use labels for selection instead of adding another suite bootstrap or nested suite package.
 - Use a unique namespace and temp directory prefix.
@@ -89,7 +92,21 @@ Human reviewers requested these patterns in [#923](https://github.com/migtools/c
 
 ## Local commands
 
-Run the focused test after the two clusters and `k8sdeploy` are available:
+Run the shared cluster-free checks from the repository root:
+
+```bash
+make build
+make test-unit
+make test-e2e-compile
+make fmt-check
+```
+
+The unit target includes E2E config, framework, and utility packages while
+excluding live suites. The compilation target covers every suite package
+without running tests or benchmarks. Use `GO_TEST_ARGS` for extra test flags
+and `COVERAGE_PROFILE=coverage.out COVERAGE_MODE=atomic` for unit coverage.
+
+Run the focused test after the required clusters and `k8sdeploy` are available:
 
 ```bash
 TEST_FILE=e2e-tests/tests/tier0/example_test.go
@@ -107,17 +124,18 @@ Add scenario-specific flags such as `--plugin-dir`, `--cloud-storage`, or `--rcl
 
 ## Verification
 
-Run the cheapest checks first:
+Use the shared commands above for complete cluster-free verification. For
+iteration, run the affected package directly, for example
+`go test ./e2e-tests/framework ./e2e-tests/utils`.
 
-```bash
-TEST_FILE=e2e-tests/tests/tier0/example_test.go
-gofmt -w "$TEST_FILE"
-go test ./e2e-tests/framework ./e2e-tests/utils
-go test ./e2e-tests/tests/tier0 ./e2e-tests/tests/tier1 -run '^$'
-go test . ./cmd/... ./internal/...
-```
+Do not use an unqualified `go test ./...` as a local unit-test command. It also
+runs live Ginkgo suites under `e2e-tests/tests/`. Report build, unit, compilation,
+and live execution results separately. Compilation alone does not establish
+that a cluster scenario works.
 
-Do not use an unqualified `go test ./...` as a local unit-test command. It also runs the Ginkgo e2e suites under `e2e-tests/tests/tier0` and `e2e-tests/tests/tier1`. Some specs require configured clusters, binaries, or suite flags and can fail when that setup is unavailable. Run the focused Ginkgo test with its required environment instead. Report separately which compile/unit checks passed and whether cluster-backed execution ran.
+Format changed Go files with `gofmt -w path/to/changed.go`. The format check
+does not rewrite files and may report pre-existing differences elsewhere;
+report those separately instead of reformatting unrelated files.
 
 Before finishing, inspect the diff for these common failures:
 

@@ -80,7 +80,23 @@ For namespace-admin scenarios, tests additionally:
 
 ## Running the Tests
 
-Run all tiers from repo root:
+Start with the shared cluster-free checks from the repository root:
+
+```bash
+make build
+make test-unit
+make test-e2e-compile
+make fmt-check
+```
+
+`make test-unit` includes the E2E config, framework, and utility packages but
+excludes the live suite subtree. `make test-e2e-compile` compiles every suite
+without running tests or benchmarks. Neither command requires clusters or
+`k8sdeploy`. A bare `go test ./...` also runs the live suites.
+
+For live execution, provide `kubectl`, `k8sdeploy`, source and target contexts,
+and any scenario-specific plugins or transfer settings. Run all tiers from
+the repository root:
 
 ```bash
 ginkgo run -v --recurse e2e-tests/tests -- \
