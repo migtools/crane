@@ -162,14 +162,31 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 	return filesWritten, errs
 }
 
-// failureFilename returns the filename for a failed API resource list. It keeps
-// the legacy resource-name filename unless another failure has the same name.
-func failureFilename(resourceErr *groupResourceError, hasNameCollision bool) string {
+// preferredFailureFilename returns the preferred filename for a failed API
+// resource list. It keeps the legacy resource-name filename unless another
+// failure has the same name.
+func preferredFailureFilename(resourceErr *groupResourceError, hasNameCollision bool) string {
 	if !hasNameCollision || resourceErr.APIGroupVersion == "" {
 		return resourceErr.APIResource.Name + ".yaml"
 	}
 	groupVersion := strings.ReplaceAll(resourceErr.APIGroupVersion, "/", "_")
 	return fmt.Sprintf("%s_%s.yaml", resourceErr.APIResource.Name, groupVersion)
+}
+
+// nextAvailableFilename returns filename unless it is already used, in which
+// case it adds the smallest numeric suffix that makes the filename unique.
+func nextAvailableFilename(filename string, used map[string]struct{}) string {
+	if _, exists := used[filename]; !exists {
+		return filename
+	}
+
+	base := strings.TrimSuffix(filename, ".yaml")
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d.yaml", base, suffix)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
 }
 
 // failureFilenames returns one distinct filename for every writable failure.
@@ -190,14 +207,8 @@ func failureFilenames(errors []*groupResourceError) []string {
 			continue
 		}
 
-		filename := failureFilename(resourceErr, nameCounts[resourceErr.APIResource.Name] > 1)
-		base := strings.TrimSuffix(filename, ".yaml")
-		for suffix := 2; ; suffix++ {
-			if _, exists := used[filename]; !exists {
-				break
-			}
-			filename = fmt.Sprintf("%s_%d.yaml", base, suffix)
-		}
+		preferred := preferredFailureFilename(resourceErr, nameCounts[resourceErr.APIResource.Name] > 1)
+		filename := nextAvailableFilename(preferred, used)
 		filenames[i] = filename
 		used[filename] = struct{}{}
 	}
