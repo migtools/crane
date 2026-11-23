@@ -1,0 +1,74 @@
+version: "1"
+forge: github
+runtime: claude
+roles:
+  - triage
+  - coder
+  - review
+  - fix
+  - retro
+  - prioritize
+
+mint_url: https://mint.fullsend.sh
+inference:
+  provider: vertex
+  region: global
+  # Workflows pass vars.VERTEX_PROJECT_ID and vars.VERTEX_WIF_PROVIDER
+  # through the reusable workflow's FULLSEND_GCP_* interface.
+
+tracker:
+  github:
+    allowed_targets:
+      repos:
+        - migtools/crane
+
+# Disable triage auto-code, use medium review findings, and keep prioritize request-only.
+agents:
+  - name: triage
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/triage.yaml#sha256=8b4ac709e08e93d5747fbe949e0728d1b635ed92d49d83b94768c8a8bc68c337
+    enabled: true
+    harness:
+      env:
+        runner:
+          TRIAGE_AUTO_CODE: "off"
+        sandbox:
+          TRIAGE_AUTO_CODE: "off"
+  - name: review
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/review.yaml#sha256=6d6e0941f5ce10edb1b5d104a896c2c871a3ca08259577ae2faf6f8932ff80aa
+    enabled: true
+    # TEMPORARY: withhold APPROVED reviews until Fullsend earns the team's trust.
+    # Risk scores are 1-5; threshold 1 turns every approve verdict into a comment.
+    # Keep REQUEST_CHANGES available for findings that need fixes.
+    harness:
+      env:
+        runner:
+          REVIEW_FINDING_SEVERITY_THRESHOLD: "medium"
+          REVIEW_RISK_ASSESSMENT_ENABLED: "true"
+          REVIEW_RISK_VERDICT_THRESHOLD: "1"
+        sandbox:
+          REVIEW_FINDING_SEVERITY_THRESHOLD: "medium"
+          REVIEW_RISK_ASSESSMENT_ENABLED: "true"
+          REVIEW_RISK_VERDICT_THRESHOLD: "1"
+  - name: code
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/code.yaml#sha256=f6fe03354a78f6e903d5186c8a7a348b5d0d5487cc48bb9633f7d583715ed6db
+    enabled: true
+  - name: fix
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/fix.yaml#sha256=41344ad24d492eaa3824cfca4d13d3799c091fa2271b9c54326efadb12e33785
+    enabled: true
+  - name: retro
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/retro.yaml#sha256=dc97087e1b7a10c0d300fe7bc5aaf9f4697060f98764dbb8fec68d8e97c354e4
+    enabled: true
+  - name: prioritize
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/prioritize.yaml#sha256=faf3a76621b8c49f16e4d5f2ae6059e773decb685c3fc8bb2c603bdc42e9a03b
+    enabled: true
+    # Override built-in routing explicitly so automatic events never select it.
+    trigger: >-
+      event.entity.kind in ["work_item", "change_proposal"]
+      && event.transition.kind == "comment_added"
+      && has(event.transition.comment.command)
+      && event.transition.comment.command == "/fs-prioritize"
+      && event.actor.kind == "human"
+
+allowed_remote_resources:
+  - https://raw.githubusercontent.com/fullsend-ai/fullsend/
+  - https://raw.githubusercontent.com/fullsend-ai/agents/
