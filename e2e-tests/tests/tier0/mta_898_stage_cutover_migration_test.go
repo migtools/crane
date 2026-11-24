@@ -71,6 +71,18 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		srcPodName, err := GetPodNameByLabel(kubectlSrc, srcApp.Namespace, "name="+appName)
 		Expect(err).NotTo(HaveOccurred())
 
+		By("Verify the source app runs the pinned Redis image")
+		// The pin is applied through the k8s-apps-deployer redis role's
+		// redis_image extra var. If the role ignored it, the source would float
+		// on :latest and the RDB-version mismatch with the verifier would
+		// return as an opaque PING timeout, so fail here with a clear message.
+		srcImageOut, err := kubectlSrc.Run("get", "pod", srcPodName, "-n", srcApp.Namespace, "-o",
+			fmt.Sprintf(`jsonpath={.spec.containers[?(@.name=="%s")].image}`, appName))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(strings.TrimSpace(StripKubectlWarnings(srcImageOut))).To(Equal(mta898RedisImage),
+			"source pod %s/%s container %q does not run the pinned image; the k8s-apps-deployer redis role may not honor the redis_image extra var",
+			srcApp.Namespace, srcPodName, appName)
+
 		By("List the PVC created by the source app")
 		pvcs, err := ListPVCs(srcApp.Namespace, "", srcApp.Context)
 		Expect(err).NotTo(HaveOccurred())
