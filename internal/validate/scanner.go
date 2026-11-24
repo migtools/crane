@@ -24,6 +24,7 @@ type manifestMeta struct {
 	APIVersion string `json:"apiVersion"`
 	Kind       string `json:"kind"`
 	Metadata   struct {
+		Name      string `json:"name"`
 		Namespace string `json:"namespace"`
 	} `json:"metadata"`
 }
@@ -102,6 +103,9 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 				key := fmt.Sprintf("%s/%s/%s/%s", gv.Group, gv.Version, meta.Kind, meta.Metadata.Namespace)
 				if entry, ok := index[key]; ok {
 					entry.SourceFiles = append(entry.SourceFiles, path)
+					if !containsName(entry.Names, meta.Metadata.Name) {
+						entry.Names = append(entry.Names, meta.Metadata.Name)
+					}
 					log.Debugf("  Duplicate GVK+ns %s (additional source: %s)", key, path)
 				} else {
 					index[key] = &ManifestEntry{
@@ -110,6 +114,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 						Group:       gv.Group,
 						Version:     gv.Version,
 						Namespace:   meta.Metadata.Namespace,
+						Names:       []string{meta.Metadata.Name},
 						SourceFiles: []string{path},
 					}
 					log.Debugf("  Found %s/%s (namespace: %q) in %s", meta.APIVersion, meta.Kind, meta.Metadata.Namespace, path)
@@ -124,6 +129,7 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 
 	entries := make([]ManifestEntry, 0, len(index))
 	for _, e := range index {
+		sort.Strings(e.Names)
 		entries = append(entries, *e)
 	}
 	sort.Slice(entries, func(i, j int) bool {
@@ -143,3 +149,11 @@ func ScanManifests(opts ScanOptions, log logrus.FieldLogger) ([]ManifestEntry, e
 	return entries, nil
 }
 
+func containsName(names []string, name string) bool {
+	for _, candidate := range names {
+		if candidate == name {
+			return true
+		}
+	}
+	return false
+}
