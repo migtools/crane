@@ -19,6 +19,15 @@ const (
 	mta898RedisPassword    = "PASSWORD"
 	deltaBaselineKey       = "delta-test-baseline"
 	deltaBaselineSizeBytes = 3_000_000
+
+	// mta898RedisImage is used for both the source workload and the
+	// target-side verifier. Both must run the same Redis release: a verifier
+	// older than the source cannot load the source's dump.rdb ("Can't handle
+	// RDB format version"), which broke this test when the two images floated
+	// on independent :latest tags. Bump it deliberately, as a single value.
+	mta898RedisImage = "docker.io/library/redis:8.10.3"
+
+	mta898VerifierPingTimeout = 90 * time.Second
 )
 
 var _ = Describe("Stage and cutover migration flow", func() {
@@ -35,6 +44,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			config.TargetContext,
 		)
 		srcApp := scenario.SrcApp
+		srcApp.ExtraVars = map[string]any{"redis_image": mta898RedisImage}
 		tgtApp := scenario.TgtApp
 		kubectlSrc := scenario.KubectlSrc
 		kubectlTgt := scenario.KubectlTgt
@@ -115,8 +125,8 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		verifierOpts := VerifierPodOptions{
 			Name:       verifierPod,
 			Namespace:  tgtApp.Namespace,
-			Image:      "docker.io/bitnami/redis:latest",
-			Command:    []string{"/opt/bitnami/redis/bin/redis-server", "--dir", "/data", "--requirepass", mta898RedisPassword},
+			Image:      mta898RedisImage,
+			Command:    []string{"redis-server", "--dir", "/data", "--requirepass", mta898RedisPassword},
 			Volumes:    []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
 			Restricted: true,
 		}
@@ -125,7 +135,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 				log.Printf("cleanup verifier pod %q: %v", verifierPod, err)
 			}
 		})
-		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
+		Expect(deployRedisVerifier(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
 		verifyValue, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "verifier", "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(verifyValue).To(Equal(initial))
@@ -168,7 +178,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		waitForTransferCleanup()
 
 		By("Verify no data is missing: both the initial and new keys are present on target")
-		Expect(DeployVerifierPod(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
+		Expect(deployRedisVerifier(kubectlTgt, verifierOpts)).NotTo(HaveOccurred())
 		mytestkeyAfterStage2, err := redisGet(kubectlTgt, tgtApp.Namespace, verifierPod, "verifier", "mytestkey")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(mytestkeyAfterStage2).To(Equal(initial))
@@ -240,6 +250,38 @@ func redisExec(k KubectlRunner, namespace, pod, container string, args ...string
 		return "", err
 	}
 	return strings.TrimSpace(StripKubectlWarnings(out)), nil
+}
+
+// deployRedisVerifier starts the target-side Redis verifier pod and waits
+// until Redis answers an authenticated PING. The pod has no readiness probe,
+// so Kubernetes reports it Ready as soon as the container starts — before
+// Redis has loaded dump.rdb, and before a verifier that cannot load the dump
+// (incompatible RDB version, unreadable file) exits. On failure the error
+// carries the container's status and logs, captured before cleanup deletes
+// the pod.
+func deployRedisVerifier(k KubectlRunner, opts VerifierPodOptions) error {
+	if err := DeployVerifierPod(k, opts); err != nil {
+		return err
+	}
+
+	deadline := time.Now().Add(mta898VerifierPingTimeout)
+	var lastOut, phase string
+	var lastErr error
+	for {
+		lastOut, lastErr = redisExec(k, opts.Namespace, opts.Name, "verifier", "ping")
+		if lastErr == nil && lastOut == "PONG" {
+			return nil
+		}
+		// restartPolicy is Never, so a terminated pod will never answer.
+		phase, _ = k.Run("get", "pod", opts.Name, "-n", opts.Namespace, "-o", "jsonpath={.status.phase}")
+		if phase == "Failed" || phase == "Succeeded" || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	return fmt.Errorf("redis in verifier pod %s/%s (image %s) did not answer PING with PONG (timeout %s, pod phase %q, last output %q, last error: %v)\n%s",
+		opts.Namespace, opts.Name, opts.Image, mta898VerifierPingTimeout, phase, lastOut, lastErr,
+		VerifierPodDiagnostics(k, opts.Namespace, opts.Name))
 }
 
 func redisGet(k KubectlRunner, namespace, pod, container, key string) (string, error) {
