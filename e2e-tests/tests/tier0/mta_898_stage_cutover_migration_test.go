@@ -20,12 +20,25 @@ const (
 	deltaBaselineKey       = "delta-test-baseline"
 	deltaBaselineSizeBytes = 3_000_000
 
-	// mta898RedisImage is used for both the source workload and the
-	// target-side verifier. Both must run the same Redis release: a verifier
+	// mta898RedisVersion is the Redis release run by both the source workload
+	// and the target-side verifier. Both must run the same release: a verifier
 	// older than the source cannot load the source's dump.rdb ("Can't handle
 	// RDB format version"), which broke this test when the two images floated
-	// on independent :latest tags. Bump it deliberately, as a single value.
-	mta898RedisImage = "docker.io/library/redis:8.10.3"
+	// on independent :latest tags. Bump it deliberately, and only to a version
+	// published for both images below.
+	mta898RedisVersion = "8.2.1"
+
+	// mta898SourceRedisImage is rendered into the source Deployment through
+	// the k8s-apps-deployer redis role's redis_image extra var. That role's
+	// manifest is written for the official image.
+	mta898SourceRedisImage = "docker.io/library/redis:" + mta898RedisVersion
+
+	// mta898VerifierRedisImage is Bitnami-based because Bitnami images are
+	// built to run as an arbitrary non-root UID, which the Restricted verifier
+	// pod needs on OpenShift. docker.io/bitnami/redis now publishes only
+	// :latest, so the pinned tag comes from the frozen docker.io/bitnamilegacy
+	// repository (also used by the indirect-mode MinIO setup).
+	mta898VerifierRedisImage = "docker.io/bitnamilegacy/redis:" + mta898RedisVersion
 
 	mta898VerifierPingTimeout = 90 * time.Second
 )
@@ -44,7 +57,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			config.TargetContext,
 		)
 		srcApp := scenario.SrcApp
-		srcApp.ExtraVars = map[string]any{"redis_image": mta898RedisImage}
+		srcApp.ExtraVars = map[string]any{"redis_image": mta898SourceRedisImage}
 		tgtApp := scenario.TgtApp
 		kubectlSrc := scenario.KubectlSrc
 		kubectlTgt := scenario.KubectlTgt
@@ -79,7 +92,7 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		srcImageOut, err := kubectlSrc.Run("get", "pod", srcPodName, "-n", srcApp.Namespace, "-o",
 			fmt.Sprintf(`jsonpath={.spec.containers[?(@.name=="%s")].image}`, appName))
 		Expect(err).NotTo(HaveOccurred())
-		Expect(strings.TrimSpace(StripKubectlWarnings(srcImageOut))).To(Equal(mta898RedisImage),
+		Expect(strings.TrimSpace(StripKubectlWarnings(srcImageOut))).To(Equal(mta898SourceRedisImage),
 			"source pod %s/%s container %q does not run the pinned image; the k8s-apps-deployer redis role may not honor the redis_image extra var",
 			srcApp.Namespace, srcPodName, appName)
 
@@ -137,8 +150,8 @@ var _ = Describe("Stage and cutover migration flow", func() {
 		verifierOpts := VerifierPodOptions{
 			Name:       verifierPod,
 			Namespace:  tgtApp.Namespace,
-			Image:      mta898RedisImage,
-			Command:    []string{"redis-server", "--dir", "/data", "--requirepass", mta898RedisPassword},
+			Image:      mta898VerifierRedisImage,
+			Command:    []string{"/opt/bitnami/redis/bin/redis-server", "--dir", "/data", "--requirepass", mta898RedisPassword},
 			Volumes:    []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
 			Restricted: true,
 		}
