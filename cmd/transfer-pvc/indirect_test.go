@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
@@ -802,5 +803,107 @@ func TestCleanupCloudStorage(t *testing.T) {
 				t.Fatalf("followLog should run after a successful cleanup-pod launch")
 			}
 		})
+	}
+}
+
+func TestEventTime(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	mt := func(d time.Duration) metav1.Time { return metav1.NewTime(base.Add(d)) }
+
+	tests := []struct {
+		name  string
+		event corev1.Event
+		want  time.Time
+	}{
+		{
+			name: "series last-observed wins when both it and LastTimestamp are set",
+			event: corev1.Event{
+				LastTimestamp: mt(1 * time.Minute),
+				Series:        &corev1.EventSeries{LastObservedTime: metav1.NewMicroTime(base.Add(5 * time.Minute))},
+			},
+			want: base.Add(5 * time.Minute),
+		},
+		{
+			name:  "falls back to LastTimestamp for singleton events",
+			event: corev1.Event{LastTimestamp: mt(2 * time.Minute)},
+			want:  base.Add(2 * time.Minute),
+		},
+		{
+			name:  "falls back to EventTime when no last-seen time",
+			event: corev1.Event{EventTime: metav1.NewMicroTime(base.Add(3 * time.Minute))},
+			want:  base.Add(3 * time.Minute),
+		},
+		{
+			name:  "falls back to creation time when nothing else is set",
+			event: corev1.Event{ObjectMeta: metav1.ObjectMeta{CreationTimestamp: mt(4 * time.Minute)}},
+			want:  base.Add(4 * time.Minute),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := eventTime(tt.event); !got.Equal(tt.want) {
+				t.Errorf("eventTime() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWarningEvents(t *testing.T) {
+	const ns = "test-ns"
+	const podName = "rclone-download"
+	podUID := types.UID("current-pod")
+
+	evt := func(name string, obj corev1.ObjectReference, reason string) *corev1.Event {
+		return &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: name, Namespace: ns},
+			Type:           corev1.EventTypeWarning,
+			Reason:         reason,
+			Message:        reason + " happened",
+			InvolvedObject: obj,
+			LastTimestamp:  metav1.Now(),
+		}
+	}
+	podRef := func(uid types.UID) corev1.ObjectReference {
+		return corev1.ObjectReference{Kind: "Pod", Name: podName, Namespace: ns, UID: uid}
+	}
+
+	currentPodEvt := evt("cur", podRef(podUID), "FailedScheduling")
+	stalePodEvt := evt("stale", podRef(types.UID("old-pod")), "StalePodEvent")
+	uidlessPodEvt := evt("uidless", podRef(""), "UIDlessPodEvent")
+	normalEvt := evt("normal", podRef(podUID), "Normal")
+	normalEvt.Type = corev1.EventTypeNormal
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: ns, UID: types.UID("pvc-uid")},
+	}
+	pvcUIDlessEvt := evt("pvc-uidless", corev1.ObjectReference{Kind: "PersistentVolumeClaim", Name: "dest-pvc", Namespace: ns}, "ProvisioningFailed")
+
+	objs := []runtime.Object{currentPodEvt, stalePodEvt, uidlessPodEvt, normalEvt, pvcUIDlessEvt}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(objs...).Build()
+	pvcs := map[string]*corev1.PersistentVolumeClaim{"dest-pvc": pvc}
+
+	got := warningEvents(context.Background(), c, ns, podName, podUID, pvcs, logrus.StandardLogger())
+	joined := strings.Join(got, "\n")
+
+	// Pod event whose UID matches the pod we read is included.
+	if !strings.Contains(joined, "FailedScheduling") {
+		t.Errorf("expected matching-UID pod event, got %q", joined)
+	}
+	// A UID-less pod event cannot be distinguished from a prior pod, so it is dropped.
+	if strings.Contains(joined, "UIDlessPodEvent") {
+		t.Errorf("UID-less pod event should be rejected, got %q", joined)
+	}
+	// An event for a different pod UID (same name) is dropped.
+	if strings.Contains(joined, "StalePodEvent") {
+		t.Errorf("stale pod event should be rejected, got %q", joined)
+	}
+	// Non-Warning events are never reported.
+	if strings.Contains(joined, "Normal") {
+		t.Errorf("Normal event should be excluded, got %q", joined)
+	}
+	// The PVC branch still accepts UID-less events (behavior preserved).
+	if !strings.Contains(joined, "ProvisioningFailed") {
+		t.Errorf("expected UID-less PVC event to be accepted, got %q", joined)
 	}
 }

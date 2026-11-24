@@ -835,9 +835,12 @@ func warningEvents(ctx context.Context, c client.Client, namespace, podName stri
 			return false
 		}
 		if obj.Kind == "Pod" && obj.Name == podName {
-			// Guard against a prior pod of the same name: accept only events
-			// whose UID matches the pod we read (or that record no UID).
-			return obj.UID == "" || obj.UID == podUID
+			// Guard against a prior pod of the same name: require the event's
+			// UID to match the pod we read. A UID-less event cannot be told
+			// apart from one for an earlier pod sharing this name, so reject it.
+			// When the pod read failed (podUID == "") only UID-less events can
+			// match, which is the best we can do without a UID to compare.
+			return obj.UID == podUID
 		}
 		if obj.Kind == "PersistentVolumeClaim" {
 			if pvc, ok := pvcs[obj.Name]; ok {
@@ -876,14 +879,17 @@ func warningEvents(ctx context.Context, c client.Client, namespace, podName stri
 
 // eventTime returns the most representative timestamp for an event, preferring
 // the last-seen time. For a repeated event under the newer Events API that time
-// lives in Series.LastObservedTime, so it is used before falling back to the
-// first-occurrence EventTime or the creation time for singleton events.
+// lives in Series.LastObservedTime, which is checked first because it is the
+// authoritative last-occurrence time and can be more recent than the legacy
+// LastTimestamp when both are populated. It then falls back to LastTimestamp,
+// the first-occurrence EventTime, and finally the creation time for singleton
+// events.
 func eventTime(e corev1.Event) time.Time {
-	if !e.LastTimestamp.IsZero() {
-		return e.LastTimestamp.Time
-	}
 	if e.Series != nil && !e.Series.LastObservedTime.IsZero() {
 		return e.Series.LastObservedTime.Time
+	}
+	if !e.LastTimestamp.IsZero() {
+		return e.LastTimestamp.Time
 	}
 	if !e.EventTime.IsZero() {
 		return e.EventTime.Time
