@@ -1397,8 +1397,12 @@ func getPrefixAndSuffix(r ResourceMatch) (string, string) {
 	return prefix, suffix
 }
 
+// fileHasPrefixAndSuffix matches against the file's base name, since
+// ListFilesRecursivelyAsList returns paths relative to the search dir
+// (e.g. "_cluster/ClusterRole_...yaml" for files in subdirectories).
 func fileHasPrefixAndSuffix(file, prefix, suffix string) bool {
-	return strings.HasPrefix(file, prefix) && strings.HasSuffix(file, suffix)
+	name := filepath.Base(file)
+	return strings.HasPrefix(name, prefix) && strings.HasSuffix(name, suffix)
 }
 
 // AssertResourcesExist checks if all specified resources exist in the directory.
