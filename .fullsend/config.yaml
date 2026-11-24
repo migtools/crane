@@ -22,11 +22,12 @@ tracker:
       repos:
         - migtools/crane
 
-# Disable triage auto-code, use medium review findings, and keep prioritize request-only.
+# Use role-specific models, disable triage auto-code, and keep retro/prioritize request-only.
 agents:
   - name: triage
-    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/triage.yaml#sha256=8b4ac709e08e93d5747fbe949e0728d1b635ed92d49d83b94768c8a8bc68c337
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/ea29de9bb8b1729b04c0597b48a5c7aae62deb71/harness/triage.yaml#sha256=ce30d5eea5c13c7cf33a7feffa9342d33cb918d485d0587c1030e04766884a0d
     enabled: true
+    model: claude-sonnet-4-6
     harness:
       env:
         runner:
@@ -34,8 +35,20 @@ agents:
         sandbox:
           TRIAGE_AUTO_CODE: "off"
   - name: review
-    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/review.yaml#sha256=6d6e0941f5ce10edb1b5d104a896c2c871a3ca08259577ae2faf6f8932ff80aa
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/ea29de9bb8b1729b04c0597b48a5c7aae62deb71/harness/review.yaml#sha256=c31ab2ff59b288ad1b8e3755751549c00c1606649cdb239bbbe5df58ba6f3112
     enabled: true
+    runtime: pi
+    model: anthropic-vertex/claude-sonnet-4-6
+    subagents:
+      correctness: anthropic-vertex/claude-opus-5-5
+      security: anthropic-vertex/claude-opus-5-5
+      challenger: anthropic-vertex/claude-opus-5-5
+      docs-currency: google-vertex/gemini-3.8-flash
+      intent-coherence: google-vertex/gemini-3.8-flash
+      risk-assessment: google-vertex/gemini-3.8-flash
+      style-conventions: google-vertex/gemini-3.8-flash
+      cross-repo-contracts: anthropic-vertex/claude-sonnet-4-6
+      security-triage: anthropic-vertex/claude-haiku-4-5
     # TEMPORARY: withhold APPROVED reviews until Fullsend earns the team's trust.
     # Risk scores are 1-5; threshold 1 turns every approve verdict into a comment.
     # Keep REQUEST_CHANGES available for findings that need fixes.
@@ -50,17 +63,28 @@ agents:
           REVIEW_RISK_ASSESSMENT_ENABLED: "true"
           REVIEW_RISK_VERDICT_THRESHOLD: "1"
   - name: code
-    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/code.yaml#sha256=f6fe03354a78f6e903d5186c8a7a348b5d0d5487cc48bb9633f7d583715ed6db
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/ea29de9bb8b1729b04c0597b48a5c7aae62deb71/harness/code.yaml#sha256=cfa49d4677cc4d6544fcf878e05b0f95620bbb62907289dbc5a22681a7679976
     enabled: true
+    runtime: claude
+    model: opus
   - name: fix
-    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/fix.yaml#sha256=41344ad24d492eaa3824cfca4d13d3799c091fa2271b9c54326efadb12e33785
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/ea29de9bb8b1729b04c0597b48a5c7aae62deb71/harness/fix.yaml#sha256=994955a340553f30e8a0a43bb438af19c765d6986e5d54cee4783f6cc8b40315
     enabled: true
+    model: claude-sonnet-4-6
   - name: retro
-    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/retro.yaml#sha256=dc97087e1b7a10c0d300fe7bc5aaf9f4697060f98764dbb8fec68d8e97c354e4
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/ea29de9bb8b1729b04c0597b48a5c7aae62deb71/harness/retro.yaml#sha256=89e2b4c57ef53b23b8964edbf204f7ab9bda18a6119803eb5d100b0869bfca53
     enabled: true
+    model: claude-sonnet-4-6
+    trigger: >-
+      event.transition.kind == "comment_added"
+      && has(event.transition.comment.command)
+      && event.transition.comment.command == "/fs-retro"
+      && event.actor.kind == "human"
   - name: prioritize
-    source: https://raw.githubusercontent.com/fullsend-ai/agents/41f89529863ea6c26e804a348f56953423d294a3/harness/prioritize.yaml#sha256=faf3a76621b8c49f16e4d5f2ae6059e773decb685c3fc8bb2c603bdc42e9a03b
+    source: https://raw.githubusercontent.com/fullsend-ai/agents/ea29de9bb8b1729b04c0597b48a5c7aae62deb71/harness/prioritize.yaml#sha256=6e17b6be217be53775b54cf19a7d025c458186fd5cd36d8061800f5d5e7e1060
     enabled: true
+    runtime: pi
+    model: google-vertex/gemini-3.8-flash
     # Override built-in routing explicitly so automatic events never select it.
     trigger: >-
       event.entity.kind in ["work_item", "change_proposal"]

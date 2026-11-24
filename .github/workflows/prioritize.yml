@@ -1,4 +1,4 @@
-# Based on Fullsend v0.57.0 internal/scaffold/fullsend-repo/.github/workflows/prioritize.yml.
+# Based on Fullsend v0.57.1 internal/scaffold/fullsend-repo/.github/workflows/prioritize.yml.
 # Local changes restrict execution to migtools/crane, read Vertex identifiers
 # from repository variables, and forward optional runner/telemetry secrets.
 # fullsend-stage: prioritize
@@ -37,7 +37,7 @@ concurrency:
 jobs:
   prioritize:
     if: github.repository == 'migtools/crane' && inputs.source_repo == github.repository
-    uses: fullsend-ai/fullsend/.github/workflows/reusable-prioritize.yml@3381ce46ba810d0f4cefe64905b0e6bc3ce36b48 # v0.57.0
+    uses: fullsend-ai/fullsend/.github/workflows/reusable-prioritize.yml@d11de3ea0dde5aa652110b6716c19e000c426df7 # v0.57.1
     with:
       event_type: ${{ inputs.event_type }}
       source_repo: ${{ inputs.source_repo }}
