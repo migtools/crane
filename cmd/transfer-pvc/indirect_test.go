@@ -669,10 +669,53 @@ func TestStorageClassHintNoStorageClassesDefined(t *testing.T) {
 			Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
 		},
 	}
-	got := storageClassHint(context.Background(), c, pvcs, logrus.StandardLogger())
+	got := storageClassHint(context.Background(), c, pvcs, "dest-pvc", logrus.StandardLogger())
 	if !strings.Contains(got, "no storage classes are defined") {
 		t.Errorf("storageClassHint() = %q, want mention of no storage classes defined", got)
 	}
+}
+
+func TestStorageClassHintRole(t *testing.T) {
+	missing := "nope"
+	existingSC := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "gp2"}}
+	pvc := func(name string) *corev1.PersistentVolumeClaim {
+		return &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-ns"},
+			Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &missing},
+			Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+		}
+	}
+
+	t.Run("destination PVC gets --dest-storage-class guidance and data-safety warning", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(existingSC).Build()
+		pvcs := map[string]*corev1.PersistentVolumeClaim{"dest-pvc": pvc("dest-pvc")}
+		got := storageClassHint(context.Background(), c, pvcs, "dest-pvc", logrus.StandardLogger())
+		if !strings.Contains(got, `destination PVC "dest-pvc"`) {
+			t.Errorf("hint %q should name the destination PVC", got)
+		}
+		if !strings.Contains(got, "--dest-storage-class") {
+			t.Errorf("hint %q should mention --dest-storage-class for the destination PVC", got)
+		}
+		if !strings.Contains(got, "may contain data") {
+			t.Errorf("hint %q should keep the data-safety warning for the destination PVC", got)
+		}
+	})
+
+	t.Run("source PVC is identified without destination-only guidance", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(existingSC).Build()
+		// destPVCName is empty, as on the upload (source-side) pod path.
+		pvcs := map[string]*corev1.PersistentVolumeClaim{"src-pvc": pvc("src-pvc")}
+		got := storageClassHint(context.Background(), c, pvcs, "", logrus.StandardLogger())
+		if !strings.Contains(got, `PVC "src-pvc"`) {
+			t.Errorf("hint %q should name the source PVC", got)
+		}
+		if strings.Contains(got, "--dest-storage-class") {
+			t.Errorf("hint %q must not suggest --dest-storage-class for a source PVC", got)
+		}
+		if strings.Contains(got, "may contain data") {
+			t.Errorf("hint %q must not attach the destination remediation to a source PVC", got)
+		}
+	})
 }
 
 func TestCheckRclonePartialSuccessTerminationDetail(t *testing.T) {

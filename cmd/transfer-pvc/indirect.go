@@ -774,8 +774,13 @@ func podStartupDiagnostics(c client.Client, podName, namespace, containerName st
 		}
 	}
 
-	// A hint when an unbound PVC names a storage class that does not exist.
-	if hint := storageClassHint(ctx, c, pvcObjs, log); hint != "" {
+	// A hint when an unbound PVC names a missing storage class. Only the
+	// destination PVC (if known) can be fixed with --dest-storage-class.
+	destPVCName := ""
+	if destinationPVC != nil {
+		destPVCName = destinationPVC.Name
+	}
+	if hint := storageClassHint(ctx, c, pvcObjs, destPVCName, log); hint != "" {
 		lines = append(lines, "hint: "+hint)
 	}
 
@@ -835,11 +840,9 @@ func warningEvents(ctx context.Context, c client.Client, namespace, podName stri
 			return false
 		}
 		if obj.Kind == "Pod" && obj.Name == podName {
-			// Guard against a prior pod of the same name: require the event's
-			// UID to match the pod we read. A UID-less event cannot be told
-			// apart from one for an earlier pod sharing this name, so reject it.
-			// When the pod read failed (podUID == "") only UID-less events can
-			// match, which is the best we can do without a UID to compare.
+			// Require an exact UID match so events from a prior pod of the same
+			// name (or UID-less events we can't attribute) are rejected. When the
+			// pod read failed, podUID is "" and only UID-less events can match.
 			return obj.UID == podUID
 		}
 		if obj.Kind == "PersistentVolumeClaim" {
@@ -877,13 +880,10 @@ func warningEvents(ctx context.Context, c client.Client, namespace, podName stri
 	return out
 }
 
-// eventTime returns the most representative timestamp for an event, preferring
-// the last-seen time. For a repeated event under the newer Events API that time
-// lives in Series.LastObservedTime, which is checked first because it is the
-// authoritative last-occurrence time and can be more recent than the legacy
-// LastTimestamp when both are populated. It then falls back to LastTimestamp,
-// the first-occurrence EventTime, and finally the creation time for singleton
-// events.
+// eventTime returns an event's last-seen time, preferring Series.LastObservedTime
+// (the authoritative last occurrence for repeated events under the newer API, and
+// potentially newer than LastTimestamp), then falling back to LastTimestamp,
+// EventTime, and finally the creation time.
 func eventTime(e corev1.Event) time.Time {
 	if e.Series != nil && !e.Series.LastObservedTime.IsZero() {
 		return e.Series.LastObservedTime.Time
@@ -897,19 +897,20 @@ func eventTime(e corev1.Event) time.Time {
 	return e.CreationTimestamp.Time
 }
 
-// storageClassHint returns a suggestion when an unbound PVC requests a storage
-// class that does not exist on the cluster, naming the classes that do so the
-// user can re-run with --dest-storage-class. Returns "" when every referenced
-// PVC is bound or names a class that exists.
-func storageClassHint(ctx context.Context, c client.Client, pvcs map[string]*corev1.PersistentVolumeClaim, log *logrus.Logger) string {
-	// Distinct, non-empty classes requested by still-unbound PVCs.
-	requested := map[string]bool{}
-	for _, pvc := range pvcs {
+// storageClassHint suggests fixes when an unbound PVC requests a missing storage
+// class, naming each affected PVC and the classes that do exist. Only the
+// destination PVC (matched by destPVCName) gets --dest-storage-class guidance and
+// the data-safety warning, since that flag cannot fix a source PVC. Returns ""
+// when every referenced PVC is bound or names a class that exists.
+func storageClassHint(ctx context.Context, c client.Client, pvcs map[string]*corev1.PersistentVolumeClaim, destPVCName string, log *logrus.Logger) string {
+	// Non-empty class requested by each still-unbound PVC, keyed by PVC name.
+	requested := map[string]string{}
+	for name, pvc := range pvcs {
 		if pvc.Status.Phase == corev1.ClaimBound {
 			continue
 		}
 		if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
-			requested[*pvc.Spec.StorageClassName] = true
+			requested[name] = *pvc.Spec.StorageClassName
 		}
 	}
 	if len(requested) == 0 {
@@ -931,10 +932,12 @@ func storageClassHint(ctx context.Context, c client.Client, pvcs map[string]*cor
 		}
 		available = append(available, name)
 	}
+	sort.Strings(available)
 
+	// PVCs whose requested class is absent, in a stable order by PVC name.
 	var missing []string
-	for name := range requested {
-		if !existing[name] {
+	for name, class := range requested {
+		if !existing[class] {
 			missing = append(missing, name)
 		}
 	}
@@ -942,27 +945,36 @@ func storageClassHint(ctx context.Context, c client.Client, pvcs map[string]*cor
 		return ""
 	}
 	sort.Strings(missing)
-	sort.Strings(available)
 
-	quoted := make([]string, len(missing))
-	for i, m := range missing {
-		quoted[i] = fmt.Sprintf("%q", m)
+	// A PVC's storage class is immutable, so --dest-storage-class only applies to a
+	// newly created PVC; an existing one must be remediated by hand (and may hold
+	// data, so review before removing).
+	const destRemediation = "; the existing destination PVC's storage class cannot be changed in place, so remediate it by hand (it may contain data — review before removing) before retrying"
+
+	var hints []string
+	for _, name := range missing {
+		class := fmt.Sprintf("%q", requested[name])
+		if name == destPVCName {
+			if len(available) == 0 {
+				hints = append(hints, fmt.Sprintf("destination PVC %q requests storage class %s which does not exist, and no storage classes are defined on the destination cluster%s",
+					name, class, destRemediation))
+			} else {
+				hints = append(hints, fmt.Sprintf("destination PVC %q requests storage class %s which does not exist; re-run with --dest-storage-class set to one of: %s%s",
+					name, class, strings.Join(available, ", "), destRemediation))
+			}
+			continue
+		}
+		// Non-destination (e.g. source) PVC: identify it without implying
+		// --dest-storage-class can fix it.
+		if len(available) == 0 {
+			hints = append(hints, fmt.Sprintf("PVC %q requests storage class %s which does not exist, and no storage classes are defined on the cluster",
+				name, class))
+		} else {
+			hints = append(hints, fmt.Sprintf("PVC %q requests storage class %s which does not exist; the cluster defines: %s",
+				name, class, strings.Join(available, ", ")))
+		}
 	}
-	label := "storage class"
-	if len(missing) > 1 {
-		label = "storage classes"
-	}
-	// A PVC's storage class is immutable, so --dest-storage-class only affects a
-	// newly created PVC. If the destination PVC already exists with the wrong
-	// class it must be remediated by hand (crane will not delete it) before the
-	// flag takes effect — and it may hold data, so review it before removing it.
-	remediation := "; the existing destination PVC's storage class cannot be changed in place, so remediate it by hand (it may contain data — review before removing) before retrying"
-	if len(available) == 0 {
-		return fmt.Sprintf("the destination PVC requests %s %s which does not exist, and no storage classes are defined on the destination cluster%s",
-			label, strings.Join(quoted, ", "), remediation)
-	}
-	return fmt.Sprintf("the destination PVC requests %s %s which does not exist; re-run with --dest-storage-class set to one of: %s%s",
-		label, strings.Join(quoted, ", "), strings.Join(available, ", "), remediation)
+	return strings.Join(hints, "; ")
 }
 
 // checkRclonePartialSuccess examines rclone output when the pod exits non-zero.
