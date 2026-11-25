@@ -192,6 +192,12 @@ jobs:
           src_user: "dev"
           tgt_user: "dev"
 
+      - name: Setup BuildConfig CRD and Shipwright
+        uses: ./.github/actions/setup-shipwright-buildconfig
+        with:
+          source_context: src
+          target_context: tgt
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -226,6 +232,26 @@ jobs:
       - name: Build OpenShift plugin
         id: openshift_plugin
         uses: ./.github/actions/build-openshift-plugin
+
+      - name: Build BuildConfig to Shipwright plugin
+        env:
+          PLUGIN_DIR: ${{ steps.openshift_plugin.outputs.plugin_dir }}
+        run: |
+          set -euo pipefail
+          echo "Cloning BuildConfig to Shipwright plugin repository..."
+          git clone https://github.com/migtools/crane-plugin-buildconfig-to-builds.git
+          cd crane-plugin-buildconfig-to-builds
+          echo "Building plugin..."
+          GOTOOLCHAIN=auto go build -o crane-plugin-buildconfig-to-builds .
+          chmod +x crane-plugin-buildconfig-to-builds
+          echo "Plugin built successfully"
+
+          # Install next to the OpenShift plugin: --plugin-dir takes a single
+          # directory, so both plugins have to share one.
+          cp crane-plugin-buildconfig-to-builds "$PLUGIN_DIR/"
+          chmod +x "$PLUGIN_DIR/crane-plugin-buildconfig-to-builds"
+          echo "Plugin available at: $PLUGIN_DIR"
+          ls -lh "$PLUGIN_DIR"
 
       - name: Run touched crane e2e tests
         env:
