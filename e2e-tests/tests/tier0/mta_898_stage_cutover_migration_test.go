@@ -268,49 +268,13 @@ var _ = Describe("Stage and cutover migration flow", func() {
 	})
 })
 
-// transientExecErrs are substrings of kubectl-exec failures that originate in
-// the container runtime or the API-server→kubelet stream transport rather than
-// the command itself. They clear on retry (e.g. a containerd exec-startup race
-// right after a pod reports Ready), so redisExec retries a few times before
-// giving up instead of failing the whole migration test on a one-off hiccup.
-var transientExecErrs = []string{
-	"procReady not received",       // containerd/runc exec-startup race
-	"OCI runtime exec failed",      // generic runc exec-startup failure
-	"error dialing backend",        // apiserver→kubelet transport hiccup
-	"unable to upgrade connection", // spdy/websocket upgrade failure
-	"Unknown stream id",            // websocket stream desync
-	"container not found",          // exec raced a container (re)start
-}
-
-func isTransientExecError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	for _, s := range transientExecErrs {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
-}
-
 func redisExec(k KubectlRunner, namespace, pod, container string, args ...string) (string, error) {
 	cmdArgs := append([]string{"exec", pod, "-n", namespace, "-c", container, "--", "redis-cli", "-a", mta898RedisPassword}, args...)
-	var out string
-	var err error
-	for attempt := 1; attempt <= 5; attempt++ {
-		out, err = k.Run(cmdArgs...)
-		if err == nil {
-			return strings.TrimSpace(StripKubectlWarnings(out)), nil
-		}
-		if !isTransientExecError(err) {
-			return "", err
-		}
-		log.Printf("redis exec into %s/%s (attempt %d/5) hit a transient runtime error, retrying: %v", namespace, pod, attempt, err)
-		time.Sleep(2 * time.Second)
+	out, err := k.Run(cmdArgs...)
+	if err != nil {
+		return "", err
 	}
-	return "", err
+	return strings.TrimSpace(StripKubectlWarnings(out)), nil
 }
 
 // deployRedisVerifier starts the target-side Redis verifier pod and waits
