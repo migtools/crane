@@ -949,4 +949,18 @@ func TestWarningEvents(t *testing.T) {
 	if !strings.Contains(joined, "ProvisioningFailed") {
 		t.Errorf("expected UID-less PVC event to be accepted, got %q", joined)
 	}
+
+	// When the pod read failed, podUID is "" and no pod event can be
+	// attributed — including UID-less events that might belong to a prior pod
+	// of the same name. PVC events are still reported.
+	gotNoUID := warningEvents(context.Background(), c, ns, podName, "", pvcs, logrus.StandardLogger())
+	joinedNoUID := strings.Join(gotNoUID, "\n")
+	for _, reason := range []string{"FailedScheduling", "UIDlessPodEvent", "StalePodEvent"} {
+		if strings.Contains(joinedNoUID, reason) {
+			t.Errorf("with empty podUID, pod event %q should be rejected, got %q", reason, joinedNoUID)
+		}
+	}
+	if !strings.Contains(joinedNoUID, "ProvisioningFailed") {
+		t.Errorf("with empty podUID, UID-less PVC event should still be accepted, got %q", joinedNoUID)
+	}
 }

@@ -840,10 +840,11 @@ func warningEvents(ctx context.Context, c client.Client, namespace, podName stri
 			return false
 		}
 		if obj.Kind == "Pod" && obj.Name == podName {
-			// Require an exact UID match so events from a prior pod of the same
-			// name (or UID-less events we can't attribute) are rejected. When the
-			// pod read failed, podUID is "" and only UID-less events can match.
-			return obj.UID == podUID
+			// Require a known pod UID and an exact match so events from a prior
+			// pod of the same name (or UID-less events we can't attribute) are
+			// rejected. When the pod read failed, podUID is "" and no pod event
+			// can be attributed, so none are accepted.
+			return podUID != "" && obj.UID == podUID
 		}
 		if obj.Kind == "PersistentVolumeClaim" {
 			if pvc, ok := pvcs[obj.Name]; ok {
