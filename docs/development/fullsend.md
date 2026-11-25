@@ -114,8 +114,8 @@ The `skip-triage` label suppresses automatic triage. An authorized human
 
 ## Retrospectives and prioritization
 
-Retro analyzes completed work. It can run automatically when a same-repository
-PR is closed or merged, or on request with `/fs-retro`.
+Retro analyzes completed work only on request with `/fs-retro`. Closing or
+merging a PR does not start it automatically.
 
 Prioritize runs only on request. Comment `/fs-prioritize` on an issue to get
 Reach, Impact, Confidence, and Effort scores with written reasoning. It posts
