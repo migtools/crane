@@ -323,9 +323,35 @@ metadata:
 		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
 	if _, err := k.Run("wait", "--for=condition=Ready", "pod/"+opts.Name, "-n", opts.Namespace, "--timeout=120s"); err != nil {
-		return fmt.Errorf("wait for verifier pod %s/%s to become ready: %w", opts.Namespace, opts.Name, err)
+		return fmt.Errorf("wait for verifier pod %s/%s to become ready: %w\n%s", opts.Namespace, opts.Name, err, VerifierPodDiagnostics(k, opts.Namespace, opts.Name))
 	}
 	return nil
+}
+
+// VerifierPodDiagnostics returns the phase, container statuses (including
+// termination reason and exit code) and recent logs of a pod created by
+// DeployVerifierPod, for inclusion in error messages. Call it before
+// DeleteVerifierPod: once the pod is deleted, the evidence of why it failed
+// is gone. Collection errors are reported inline rather than returned, so
+// gathering diagnostics never masks the original failure.
+func VerifierPodDiagnostics(k KubectlRunner, namespace, name string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "diagnostics for verifier pod %s/%s:\n", namespace, name)
+
+	status, err := k.Run("get", "pod", name, "-n", namespace, "-o", "jsonpath=phase={.status.phase} containerStatuses={.status.containerStatuses}")
+	if err != nil {
+		fmt.Fprintf(&b, "  status: unavailable: %v\n", err)
+	} else {
+		fmt.Fprintf(&b, "  status: %s\n", status)
+	}
+
+	logs, err := k.Run("logs", name, "-n", namespace, "-c", "verifier", "--tail=50")
+	if err != nil {
+		fmt.Fprintf(&b, "  logs: unavailable: %v\n", err)
+	} else {
+		fmt.Fprintf(&b, "  logs (last 50 lines):\n%s\n", logs)
+	}
+	return b.String()
 }
 
 // DeleteVerifierPod deletes a pod created by DeployVerifierPod. Safe to call
