@@ -5,45 +5,58 @@ configuration, GitHub App access, inference, and workflow updates. For agent
 commands and the GitHub development workflow, see [Using Fullsend](fullsend.md).
 
 Fullsend provides triage, review, code, fix, retro, and prioritize agents for
-`migtools/crane`. The workflows use Fullsend v0.57.0, commit
-`3381ce46ba810d0f4cefe64905b0e6bc3ce36b48`. Agent sources in
-`.fullsend/config.yaml` reference `fullsend-ai/agents` v0.57.0, commit
-`41f89529863ea6c26e804a348f56953423d294a3`, with SHA-256 integrity checks.
+`migtools/crane`. The workflows pin Fullsend v0.57.1, commit
+`d11de3ea0dde5aa652110b6716c19e000c426df7`. Agent sources in
+`.fullsend/config.yaml` reference `fullsend-ai/agents` v0.57.1, commit
+`ea29de9bb8b1729b04c0597b48a5c7aae62deb71`, with SHA-256 integrity checks.
 
-All six agents use the Claude Code runtime on Google Vertex AI in `global`,
-billed to the project in `VERTEX_PROJECT_ID`. Model selection is inherited
-from upstream harnesses and personas, with no local model or tier overrides.
+The configuration uses role-specific models on Google Vertex AI in `global`,
+billed to the project in `VERTEX_PROJECT_ID`. Changes take effect after merge
+into the branch used by the trusted workflow. See [current status](#current-status)
+for the distinction between earlier validated runs and this configuration.
 
-## Upstream model selection
+## Runtime and model selection
 
-All six v0.57.0 fleet harnesses select `opus` for the parent agent. Fullsend
-v0.57.0 resolves that alias to `claude-opus-5-5`, with
-`claude-opus-4-6` as its model-not-served fallback.
+| Agent | Runtime | Parent model |
+| --- | --- | --- |
+| triage | Claude Code | Sonnet 4.6, `claude-sonnet-4-6` |
+| code | Claude Code | `opus`, resolving to Opus 5.5 with an Opus 4.6 model-not-served fallback |
+| fix | Claude Code | Sonnet 4.6, `claude-sonnet-4-6` |
+| retro | Claude Code | Sonnet 4.6, `claude-sonnet-4-6` |
+| review | pi | `anthropic-vertex/claude-sonnet-4-6` |
+| prioritize | pi | `google-vertex/gemini-3.8-flash` |
 
-Review personas select different tiers. Correctness, security, and challenger
-use Opus; cross-repository contracts, documentation, intent, risk, style, and
-user experience use Sonnet; security triage uses Haiku.
+Review has explicit `agents[].subagents` overrides:
 
-Claude Code resolves those native subagent aliases separately from Fullsend's
-parent aliases. The pinned fleet's `env/gcp-vertex.env` explicitly sets the
-native Sonnet tier to `claude-sonnet-4-6`. Native Opus and Haiku retain the
-Claude Code provider defaults. The documented Vertex defaults are Opus 5.5
-and Haiku 4.5.
-
-The following models are enabled in the
-[project's Model Garden](https://console.cloud.google.com/vertex-ai/model-garden?project=mta-ops-fs-agents),
-in addition to Sonnet 5.5:
-
-| Model | Purpose |
+| Personas | Model |
 | --- | --- |
-| Claude Opus 5.5, `claude-opus-5-5` | All parent agents and native Opus personas |
-| Claude Sonnet 4.6, `claude-sonnet-4-6` | Native Sonnet personas, pinned by the fleet environment |
-| Claude Haiku 4.5, `claude-haiku-4-5` | Native Haiku personas |
+| correctness, security, challenger | `anthropic-vertex/claude-opus-5-5` |
+| docs-currency, intent-coherence, risk-assessment, style-conventions | `google-vertex/gemini-3.8-flash` |
+| cross-repo-contracts | `anthropic-vertex/claude-sonnet-4-6` |
+| security-triage | `anthropic-vertex/claude-haiku-4-5` |
 
-Opus 4.6 is optional if the parent model-not-served fallback is needed.
-Enabling Haiku 5.5 alone does not provide access to the native Haiku 4.5
-default. Enable model access for the inference project and use models
-available at the `global` endpoint.
+Other personas retain their frontmatter models. For example, user-experience
+uses the `sonnet` alias when selected. Fullsend v0.57.1 resolves `sonnet` to
+Sonnet 5.5, with a Sonnet 4.6 model-not-served fallback. The fleet environment
+also pins Claude Code's native Sonnet tier to Sonnet 5.5. This can affect
+native children of Claude Code agents; it does not replace the explicit
+Sonnet 4.6 parent and pi-persona settings above.
+
+Version 0.57.1 adds per-persona `agents[].subagents` routing for Claude Code
+as well. Its supported routes differ from pi; the configured mixed
+Claude/Gemini review remains on pi. Pi children default to medium thinking,
+while the parent agents inherit the fleet's high effort setting.
+
+The new fleet harnesses pin updated sandbox images containing pi 1.6.0 and
+Claude Code 2.1.306. Fullsend still pins OpenShell 0.1.4.
+
+Opus 5.5, Sonnet 4.6, Haiku 4.5, and Sonnet 5.5 have passed standalone Vertex
+WIF inference checks in this project. Check their access in the
+[project's Model Garden](https://console.cloud.google.com/vertex-ai/model-garden?project=mta-ops-fs-agents)
+when changing models. Gemini 3.8 Flash access and the mixed pi review still
+need live validation. The existing smoke-test workflow invokes Claude models;
+it does not validate Gemini. Explicit model IDs do not have an implicit
+fallback. Opus 4.6 is optional for the code parent's alias fallback.
 
 ## GitHub identity and inference
 
@@ -61,7 +74,7 @@ tokens. These Apps must be installed in `migtools` with access to `crane`:
 Inference uses the central ITPC WIF provider from `VERTEX_WIF_PROVIDER` and
 a repository-scoped `roles/aiplatform.user` binding in `VERTEX_PROJECT_ID`.
 The mint supplies GitHub identity; it does not supply model inference.
-Fullsend and Claude Code derive the Vertex request URL from the project,
+Fullsend and the selected runtime derive the Vertex request URL from the project,
 location, and model. The project and provider are supplied by the workflows,
 with no fixed project ID or provider URL in `.fullsend/config.yaml`.
 
@@ -107,11 +120,13 @@ authorization is separate from the GitHub App permissions used by agents.
 
 ## Agent configuration and routing
 
-All six agents are enabled. Prioritize is request-only, with an explicit
-`agents[].trigger` matching a human `/fs-prioritize` command. The other agents
-retain upstream routing and effort settings, with triage-to-code promotion
-disabled as described below. Configuration changes take effect when merged
-into the branch used by the trusted workflow.
+All six agents are enabled. Retro and prioritize are request-only, with
+explicit `agents[].trigger` expressions matching human `/fs-retro` and
+`/fs-prioritize` commands respectively. Retro does not run automatically when
+a PR closes or merges. The other agents retain upstream routing and effort
+settings, with triage-to-code promotion disabled as described below.
+Configuration changes take effect when merged into the branch used by the
+trusted workflow.
 
 Review publishes findings at medium severity and above. The
 `REVIEW_FINDING_SEVERITY_THRESHOLD` is set to `medium` in both runner and
@@ -153,7 +168,7 @@ request overrides it. Code and fix can create and update PR branches.
 `CODE_AUTO_MERGE` retains the upstream default of disabled, and normal branch
 rules govern merging. Issue creation targets are restricted to `migtools/crane`.
 
-The v0.57.0 shim uses `pull_request`, not `pull_request_target`. It forwards
+The v0.57.1 shim uses `pull_request`, not `pull_request_target`. It forwards
 issue, issue-comment, same-repository PR, and PR-review events to the pinned
 upstream dispatcher. Fork PRs and Dependabot PRs do not receive automatic
 review or retro. An authorized `/fs-review` comment requests a review of a
@@ -177,13 +192,20 @@ changes, and there is no repository-local scheduled prioritization.
 | --- | --- |
 | GitHub Actions OIDC authentication through ITPC WIF | Working |
 | Vertex inference in `global` with Opus 5.5, Sonnet 4.6, Haiku 4.5, and Sonnet 5.5 | Working |
-| Fullsend GitHub App access and token minting | Not yet verified |
-| End-to-end Fullsend agent execution and native subagent model selection | Not yet verified |
+| Earlier v0.57.0 Claude triage, code, review, and GitHub token minting | Verified in November 23 agent runs |
+| v0.57.1 role-specific configuration, including pi review and prioritize | Requires validation after deployment |
+| Gemini 3.8 Flash inference and mixed-model pi delegation | Not yet verified |
 | Credential refresh during long-running agent sessions | Not yet verified |
 
+The earlier [review run](https://github.com/migtools/crane/actions/runs/45211618845)
+and [code run](https://github.com/migtools/crane/actions/runs/45210107091)
+used the previous Claude-only configuration. They do not validate the new
+runtime and model assignments.
+
 Use the [Vertex WIF smoke test](vertex-wif-smoke-test.md) to check model
-availability and cloud authentication. Fullsend execution, delegation, and
-credential refresh require agent runs.
+availability for Claude and cloud authentication. Fullsend execution,
+Gemini access, mixed-model delegation, and credential refresh require
+appropriate live checks.
 
 ## Operations and updates
 
@@ -199,7 +221,14 @@ model aliases, persona frontmatter, and the fleet Vertex environment for changes
 to the required model access, then run lint and actionlint.
 The inherited fleet harnesses already pin their sandbox images by digest.
 
-Check configuration changes from the repository root with Fullsend v0.57.0
+The v0.57.1 event shim, manual prioritize caller, and their reusable workflow
+interfaces are unchanged from v0.57.0. This upgrade changes their commit pins
+and all six harness URLs and integrity hashes. The new harnesses supply the
+updated sandbox image digests; there is no separate image pin in Crane.
+The existing GitHub Apps, repository variables, and WIF provider remain the
+installation inputs.
+
+Check configuration changes from the repository root with Fullsend v0.57.1
 and actionlint:
 
 ```bash
@@ -212,8 +241,8 @@ Lint resolves the six pinned harnesses and their dependencies. It may report
 deprecations from upstream harnesses; inspect their origins before changing
 repository configuration.
 
-Release notes: [Fullsend v0.57.0](https://github.com/fullsend-ai/fullsend/releases/tag/v0.57.0)
-and [fleet agents v0.57.0](https://github.com/fullsend-ai/agents/releases/tag/v0.57.0).
+Release notes: [Fullsend v0.57.1](https://github.com/fullsend-ai/fullsend/releases/tag/v0.57.1)
+and [fleet agents v0.57.1](https://github.com/fullsend-ai/agents/releases/tag/v0.57.1).
 
 For deployment plans, test results, and pilot findings, see the
 [Fullsend deployment and testing notes](https://github.com/aufi/move-crane/tree/main/fullsend-ai).
