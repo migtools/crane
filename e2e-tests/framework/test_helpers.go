@@ -287,7 +287,7 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 		return fmt.Errorf("marshal verifier pod command: %w", err)
 	}
 
-	securityBlock := ""
+	securityBlock, podSecurityBlock := "", ""
 	if opts.Restricted {
 		// Vanilla k8s needs an explicit non-root runAsUser for root-based images
 		// (e.g. alpine); OpenShift's restricted SCC rejects out-of-range UIDs, so
@@ -295,6 +295,10 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 		runAsUserLine := ""
 		if !k.IsOpenShift() {
 			runAsUserLine = "      runAsUser: 1000\n"
+			// fsGroup makes the kubelet give the non-root user group ownership of
+			// mounted PVCs; without it UID 1000 can't read data the source app
+			// wrote as a different UID. OpenShift's SCC assigns an fsGroup itself.
+			podSecurityBlock = "  securityContext:\n    fsGroup: 1000\n"
 		}
 		securityBlock = fmt.Sprintf(`    securityContext:
       runAsNonRoot: true
@@ -313,12 +317,12 @@ metadata:
   name: %s
   namespace: %s
 %sspec:
-  restartPolicy: Never
+%s  restartPolicy: Never
   containers:
   - name: verifier
     image: %s
     command: %s
-%s%s%s`, opts.Name, opts.Namespace, labelsBlock, opts.Image, string(commandJSON), securityBlock, mountsBlock, volumesBlock)
+%s%s%s`, opts.Name, opts.Namespace, labelsBlock, podSecurityBlock, opts.Image, string(commandJSON), securityBlock, mountsBlock, volumesBlock)
 
 	if err := k.ApplyYAMLSpec(manifest, opts.Namespace); err != nil {
 		return fmt.Errorf("apply verifier pod %s/%s: %w", opts.Namespace, opts.Name, err)
