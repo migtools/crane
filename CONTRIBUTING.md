@@ -10,24 +10,53 @@ Thank you for your interest in contributing to Crane! This guide will help you g
    cd crane
    ```
 
-2. Build the binary:
-   ```bash
-   go build -o crane main.go
-   ```
+2. Run the cluster-free checks from the repository root:
+    ```bash
+    make build
+    make test-unit
+    make test-e2e-compile
+    make fmt-check
+    ```
 
-3. Run tests:
-   ```bash
-   go test ./...
-   ```
+3. Run focused live E2E tests when their cluster and tool prerequisites are
+   available. See the [E2E guide](e2e-tests/README.md).
 
 4. Submit a pull request
 
 ## Prerequisites
 
 - **Go** 1.25+ (see `go.mod` for exact version)
+- **GNU Make, Bash 4.4+, and Git** for the shared verification commands
 - **kubectl** (for deploying output to clusters and for `crane validate` with live cluster mode)
 - **Docker** (optional, for container-based testing)
-- Access to a Kubernetes cluster (for E2E testing)
+- **k8sdeploy** and source/target Kubernetes contexts for live E2E testing
+
+The build, unit tests, E2E compilation, and format check do not require a
+kubeconfig, running clusters, or `k8sdeploy`. Go may download module dependencies.
+
+## Verification commands
+
+| Command | Purpose |
+| --- | --- |
+| `make build` | Build all packages and write the `./crane` binary |
+| `make test-unit` | Test all packages except the live `e2e-tests/tests/` subtree, including E2E config, framework, and utility packages |
+| `make test-e2e-compile` | Compile every E2E suite without running tests or benchmarks |
+| `make fmt-check` | Check tracked Go files without rewriting them |
+
+An unqualified `go test ./...` also runs the live Ginkgo suites. Use
+`make test-unit` for cluster-free checks. Run a specific unit package directly
+when useful, for example `go test ./internal/transform/...`.
+
+The targets accept `GO` to select the Go executable and `GO_TEST_ARGS` for
+test flags. For the same unit coverage settings as CI, use:
+
+```bash
+make test-unit GO_TEST_ARGS=-v COVERAGE_PROFILE=coverage.out COVERAGE_MODE=atomic
+go tool cover -func=coverage.out
+```
+
+`make fmt-check` can report pre-existing formatting differences. Format the
+files changed by your task and report unrelated differences separately.
 
 ## Development Setup
 
@@ -59,17 +88,22 @@ fmt.Errorf("expected *unstructured.Unstructured but got %T", u)
 - Always check type assertions and provide informative error messages
 - Include the actual resource type and API resource name in errors
 
-## Commit and PR Title Conventions
+## Commit and PR title conventions
 
-Use verb-first titles that describe what the change does:
+Commit messages use Conventional Commits, such as `fix: handle empty namespace`
+or `docs: clarify cluster-free checks`.
 
-- `Fix` for bug fixes (e.g., `Fix transform error on empty namespace`)
-- `Add` for new features (e.g., `Add crane validate command`)
-- `Update` for enhancements (e.g., `Update crane-lib with resources whiteout`)
-- `Refactor` for code restructuring
-- `Remove` for removals
+PR titles use the aliases accepted by the
+[Konveyor versioning documentation](https://github.com/konveyor/release-tools/blob/main/VERSIONING.md):
 
-Include issue references where applicable: `Fix transform error on empty namespace (#197)`
+- `:bug:` for bug fixes, for example `:bug: Fix empty namespace handling`
+- `:book:` for documentation
+- `:seedling:` for infrastructure and other changes
+- `:test_tube:` for integration and E2E tests
+
+The validator also accepts `:warning:`, `:sparkles:`, and `:ghost:`. A
+Conventional Commit prefix alone does not satisfy the PR title check.
+Include issue references where applicable.
 
 ## Pull Request Guidelines
 
@@ -78,12 +112,14 @@ Include issue references where applicable: `Fix transform error on empty namespa
 **Body must include:**
 - **Summary** — what changed and why
 - **Impact** — severity, affected components
-- **Test plan** — how to verify
+- **Test plan** - exact commands run and whether focused live E2E execution ran
 
 **Before submitting:**
 
-- [ ] Code compiles: `go build ./...`
-- [ ] Tests pass: `go test ./...`
+- [ ] Code compiles: `make build`
+- [ ] Cluster-free unit tests pass: `make test-unit`
+- [ ] E2E packages compile: `make test-e2e-compile`
+- [ ] Formatting checked: `make fmt-check`, with unrelated existing differences reported
 - [ ] Error messages are informative
 - [ ] No unnecessary refactoring in the same PR
 - [ ] Backward compatible (or documented breaking change)
@@ -94,7 +130,7 @@ Include issue references where applicable: `Fix transform error on empty namespa
 - Bug fixes should include regression tests when possible
 - Use table-driven tests for multiple scenarios
 - Test files: `*_test.go` in the same package
-- E2E tests: `e2e-tests/`
+- E2E tests: `e2e-tests/`; compile with `make test-e2e-compile` and execute with the required cluster setup
 
 See [Testing Guide](docs/development/testing.md) for detailed testing documentation.
 

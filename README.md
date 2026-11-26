@@ -15,6 +15,20 @@ Crane is a migration tool under the [Konveyor](https://www.konveyor.io/) communi
 | release-0.10 | [![Go](https://github.com/migtools/crane/actions/workflows/go.yml/badge.svg?branch=release-0.10&event=push)](https://github.com/migtools/crane/actions/workflows/go.yml?query=branch%3Arelease-0.10+event%3Apush) | [![Tier0 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml/badge.svg?branch=release-0.10&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml?query=branch%3Arelease-0.10+event%3Apush)<br>[![Tier1 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml/badge.svg?branch=release-0.10&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml?query=branch%3Arelease-0.10+event%3Apush) | [![Tier0 Nightly](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier0.yml/badge.svg?event=schedule)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier0.yml)<br>[![Tier1 Nightly](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier1.yml/badge.svg?event=schedule)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.10-e2e-tier1.yml) |
 | release-0.11 | [![Go](https://github.com/migtools/crane/actions/workflows/go.yml/badge.svg?branch=release-0.11&event=push)](https://github.com/migtools/crane/actions/workflows/go.yml?query=branch%3Arelease-0.11+event%3Apush) | [![Tier0 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml/badge.svg?branch=release-0.11&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier0-tests.yml?query=branch%3Arelease-0.11+event%3Apush)<br>[![Tier1 CI](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml/badge.svg?branch=release-0.11&event=push)](https://github.com/migtools/crane/actions/workflows/run-e2e-tier1-tests.yml?query=branch%3Arelease-0.11+event%3Apush) | [![Tier0 Nightly](https://github.com/migtools/crane/actions/workflows/nightly-release-0.11-e2e-tier0.yml/badge.svg?event=schedule)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.11-e2e-tier0.yml)<br>[![Tier1 Nightly](https://github.com/migtools/crane/actions/workflows/nightly-release-0.11-e2e-tier1.yml/badge.svg?event=schedule)](https://github.com/migtools/crane/actions/workflows/nightly-release-0.11-e2e-tier1.yml) |
 
+Run the shared cluster-free checks from the repository root:
+
+```bash
+make build
+make test-unit
+make test-e2e-compile
+make fmt-check
+```
+
+`make test-unit` includes E2E framework and utility unit tests while excluding
+live suites. `make test-e2e-compile` compiles those suites without running
+them. See the [testing guide](docs/development/testing.md) for live E2E setup
+and coverage options.
+
 ## YouTube Demo
 [![Alt text](https://img.youtube.com/vi/PoSivlgVLf8/0.jpg)](https://www.youtube.com/watch?v=PoSivlgVLf8)
 
@@ -58,7 +72,7 @@ How does it work? Crane works by:
 
   * Obtain the `crane` binary from either:
     * Download a prebuilt binary from the links in the `Downloads` section above.
-    * Clone this repo and build the crane binary via: `go build -o crane main.go`
+    * Clone this repo and build the crane binary via: `make build`
   * Install the `crane` binary in your `$PATH`
 
 ## Usage Example
@@ -126,6 +140,7 @@ For comprehensive documentation, see the [docs/](docs/README.md) directory:
 - [Installation](docs/installation.md)
 - [Command Reference](docs/README.md#command-reference) — export, transform, apply, validate, transfer-pvc
 - [Contributing](CONTRIBUTING.md) | [Development Guide](docs/development/README.md)
+- [Crane E2E agent skill](docs/development/crane-e2e-skill.md)
 
 ## Automated Documentation Review (`code-to-docs`)
 

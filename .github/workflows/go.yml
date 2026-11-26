@@ -16,15 +16,11 @@ jobs:
           path: main
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Build all packages
+      - name: Build packages and Crane binary
+        working-directory: main
         env:
           GOPROXY: "https://proxy.golang.org"
-        run: cd main && go build ./...
-
-      - name: Build crane binary
-        env:
-          GOPROXY: "https://proxy.golang.org"
-        run: cd main && go build -o crane .
+        run: make build
 
       - name: Upload crane binary
         uses: actions/upload-artifact@v4
@@ -33,14 +29,13 @@ jobs:
           path: main/crane
           retention-days: 30
 
-      # E2E lives under e2e-tests/tests and requires k8sdeploy + clusters; CI runs unit tests only.
+      # Live E2E suites require clusters; test-unit still covers their helpers.
       - name: Unit tests with coverage
+        working-directory: main
         env:
           GOPROXY: "https://proxy.golang.org"
         run: |
-          cd main
-          PKGS="$(go list ./... | grep -Ev '/e2e-tests/'; go list ./e2e-tests/utils)"
-          go test -v -coverprofile=coverage.out -covermode=atomic $PKGS
+          make test-unit GO_TEST_ARGS=-v COVERAGE_PROFILE=coverage.out COVERAGE_MODE=atomic
           echo "## Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
@@ -52,6 +47,12 @@ jobs:
           go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compile E2E suites without running tests
+        working-directory: main
+        env:
+          GOPROXY: "https://proxy.golang.org"
+        run: make test-e2e-compile
 
       - name: Save PR number
         if: github.event_name == 'pull_request'
