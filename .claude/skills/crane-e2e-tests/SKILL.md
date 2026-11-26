@@ -27,19 +27,51 @@ tier bootstrap does not update the others.
 
 ## Choose the source and target boundary
 
-- When both clusters support the required APIs, use `NewMigrationScenario`,
-  `PrepareSourceApp`, `RunCranePipelineWithChecks`, and the appropriate target
-  apply helper from `pipeline.go`.
-- For an OpenShift-only source API unavailable on CI minikube, create a realistic
-  synthetic export below `paths.ExportDir`. Run `CraneRunner.Transform` and
-  `CraneRunner.Apply`, inspect `output.yaml`, and apply the result to the target.
-  This tests conversion and target acceptance without a live OpenShift source.
+Before writing or changing a scenario, identify the supported source-to-target
+pairs it should cover: Kubernetes to Kubernetes, Kubernetes to OpenShift,
+OpenShift to Kubernetes, or OpenShift to OpenShift. Check the prerequisites on
+each side independently:
+
+- Check the source APIs needed for export and the target APIs and admission
+  policies needed to run the workload. Account for OpenShift SCC and namespace
+  UID/GID allocation where they affect admission.
+- Select a reachable transfer endpoint for the target platform. Use a Route
+  only where the target supports it. For nginx ingress, check the controller's
+  reachable address and any required TLS passthrough.
+- Map source StorageClasses to suitable target classes and check that target
+  PVCs bind and can be mounted. Check the intended admin or namespace-admin
+  permissions separately on each cluster.
+
+When both clusters support the required APIs, use `NewMigrationScenario`,
+`PrepareSourceApp`, `RunCranePipelineWithChecks`, and the appropriate target
+apply helper from `pipeline.go`.
+
+For an OpenShift-only source API unavailable on CI minikube, create a realistic
+synthetic export below `paths.ExportDir`. Run `CraneRunner.Transform` and
+`CraneRunner.Apply`, inspect `output.yaml`, and apply the result to the target.
+This tests conversion and target acceptance without a live OpenShift source.
+Record it as synthetic coverage, separate from a live platform pair.
 
 Installing a substitute CRD merely to create an OpenShift built-in input does
 not reproduce OpenShift defaulting or admission. Minikube results do not cover
 SCC behavior, Routes, or downstream plugin packaging. Use
 `KubectlRunner.IsOpenShift()` where assertions depend on the platform and
 report any required OpenShift execution separately.
+
+## Test the documented migration path
+
+Use the Crane commands, plugins, and configuration that users are expected to
+use. If the target needs a transformation, apply it through built-in Crane
+behavior, a documented plugin, or documented transform configuration. Do not
+patch rendered manifests, cluster resources, or transfer endpoints in the test
+to bypass an incompatibility. If there is no documented migration path, report
+the target admission or validation failure.
+
+For a platform-specific transformation, assert the rendered change and verify
+the expected behavior on the target. In PVC migration scenarios, verify the
+transferred data before starting the target application, then verify that the
+running application can use the data. A successful rsync exit alone does not
+verify a migration. Keep core assertions shared across platform pairs.
 
 ## Select credentials and transfer mode explicitly
 
@@ -131,5 +163,8 @@ build/unit results, suite compilation, and live execution separate.
 For live validation, inspect the Ginkgo output or test report for the intended
 spec, a non-zero executed-spec count, and its passed/failed/skipped result.
 A green job that selected zero specs or skipped the requested scenario does
-not validate it. Report the command, platform, admin/non-admin and direct/indirect
-modes, plugin revision when relevant, and any skipped scenario with its reason.
+not validate it. Run each applicable platform pair where live clusters are
+available. In the PR test plan, report the exact source and target platforms,
+command, admin/non-admin and direct/indirect modes, and endpoint type, plugin
+revision, and transform configuration where relevant. List any applicable
+pairs or specs that did not run and explain why.

@@ -117,7 +117,8 @@ The agent produces better results when the request states:
 - The behavior or regression being tested
 - The related issue, test case, or PR
 - Whether the test belongs in tier0 or tier1
-- Whether source and target are minikube, OpenShift, or mixed
+- The supported source-to-target platform pairs to cover, for example OpenShift
+  to Kubernetes on minikube
 - Whether non-admin contexts are required
 - Whether PVC data transfer is direct or indirect
 - Any required plugin repository and commit
@@ -155,7 +156,9 @@ Before accepting generated changes, verify:
 - Non-admin tests respect `--run-as=admin` through the active-runner helpers and do not skip based only on missing raw non-admin contexts.
 - Direct-only transfer tests disable suite-wide cloud storage inheritance explicitly.
 - Golden manifests compare semantic content and do not capture unstable metadata.
-- OpenShift-specific behavior has an OCP test result when minikube cannot cover it.
+- The test uses the documented migration path and checks the expected behavior
+  on the target. The test plan identifies applicable platform pairs that could
+  not run and distinguishes synthetic exports from live source coverage.
 - Full, focused, and indirect CI jobs receive new flags and dependencies where needed.
 - Ginkgo output or reports confirm that the requested scenario executed; a green job with only skipped or unselected specs is not validation.
 - The final response states which tests actually ran and which require a cluster.
@@ -223,8 +226,10 @@ ginkgo run -v --fail-on-empty --focus-file="$TEST_FILE" "$TEST_SUITE" -- \
 Add scenario-specific flags such as `--plugin-dir`, `--cloud-storage`, or `--rclone-config-file` only when required.
 
 Inspect the Ginkgo result for the requested spec and a non-zero executed-spec
-count. Report its status, platform, active admin/non-admin and transfer modes,
-and plugin revision when relevant. Explain any skipped scenario separately.
+count. Report its status for each source-to-target platform pair that ran,
+including the active admin/non-admin and transfer modes and the endpoint type,
+plugin revision, and transform configuration where relevant. List applicable
+pairs or specs that did not run and explain why.
 
 ### When clusters are unavailable
 
