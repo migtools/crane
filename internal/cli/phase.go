@@ -36,6 +36,12 @@ func (p *PhaseTracker) End(status string, detail string) {
 	fmt.Fprintf(p.w, "%s\n", line)
 }
 
+// Complete advances to the next phase and writes its finished result in one line.
+func (p *PhaseTracker) Complete(name, result string) {
+	p.current++
+	fmt.Fprintf(p.w, "[%d/%d] %s ... %s\n", p.current, p.total, name, result)
+}
+
 func (p *PhaseTracker) Fail(err error, msg string) error {
 	p.End("FAILED", "")
 	fmt.Fprintf(p.w, "  error: %v\n", err)

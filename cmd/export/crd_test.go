@@ -88,7 +88,7 @@ func TestCollectRelatedCRDs_customResourceOneCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crdUnstructured("widgets.example.com"))
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -121,7 +121,7 @@ func TestCollectRelatedCRDs_builtinGroupNoFetch(t *testing.T) {
 			Items: []unstructured.Unstructured{{}},
 		},
 	}
-	got, errs := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -139,7 +139,7 @@ func TestCollectRelatedCRDs_dedupePluralGroup(t *testing.T) {
 	w2 := widgetGroupResource()
 	w2.objects.Items[0].SetName("w2")
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{w1, w2}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{w1, w2}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -156,7 +156,7 @@ func TestCollectRelatedCRDs_skipsSubresourceName(t *testing.T) {
 	gr := widgetGroupResource()
 	gr.APIResource.Name = "widgets/status"
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -187,7 +187,7 @@ func TestCollectRelatedCRDs_multipleDistinctCRDs(t *testing.T) {
 		},
 	}
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource(), gadget}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{widgetGroupResource(), gadget}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -206,7 +206,7 @@ func TestCollectRelatedCRDs_getFailureReturnsGroupResourceError(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(got) != 0 {
 		t.Fatalf("expected no CRD rows, got %d", len(got))
 	}
@@ -243,7 +243,7 @@ func TestCollectRelatedCRDs_IncludeOverridesBuiltinGroup(t *testing.T) {
 		},
 	}
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, []string{"route.openshift.io"})
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{gr}, client, log, nil, []string{"route.openshift.io"})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -261,12 +261,15 @@ func TestCollectRelatedCRDs_skipsOLMManagedCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs, skipped := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	if len(got) != 0 {
 		t.Fatalf("expected OLM-managed CRD to be skipped, got %d", len(got))
+	}
+	if skipped != 1 {
+		t.Fatalf("skipped = %d, want 1", skipped)
 	}
 }
 
@@ -276,7 +279,7 @@ func TestCollectRelatedCRDs_skipsManagedByLabel(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -293,7 +296,7 @@ func TestCollectRelatedCRDs_skipsOperatorFrameworkAnnotation(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -308,7 +311,7 @@ func TestCollectRelatedCRDs_skipsOwnerReferenceCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -323,7 +326,7 @@ func TestCollectRelatedCRDs_exportsUnmanagedCRD(t *testing.T) {
 	client := fake.NewSimpleDynamicClient(scheme, crd)
 	log := testLogger()
 
-	got, errs := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(0, []*groupResource{widgetGroupResource()}, client, log, nil, nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
@@ -345,7 +348,7 @@ func TestCollectRelatedCRDs_timeoutError(t *testing.T) {
 	gr := widgetGroupResource()
 
 	// Pass non-zero timeout
-	got, errs := collectRelatedCRDs(100, []*groupResource{gr}, client, log, nil, nil)
+	got, errs, _ := collectRelatedCRDs(100, []*groupResource{gr}, client, log, nil, nil)
 
 	if len(got) != 0 {
 		t.Fatalf("expected 0 CRDs on timeout, got %d", len(got))
@@ -363,8 +366,8 @@ func TestCollectRelatedCRDs_timeoutError(t *testing.T) {
 
 func TestGetOperatorManager(t *testing.T) {
 	tests := []struct {
-		name     string
-		obj      *unstructured.Unstructured
+		name      string
+		obj       *unstructured.Unstructured
 		wantEmpty bool
 	}{
 		{"no labels or annotations", crdUnstructured("test"), true},

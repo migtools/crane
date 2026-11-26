@@ -32,24 +32,46 @@ type groupResource struct {
 }
 
 type groupResourceError struct {
-	APIResource metav1.APIResource `json:",inline"`
-	Error       error              `json:"error"`
+	APIGroupVersion string             `json:"apiGroupVersion,omitempty"`
+	APIResource     metav1.APIResource `json:",inline"`
+	Error           error              `json:"error"`
 }
 
-// hasClusterScopedManifests reports whether any object in resources would be written
+// clusterScopedManifestCount returns how many objects in resources would be written
 // under clusterResourceDir (objects with empty namespace).
-func hasClusterScopedManifests(resources []*groupResource) bool {
+func clusterScopedManifestCount(resources []*groupResource) int {
+	count := 0
 	for _, g := range resources {
 		if g == nil || g.objects == nil {
 			continue
 		}
 		for _, obj := range g.objects.Items {
 			if obj.GetNamespace() == "" {
-				return true
+				count++
 			}
 		}
 	}
-	return false
+	return count
+}
+
+// namespacedResourceTypeCount returns the number of namespaced API types in
+// resources. The caller provides only types with at least one listed object.
+// Cluster-scoped RBAC and SCC types are handled separately in the
+// related-resources phase.
+func namespacedResourceTypeCount(resources []*groupResource) int {
+	count := 0
+	for _, g := range resources {
+		if g != nil && g.APIResource.Namespaced {
+			count++
+		}
+	}
+	return count
+}
+
+// hasClusterScopedManifests reports whether any object in resources would be written
+// under clusterResourceDir (objects with empty namespace).
+func hasClusterScopedManifests(resources []*groupResource) bool {
+	return clusterScopedManifestCount(resources) > 0
 }
 
 // prepareClusterResourceDir removes any previous _cluster export at clusterResourceDir
@@ -84,8 +106,10 @@ func prepareFailuresDir(failuresDir string) error {
 
 // writeResources writes each object in resources to a YAML file under resourceDir
 // or clusterResourceDir when the object has no namespace.
-func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) []error {
+func writeResources(resources []*groupResource, clusterResourceDir string, resourceDir string, log logrus.FieldLogger) (int, []error) {
+	filesWritten := 0
 	errs := []error{}
+	writtenPaths := map[string]string{}
 	for _, r := range resources {
 		log.Debugf("Writing objects of resource: %s to the output directory", r.APIResource.Name)
 
@@ -101,6 +125,12 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 				targetDir = clusterResourceDir
 			}
 			path := filepath.Join(targetDir, file.GetResourceFilename(obj))
+			resourceID := fmt.Sprintf("%s %s/%s", obj.GetKind(), obj.GetNamespace(), obj.GetName())
+			if previousResourceID, alreadyWritten := writtenPaths[path]; alreadyWritten {
+				errs = append(errs, fmt.Errorf("refusing to overwrite manifest at %q: %s and %s resolve to the same output path", path, previousResourceID, resourceID))
+				continue
+			}
+			writtenPaths[path] = resourceID
 			f, err := os.Create(path)
 			if err != nil {
 				errs = append(errs, err)
@@ -124,17 +154,75 @@ func writeResources(resources []*groupResource, clusterResourceDir string, resou
 				errs = append(errs, err)
 				continue
 			}
+			filesWritten++
 
 		}
 	}
 
-	return errs
+	return filesWritten, errs
 }
 
-// writeErrors persists list failures as YAML files named by API resource in failuresDir.
-func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) []error {
+// preferredFailureFilename returns the preferred filename for a failed API
+// resource list. It keeps the legacy resource-name filename unless another
+// failure has the same name.
+func preferredFailureFilename(resourceErr *groupResourceError, hasNameCollision bool) string {
+	if !hasNameCollision || resourceErr.APIGroupVersion == "" {
+		return resourceErr.APIResource.Name + ".yaml"
+	}
+	groupVersion := strings.ReplaceAll(resourceErr.APIGroupVersion, "/", "_")
+	return fmt.Sprintf("%s_%s.yaml", resourceErr.APIResource.Name, groupVersion)
+}
+
+// nextAvailableFilename returns filename unless it is already used, in which
+// case it adds the smallest numeric suffix that makes the filename unique.
+func nextAvailableFilename(filename string, used map[string]struct{}) string {
+	if _, exists := used[filename]; !exists {
+		return filename
+	}
+
+	base := strings.TrimSuffix(filename, ".yaml")
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d.yaml", base, suffix)
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+// failureFilenames returns one distinct filename for every writable failure.
+// Ordinary failures retain their legacy resource-name filenames. If multiple
+// failures share a resource name, group and version distinguish them.
+func failureFilenames(errors []*groupResourceError) []string {
+	nameCounts := make(map[string]int)
+	for _, resourceErr := range errors {
+		if resourceErr.APIResource.Kind != "" {
+			nameCounts[resourceErr.APIResource.Name]++
+		}
+	}
+
+	filenames := make([]string, len(errors))
+	used := make(map[string]struct{})
+	for i, resourceErr := range errors {
+		if resourceErr.APIResource.Kind == "" {
+			continue
+		}
+
+		preferred := preferredFailureFilename(resourceErr, nameCounts[resourceErr.APIResource.Name] > 1)
+		filename := nextAvailableFilename(preferred, used)
+		filenames[i] = filename
+		used[filename] = struct{}{}
+	}
+
+	return filenames
+}
+
+// writeErrors persists list failures as YAML files in failuresDir. Resource
+// names are kept unless duplicate names need group/version suffixes.
+func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.FieldLogger) (int, []error) {
+	filesWritten := 0
 	errs := []error{}
-	for _, r := range errors {
+	filenames := failureFilenames(errors)
+	for i, r := range errors {
 		log.Debugf("Writing error for resource %s, error: %v", r.APIResource.Name, r.Error)
 
 		kind := r.APIResource.Kind
@@ -143,7 +231,7 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 			continue
 		}
 
-		path := filepath.Join(failuresDir, r.APIResource.Name+".yaml")
+		path := filepath.Join(failuresDir, filenames[i])
 		f, err := os.Create(path)
 		if err != nil {
 			errs = append(errs, err)
@@ -167,9 +255,10 @@ func writeErrors(errors []*groupResourceError, failuresDir string, log logrus.Fi
 			errs = append(errs, err)
 			continue
 		}
+		filesWritten++
 	}
 
-	return errs
+	return filesWritten, errs
 }
 
 // discoverPreferredResources returns server-preferred API resource lists, filtered to
@@ -251,7 +340,11 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				// Check if error is due to timeout/deadline exceeded - fail fast
 				if apierrors.IsTimeout(err) || strings.Contains(err.Error(), "context deadline exceeded") {
 					log.Errorf("Request timeout exceeded for groupVersion %s, resource: %s, kind: %s: %v", g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind, err)
-					return nil, []*groupResourceError{{resource, err}}
+					return nil, []*groupResourceError{{
+						APIGroupVersion: g.APIGroupVersion,
+						APIResource:     resource,
+						Error:           err,
+					}}
 				}
 				switch {
 				case apierrors.IsForbidden(err):
@@ -263,13 +356,17 @@ func resourceToExtract(requestTimeout time.Duration, namespace string, labelSele
 				default:
 					log.Errorf("Error listing objects: %v, groupVersion %s, resource: %s, kind: %s", err, g.APIGroupVersion, g.APIResource.Name, g.APIResource.Kind)
 				}
-				errors = append(errors, &groupResourceError{resource, err})
+				errors = append(errors, &groupResourceError{
+					APIGroupVersion: g.APIGroupVersion,
+					APIResource:     resource,
+					Error:           err,
+				})
 				continue
 			}
 
 			if len(objs.Items) > 0 {
 				g.objects = objs
-				log.Infof("Adding resource: %s to the list of GVRs to be extracted", resource.Name)
+				log.Debugf("Adding resource: %s to the list of GVRs to be extracted", resource.Name)
 				resources = append(resources, g)
 				continue
 			}
@@ -306,7 +403,7 @@ func getObjects(requestTimeout time.Duration, g *groupResource, namespace string
 		if requestTimeout > 0 {
 			ctx, cancel = context.WithTimeout(pagerCtx, requestTimeout)
 		}
-		defer cancel() 
+		defer cancel()
 
 		if g.APIResource.Namespaced {
 			return c.Namespace(namespace).List(ctx, opts)
@@ -357,12 +454,12 @@ func iterateItemsByGet(requestTimeout time.Duration, c dynamic.NamespaceableReso
 		}
 		// Create fresh context with timeout for each Get request
 		ctx := context.Background()
-		cancel := func() {} 
-		
+		cancel := func() {}
+
 		if requestTimeout > 0 {
 			ctx, cancel = context.WithTimeout(ctx, requestTimeout)
 		}
-		
+
 		obj, err := c.Namespace(namespace).Get(ctx, u.GetName(), metav1.GetOptions{})
 		cancel()
 		if err != nil {

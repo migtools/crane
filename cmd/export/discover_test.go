@@ -102,9 +102,9 @@ func TestHasClusterScopedManifests(t *testing.T) {
 			want:      false,
 		},
 		{
-			name: "nil groupResource entry",
+			name:      "nil groupResource entry",
 			resources: []*groupResource{nil},
-			want: false,
+			want:      false,
 		},
 		{
 			name: "nil objects field",
@@ -212,6 +212,33 @@ func TestPrepareFailuresDir(t *testing.T) {
 	}
 	if _, err := os.Stat(failuresDir); err != nil {
 		t.Fatalf("directory should exist after second call: %v", err)
+	}
+}
+
+func TestClusterScopedManifestCount(t *testing.T) {
+	namespaced := namespacedObj("test-ns", "config")
+	clusterOne := clusterScopedObj("role-one")
+	clusterTwo := clusterScopedObj("role-two")
+	resources := []*groupResource{
+		{objects: &unstructured.UnstructuredList{Items: []unstructured.Unstructured{namespaced, clusterOne}}},
+		{objects: &unstructured.UnstructuredList{Items: []unstructured.Unstructured{clusterTwo}}},
+	}
+
+	if got := clusterScopedManifestCount(resources); got != 2 {
+		t.Fatalf("clusterScopedManifestCount() = %d, want 2", got)
+	}
+}
+
+func TestNamespacedResourceTypeCount(t *testing.T) {
+	resources := []*groupResource{
+		{APIResource: metav1.APIResource{Name: "configmaps", Namespaced: true}},
+		{APIResource: metav1.APIResource{Name: "services", Namespaced: true}},
+		{APIResource: metav1.APIResource{Name: "clusterroles", Namespaced: false}},
+		nil,
+	}
+
+	if got := namespacedResourceTypeCount(resources); got != 2 {
+		t.Fatalf("namespacedResourceTypeCount() = %d, want 2", got)
 	}
 }
 
@@ -350,9 +377,12 @@ func TestWriteResources(t *testing.T) {
 		},
 	}
 
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 2 {
+		t.Fatalf("filesWritten = %d, want 2", filesWritten)
 	}
 
 	// Namespaced resource written to resourceDir.
@@ -381,9 +411,12 @@ func TestWriteResources_SkipsEmptyKind(t *testing.T) {
 		},
 	}
 
-	errs := writeResources(resources, dir, dir, log)
+	filesWritten, errs := writeResources(resources, dir, dir, log)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 
 	// No files should be written.
@@ -398,6 +431,39 @@ func TestWriteResources_SkipsEmptyKind(t *testing.T) {
 	}
 }
 
+func TestWriteResources_DoesNotOverwriteFilenameCollision(t *testing.T) {
+	log := testLogger()
+	resourceDir := t.TempDir()
+	clusterDir := filepath.Join(resourceDir, "_cluster")
+	if err := os.MkdirAll(clusterDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	colonName := namespacedObj("my-ns", "system:deployers")
+	colonName.SetKind("RoleBinding")
+	colonName.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
+	underscoreName := namespacedObj("my-ns", "system_deployers_7ce771ca")
+	underscoreName.SetKind("RoleBinding")
+	underscoreName.SetGroupVersionKind(schema.GroupVersionKind{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding"})
+
+	if got, want := file.GetResourceFilename(colonName), file.GetResourceFilename(underscoreName); got != want {
+		t.Fatalf("test setup needs colliding filenames: %q != %q", got, want)
+	}
+
+	resources := []*groupResource{{
+		APIResource: metav1.APIResource{Name: "rolebindings", Kind: "RoleBinding", Namespaced: true},
+		objects:     &unstructured.UnstructuredList{Items: []unstructured.Unstructured{colonName, underscoreName}},
+	}}
+
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
+	if filesWritten != 1 {
+		t.Fatalf("filesWritten = %d, want 1", filesWritten)
+	}
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "same output path") {
+		t.Fatalf("expected one filename collision error, got %v", errs)
+	}
+}
+
 // ---------- writeErrors ----------
 
 func TestWriteErrors(t *testing.T) {
@@ -406,14 +472,18 @@ func TestWriteErrors(t *testing.T) {
 
 	errors := []*groupResourceError{
 		{
-			APIResource: metav1.APIResource{Name: "widgets", Kind: "Widget"},
-			Error:       os.ErrPermission,
+			APIGroupVersion: "example.com/v1",
+			APIResource:     metav1.APIResource{Name: "widgets", Kind: "Widget"},
+			Error:           os.ErrPermission,
 		},
 	}
 
-	errs := writeErrors(errors, dir, log)
+	filesWritten, errs := writeErrors(errors, dir, log)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 1 {
+		t.Fatalf("filesWritten = %d, want 1", filesWritten)
 	}
 
 	path := filepath.Join(dir, "widgets.yaml")
@@ -430,6 +500,40 @@ func TestWriteErrors(t *testing.T) {
 	}
 }
 
+func TestWriteErrors_KeepsSameResourceNameFromDifferentAPIGroups(t *testing.T) {
+	log := testLogger()
+	dir := t.TempDir()
+	errors := []*groupResourceError{
+		{
+			APIGroupVersion: "one.example.com/v1",
+			APIResource:     metav1.APIResource{Name: "widgets", Kind: "Widget"},
+			Error:           errors.New("list widgets.one.example.com failed"),
+		},
+		{
+			APIGroupVersion: "two.example.com/v1",
+			APIResource:     metav1.APIResource{Name: "widgets", Kind: "Widget"},
+			Error:           errors.New("list widgets.two.example.com failed"),
+		},
+	}
+
+	filesWritten, errs := writeErrors(errors, dir, log)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 2 {
+		t.Fatalf("filesWritten = %d, want 2", filesWritten)
+	}
+
+	for _, name := range []string{
+		"widgets_one.example.com_v1.yaml",
+		"widgets_two.example.com_v1.yaml",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("failure file %q not written: %v", name, err)
+		}
+	}
+}
+
 func TestWriteErrors_SkipsEmptyKind(t *testing.T) {
 	log := testLogger()
 	dir := t.TempDir()
@@ -441,9 +545,12 @@ func TestWriteErrors_SkipsEmptyKind(t *testing.T) {
 		},
 	}
 
-	errs := writeErrors(errors, dir, log)
+	filesWritten, errs := writeErrors(errors, dir, log)
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -648,9 +755,12 @@ func TestWriteResources_createFailsWhenTargetPathIsDirectory(t *testing.T) {
 			objects:     &unstructured.UnstructuredList{Items: []unstructured.Unstructured{nsObj}},
 		},
 	}
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 error, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -676,9 +786,12 @@ func TestWriteResources_marshalFails(t *testing.T) {
 			objects:     &unstructured.UnstructuredList{Items: []unstructured.Unstructured{nsObj}},
 		},
 	}
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 marshal error, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -708,9 +821,12 @@ func TestWriteResources_createFailsWhenDestinationFileNotWritable(t *testing.T) 
 			objects:     &unstructured.UnstructuredList{Items: []unstructured.Unstructured{nsObj}},
 		},
 	}
-	errs := writeResources(resources, clusterDir, resourceDir, log)
+	filesWritten, errs := writeResources(resources, clusterDir, resourceDir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 error opening/truncating read-only destination file, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -726,9 +842,12 @@ func TestWriteErrors_createFailsWhenFailuresDirParentIsFile(t *testing.T) {
 	listErrs := []*groupResourceError{
 		{APIResource: metav1.APIResource{Name: "widgets", Kind: "Widget"}, Error: errors.New("list failed")},
 	}
-	errs := writeErrors(listErrs, failuresDir, log)
+	filesWritten, errs := writeErrors(listErrs, failuresDir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 error, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -742,9 +861,12 @@ func TestWriteErrors_targetPathIsDirectory(t *testing.T) {
 	if err := os.Mkdir(target, 0700); err != nil {
 		t.Fatal(err)
 	}
-	errs := writeErrors(listErrs, dir, log)
+	filesWritten, errs := writeErrors(listErrs, dir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 error when error file path is a directory, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -766,9 +888,12 @@ func TestWriteErrors_jsonMarshalFails(t *testing.T) {
 			Error:       jsonMarshalFailError{},
 		},
 	}
-	errs := writeErrors(listErrs, dir, log)
+	filesWritten, errs := writeErrors(listErrs, dir, log)
 	if len(errs) != 1 {
 		t.Fatalf("want 1 yaml/json marshal error, got %v", errs)
+	}
+	if filesWritten != 0 {
+		t.Fatalf("filesWritten = %d, want 0", filesWritten)
 	}
 }
 
@@ -1271,7 +1396,7 @@ func TestGetObjects_clusterScopedSkipsLabelSelector(t *testing.T) {
 		APIGroupVersion: "rbac.authorization.k8s.io/v1",
 		APIResource:     metav1.APIResource{Name: "clusterrolebindings", Kind: "ClusterRoleBinding", Namespaced: false},
 	}
-	_, err := getObjects(0,g, "", "app=test", client, testLogger())
+	_, err := getObjects(0, g, "", "app=test", client, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
