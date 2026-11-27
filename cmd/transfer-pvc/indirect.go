@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 
 	"strings"
 	"time"
@@ -18,8 +19,10 @@ import (
 	"github.com/sirupsen/logrus"
 
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -565,8 +568,8 @@ func followPodLogsUntilComplete(restCfg *rest.Config, c client.Client, podName, 
 			return fmt.Errorf("waiting for pod %s/%s to start: %w", namespace, podName, err)
 		}
 		log.Debugf("Timed out waiting for pod %s/%s to start: %v", namespace, podName, err)
-		if reason := podTerminationReason(c, podName, namespace, containerName, log); reason != "" {
-			return fmt.Errorf("timed out waiting for pod %s/%s to start (%s): %w", namespace, podName, reason, err)
+		if diag := podStartupDiagnostics(c, podName, namespace, containerName, destinationPVC, log); diag != "" {
+			return fmt.Errorf("timed out waiting for pod %s/%s to start: %w\n%s", namespace, podName, err, diag)
 		}
 		return fmt.Errorf("timed out waiting for pod %s/%s to start: %w", namespace, podName, err)
 	}
@@ -690,6 +693,289 @@ func captureTerminationReason(pod *corev1.Pod, containerName string) string {
 			containerStatus.State.Terminated.Reason, containerStatus.State.Terminated.Message))
 	}
 	return ""
+}
+
+// podStartupDiagnostics gathers best-effort state about a mover pod that timed
+// out before reaching Running, so the error explains why instead of only naming
+// the pod (issue #997): pod phase and PodScheduled condition, container waiting
+// reasons, each referenced PVC's binding status and storage class, recent
+// Warning events, and a --dest-storage-class hint when a referenced storage
+// class is missing.
+//
+// Every read is best-effort and bounded by a short context, so an RBAC denial or
+// slow API server only shrinks the report. Returns "" when nothing is collected.
+func podStartupDiagnostics(c client.Client, podName, namespace, containerName string, destinationPVC *corev1.PersistentVolumeClaim, log *logrus.Logger) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var lines []string
+
+	// PVC names referenced for diagnostics, in a stable order and starting with
+	// the known destination PVC so it is reported even if the pod cannot be read.
+	var pvcNames []string
+	seenPVC := map[string]bool{}
+	addPVC := func(name string) {
+		if name == "" || seenPVC[name] {
+			return
+		}
+		seenPVC[name] = true
+		pvcNames = append(pvcNames, name)
+	}
+	if destinationPVC != nil {
+		addPVC(destinationPVC.Name)
+	}
+
+	pod := &corev1.Pod{}
+	var podUID types.UID
+	if err := c.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+		log.Debugf("Cannot read pod %s/%s for startup diagnostics: %v", namespace, podName, err)
+	} else {
+		podUID = pod.UID
+		lines = append(lines, fmt.Sprintf("pod phase: %s", pod.Status.Phase))
+		for _, cond := range pod.Status.Conditions {
+			if cond.Type != corev1.PodScheduled {
+				continue
+			}
+			line := fmt.Sprintf("scheduled: %s", cond.Status)
+			if cond.Reason != "" {
+				line += fmt.Sprintf(" (%s)", cond.Reason)
+			}
+			if cond.Message != "" {
+				line += ": " + cond.Message
+			}
+			lines = append(lines, line)
+		}
+		lines = append(lines, containerWaitingReasons(pod)...)
+		for _, vol := range pod.Spec.Volumes {
+			if vol.PersistentVolumeClaim != nil {
+				addPVC(vol.PersistentVolumeClaim.ClaimName)
+			}
+		}
+	}
+
+	// Binding status and storage class of each referenced PVC.
+	pvcObjs := map[string]*corev1.PersistentVolumeClaim{}
+	for _, name := range pvcNames {
+		pvc := &corev1.PersistentVolumeClaim{}
+		if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, pvc); err != nil {
+			log.Debugf("Cannot read PVC %s/%s for startup diagnostics: %v", namespace, name, err)
+			continue
+		}
+		pvcObjs[name] = pvc
+		lines = append(lines, fmt.Sprintf("PVC %s: phase=%s storageClass=%s",
+			name, pvc.Status.Phase, storageClassLabel(pvc)))
+	}
+
+	// Recent Warning events on the pod and its PVCs.
+	if events := warningEvents(ctx, c, namespace, podName, podUID, pvcObjs, log); len(events) > 0 {
+		lines = append(lines, "warning events:")
+		for _, e := range events {
+			lines = append(lines, "  - "+e)
+		}
+	}
+
+	// A hint when an unbound PVC names a missing storage class. Only the
+	// destination PVC (if known) can be fixed with --dest-storage-class.
+	destPVCName := ""
+	if destinationPVC != nil {
+		destPVCName = destinationPVC.Name
+	}
+	if hint := storageClassHint(ctx, c, pvcObjs, destPVCName, log); hint != "" {
+		lines = append(lines, "hint: "+hint)
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+	return "diagnostics:\n  " + strings.Join(lines, "\n  ")
+}
+
+// containerWaitingReasons returns one line per container (init or regular) stuck
+// in Waiting with a reason, e.g. "container rclone waiting: ContainerCreating".
+// These are the states that keep a pod out of Running.
+func containerWaitingReasons(pod *corev1.Pod) []string {
+	var out []string
+	report := func(kind string, statuses []corev1.ContainerStatus) {
+		for _, cs := range statuses {
+			if cs.State.Waiting == nil || cs.State.Waiting.Reason == "" {
+				continue
+			}
+			line := fmt.Sprintf("%s %s waiting: %s", kind, cs.Name, cs.State.Waiting.Reason)
+			if msg := strings.TrimSpace(cs.State.Waiting.Message); msg != "" {
+				line += ": " + msg
+			}
+			out = append(out, line)
+		}
+	}
+	report("init container", pod.Status.InitContainerStatuses)
+	report("container", pod.Status.ContainerStatuses)
+	return out
+}
+
+// storageClassLabel renders a PVC's requested storage class for diagnostics,
+// distinguishing an unset class (uses the cluster default) from an explicit
+// empty string (opts out of dynamic provisioning).
+func storageClassLabel(pvc *corev1.PersistentVolumeClaim) string {
+	if pvc.Spec.StorageClassName == nil {
+		return "(default)"
+	}
+	if *pvc.Spec.StorageClassName == "" {
+		return `"" (none)`
+	}
+	return fmt.Sprintf("%q", *pvc.Spec.StorageClassName)
+}
+
+// warningEvents returns recent Warning event messages ("Reason: Message") for
+// the pod and the given PVCs, newest first and capped. Events are listed once
+// for the namespace; an access error yields no events rather than failing.
+func warningEvents(ctx context.Context, c client.Client, namespace, podName string, podUID types.UID, pvcs map[string]*corev1.PersistentVolumeClaim, log *logrus.Logger) []string {
+	eventList := &corev1.EventList{}
+	if err := c.List(ctx, eventList, client.InNamespace(namespace)); err != nil {
+		log.Debugf("Cannot list events in %s for startup diagnostics: %v", namespace, err)
+		return nil
+	}
+
+	matches := func(obj corev1.ObjectReference) bool {
+		if obj.Namespace != "" && obj.Namespace != namespace {
+			return false
+		}
+		if obj.Kind == "Pod" && obj.Name == podName {
+			// Require a known pod UID and an exact match so events from a prior
+			// pod of the same name (or UID-less events we can't attribute) are
+			// rejected. When the pod read failed, podUID is "" and no pod event
+			// can be attributed, so none are accepted.
+			return podUID != "" && obj.UID == podUID
+		}
+		if obj.Kind == "PersistentVolumeClaim" {
+			if pvc, ok := pvcs[obj.Name]; ok {
+				return obj.UID == "" || obj.UID == pvc.UID
+			}
+		}
+		return false
+	}
+
+	relevant := make([]corev1.Event, 0, len(eventList.Items))
+	for _, e := range eventList.Items {
+		if e.Type == corev1.EventTypeWarning && matches(e.InvolvedObject) {
+			relevant = append(relevant, e)
+		}
+	}
+	sort.SliceStable(relevant, func(i, j int) bool {
+		return eventTime(relevant[i]).After(eventTime(relevant[j]))
+	})
+
+	const maxEvents = 5
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range relevant {
+		msg := strings.TrimSpace(fmt.Sprintf("%s: %s", e.Reason, e.Message))
+		if msg == "" || seen[msg] {
+			continue
+		}
+		seen[msg] = true
+		out = append(out, msg)
+		if len(out) == maxEvents {
+			break
+		}
+	}
+	return out
+}
+
+// eventTime returns an event's last-seen time, preferring Series.LastObservedTime
+// (the authoritative last occurrence for repeated events under the newer API, and
+// potentially newer than LastTimestamp), then falling back to LastTimestamp,
+// EventTime, and finally the creation time.
+func eventTime(e corev1.Event) time.Time {
+	if e.Series != nil && !e.Series.LastObservedTime.IsZero() {
+		return e.Series.LastObservedTime.Time
+	}
+	if !e.LastTimestamp.IsZero() {
+		return e.LastTimestamp.Time
+	}
+	if !e.EventTime.IsZero() {
+		return e.EventTime.Time
+	}
+	return e.CreationTimestamp.Time
+}
+
+// storageClassHint suggests fixes when an unbound PVC requests a missing storage
+// class, naming each affected PVC and the classes that do exist. Only the
+// destination PVC (matched by destPVCName) gets --dest-storage-class guidance and
+// the data-safety warning, since that flag cannot fix a source PVC. Returns ""
+// when every referenced PVC is bound or names a class that exists.
+func storageClassHint(ctx context.Context, c client.Client, pvcs map[string]*corev1.PersistentVolumeClaim, destPVCName string, log *logrus.Logger) string {
+	// Non-empty class requested by each still-unbound PVC, keyed by PVC name.
+	requested := map[string]string{}
+	for name, pvc := range pvcs {
+		if pvc.Status.Phase == corev1.ClaimBound {
+			continue
+		}
+		if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
+			requested[name] = *pvc.Spec.StorageClassName
+		}
+	}
+	if len(requested) == 0 {
+		return ""
+	}
+
+	scList := &storagev1.StorageClassList{}
+	if err := c.List(ctx, scList); err != nil {
+		log.Debugf("Cannot list storage classes for startup diagnostics: %v", err)
+		return ""
+	}
+	existing := map[string]bool{}
+	var available []string
+	for _, sc := range scList.Items {
+		existing[sc.Name] = true
+		name := sc.Name
+		if sc.Annotations["storageclass.kubernetes.io/is-default-class"] == "true" {
+			name += " (default)"
+		}
+		available = append(available, name)
+	}
+	sort.Strings(available)
+
+	// PVCs whose requested class is absent, in a stable order by PVC name.
+	var missing []string
+	for name, class := range requested {
+		if !existing[class] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	sort.Strings(missing)
+
+	// A PVC's storage class is immutable, so --dest-storage-class only applies to a
+	// newly created PVC; an existing one must be remediated by hand (and may hold
+	// data, so review before removing).
+	const destRemediation = "; the existing destination PVC's storage class cannot be changed in place, so remediate it by hand (it may contain data — review before removing) before retrying"
+
+	var hints []string
+	for _, name := range missing {
+		class := fmt.Sprintf("%q", requested[name])
+		if name == destPVCName {
+			if len(available) == 0 {
+				hints = append(hints, fmt.Sprintf("destination PVC %q requests storage class %s which does not exist, and no storage classes are defined on the destination cluster%s",
+					name, class, destRemediation))
+			} else {
+				hints = append(hints, fmt.Sprintf("destination PVC %q requests storage class %s which does not exist; re-run with --dest-storage-class set to one of: %s%s",
+					name, class, strings.Join(available, ", "), destRemediation))
+			}
+			continue
+		}
+		// Non-destination (e.g. source) PVC: identify it without implying
+		// --dest-storage-class can fix it.
+		if len(available) == 0 {
+			hints = append(hints, fmt.Sprintf("PVC %q requests storage class %s which does not exist, and no storage classes are defined on the cluster",
+				name, class))
+		} else {
+			hints = append(hints, fmt.Sprintf("PVC %q requests storage class %s which does not exist; the cluster defines: %s",
+				name, class, strings.Join(available, ", ")))
+		}
+	}
+	return strings.Join(hints, "; ")
 }
 
 // checkRclonePartialSuccess examines rclone output when the pod exits non-zero.

@@ -10,11 +10,14 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -511,6 +514,210 @@ func TestPodTerminationReason(t *testing.T) {
 	}
 }
 
+func TestPodStartupDiagnostics(t *testing.T) {
+	scheme := newTestScheme()
+	fast := "fast"
+	none := ""
+
+	pendingUnschedulablePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "rclone-download", Namespace: "test-ns"},
+		Spec: corev1.PodSpec{Volumes: []corev1.Volume{{
+			Name:         "vol",
+			VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "dest-pvc"}},
+		}}},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			Conditions: []corev1.PodCondition{{
+				Type:    corev1.PodScheduled,
+				Status:  corev1.ConditionFalse,
+				Reason:  "Unschedulable",
+				Message: "0/3 nodes are available",
+			}},
+			ContainerStatuses: []corev1.ContainerStatus{{
+				Name:  "rclone",
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}},
+			}},
+		},
+	}
+
+	missingSCPVC := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns", UID: types.UID("dest-uid")},
+		Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &fast},
+		Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+	}
+
+	provisioningEvent := &corev1.Event{
+		ObjectMeta:     metav1.ObjectMeta{Name: "evt-1", Namespace: "test-ns"},
+		Type:           corev1.EventTypeWarning,
+		Reason:         "ProvisioningFailed",
+		Message:        `storageclass.storage.k8s.io "fast" not found`,
+		InvolvedObject: corev1.ObjectReference{Kind: "PersistentVolumeClaim", Name: "dest-pvc", Namespace: "test-ns", UID: types.UID("dest-uid")},
+		LastTimestamp:  metav1.Now(),
+	}
+
+	existingSC := &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "gp2",
+			Annotations: map[string]string{"storageclass.kubernetes.io/is-default-class": "true"},
+		},
+	}
+
+	tests := []struct {
+		name         string
+		objs         []runtime.Object
+		destPVC      *corev1.PersistentVolumeClaim
+		podName      string
+		wantContains []string
+		wantOmits    []string
+		wantEmpty    bool
+	}{
+		{
+			name:    "unschedulable pod with missing storage class",
+			objs:    []runtime.Object{pendingUnschedulablePod, missingSCPVC, provisioningEvent, existingSC},
+			destPVC: missingSCPVC,
+			podName: "rclone-download",
+			wantContains: []string{
+				"pod phase: Pending",
+				"scheduled: False (Unschedulable): 0/3 nodes are available",
+				"container rclone waiting: ContainerCreating",
+				`PVC dest-pvc: phase=Pending storageClass="fast"`,
+				"warning events:",
+				`ProvisioningFailed: storageclass.storage.k8s.io "fast" not found`,
+				`re-run with --dest-storage-class set to one of: gp2 (default)`,
+			},
+		},
+		{
+			name:    "bound pvc produces no storage class hint",
+			destPVC: &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"}},
+			objs: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "rclone-download", Namespace: "test-ns"},
+					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"},
+					Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &fast},
+					Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimBound},
+				},
+				existingSC,
+			},
+			podName:      "rclone-download",
+			wantContains: []string{"pod phase: Pending", `PVC dest-pvc: phase=Bound storageClass="fast"`},
+			wantOmits:    []string{"hint:", "--dest-storage-class"},
+		},
+		{
+			name:    "explicit empty storage class reported as none",
+			destPVC: &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"}},
+			objs: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "rclone-download", Namespace: "test-ns"},
+					Status:     corev1.PodStatus{Phase: corev1.PodPending},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"},
+					Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &none},
+					Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+				},
+			},
+			podName:      "rclone-download",
+			wantContains: []string{`PVC dest-pvc: phase=Pending storageClass="" (none)`},
+			wantOmits:    []string{"hint:"},
+		},
+		{
+			name:      "nothing readable returns empty",
+			destPVC:   nil,
+			objs:      nil,
+			podName:   "does-not-exist",
+			wantEmpty: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(tt.objs...).Build()
+			got := podStartupDiagnostics(c, tt.podName, "test-ns", "rclone", tt.destPVC, logrus.StandardLogger())
+			if tt.wantEmpty {
+				if got != "" {
+					t.Fatalf("podStartupDiagnostics() = %q, want empty", got)
+				}
+				return
+			}
+			if got == "" {
+				t.Fatal("podStartupDiagnostics() returned empty, want diagnostics")
+			}
+			for _, want := range tt.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("podStartupDiagnostics() = %q\nmissing %q", got, want)
+				}
+			}
+			for _, omit := range tt.wantOmits {
+				if strings.Contains(got, omit) {
+					t.Errorf("podStartupDiagnostics() = %q\nshould not contain %q", got, omit)
+				}
+			}
+		})
+	}
+}
+
+func TestStorageClassHintNoStorageClassesDefined(t *testing.T) {
+	fast := "fast"
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).Build()
+	pvcs := map[string]*corev1.PersistentVolumeClaim{
+		"dest-pvc": {
+			ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: "test-ns"},
+			Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &fast},
+			Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+		},
+	}
+	got := storageClassHint(context.Background(), c, pvcs, "dest-pvc", logrus.StandardLogger())
+	if !strings.Contains(got, "no storage classes are defined") {
+		t.Errorf("storageClassHint() = %q, want mention of no storage classes defined", got)
+	}
+}
+
+func TestStorageClassHintRole(t *testing.T) {
+	missing := "nope"
+	existingSC := &storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "gp2"}}
+	pvc := func(name string) *corev1.PersistentVolumeClaim {
+		return &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "test-ns"},
+			Spec:       corev1.PersistentVolumeClaimSpec{StorageClassName: &missing},
+			Status:     corev1.PersistentVolumeClaimStatus{Phase: corev1.ClaimPending},
+		}
+	}
+
+	t.Run("destination PVC gets --dest-storage-class guidance and data-safety warning", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(existingSC).Build()
+		pvcs := map[string]*corev1.PersistentVolumeClaim{"dest-pvc": pvc("dest-pvc")}
+		got := storageClassHint(context.Background(), c, pvcs, "dest-pvc", logrus.StandardLogger())
+		if !strings.Contains(got, `destination PVC "dest-pvc"`) {
+			t.Errorf("hint %q should name the destination PVC", got)
+		}
+		if !strings.Contains(got, "--dest-storage-class") {
+			t.Errorf("hint %q should mention --dest-storage-class for the destination PVC", got)
+		}
+		if !strings.Contains(got, "may contain data") {
+			t.Errorf("hint %q should keep the data-safety warning for the destination PVC", got)
+		}
+	})
+
+	t.Run("source PVC is identified without destination-only guidance", func(t *testing.T) {
+		c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(existingSC).Build()
+		// destPVCName is empty, as on the upload (source-side) pod path.
+		pvcs := map[string]*corev1.PersistentVolumeClaim{"src-pvc": pvc("src-pvc")}
+		got := storageClassHint(context.Background(), c, pvcs, "", logrus.StandardLogger())
+		if !strings.Contains(got, `PVC "src-pvc"`) {
+			t.Errorf("hint %q should name the source PVC", got)
+		}
+		if strings.Contains(got, "--dest-storage-class") {
+			t.Errorf("hint %q must not suggest --dest-storage-class for a source PVC", got)
+		}
+		if strings.Contains(got, "may contain data") {
+			t.Errorf("hint %q must not attach the destination remediation to a source PVC", got)
+		}
+	})
+}
+
 func TestCheckRclonePartialSuccessTerminationDetail(t *testing.T) {
 	reason := "container terminated: StartError: " + startErrorMsg
 
@@ -639,5 +846,121 @@ func TestCleanupCloudStorage(t *testing.T) {
 				t.Fatalf("followLog should run after a successful cleanup-pod launch")
 			}
 		})
+	}
+}
+
+func TestEventTime(t *testing.T) {
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	mt := func(d time.Duration) metav1.Time { return metav1.NewTime(base.Add(d)) }
+
+	tests := []struct {
+		name  string
+		event corev1.Event
+		want  time.Time
+	}{
+		{
+			name: "series last-observed wins when both it and LastTimestamp are set",
+			event: corev1.Event{
+				LastTimestamp: mt(1 * time.Minute),
+				Series:        &corev1.EventSeries{LastObservedTime: metav1.NewMicroTime(base.Add(5 * time.Minute))},
+			},
+			want: base.Add(5 * time.Minute),
+		},
+		{
+			name:  "falls back to LastTimestamp for singleton events",
+			event: corev1.Event{LastTimestamp: mt(2 * time.Minute)},
+			want:  base.Add(2 * time.Minute),
+		},
+		{
+			name:  "falls back to EventTime when no last-seen time",
+			event: corev1.Event{EventTime: metav1.NewMicroTime(base.Add(3 * time.Minute))},
+			want:  base.Add(3 * time.Minute),
+		},
+		{
+			name:  "falls back to creation time when nothing else is set",
+			event: corev1.Event{ObjectMeta: metav1.ObjectMeta{CreationTimestamp: mt(4 * time.Minute)}},
+			want:  base.Add(4 * time.Minute),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := eventTime(tt.event); !got.Equal(tt.want) {
+				t.Errorf("eventTime() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWarningEvents(t *testing.T) {
+	const ns = "test-ns"
+	const podName = "rclone-download"
+	podUID := types.UID("current-pod")
+
+	evt := func(name string, obj corev1.ObjectReference, reason string) *corev1.Event {
+		return &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: name, Namespace: ns},
+			Type:           corev1.EventTypeWarning,
+			Reason:         reason,
+			Message:        reason + " happened",
+			InvolvedObject: obj,
+			LastTimestamp:  metav1.Now(),
+		}
+	}
+	podRef := func(uid types.UID) corev1.ObjectReference {
+		return corev1.ObjectReference{Kind: "Pod", Name: podName, Namespace: ns, UID: uid}
+	}
+
+	currentPodEvt := evt("cur", podRef(podUID), "FailedScheduling")
+	stalePodEvt := evt("stale", podRef(types.UID("old-pod")), "StalePodEvent")
+	uidlessPodEvt := evt("uidless", podRef(""), "UIDlessPodEvent")
+	normalEvt := evt("normal", podRef(podUID), "Normal")
+	normalEvt.Type = corev1.EventTypeNormal
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: "dest-pvc", Namespace: ns, UID: types.UID("pvc-uid")},
+	}
+	pvcUIDlessEvt := evt("pvc-uidless", corev1.ObjectReference{Kind: "PersistentVolumeClaim", Name: "dest-pvc", Namespace: ns}, "ProvisioningFailed")
+
+	objs := []runtime.Object{currentPodEvt, stalePodEvt, uidlessPodEvt, normalEvt, pvcUIDlessEvt}
+	c := fake.NewClientBuilder().WithScheme(newTestScheme()).WithRuntimeObjects(objs...).Build()
+	pvcs := map[string]*corev1.PersistentVolumeClaim{"dest-pvc": pvc}
+
+	got := warningEvents(context.Background(), c, ns, podName, podUID, pvcs, logrus.StandardLogger())
+	joined := strings.Join(got, "\n")
+
+	// Pod event whose UID matches the pod we read is included.
+	if !strings.Contains(joined, "FailedScheduling") {
+		t.Errorf("expected matching-UID pod event, got %q", joined)
+	}
+	// A UID-less pod event cannot be distinguished from a prior pod, so it is dropped.
+	if strings.Contains(joined, "UIDlessPodEvent") {
+		t.Errorf("UID-less pod event should be rejected, got %q", joined)
+	}
+	// An event for a different pod UID (same name) is dropped.
+	if strings.Contains(joined, "StalePodEvent") {
+		t.Errorf("stale pod event should be rejected, got %q", joined)
+	}
+	// Non-Warning events are never reported.
+	if strings.Contains(joined, "Normal") {
+		t.Errorf("Normal event should be excluded, got %q", joined)
+	}
+	// The PVC branch still accepts UID-less events (behavior preserved).
+	if !strings.Contains(joined, "ProvisioningFailed") {
+		t.Errorf("expected UID-less PVC event to be accepted, got %q", joined)
+	}
+
+	// When the pod read failed, podUID is "" and no pod event can be
+	// attributed — including UID-less events that might belong to a prior pod
+	// of the same name. PVC events are still reported.
+	gotNoUID := warningEvents(context.Background(), c, ns, podName, "", pvcs, logrus.StandardLogger())
+	joinedNoUID := strings.Join(gotNoUID, "\n")
+	for _, reason := range []string{"FailedScheduling", "UIDlessPodEvent", "StalePodEvent"} {
+		if strings.Contains(joinedNoUID, reason) {
+			t.Errorf("with empty podUID, pod event %q should be rejected, got %q", reason, joinedNoUID)
+		}
+	}
+	if !strings.Contains(joinedNoUID, "ProvisioningFailed") {
+		t.Errorf("with empty podUID, UID-less PVC event should still be accepted, got %q", joinedNoUID)
 	}
 }
