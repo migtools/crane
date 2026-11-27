@@ -40,6 +40,11 @@ const (
 	// repository (also used by the indirect-mode MinIO setup).
 	mta898VerifierRedisImage = "docker.io/bitnamilegacy/redis:" + mta898RedisVersion
 
+	// mta898DataUID owns the migrated data on vanilla k8s: the official redis
+	// image writes as 999 and crane preserves that owner, so the verifier runs
+	// as 999 to read it without a PVC-mutating fsGroup. Ignored on OpenShift.
+	mta898DataUID = 999
+
 	mta898VerifierPingTimeout = 90 * time.Second
 )
 
@@ -154,6 +159,10 @@ var _ = Describe("Stage and cutover migration flow", func() {
 			Command:    []string{"/opt/bitnami/redis/bin/redis-server", "--dir", "/data", "--requirepass", mta898RedisPassword},
 			Volumes:    []PodVolumeMount{{PVCName: pvcName, MountPath: "/data"}},
 			Restricted: true,
+			// Read the migrated dump as the identity that owns it (vanilla only;
+			// SCC-assigned on OpenShift) instead of mutating the PVC via fsGroup.
+			RunAsUser:  mta898DataUID,
+			RunAsGroup: mta898DataUID,
 		}
 		DeferCleanup(func() {
 			if err := DeleteVerifierPod(kubectlTgt, tgtApp.Namespace, verifierPod); err != nil {
