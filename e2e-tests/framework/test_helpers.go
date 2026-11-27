@@ -248,6 +248,12 @@ type VerifierPodOptions struct {
 	// Pod Security Admission profile — i.e. non-admin scenarios. Leave false for
 	// cluster-admin contexts where a securityContext is not required.
 	Restricted bool
+	// RunAsUser and RunAsGroup, when non-zero, pin the verifier's identity on
+	// vanilla Kubernetes to read PVC data owned by that UID/GID without the
+	// volume-mutating chown/chmod an fsGroup causes. Ignored on OpenShift (the
+	// SCC assigns one); zero means the restricted default (UID 1000).
+	RunAsUser  int64
+	RunAsGroup int64
 }
 
 // DeployVerifierPod creates a disposable pod that mounts one or more existing
@@ -291,10 +297,20 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
 	if opts.Restricted {
 		// Vanilla k8s needs an explicit non-root runAsUser for root-based images
 		// (e.g. alpine); OpenShift's restricted SCC rejects out-of-range UIDs, so
-		// omit it there and let the SCC assign one.
-		runAsUserLine := ""
+		// omit it there and let the SCC assign one. Callers reading PVC data owned
+		// by a particular identity can pin RunAsUser/RunAsGroup to that identity
+		// (vanilla only) so the pod reads the data as-is instead of mutating the
+		// volume via fsGroup.
+		idLines := ""
 		if !k.IsOpenShift() {
-			runAsUserLine = "      runAsUser: 1000\n"
+			uid := int64(1000)
+			if opts.RunAsUser != 0 {
+				uid = opts.RunAsUser
+			}
+			idLines = fmt.Sprintf("      runAsUser: %d\n", uid)
+			if opts.RunAsGroup != 0 {
+				idLines += fmt.Sprintf("      runAsGroup: %d\n", opts.RunAsGroup)
+			}
 		}
 		securityBlock = fmt.Sprintf(`    securityContext:
       runAsNonRoot: true
@@ -304,7 +320,7 @@ func DeployVerifierPod(k KubectlRunner, opts VerifierPodOptions) error {
         - ALL
       seccompProfile:
         type: RuntimeDefault
-`, runAsUserLine)
+`, idLines)
 	}
 
 	manifest := fmt.Sprintf(`apiVersion: v1
